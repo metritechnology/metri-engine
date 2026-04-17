@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  valkey-cache:
+    image: valkey/valkey:latest
+    container_name: metri-valkey-local
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

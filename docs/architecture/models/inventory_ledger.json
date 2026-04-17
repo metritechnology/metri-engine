@@ -1,0 +1,65 @@
+{
+  "entity": "inventory_ledger",
+  "engine": "olap",
+  "is_system": true,
+  "track_history": false,
+  "partition_strategy": "YYYY-MM",
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": true
+    },
+    {
+      "name": "movement_id",
+      "type": "reference",
+      "entityRef": "inventory_movement",
+      "cardinality": "one",
+      "required": true,
+      "index": true
+    },
+    {
+      "name": "part_id",
+      "type": "reference",
+      "entityRef": "part",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "timestamp",
+      "type": "epoch",
+      "index": true,
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "quantity_change",
+      "type": "decimal",
+      "is_measure": true,
+      "default_rollup": "sum"
+    },
+    {
+      "name": "running_balance",
+      "type": "decimal",
+      "description": "Calculated running total stock for this part/location at this explicit timestamp.",
+      "is_measure": true,
+      "default_rollup": "last_value"
+    },
+    {
+      "name": "running_financial_value",
+      "type": "decimal",
+      "description": "Calculated value of stock for this part/location (average cost method).",
+      "is_measure": true,
+      "default_rollup": "last_value"
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+;; =============================================================================
+;; METRI ENGINE - ANALYTICAL TRUTH MANIFEST v3.7 (Full Semantic Integration)
+;; =============================================================================
+;; Este contrato cierra la brecha entre metri.proto, MetriDSL y MQL.
+;; 
+;; RACIONAL DE DISEÑO (SOLID / DIP):
+;; ---------------------------------
+;; Este manifiesto se rige por el Principio de Inversión de Dependencias (DIP).
+;; Mantiene una frontera inquebrantable entre el "Qué" (AST Analítico) y el "Cómo" 
+;; (Orquestación Visual).
+;;
+;; 1. Lógica Pura (Aegis): Aegis implementa la interfaz 'ast-definition'. Es ciego
+;;    a la existencia de gRPC o de tipos de gráficas (bar, line). Su única misión
+;;    es transpilar la intención matemática a dialectos nativos (Datalog/SQL).
+;;
+;; 2. Orquestación (Janus): Janus gestiona 'orchestration-meta'. Utiliza estos
+;;    metadatos para decorar el resultado de Aegis y convertirlo en un stream gRPC
+;;    con VizMeta.
+;;
+;; 3. Independencia de Implementación: Esta separación permite testear Aegis con
+;;    ASTs puras sin mockear el servidor gRPC, y actualizar Janus sin tocar el
+;;    motor de transpilación.
+;; =============================================================================
+
+{
+ :metri.ast/registry
+ {;; --- DOMINIO 1: TIPOS ATÓMICOS ---
+  :metri.spec/tenant-id :string
+  :metri.spec/entity-ref :keyword
+  :metri.spec/aggregation [:enum :count :sum :avg :min :max :median :std-dev :variance 
+                                  :percentile-90 :percentile-95 :percentile-99 
+                                  :correlation :linear-regression :logistic-regression]
+  
+  :metri.spec/interval-type [:enum :hour :day :week :month :quarter :year :ytd :last-30-days]
+                        
+  ;; --- DOMINIO 2: AST LÓGICO (Capacidad MetriDSL & MQL) ---
+  :metri.spec/filter-node
+  [:or
+   [:cat [:enum :and :or :not] [:* [:ref :metri.spec/filter-node]]]
+   [:cat [:enum := :!= :> :>= :< :<= :in :between :like :is-null :is-not-null :matches] :keyword any?]]
+
+  :metri.spec/metric 
+  [:map
+   [:metric/attribute :keyword]
+   [:metric/aggregation :metri.spec/aggregation]
+   [:metric/name {:optional true} :string]
+   [:metric/filter {:optional true} [:ref :metri.spec/filter-node]]
+   [:metric/interval {:optional true} :metri.spec/interval-type]
+   [:metric/secondary-attribute {:optional true} :keyword]]
+
+  :metri.spec/semantic-ref
+  [:map [:metric/key :string]]
+             
+  :metri.spec/dimension 
+  [:map
+   [:dimension/attribute :keyword]
+   [:dimension/interval {:optional true} :metri.spec/interval-type]]
+                
+  :metri.spec/time-frame 
+  [:map
+   [:time/type [:enum :custom-range :today :yesterday :last-n-days :this-month :year-to-date :all-time]]
+   [:time/n-value {:optional true} :int]
+   [:time/start-ts {:optional true} :inst] 
+   [:time/end-ts {:optional true} :inst]
+   [:time/timezone :string]]
+
+  :metri.spec/hierarchy-context
+  [:map
+   [:parent-field :keyword]
+   [:current-node-id {:optional true} :string]
+   [:inject-has-children {:optional true} :boolean]]
+
+  :metri.spec/comparison
+  [:map
+   [:type [:enum :relative :shortcut :absolute :benchmark :smart]]
+   [:label {:optional true} :string]
+   [:shortcut {:optional true} 
+    [:enum :previous-period :same-period-last-year :same-day-last-week :yesterday-last-year]]
+   [:absolute-range {:optional true} [:map [:start :inst] [:end :inst]]]
+   [:benchmark-value {:optional true} :double]]
+
+  :metri.spec/eql-query 
+  [:vector 
+   [:or 
+    :keyword 
+    [:map-of :keyword 
+     [:map 
+      [:select [:ref :metri.spec/eql-query]]
+      [:limit {:optional true} :int]
+      [:sort {:optional true} [:vector [:map [:field :keyword] [:descending :boolean]]]]]]]]
+
+  :metri.spec/ast-definition
+  [:map
+   [:entity :metri.spec/entity-ref]
+   [:metrics {:optional true} [:vector [:or :metri.spec/metric :metri.spec/semantic-ref]]]
+   [:dimensions {:optional true} [:vector :metri.spec/dimension]]
+   [:time-frame {:optional true} :metri.spec/time-frame]
+   [:filters {:optional true} [:vector :metri.spec/filter-node]]
+   [:comparisons {:optional true} [:vector :metri.spec/comparison]]
+   [:search {:optional true} :string] 
+   [:hierarchy {:optional true} :metri.spec/hierarchy-context]
+   [:limit {:optional true} :int]
+   [:select {:optional true} :metri.spec/eql-query]]
+
+  :metri.spec/explore-request
+  [:map
+   [:tenant-id :metri.spec/tenant-id]
+   [:entity :metri.spec/entity-ref]
+   [:attribute :keyword]
+   [:limit {:optional true} :int]
+   [:filters {:optional true} [:vector :metri.spec/filter-node]]
+   [:extract-keys-only? {:optional true} :boolean]]
+
+  :metri.spec/discovery-request
+  [:map
+   [:tenant-id :metri.spec/tenant-id]
+   [:type {:optional true} :keyword]]
+
+  :metri.spec/orchestration-meta
+  [:map
+   [:viz {:optional true} :keyword]
+   [:merge-groups {:optional true} [:vector [:map [:group-id :string] [:query-keys [:vector :keyword]]]]]]
+
+  :metri.spec/query-request
+  [:map
+   [:tenant-id :metri.spec/tenant-id]
+   [:context {:optional true} [:map [:common-entity :metri.spec/entity-ref] [:common-filters [:vector :metri.spec/filter-node]]]]
+   [:queries [:map-of :keyword 
+               [:map 
+                {:closed true} 
+                [:ast [:ref :metri.spec/ast-definition]]
+                [:meta [:ref :metri.spec/orchestration-meta]]]]]]}
+}

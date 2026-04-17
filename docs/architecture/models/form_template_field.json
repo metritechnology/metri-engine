@@ -1,0 +1,65 @@
+{
+  "entity": "form_template_field",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "form_template_section_id",
+      "type": "reference",
+      "entityRef": "form_template_section",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "field_order",
+      "type": "decimal",
+      "required": true,
+      "index": true,
+      "description": "Sequential order of the question in the checklist UI"
+    },
+    {
+      "name": "question_prompt",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "Text displayed to the technician requesting input"
+    },
+    {
+      "name": "type",
+      "type": "enum",
+      "options": [
+        "PASS_FAIL",
+        "YES_NO",
+        "COMPLIES_DOES_NOT_COMPLY",
+        "TEXT_INPUT",
+        "NUMBER_INPUT",
+        "MULTIPLE_CHOICE",
+        "FILE_ATTACHMENT",
+        "METER_READING",
+        "SIGNATURE",
+        "QR_BARCODE"
+      ],
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "is_required",
+      "type": "boolean",
+      "default_value": true,
+      "is_dimension": true
+    },
+    {
+      "name": "validation_rules",
+      "type": "json",
+      "description": "Optional payload. JSON storing advanced logic, like min/max logic for NUMBER_INPUT, or options for MULTIPLE_CHOICE."
+    }
+  ]
+}

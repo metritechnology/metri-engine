@@ -1,0 +1,37 @@
+name: Contract Conformance
+
+on:
+  pull_request:
+    paths:
+      - "metri.proto"
+      - "docs/architecture/janus-aegis-contract-v3.edn"
+      - "docs/architecture/**/*.md"
+      - "docs/architecture/validate_contracts.clj"
+      - "docs/architecture/validate_traceability.clj"
+      - ".github/workflows/contract-conformance.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "metri.proto"
+      - "docs/architecture/janus-aegis-contract-v3.edn"
+      - "docs/architecture/**/*.md"
+      - "docs/architecture/validate_contracts.clj"
+      - "docs/architecture/validate_traceability.clj"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Clojure
+        uses: DeLaGuardo/setup-clojure@13.2
+        with:
+          cli: 1.11.1.1413
+
+      - name: Validate contracts
+        run: clojure -Sdeps '{:paths ["docs/architecture"]}' -M -m validate-contracts
+
+      - name: Validate traceability matrix
+        run: clojure -Sdeps '{:paths ["docs/architecture"]}' -M -m validate-traceability

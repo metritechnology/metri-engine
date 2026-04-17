@@ -1,0 +1,55 @@
+{
+  "entity": "file",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": false,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": true
+    },
+    {
+      "name": "file_name",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "mime_type",
+      "type": "string",
+      "is_dimension": true,
+      "description": "e.g. image/jpeg, application/pdf"
+    },
+    {
+      "name": "file_size_bytes",
+      "type": "decimal",
+      "is_measure": true
+    },
+    {
+      "name": "url",
+      "type": "string",
+      "required": true,
+      "description": "Storage provider URL (e.g., S3 or Blob Storage)"
+    },
+    {
+      "name": "uploaded_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one"
+    },
+    {
+      "name": "created_at",
+      "type": "epoch",
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "direct_access_only",
+      "type": "boolean",
+      "default_value": false,
+      "index": true,
+      "description": "Si es 'true' (ej: Firmas o Biometrías), el Engine le aplica invisibilidad fantasma contra cualquier rpc Query. Solo el Point-Read directo por UUID logrará materializarlo previniendo Data Leaks en paginaciones masivas."
+    }
+  ]
+}

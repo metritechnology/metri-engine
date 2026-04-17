@@ -1,0 +1,61 @@
+{
+  "entity": "webhook_endpoint",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "target_url",
+      "type": "string",
+      "required": true,
+      "pattern": "^https?://.+"
+    },
+    {
+      "name": "http_method",
+      "type": "enum",
+      "options": ["POST", "PUT", "PATCH"],
+      "default_value": "POST"
+    },
+    {
+      "name": "authentication_type",
+      "type": "enum",
+      "options": ["NONE", "BEARER_TOKEN", "BASIC_AUTH", "CUSTOM_HEADER"],
+      "default_value": "NONE"
+    },
+    {
+      "name": "auth_token",
+      "type": "string",
+      "crypto_envelope": true,
+      "description": "Token de autenticación del destino. Interceptado por Envelope Encryption en el Gateway (KMS) para asentar solo el Ciphertext en la DB."
+    },
+    {
+      "name": "subscribed_rule_ids",
+      "type": "reference",
+      "entityRef": "event_routing_rule",
+      "cardinality": "many",
+      "required": true,
+      "description": "Lista de las Event Routing Rules (Triggers) que ejecutarán este Webhook."
+    },
+    {
+      "name": "max_retries",
+      "type": "long",
+      "default_value": 3
+    },
+    {
+      "name": "is_active",
+      "type": "boolean",
+      "default_value": true
+    }
+  ]
+}

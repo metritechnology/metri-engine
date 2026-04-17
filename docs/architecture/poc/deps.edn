@@ -1,0 +1,6 @@
+{:paths ["."]
+ :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        metosin/malli {:mvn/version "0.15.0"}}
+ :aliases
+ {:test {:extra-paths ["."]
+         :main-opts ["-m" "clojure.test" "janus-tester-test"]}}}

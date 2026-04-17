@@ -1,0 +1,5 @@
+# Contract and architecture ownership
+metri.proto @backend-platform
+docs/architecture/janus-aegis-contract-v3.edn @data-platform
+docs/architecture/contract-traceability-matrix.md @architecture
+.github/workflows/contract-conformance.yml @devops

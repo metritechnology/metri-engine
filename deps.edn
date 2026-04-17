@@ -1,0 +1,37 @@
+{:paths ["src" "resources"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.0"}
+        org.clojure/core.async {:mvn/version "1.6.681"}
+        ;; API Core & Validation
+        metosin/malli {:mvn/version "0.16.4"}
+        ;; OLTP Datahike Serverless
+        io.replikativ/datahike {:mvn/version "0.6.1525"}
+        io.replikativ/datahike-dynamodb {:mvn/version "0.1.9"}
+        ;; OLAP Integration
+        ;; com.github.seancorfield/honeysql {:mvn/version "2.6.1147"}
+        ;; Cloud & Infrastructure SDKs
+        com.cognitect.aws/api {:mvn/version "0.8.692"}
+        com.cognitect.aws/endpoints {:mvn/version "1.1.12.772"}
+        software.amazon.awssdk/athena {:mvn/version "2.25.11"}
+        ;; Embedded Policy PDP
+        ;; software.amazon.cedar/cedar-java {:mvn/version "3.2.1"}
+        ;; Valkey/Redis
+        ;; com.taoensso/carmine {:mvn/version "3.4.0"}
+        ;; Observability
+        io.opentelemetry/opentelemetry-api {:mvn/version "1.37.0"}
+        ;; AWS Lambda AWS Core
+        com.amazonaws/aws-lambda-java-core {:mvn/version "1.2.3"}
+        com.amazonaws/aws-lambda-java-events {:mvn/version "3.11.4"}}
+
+ :aliases
+ {:dev
+  {:extra-paths ["test"]
+   :extra-deps {}}
+
+  :test
+  {:extra-paths ["test"]
+   :extra-deps {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+   :main-opts ["-m" "cognitect.test-runner"]}
+
+  :build
+  {:deps {io.github.clojure/tools.build {:git/tag "v0.10.5" :git/sha "2a21b7a"}}
+   :ns-default build}}}

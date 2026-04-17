@@ -1,0 +1,128 @@
+{
+  "entity": "scheduled_job",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "parent_entity_ref",
+      "type": "uuid",
+      "required": false,
+      "index": true,
+      "description": "El ID camale\u00f3nico de quien engendr\u00f3 este Job. Puede ser un Mantenimiento Preventivo, un Recordatorio, o un User UUID para env\u00edos de facturas."
+    },
+    {
+      "name": "trigger_type",
+      "type": "enum",
+      "options": [
+        "CRON",
+        "EXACT_TIME",
+        "TELEMETRY"
+      ],
+      "required": true,
+      "description": "La naturaleza de la trampa. Tiempo o Choque F\u00edsico."
+    },
+    {
+      "name": "trigger_expression",
+      "type": "string",
+      "required": true,
+      "description": "El motor universal. Si es CRON expone '0 8 * * *'. Si es EXACT_TIME expone Epoch '1702812932'. Si es TELEMETRY expone 'reading_value > 5000'."
+    },
+    {
+      "name": "iana_timezone",
+      "type": "string",
+      "description": "Zona Horaria Can\u00f3nica ISO (Ej. America/Bogota). Absolutamente cr\u00edtico para garantizar que AWS EventBridge preserve las l\u00f3gicas humanas saltando correctamente los cambios mundiales de Horario de Verano/Invierno DST."
+    },
+    {
+      "name": "action_type",
+      "type": "enum",
+      "options": [
+        "RPC_CALL",
+        "DISPATCH_NOTIFICATION",
+        "WEBHOOK",
+        "EDA_BROADCAST"
+      ],
+      "required": true,
+      "description": "Lo que Schedulers har\u00e1 (ciegamente) cuando AWS lo despierte de su letargo."
+    },
+    {
+      "name": "target_user_id",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "description": "Si la alarma as\u00edncrona es para un humano aislado, Datomic amarra el Job a \u00e9l para evitar punteros muertos (Null Pointers as\u00edncronos)."
+    },
+    {
+      "name": "target_group_id",
+      "type": "reference",
+      "entityRef": "user_group",
+      "cardinality": "one",
+      "description": "Si el Job invoca Broadcasting de Notificaciones en Masa, Datomic protege y bloquea la eliminaci\u00f3n del User Group base."
+    },
+    {
+      "name": "target_role_id",
+      "type": "reference",
+      "entityRef": "role",
+      "cardinality": "one",
+      "description": "Resoluci\u00f3n de notificaciones encoladas basada netamente en el rol org\u00e1nico de planta."
+    },
+    {
+      "name": "action_payload",
+      "type": "json",
+      "required": true,
+      "description": "El Boomerang Ciego. Metri Schedulers devolver\u00e1 esto \u00edntegro por red a quien corresponda ejecutarlo."
+    },
+    {
+      "name": "idempotency_hash",
+      "type": "string",
+      "is_system": true,
+      "description": "Huella dactilar est\u00e1tica. Garantiza matem\u00e1ticamente que Metri Engine (Clojure) descarte reintentos par\u00e1sitos o latenciados provenientes de Schedulers."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "PENDING",
+        "ACTIVE",
+        "COMPLETED",
+        "FAILED",
+        "SUSPENDED"
+      ],
+      "default_value": "ACTIVE",
+      "is_dimension": true
+    }
+  ],
+  "events": {
+    "create": "SCHEDULED_JOB_CREATED",
+    "update": "SCHEDULED_JOB_UPDATED",
+    "delete": "SCHEDULED_JOB_DELETED"
+  },
+  "event_rules": [
+    {
+      "rule_code": "SCHEDULED_JOB_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.scheduled_job.created",
+      "description": "Notifica a Metri Schedulers para construir la trampa temporal (AWS EventBridge Scheduler) o telem\u00e9trica abstractamente."
+    },
+    {
+      "rule_code": "SCHEDULED_JOB_UPDATED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [],
+      "detail_type_output": "system.scheduled_job.updated",
+      "description": "Fuerza a Metri Schedulers a destruir la trampa antigua en AWS y reajustar los temporizadores ciegamente con la nueva configuraci\u00f3n."
+    },
+    {
+      "rule_code": "SCHEDULED_JOB_DELETED",
+      "event_trigger_type": "on_delete",
+      "filter_conditions": [],
+      "detail_type_output": "system.scheduled_job.deleted",
+      "description": "Aniquila la subscripci\u00f3n de EventBridge Scheduler en AWS evadiendo posibles despertares fantasma futuros."
+    }
+  ]
+}

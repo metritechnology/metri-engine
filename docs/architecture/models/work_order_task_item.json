@@ -1,0 +1,74 @@
+{
+  "entity": "work_order_task_item",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "work_order_task_id",
+      "type": "reference",
+      "entityRef": "work_order_task",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "task_template_item_id",
+      "type": "reference",
+      "entityRef": "task_template_item",
+      "cardinality": "one",
+      "description": "Vital para Inteligencia de Negocios: Permite agrupar métricas sobre este paso específico nacido de una plantilla."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "Especificación del paso físico a cumplir"
+    },
+    {
+      "name": "is_completed",
+      "type": "boolean",
+      "default_value": false,
+      "is_dimension": true
+    },
+    {
+      "name": "note_ids",
+      "type": "reference",
+      "entityRef": "note",
+      "cardinality": "many",
+      "description": "Notas específicas a este pequeño paso"
+    },
+    {
+      "name": "evidence_file_ids",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "many",
+      "description": "Fotos o evidencia exclusiva de la ejecución de este paso en concreto"
+    },
+    {
+      "name": "completed_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one"
+    },
+    {
+      "name": "labor_log_ids",
+      "type": "reference",
+      "entityRef": "labor_log",
+      "cardinality": "many",
+      "description": "Referencia Inversa Bidireccional: Lista de segmentos de tiempo registrados para este ítem."
+    },
+    {
+      "name": "completed_at",
+      "type": "epoch",
+      "index": true
+    }
+  ]
+}

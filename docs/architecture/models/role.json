@@ -1,0 +1,65 @@
+{
+  "entity": "role",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "unique": "identity",
+      "required": true,
+      "fts": true,
+      "is_dimension": true
+    },
+    {
+      "name": "description",
+      "type": "string"
+    },
+    {
+      "name": "grants",
+      "type": "array",
+      "items": { 
+        "type": "map",
+        "keys": {
+          "domain": { "type": "string", "description": "The target domain: e.g., work_order, asset." },
+          "actions": { "type": "array", "items": { "type": "string" }, "description": "Allowed actions: VIEW, CREATE, UPDATE, DELETE, EXECUTE, EXPORT." },
+          "scope": { 
+            "type": "enum", 
+            "options": ["ALL", "OWN", "ASSIGNED", "OWN_OR_ASSIGNED"],
+            "default": "ALL",
+            "description": "Visibility scope: ALL (global tenant), OWN (created by user), ASSIGNED (assigned to user)."
+          }
+        }
+      },
+      "description": "Domain-level granular permissions matrix."
+    },
+    {
+      "name": "allowed_locations",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "many",
+      "doc": "Contextual Authorization: List of locations (physical boundaries) this role is authorized to access."
+    },
+    {
+      "name": "allowed_assets",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "many",
+      "doc": "Contextual Authorization: List of specific assets this role is authorized to access."
+    },
+    {
+      "name": "tenant_id",
+      "type": "reference",
+      "entityRef": "tenant",
+      "required": true,
+      "is_dimension": true,
+      "doc": "Mandatory tenant isolation."
+    }
+  ]
+}

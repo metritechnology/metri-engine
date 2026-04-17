@@ -1,0 +1,64 @@
+{
+  "entity": "domain_quota",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": true
+    },
+    {
+      "name": "tenant_id",
+      "type": "reference",
+      "entityRef": "tenant",
+      "required": true,
+      "doc": "Quotas are strictly Tenant-scoped in Metri Engine."
+    },
+    {
+      "name": "resource_domain",
+      "type": "string",
+      "required": true,
+      "doc": "The domain being limited (e.g., 'asset', 'location')."
+    },
+    {
+      "name": "limit_type",
+      "type": "enum",
+      "options": [
+        "WRITE_COUNT",
+        "READ_COUNT"
+      ],
+      "required": true,
+      "doc": "Specifies if the quota limits creations or queries."
+    },
+    {
+      "name": "reset_strategy",
+      "type": "enum",
+      "options": [
+        "MONTHLY",
+        "YEARLY",
+        "FIXED"
+      ],
+      "required": true,
+      "doc": "Determines if the quota resets over time or is a hard cumulative limit."
+    },
+    {
+      "name": "period_key",
+      "type": "string",
+      "required": true,
+      "doc": "The time window (e.g., '2026-04'). Use 'LIFETIME' if reset_strategy is FIXED."
+    },
+    {
+      "name": "max_limit",
+      "type": "long",
+      "required": true
+    },
+    {
+      "name": "current_usage",
+      "type": "long",
+      "required": true,
+      "doc": "Atomic counter managed by Datomic Transaction Functions."
+    }
+  ]
+}

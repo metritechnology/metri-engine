@@ -1,0 +1,84 @@
+{
+  "entity": "electronic_signature",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "signer_user_id",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "signature_intent",
+      "type": "enum",
+      "options": [
+        "CERTIFY_ACCURACY",
+        "APPROVE",
+        "ACKNOWLEDGE_REVIEW"
+      ],
+      "required": true,
+      "description": "El propósito o intento visual que el usuario confesó al momento de colocar su firma digital",
+      "is_dimension": true
+    },
+    {
+      "name": "timestamp",
+      "type": "epoch",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "ip_address",
+      "type": "string",
+      "fts": true
+    },
+    {
+      "name": "device_fingerprint",
+      "type": "string",
+      "fts": true,
+      "description": "Metadata del dispositivo recolectada al milisegundo de la firma para pruebas de No Repudio"
+    },
+    {
+      "name": "snapshot_hash",
+      "type": "string",
+      "required": true,
+      "description": "Candado Criptográfico (SHA-256) del contenido del formulario o documento en ese exacto instante temporal."
+    },
+    {
+      "name": "graphical_file_id",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "one",
+      "description": "Representación gráfica, rúbrica estétita o trazo del dedo dibujada por el usuario en la interfaz."
+    },
+    {
+      "name": "requires_mfa_token",
+      "type": "boolean",
+      "default_value": false,
+      "description": "Informa si el UI obligó la reingreso de contraseña (Doble Factor) para depositar esta firma legal."
+    },
+    {
+      "name": "signed_entity",
+      "type": "string",
+      "required": true,
+      "is_dimension": true,
+      "description": "The table or concept being signed (e.g. 'work_order', 'check_list_item')"
+    },
+    {
+      "name": "signed_entity_id",
+      "type": "uuid",
+      "required": true,
+      "index": true
+    }
+  ]
+}

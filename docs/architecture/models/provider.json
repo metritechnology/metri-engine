@@ -1,0 +1,48 @@
+{
+  "entity": "provider",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "is_dimension": true
+    },
+    {
+      "name": "contact_email",
+      "type": "string",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    },
+    {
+      "name": "contact_phone",
+      "type": "string"
+    },
+    {
+      "name": "address",
+      "type": "string"
+    },
+    {
+      "name": "services_provided",
+      "type": "json",
+      "description": "An array of service categories provided by this contractor."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "ACTIVE",
+        "INACTIVE"
+      ],
+      "default_value": "ACTIVE",
+      "is_dimension": true
+    }
+  ]
+}

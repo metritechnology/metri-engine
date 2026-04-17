@@ -1,0 +1,22 @@
+# Clojure
+.cpcache/
+target/
+
+# AWS SAM
+.aws-sam/
+
+# Environment
+.env
+env.json
+
+# Local development / Testing
+.local/
+events/
+event.json
+
+# OS/Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.iml

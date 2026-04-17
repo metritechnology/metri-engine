@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  metri-engine
+
+  AWS SAM Template optimizado para Metri Engine (Clojure JVM)
+  Aplica SnapStart para evadir Cold Starts y Lambda Function URLs para romper 
+  el límite de 29s permitiendo gRPC Streams.
+
+Parameters:
+  DatahikeTableName:
+    Type: String
+    Default: metri-datahike-prod
+    Description: "Nombre físico de la tabla transaccional de DynamoDB utilizada por Datahike Serverless."
+  AthenaWorkGroup:
+    Type: String
+    Default: metri-analytics
+    Description: "Workgroup operativo de AWS Athena."
+
+Globals:
+  Function:
+    Timeout: 900
+    MemorySize: 2048
+
+Resources:
+  # ── Almacenamiento Analítico (OLAP) ──
+  MetriDataLakeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "metri-lake-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ── Diccionario JSON & Validador (OLTP) ──
+  MetriSchemasTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+
+  # ── Despacho EDA (Outbox) ──
+  MetriOutboxQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: metri-outbox.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+
+  # ── Clojure Engine ──
+  MetriEngineFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: metri.application.core::handleRequest
+      Runtime: java21
+      Architectures:
+        - x86_64
+
+      AutoPublishAlias: live
+      SnapStart:
+        ApplyOn: PublishedVersions
+
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: RESPONSE_STREAM
+        Cors:
+          AllowOrigins:
+            - "*"
+
+      # Reglas de Cero Confianza (Minimum Least Privilege)
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref MetriDataLakeBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref MetriSchemasTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DatahikeTableName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt MetriOutboxQueue.QueueName
+        # Asignación manual para Athena ya que asegura todos los endpoints internos (Glue, LakeFormation)
+        - Statement:
+            - Effect: Allow
+              Action:
+                - athena:StartQueryExecution
+                - athena:GetQueryExecution
+                - athena:GetQueryResults
+                - athena:StopQueryExecution
+              Resource: !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkGroup}"
+            - Effect: Allow
+              Action:
+                - s3:GetBucketLocation
+                - s3:GetObject
+                - s3:ListBucket
+                - s3:ListBucketMultipartUploads
+                - s3:ListMultipartUploadParts
+                - s3:AbortMultipartUpload
+                - s3:PutObject
+              Resource:
+                - !Sub "arn:aws:s3:::*"
+
+      Environment:
+        Variables:
+          ENVIRONMENT: production
+          AWS_S3_LAKE_BUCKET: !Ref MetriDataLakeBucket
+          ATHENA_WORKGROUP: !Ref AthenaWorkGroup
+          DATAHIKE_STORE_URI: !Sub "datahike:ddb://${AWS::Region}/${DatahikeTableName}"
+          METRI_SCHEMAS_TABLE: !Ref MetriSchemasTable
+          METRI_OUTBOX_QUEUE: !GetAtt MetriOutboxQueue.QueueUrl
+
+Outputs:
+  MetriEngineFunctionUrl:
+    Description: "Enlace HTTPS para Metri Engine (Soporta Streaming gRPC)"
+    Value: !GetAtt MetriEngineFunctionUrl.FunctionUrl
+  MetriDataLakeArn:
+    Description: "ARN del lago de datos de S3"
+    Value: !GetAtt MetriDataLakeBucket.Arn

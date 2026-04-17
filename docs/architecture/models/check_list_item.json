@@ -1,0 +1,104 @@
+{
+  "entity": "check_list_item",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "check_list_section_id",
+      "type": "reference",
+      "entityRef": "check_list_section",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "form_template_field_id",
+      "type": "reference",
+      "entityRef": "form_template_field",
+      "cardinality": "one",
+      "description": "Crucial para OLAP: Atar esta respuesta exacta al campo original de la plantilla, asegurando agregación matemática a prueba de cambios en el texto."
+    },
+    {
+      "name": "question_text",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "The prompt or question assigned to the technician"
+    },
+    {
+      "name": "type",
+      "type": "enum",
+      "options": [
+        "PASS_FAIL",
+        "YES_NO",
+        "COMPLIES_DOES_NOT_COMPLY",
+        "TEXT_INPUT",
+        "NUMBER_INPUT",
+        "MULTIPLE_CHOICE",
+        "FILE_ATTACHMENT",
+        "METER_READING",
+        "SIGNATURE",
+        "QR_BARCODE"
+      ],
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "response_boolean",
+      "type": "boolean",
+      "description": "Used when type is PASS_FAIL",
+      "is_dimension": true
+    },
+    {
+      "name": "response_text",
+      "type": "string",
+      "description": "Used when type is TEXT_INPUT or MULTIPLE_CHOICE",
+      "fts": true
+    },
+    {
+      "name": "response_number",
+      "type": "decimal",
+      "description": "Used when type is NUMBER_INPUT or METER_READING. Allows OLAP aggregations.",
+      "is_measure": true,
+      "default_rollup": "last_value"
+    },
+    {
+      "name": "response_file_ids",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "many",
+      "description": "Used when type is FILE_ATTACHMENT to store photos or documents"
+    },
+    {
+      "name": "response_signature_id",
+      "type": "reference",
+      "entityRef": "electronic_signature",
+      "cardinality": "one",
+      "description": "Used when type is SIGNATURE to securely bridge out to the cryptographic signatures vault."
+    },
+    {
+      "name": "observations",
+      "type": "string",
+      "fts": true,
+      "description": "Texto libre opcional para que el técnico agregue comentarios extra o justifique cualquier tipo de respuesta."
+    },
+    {
+      "name": "completed_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one"
+    },
+    {
+      "name": "completed_at",
+      "type": "epoch",
+      "index": true
+    }
+  ]
+}

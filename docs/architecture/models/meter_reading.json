@@ -1,0 +1,59 @@
+{
+  "entity": "meter_reading",
+  "engine": "olap",
+  "is_system": false,
+  "track_history": false,
+  "disable_eda": true,
+  "disable_fts": true,
+  "partition_strategy": "{tenant_id}/YYYY-MM-DD/{asset_id}",
+  "routing": {
+    "is_iot_target": true,
+    "write_path_locked": true,
+    "ingestion_engine": "aws_kinesis_firehose",
+    "storage_engine": "amazon_s3_iceberg",
+    "description": "CQRS Híbrido: Este modelo muta usando dos vías exclusivas. 1) En tiempo real por AWS Firehose. 2) Vía 'rpc BulkIngest' (gRPC masivo). Metri Engine tiene estrictamente censurado procesar telemetría por la vía 1 a 1 transaccional humana ('rpc Transact' y FTS)."
+  },
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+
+    {
+      "name": "reading_value",
+      "type": "decimal",
+      "is_measure": true,
+      "required": true
+    },
+    {
+      "name": "unit_of_measure",
+      "type": "string",
+      "required": true,
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:uncefact",
+      "is_dimension": true,
+      "description": "Unidad de medida regulada mundialmente bajo el código UN/CEFACT (ej. 'CEL', 'KWH'). Protege al ecosistema analítico de polución semántica."
+    },
+    {
+      "name": "timestamp",
+      "type": "epoch",
+      "index": true,
+      "required": true
+    },
+    {
+      "name": "metadata",
+      "type": "json",
+      "is_dimension": true,
+      "description": "Diccionario clave-valor semántico dinámico. Transpilado obligatoriamente como MAP<VARCHAR, VARCHAR> en Data Lakes para evadir el letal Schema Bloat y mantener lecturas O(1)."
+    }
+  ]
+}

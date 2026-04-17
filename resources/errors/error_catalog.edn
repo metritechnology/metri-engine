@@ -1,0 +1,212 @@
+{:catalog
+ {:version "1.0.0"
+  :generated-at "2026-04-15"
+  :description "ÚNICA FUENTE DE VERDAD para todos los códigos de error de Metri Engine.
+               PROHIBIDO definir códigos de error fuera de este archivo.
+               El Bootstrapper valida este catálogo al arrancar — JVM no acepta requests
+               hasta que todos los entries pasen la validación estructural."
+
+  :entries
+  [;; ── Familia JNS — Janus Router ───────────────────────────────────────────
+   {:code             :JNS_001
+    :family           :jns
+    :stage            :janus
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "No channel registered for the given engine type"
+    :context-required [:entity_type :engine]
+    :retryable?       false}
+
+   {:code             :JNS_REF_001
+    :family           :jns
+    :stage            :janus
+    :severity         :warning
+    :http-status      422
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Referenced entity UUID does not exist in Datahike"
+    :context-required [:field :uuid :entity_type]
+    :retryable?       false}
+
+   {:code             :JNS_REF_002
+    :family           :jns
+    :stage            :janus
+    :severity         :warning
+    :http-status      422
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Referenced entity UUID exists but has wrong entity type (type confusion attack blocked)"
+    :context-required [:field :expected_type :actual_type]
+    :retryable?       false}
+
+   {:code             :JNS_TX_001
+    :family           :jns
+    :stage            :janus
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Datahike d/transact failed — full transaction rolled back (entity + all projections)"
+    :context-required [:tx_data_size :datahike_error]
+    :retryable?       true}
+
+   {:code             :JNS_CONFLICT_001
+    :family           :jns
+    :stage            :janus
+    :severity         :warning
+    :http-status      409
+    :grpc-status      :ABORTED
+    :description      "unique:value constraint violated — value already exists in Datahike"
+    :context-required [:field :value]
+    :retryable?       false}
+
+   {:code             :JNS_SCOPE_001
+    :family           :jns
+    :stage            :janus
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "scope_resolution found no valid sequence registry entry for the given scope_tag"
+    :context-required [:sequence_code :scope_tag]
+    :retryable?       true}
+
+   {:code             :JNS_OLAP_003
+    :family           :jns
+    :stage            :janus
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "BulkIngest attempted on entity without engine:olap or write_path_locked:true"
+    :context-required [:entity_type :engine]
+    :retryable?       false}
+
+   {:code             :JNS_BULK_001
+    :family           :jns
+    :stage            :janus
+    :severity         :warning
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "BulkIngest request is missing the mandatory idempotency_key field"
+    :context-required [:entity_type]
+    :retryable?       false}
+
+   {:code             :JNS_SAGA_001
+    :family           :jns
+    :stage            :janus
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "SagaBuilder failed to construct scheduled_job projection — TX rolled back"
+    :context-required [:parent_ulid :saga_def]
+    :retryable?       true}
+
+   {:code             :JNS_CAL_001
+    :family           :jns
+    :stage            :janus
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "CalendarBuilder failed to construct calendar_event projection — TX rolled back"
+    :context-required [:parent_ulid :cal_def]
+    :retryable?       true}
+
+   ;; ── Familia COD — Códice / Schema-Driven Core ────────────────────────────
+   {:code             :COD_001
+    :family           :cod
+    :stage            :codice
+    :severity         :error
+    :http-status      404
+    :grpc-status      :NOT_FOUND
+    :description      "Schema not registered in Códice for the given entity_type"
+    :context-required [:entity_type]
+    :retryable?       false}
+
+   {:code             :COD_VAL_001
+    :family           :cod
+    :stage            :codice
+    :severity         :warning
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Malli schema validation rejected payload — type or cardinality violation"
+    :context-required [:field :expected :received]
+    :retryable?       false}
+
+   {:code             :COD_SCOPE_001
+    :family           :cod
+    :stage            :codice
+    :severity         :fatal
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Bootstrap: is_sequence_scope entityRef points to entity without is_sequence_scope_provider:true — JVM halted"
+    :context-required [:entity :field :entityRef]
+    :retryable?       false}
+
+   {:code             :COD_KMS_001
+    :family           :cod
+    :stage            :codice
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "AWS KMS encrypt failed for field with crypto_envelope:true"
+    :context-required [:field :kms_key_id]
+    :retryable?       true}
+
+   ;; ── Familia SEC — Seguridad / Cedar ABAC ────────────────────────────────
+   {:code             :SEC_401
+    :family           :sec
+    :stage            :auth
+    :severity         :warning
+    :http-status      401
+    :grpc-status      :UNAUTHENTICATED
+    :description      "gRPC token expired, malformed, or API key invalid/revoked"
+    :context-required [:token_hint]
+    :retryable?       false}
+
+   {:code             :SEC_403
+    :family           :sec
+    :stage            :abac
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "Cedar Engine denied the action for this principal on the given resource"
+    :context-required [:action :resource_domain :policy_violated]
+    :retryable?       false}
+
+   {:code             :SEC_QTA_001
+    :family           :sec
+    :stage            :quota
+    :severity         :warning
+    :http-status      429
+    :grpc-status      :RESOURCE_EXHAUSTED
+    :description      "Tenant has exhausted their write quota for this billing period"
+    :context-required [:quota_type :current :limit]
+    :retryable?       false}
+
+   ;; ── Familia SYS — Sistema / Infraestructura ──────────────────────────────
+   {:code             :SYS_000
+    :family           :sys
+    :stage            :infra
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Infrastructure failure — Datahike timeout, OOM, or network error"
+    :context-required [:service :timeout_ms]
+    :retryable?       true}
+
+   {:code             :SYS_KNS_001
+    :family           :sys
+    :stage            :kinesis
+    :severity         :fatal
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Kinesis Firehose PutRecordBatch failed — OLAP ingestion pipeline is broken"
+    :context-required [:stream_name :record_count]
+    :retryable?       true}
+
+   {:code             :MCP_503
+    :family           :mcp
+    :stage            :mcp
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "LLM service unavailable — Anthropic or Ollama timeout or capacity exceeded"
+    :context-required [:model :timeout_ms]
+    :retryable?       true}]}}

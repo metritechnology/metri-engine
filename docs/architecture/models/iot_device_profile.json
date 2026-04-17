@@ -1,0 +1,60 @@
+{
+  "entity": "iot_device_profile",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "disable_eda": false,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "description": "Nombre representativo del perfil (Ej: 'Siemens Flow Pump v2')."
+    },
+    {
+      "name": "inbound_metric_rules",
+      "type": "array",
+      "of": "object",
+      "required": false,
+      "description": "Vector decodificador cuantitativo. Transmuta dimensiones MQTT crudas (numéricas) hacia medidas UN/CEFACT puras (ej. Celsius, Watts) sobre el Parquet.",
+      "schema": [
+        { "name": "source_key", "type": "string", "required": true, "description": "La llave numérica del PLC, ej 'tmp_val'" },
+        { "name": "target_un_cefact", "type": "string", "subtype": "terminology", "terminologyUri": "urn:api:system:uncefact", "required": true },
+        { "name": "math_modifier", "type": "decimal", "default": 1.0, "description": "Multiplicador de ajuste algorítmico." }
+      ]
+    },
+    {
+      "name": "inbound_metadata_rules",
+      "type": "array",
+      "of": "object",
+      "required": false,
+      "description": "Vector decodificador categórico. Extirpa metadatos de texto libre del payload MQTT (Ej. Errores, Firmware) y los lanza al diccionario MAP del Data Lake.",
+      "schema": [
+        { "name": "source_key", "type": "string", "required": true, "description": "La llave textual del PLC, ej 'err_code' o 'status_txt'" },
+        { "name": "target_key_name", "type": "string", "required": true, "description": "Nombre semántico para la llave JSON, Ej: 'firmware_version' o 'engine_mode'." }
+      ]
+    },
+    {
+      "name": "outbound_command_templates",
+      "type": "array",
+      "of": "object",
+      "required": false,
+      "description": "Vector codificador. Transmuta comandos abstractos UI (ej 'TURN_OFF') al JSON específico que el PLC espera recibir en su AWS Device Shadow.",
+      "schema": [
+        { "name": "universal_command", "type": "string", "required": true, "description": "El verbo o acción general dictaminada." },
+        { "name": "display_label", "type": "string", "required": true, "description": "Texto amigable y legible para pintar el Botón en la interfaz React (Ej. 'Apagar Chiller')." },
+        { "name": "device_payload_template", "type": "json", "required": true, "description": "El bloque JSON en bruto que se enviará al AWS Shadow (Ej: {'cmd_id': 0, 'force': true})" }
+      ]
+    }
+  ],
+  "events": {
+    "create": "IOT_DEVICE_PROFILE_CREATED",
+    "update": "IOT_DEVICE_PROFILE_UPDATED",
+    "delete": "IOT_DEVICE_PROFILE_DELETED"
+  }
+}

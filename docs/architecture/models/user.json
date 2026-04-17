@@ -1,0 +1,69 @@
+{
+  "entity": "user",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "unique": "identity",
+      "required": true,
+      "fts": true,
+      "is_dimension": true,
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    },
+    {
+      "name": "first_name",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "last_name",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "ACTIVE",
+        "INACTIVE",
+        "SUSPENDED"
+      ],
+      "default_value": "ACTIVE",
+      "is_dimension": true
+    },
+    {
+      "name": "role_id",
+      "type": "reference",
+      "entityRef": "role",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true,
+      "doc": "Reference to the User's primary authorization role."
+    },
+    {
+      "name": "group_ids",
+      "type": "reference",
+      "entityRef": "user_group",
+      "cardinality": "many",
+      "is_dimension": true
+    },
+    {
+      "name": "tenant_id",
+      "type": "reference",
+      "entityRef": "tenant",
+      "required": true,
+      "is_dimension": true,
+      "doc": "Mandatory tenant isolation for identity management."
+    }
+  ]
+}

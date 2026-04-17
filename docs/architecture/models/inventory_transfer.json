@@ -1,0 +1,66 @@
+{
+  "entity": "inventory_transfer",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "part_id",
+      "type": "reference",
+      "entityRef": "part",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "from_location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "required": true
+    },
+    {
+      "name": "to_location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "required": true
+    },
+    {
+      "name": "quantity",
+      "type": "decimal",
+      "required": true
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "PENDING",
+        "IN_TRANSIT",
+        "COMPLETED",
+        "CANCELLED"
+      ],
+      "default_value": "PENDING",
+      "is_dimension": true
+    },
+    {
+      "name": "requested_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one"
+    },
+    {
+      "name": "dispatched_at",
+      "type": "epoch"
+    },
+    {
+      "name": "received_at",
+      "type": "epoch"
+    }
+  ]
+}

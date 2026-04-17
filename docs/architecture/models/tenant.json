@@ -1,0 +1,67 @@
+{
+  "entity": "tenant",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": true
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "fts": true,
+      "required": true
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "ACTIVE",
+        "SUSPENDED",
+        "DELETED"
+      ],
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "tier",
+      "type": "enum",
+      "options": [
+        "STARTER",
+        "PROFESSIONAL",
+        "ENTERPRISE"
+      ],
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "storage_region",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "industry",
+      "type": "string",
+      "is_dimension": true
+    },
+    {
+      "name": "billing_admin_email",
+      "type": "string",
+      "required": true,
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+    },
+    {
+      "name": "logo_url",
+      "type": "string",
+      "pattern": "^https?:\\/\\/.*"
+    },
+    {
+      "name": "sequence_counters",
+      "type": "json",
+      "is_system": true
+    }
+  ]
+}

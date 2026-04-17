@@ -1,0 +1,52 @@
+{
+  "entity": "user_group",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "unique": "identity",
+      "required": true,
+      "fts": true,
+      "is_dimension": true
+    },
+    {
+      "name": "description",
+      "type": "string"
+    },
+    {
+      "name": "allowed_locations",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "many",
+      "doc": "Contextual Authorization: List of locations this group is authorized to access."
+    },
+    {
+      "name": "allowed_assets",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "many",
+      "doc": "Contextual Authorization: List of specific assets this group is authorized to access."
+    },
+    {
+      "name": "time_restrictions",
+      "type": "array",
+      "items": {
+        "type": "map",
+        "keys": {
+          "days_of_week": { "type": "array", "items": { "type": "int" }, "description": "1: Monday, 7: Sunday" },
+          "start_minute": { "type": "int", "description": "Minutes from 00:00 (e.g., 480 for 08:00)" },
+          "end_minute": { "type": "int", "description": "Minutes from 00:00 (e.g., 1080 for 18:00)" }
+        }
+      },
+      "doc": "Optional temporal boundaries for group-level authorization."
+    }
+  ]
+}

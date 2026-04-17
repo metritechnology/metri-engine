@@ -1,0 +1,52 @@
+{
+  "entity": "check_list",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "work_order_id",
+      "type": "reference",
+      "entityRef": "work_order",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "work_order_task_id",
+      "type": "reference",
+      "entityRef": "work_order_task",
+      "cardinality": "one",
+      "description": "Permite asentar jerárquicamente esta lista de inspección debajo de una fase de trabajo específica (y no solo genéricamente a la orden raíz)."
+    },
+    {
+      "name": "form_template_id",
+      "type": "reference",
+      "entityRef": "form_template",
+      "cardinality": "one",
+      "description": "Optional. If present, this checklist inherits its items from a predefined Template. If empty, it's manually built."
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true
+    },
+    {
+      "name": "is_completed",
+      "type": "boolean",
+      "default_value": false,
+      "is_dimension": true
+    }
+  ]
+}

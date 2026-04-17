@@ -1,0 +1,63 @@
+{
+  "entity": "iot_harvester_config",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "required": true
+    },
+    {
+      "name": "target_url",
+      "type": "string",
+      "required": true,
+      "description": "El REST API Endpoint del Activo."
+    },
+    {
+      "name": "polling_interval_seconds",
+      "type": "integer",
+      "default": 300,
+      "required": true
+    },
+    {
+      "name": "auth_type",
+      "type": "enum",
+      "options": ["BEARER_TOKEN", "BASIC_AUTH", "API_KEY", "NONE"],
+      "required": true
+    },
+    {
+      "name": "credentials",
+      "type": "string",
+      "sensitive": true,
+      "required": true,
+      "description": "Credenciales puras de la API (User/Password o Token). Protegidas automáticamente in-flight por el motor KMS (Envelope Encryption)."
+    },
+    {
+      "name": "payload_format",
+      "type": "enum",
+      "options": ["JSON", "XML", "GRPC"],
+      "default": "JSON",
+      "required": true,
+      "description": "El formato esperado de la respuesta de la API para que el Worker de Go ensamble el decodificador correcto."
+    },
+    {
+      "name": "mapping_directive",
+      "type": "json",
+      "description": "Regla de transmutación para aplanar el JSON extraño del tercero."
+    }
+  ],
+  "events": {
+    "create": "IOT_HARVESTER_CONFIG_CREATED",
+    "update": "IOT_HARVESTER_CONFIG_UPDATED",
+    "delete": "IOT_HARVESTER_CONFIG_DELETED"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "entity": "request",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "is_system": false
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true
+    },
+    {
+      "name": "requested_by_user",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "description": "Reference to the user if the request was logged in"
+    },
+    {
+      "name": "requested_by_email",
+      "type": "string",
+      "description": "Email of the requester if anonymous/guest request"
+    },
+    {
+      "name": "form_template_id",
+      "type": "reference",
+      "entityRef": "form_template",
+      "cardinality": "one"
+    },
+    {
+      "name": "form_data",
+      "type": "json",
+      "description": "The payload matching the form template schema"
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "PENDING",
+        "REVIEWED",
+        "CONVERTED_TO_WO",
+        "REJECTED"
+      ],
+      "default_value": "PENDING",
+      "is_dimension": true
+    },
+    {
+      "name": "priority",
+      "type": "enum",
+      "options": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "is_dimension": true
+    },
+    {
+      "name": "asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one"
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one"
+    }
+  ]
+}
