@@ -408,10 +408,14 @@ Resources:
             - Name: payload
               Type: string
               Comment: "Campos de dominio serializados como JSON — schema-agnostic, válido para cualquier entidad"
+        # Orden de partición: tenant_id PRIMERO (aislamiento multitenant)
+        # tenant_id=acme/entity=meter_reading/YYYY/MM/DD/HH/
+        # Athena puede usar partition pruning completo con solo WHERE tenant_id='acme'
+        # sin necesidad de escanear otras entidades.
         PartitionKeys:
-          - Name: entity
-            Type: string
           - Name: tenant_id
+            Type: string
+          - Name: entity
             Type: string
 
   # ── Firehose Delivery Stream para OLAP (Multitenant & Multi-Entity) ──
@@ -424,7 +428,10 @@ Resources:
       ExtendedS3DestinationConfiguration:
         BucketARN: !GetAtt MetriDataLakeBucket.Arn
         RoleARN: !GetAtt FirehoseDeliveryRole.Arn
-        Prefix: "entity=!{partitionKeyFromQuery:_entity}/tenant_id=!{partitionKeyFromQuery:_tenant}/!{partitionKeyFromQuery:_partition_path}/"
+        # tenant_id PRIMERO: aislamiento multitenant garantizado en S3.
+        # Ruta final: tenant_id=acme/entity=meter_reading/2026/04/25/14/
+        # Athena prune por tenant sin leer datos de otros tenants.
+        Prefix: "tenant_id=!{partitionKeyFromQuery:_tenant}/entity=!{partitionKeyFromQuery:_entity}/!{partitionKeyFromQuery:_partition_path}/"
         ErrorOutputPrefix: "errors/!{firehose:error-output-type}/"
         DynamicPartitioningConfiguration:
           Enabled: true
