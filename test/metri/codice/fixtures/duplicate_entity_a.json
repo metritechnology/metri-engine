@@ -1,0 +1,4 @@
+{ "entity": "duplicate_test", "engine": "oltp", "track_history": false, "attributes": [
+    { "name": "id", "type": "uuid", "required": true }
+  ]
+}

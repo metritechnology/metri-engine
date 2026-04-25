@@ -1,0 +1,17 @@
+{
+  "entity": "asset",
+  "label": "Asset",
+  "engine": "oltp",
+  "track_history": true,
+  "is_sequence_scope_provider": true,
+  "attributes": [
+    { "name": "id",          "type": "uuid",   "required": true,  "unique": "identity" },
+    { "name": "tag",         "type": "string", "required": true,  "unique": "value",
+      "auto_generate": { "strategy": "stochastic_base36", "prefix": "A-", "length": 7 } },
+    { "name": "name",        "type": "string", "required": true  },
+    { "name": "location_id", "type": "uuid",   "required": false,
+      "entityRef": "location", "is_sequence_scope": true },
+    { "name": "status",      "type": "enum",   "required": true,
+      "options": ["ACTIVE","INACTIVE","DECOMMISSIONED"] }
+  ]
+}

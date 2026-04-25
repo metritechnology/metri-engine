@@ -1,0 +1,17 @@
+{
+  "entity": "work_order",
+  "label": "Work Order",
+  "engine": "oltp",
+  "track_history": true,
+  "attributes": [
+    { "name": "id",               "type": "uuid",   "required": true,  "unique": "identity" },
+    { "name": "work_order_number","type": "string", "required": false,
+      "auto_generate": { "strategy": "sequential", "prefix": "WO-", "padding": 4 } },
+    { "name": "location_id",      "type": "uuid",   "required": false, "entityRef": "location",
+      "is_sequence_scope": true },
+    { "name": "asset_id",         "type": "uuid",   "required": false, "entityRef": "asset",
+      "is_sequence_scope_via": "location_id" },
+    { "name": "status",           "type": "enum",   "required": true,
+      "options": ["OPEN","IN_PROGRESS","CLOSED"] }
+  ]
+}
