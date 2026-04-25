@@ -65,8 +65,7 @@
     (is (= 0 (:ingested-count body)))))
 
 (deftest olap-04-records-decorated-with-metadata
-  "OLAP-04 — Cada registro tiene metadatos tipados (:_tenant, :_entity, :id, :_timestamp, :_partition_path)
-   y el campo :payload como JSON string con los datos de dominio (schema genérico multientidad)."
+  "OLAP-04 — Cada registro tiene metadatos tipados y los datos de dominio se mantienen planos para mapear 1:1 a Parquet."
   (let [writer  (stubs/make-stream-writer)
         channel (make-olap-channel writer)
         _result (.route channel (olap-ctx :tenant-id "acme" :entity-type "meter_reading"
@@ -74,19 +73,15 @@
         records @(:records-atom writer)]
     (is (= 1 (count records)) "Debe haber 1 record en el stream")
     (let [r (first records)]
-      ;; Columnas de metadatos tipadas — siempre presentes, cualquier entidad
+      ;; Columnas de metadatos tipadas
       (is (= "acme"           (:_tenant r))          ":_tenant inyectado (Zero-Trust)")
       (is (= "meter_reading"  (:_entity r))          ":_entity inyectado")
       (is (some? (:id r))                            ":id (ULID) presente")
       (is (some? (:_timestamp r))                    ":_timestamp presente")
       (is (some? (:_partition_path r))               ":_partition_path presente")
-      ;; Columna payload — JSON string con campos de dominio
-      (is (string? (:payload r))                     ":payload debe ser un JSON string")
-      (is (.contains (:payload r) "asset_id")        ":payload contiene el campo de dominio")
-      (is (.contains (:payload r) "reading_value")   ":payload contiene reading_value")
-      ;; Las claves de metadatos NO deben estar en el payload
-      (is (not (.contains (:payload r) "_tenant"))   "_tenant no debe estar en :payload")
-      (is (not (.contains (:payload r) "_entity"))   "_entity no debe estar en :payload"))))
+      ;; Campos de dominio al mismo nivel
+      (is (= "a1" (:asset_id r))                     "asset_id presente en la raíz")
+      (is (= 42.0 (:reading_value r))                "reading_value presente en la raíz"))))
 
 (deftest olap-05-tenant-id-in-partition-path
   "OLAP-05 — El tenant_id no aparece en la ruta (está en el Firehose prefix), pero el _tenant sí."

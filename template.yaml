@@ -394,20 +394,27 @@ Resources:
             - Name: _partition_path
               Type: string
               Comment: "Ruta de partición Hive evaluada por partition.clj"
-            # ── Payload genérico (cualquier entidad del Códice) ──────────────
-            # JSON string con todos los campos de dominio del registro.
-            # Invariante: este schema funciona para meter_reading, asset,
-            # energy_bill, o cualquier entidad futura sin cambios de infra.
-            #
-            # Query Athena para campo específico:
-            #   SELECT json_extract_scalar(payload, '$.reading_value') AS value
-            #   FROM olap_events WHERE _entity = 'meter_reading' AND _tenant = 'acme'
-            #
-            # FASE 05: el Códice generará tablas Glue por entidad con columnas
-            # tipadas para predicate pushdown total sobre campos de dominio.
-            - Name: payload
+            # ── Payload de la entidad (meter_reading) ──────────────────────────
+            # Campos de dominio para mapeo nativo a columnas Parquet.
+            # Permite predicate pushdown O(1) directo sobre valores del sensor.
+            - Name: asset_id
               Type: string
-              Comment: "Campos de dominio serializados como JSON — schema-agnostic, válido para cualquier entidad"
+              Comment: "FK al asset (presente en entidades IoT)"
+            - Name: reading_value
+              Type: double
+              Comment: "Valor de la medición"
+            - Name: unit_of_measure
+              Type: string
+              Comment: "Unidad UN/CEFACT"
+            - Name: timestamp
+              Type: bigint
+              Comment: "Epoch millis del evento de campo"
+            - Name: timestamp_epoch
+              Type: bigint
+              Comment: "Epoch millis enviado por mass_simulation.py"
+            - Name: metadata
+              Type: string
+              Comment: "Diccionario clave-valor dinámico serializado como JSON"
         # Orden de partición: tenant_id PRIMERO (aislamiento multitenant)
         # tenant_id=acme/entity=meter_reading/YYYY/MM/DD/HH/
         # Athena puede usar partition pruning completo con solo WHERE tenant_id='acme'

@@ -3,12 +3,10 @@
    Solo acepta rpc BulkIngest — bloquea rpc Transact con JNS_OLAP_001.
    Datos con engine:olap → IStreamWriter → S3 Parquet → Athena.
 
-   SCHEMA GENÉRICO MULTIENTIDAD:
-   El registro final tiene SIEMPRE la misma estructura plana:
-     - Columnas tipadas fijas:  id, _tenant, _entity, _timestamp, _partition_path
-     - Columna 'payload':       JSON string con todos los campos de dominio
-   Esto permite que el Glue schema sea estático e invariante para cualquier
-   entidad del Códice sin requerir cambios de infra en FASE 05."
+   SCHEMA DE ENTIDAD:
+   El registro final se aplana combinando los metadatos y los campos del dominio.
+   Esto permite mapeo 1:1 con las columnas Glue (ej. asset_id, reading_value)
+   para aprovechar el predicate pushdown columnar en S3 Parquet."
   (:require [integrant.core :as ig]
             [taoensso.timbre :as log]
             [cheshire.core :as json]
@@ -19,32 +17,16 @@
             [metri.janus-router.partition :as partition]))
 
 (defn- decorate-record
-  "Construye el registro final para Firehose con schema genérico invariante.
-
-   Estructura de salida (misma para CUALQUIER entidad del Códice):
-   {
-     :id             ULID del registro (monotonónico)
-     :_tenant        tenant_id inyectado por CedarAuthorizer (Zero-Trust)
-     :_entity        tipo de entidad (meter_reading, asset, energy_bill, ...)
-     :_timestamp     epoch millis UTC del momento de ingestión
-     :_partition_path ruta Hive evaluada por partition.clj
-     :payload        JSON string con todos los campos de dominio
-   }
-
-   El campo :payload es opaco para el schema Glue — es un STRING tipado.
-   Para queries Athena: json_extract_scalar(payload, '$.reading_value').
-   En FASE 05 el Códice podrá generar tablas Glue por entidad con columnas
-   tipadas si se requiere predicate pushdown sobre campos de dominio."
+  "Construye el registro inyectando los metadatos estructurales de la arquitectura Zero-Trust
+   y la ruta dinámica de partición generada por el motor.
+   Los campos de dominio se mantienen en el primer nivel para mapear a columnas Parquet."
   [record tenant-id entity-type timestamp ulid partition-path]
-  {:id             ulid
-   :_tenant        tenant-id
-   :_entity        (name entity-type)
-   :_timestamp     timestamp
-   :_partition_path partition-path
-   ;; Serializar los campos de dominio como JSON string — schema-agnostic.
-   ;; Se excluyen las claves de metadatos si el cliente las envió por error.
-   :payload        (json/generate-string
-                    (dissoc record :_tenant :_entity :_timestamp :_partition_path :id))})
+  (assoc record
+         :id             ulid
+         :_tenant        tenant-id
+         :_entity        (name entity-type)
+         :_timestamp     timestamp
+         :_partition_path partition-path))
 
 (defrecord OLAPChannel [stream-writer stream-prefix]
   IJanusWriteChannel
