@@ -394,24 +394,20 @@ Resources:
             - Name: _partition_path
               Type: string
               Comment: "Ruta de partición Hive evaluada por partition.clj"
-            # ── Payload dinámico (todos los campos del modelo JSON) ──
-            # Serializado como JSON string para máxima flexibilidad por entidad.
-            # FASE 05: reemplazar por columnas tipadas por entidad via Códice.
-            - Name: asset_id
+            # ── Payload genérico (cualquier entidad del Códice) ──────────────
+            # JSON string con todos los campos de dominio del registro.
+            # Invariante: este schema funciona para meter_reading, asset,
+            # energy_bill, o cualquier entidad futura sin cambios de infra.
+            #
+            # Query Athena para campo específico:
+            #   SELECT json_extract_scalar(payload, '$.reading_value') AS value
+            #   FROM olap_events WHERE _entity = 'meter_reading' AND _tenant = 'acme'
+            #
+            # FASE 05: el Códice generará tablas Glue por entidad con columnas
+            # tipadas para predicate pushdown total sobre campos de dominio.
+            - Name: payload
               Type: string
-              Comment: "FK al asset (presente en entidades IoT)"
-            - Name: reading_value
-              Type: double
-              Comment: "Valor de la medición"
-            - Name: unit_of_measure
-              Type: string
-              Comment: "Unidad UN/CEFACT"
-            - Name: timestamp
-              Type: bigint
-              Comment: "Epoch millis del evento de campo"
-            - Name: metadata
-              Type: string
-              Comment: "Diccionario clave-valor dinámico serializado como JSON"
+              Comment: "Campos de dominio serializados como JSON — schema-agnostic, válido para cualquier entidad"
         PartitionKeys:
           - Name: entity
             Type: string
@@ -438,7 +434,7 @@ Resources:
             - Type: MetadataExtraction
               Parameters:
                 - ParameterName: MetadataExtractionQuery
-                  ParameterValue: '{_tenant: ._tenant, _entity: ._entity, _partition_path: ._partition_path}'
+                  ParameterValue: "{_tenant: ._tenant, _entity: ._entity, _partition_path: ._partition_path}"
                 - ParameterName: JsonParsingEngine
                   ParameterValue: JQ-1.6
         BufferingHints:
@@ -467,7 +463,6 @@ Resources:
             Region: !Ref AWS::Region
             VersionId: LATEST
             RoleARN: !GetAtt FirehoseDeliveryRole.Arn
-
 
   FirehoseDeliveryRole:
     Type: AWS::IAM::Role
@@ -531,7 +526,6 @@ Resources:
         - AttributeName: PK
           KeyType: HASH
 
-
   # ── Despacho EDA (Outbox) ──
   MetriOutboxDLQ:
     Type: AWS::SQS::Queue
@@ -558,7 +552,7 @@ Resources:
   MetriEngineFunction:
     Type: AWS::Serverless::Function
     Metadata:
-      BuildMethod: makefile   # usa Makefile target build-MetriEngineFunction
+      BuildMethod: makefile # usa Makefile target build-MetriEngineFunction
     Properties:
       CodeUri: .
       Handler: metri.lambda.handler
