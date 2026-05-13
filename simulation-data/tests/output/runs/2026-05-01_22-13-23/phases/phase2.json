@@ -1,0 +1,338 @@
+[
+  {
+    "id": "TC-F2-EQ",
+    "passed": true,
+    "duration_ms": 226,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-NEQ",
+    "passed": true,
+    "duration_ms": 48,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-GT",
+    "passed": true,
+    "duration_ms": 31,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-GTE",
+    "passed": true,
+    "duration_ms": 34,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-LT",
+    "passed": true,
+    "duration_ms": 10,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-LTE",
+    "passed": true,
+    "duration_ms": 10,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-IN",
+    "passed": true,
+    "duration_ms": 13,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-NOT_IN",
+    "passed": true,
+    "duration_ms": 34,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-BETWEEN",
+    "passed": true,
+    "duration_ms": 14,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-LIKE",
+    "passed": true,
+    "duration_ms": 32,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-IS_NULL",
+    "passed": true,
+    "duration_ms": 14,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-IS_NOT_NULL",
+    "passed": true,
+    "duration_ms": 23,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-MATCHES",
+    "passed": true,
+    "duration_ms": 27,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F2-CONTAINS",
+    "passed": true,
+    "duration_ms": 13,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  }
+]

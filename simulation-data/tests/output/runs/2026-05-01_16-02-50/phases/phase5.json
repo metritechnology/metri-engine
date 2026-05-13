@@ -1,0 +1,376 @@
+[
+  {
+    "id": "TC-F5-TODAY",
+    "passed": false,
+    "duration_ms": 145,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-YESTERDAY",
+    "passed": false,
+    "duration_ms": 127,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-TOMORROW",
+    "passed": false,
+    "duration_ms": 148,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_MINUTES",
+    "passed": false,
+    "duration_ms": 284,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_HOURS",
+    "passed": false,
+    "duration_ms": 195,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_DAYS",
+    "passed": false,
+    "duration_ms": 148,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_N_DAYS",
+    "passed": false,
+    "duration_ms": 152,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-THIS_WEEK",
+    "passed": false,
+    "duration_ms": 152,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_WEEK",
+    "passed": false,
+    "duration_ms": 120,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_WEEK",
+    "passed": false,
+    "duration_ms": 117,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_WEEKS",
+    "passed": false,
+    "duration_ms": 116,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_N_WEEKS",
+    "passed": false,
+    "duration_ms": 115,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-WEEK_TO_DATE",
+    "passed": false,
+    "duration_ms": 120,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-THIS_MONTH",
+    "passed": false,
+    "duration_ms": 116,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_MONTH",
+    "passed": false,
+    "duration_ms": 118,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_MONTH",
+    "passed": false,
+    "duration_ms": 115,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_MONTHS",
+    "passed": false,
+    "duration_ms": 113,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-MONTH_TO_DATE",
+    "passed": false,
+    "duration_ms": 117,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-THIS_YEAR",
+    "passed": false,
+    "duration_ms": 129,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-LAST_YEAR",
+    "passed": false,
+    "duration_ms": 118,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-ALL_TIME",
+    "passed": false,
+    "duration_ms": 114,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F5-CUSTOM_RANGE",
+    "passed": false,
+    "duration_ms": 121,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  }
+]

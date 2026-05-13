@@ -81,24 +81,30 @@ El API Boundary y los modelos DTO de Metri Engine están rigurosamente definidos
 
 Para la configuración del servidor gRPC, compilación Protobuf, ciclo de vida Integrant y topología de despliegue, consultar:
 
-👉 **[Fase 01.01 — Runtime & Infraestructura gRPC](01.01_FASE_RUNTIME_GRPC.md)**
+👉 **[Fase 01.03 — Runtime & Infraestructura gRPC](01.03_FASE_RUNTIME_GRPC.md)**
 
 ## 10. Mapa de Fases Arquitectónicas
 
-| Fase | Documento                                                                        | Componente                                     |
-| :--- | :------------------------------------------------------------------------------- | :--------------------------------------------- |
-| 01   | [01_FASE_ALISTAMIENTO_ENTORNO.md](01_FASE_ALISTAMIENTO_ENTORNO.md)               | Entorno, Lambda, Docker                        |
-| 02   | [02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md](02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md)       | Códice — JSON Schema SSOT                      |
-| 03   | [03_FASE_INGESTION.md](03_FASE_INGESTION.md)                                     | Orquestación de Ingesta (IOP + Janus)          |
-| 03A  | [03A_FASE_IOP.md](03A_FASE_IOP.md)                                               | Ingestion Orchestration Pipeline               |
-| 03B  | [03B_FASE_JANUS_ROUTER.md](03B_FASE_JANUS_ROUTER.md)                             | Janus Router — OLTP/OLAP                       |
-| 04   | [04_FASE_MOIRA.md](04_FASE_MOIRA.md)                                             | Moira EventEmitter — EDA                       |
-| 05   | [05_FASE_CONSULTA.md](05_FASE_CONSULTA.md)                                       | Motor Analítico (Aegis)                        |
-| 06   | [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md)                       | Cedar ABAC — Zero-Trust                        |
-| 07   | [07_FASE_QUOTA_GUARD.md](07_FASE_QUOTA_GUARD.md)                                 | QuotaGuard — Control de Recursos               |
-| 08   | [08_FASE_INTELIGENCIA_ARTIFICIAL_MCP.md](08_FASE_INTELIGENCIA_ARTIFICIAL_MCP.md) | MCP — Integración AI                           |
-| 09   | [09_FASE_AUDITORIA.md](09_FASE_AUDITORIA.md)                                     | Auditoría OLTP/OLAP + IAuditInterceptor        |
-| 10   | [10_FASE_GESTION_ERRORES_EDA.md](10_FASE_GESTION_ERRORES_EDA.md)                 | Errores, OTel, Sherlog                         |
-| 01.01 | [01.01_FASE_RUNTIME_GRPC.md](01.01_FASE_RUNTIME_GRPC.md)                         | **Runtime gRPC — Integrant, Deploy**           |
-| 01.02 | [01.02_FASE_MAIN_BOOTSTRAP.md](01.02_FASE_MAIN_BOOTSTRAP.md)                     | **Main, Bootstrap, Lifecycle, REPL**           |
-| 05.01 | [05.01-JANUS.md](05.01-JANUS.md)                                                 | Janus Cerebro — Pool Model Multitenant         |
+| Fase | Documento | Componente |
+| :--- | :--- | :--- |
+| 01 | [01_FASE_ALISTAMIENTO_ENTORNO.md](01_FASE_ALISTAMIENTO_ENTORNO.md) | Entorno — índice de subfases |
+| 01.01 | [01.01_FASE_MAIN_BOOTSTRAP.md](01.01_FASE_MAIN_BOOTSTRAP.md) | `-main`, Bootstrap fail-fast, Integrant, REPL |
+| 01.02 | [01.02_FASE_CLIENTES_INFRAESTRUCTURA.md](01.02_FASE_CLIENTES_INFRAESTRUCTURA.md) | 9 Clientes de Infraestructura (Infra CAPA 1) |
+| 01.03 | [01.03_FASE_RUNTIME_GRPC.md](01.03_FASE_RUNTIME_GRPC.md) | Runtime gRPC — Netty, Service Impl, OTel |
+| 02 | [02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md](02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md) | Códice — JSON Schema SSOT |
+| 03 | [03_FASE_INGESTION.md](03_FASE_INGESTION.md) | Orquestación de Ingesta (IOP + Janus) |
+| 03A | [03A_FASE_IOP.md](03A_FASE_IOP.md) | Ingestion Orchestration Pipeline |
+| 03B | [03B_FASE_JANUS_ROUTER.md](03B_FASE_JANUS_ROUTER.md) | Janus Router — OLTP/OLAP |
+| 04 | [04_FASE_MOIRA.md](04_FASE_MOIRA.md) | Moira EventEmitter — Outbox Pattern EDA |
+| 05 | [05_FASE_CONSULTA.md](05_FASE_CONSULTA.md) | Motor Analítico (Aegis) — Read Path |
+| 05.01 | [05.01-JANUS.md](05.01-JANUS.md) | Cerebro Janus (AST Compiler) |
+| 05.02 | [05.02_FASE_JANUS_AST_IR.md](05.02_FASE_JANUS_AST_IR.md) | Janus AST IR — Contrato Data-Driven |
+| 06 | [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md) | Cedar ABAC — Zero-Trust (5 pasos) |
+| 07 | [07_FASE_QUOTA_GUARD.md](07_FASE_QUOTA_GUARD.md) | QuotaGuard — Control de Recursos Por Tenant |
+| 08 | [08_FASE_INTELIGENCIA_ARTIFICIAL_MCP.md](08_FASE_INTELIGENCIA_ARTIFICIAL_MCP.md) | MCP — Integración AI (Proxy TypeScript/Lambda) |
+| 09 | [09_FASE_AUDITORIA.md](09_FASE_AUDITORIA.md) | Auditoría OLTP/OLAP + IAuditInterceptor |
+| 10 | [10_FASE_GESTION_ERRORES_EDA.md](10_FASE_GESTION_ERRORES_EDA.md) | Errores, OTel, Sherlog, Railway Pattern |
+| Ext-01 | [COMPONENTE_EXTERNO_01_EVENT_ROUTER.md](COMPONENTE_EXTERNO_01_EVENT_ROUTER.md) | Event Router — Golang, SQS→EventBridge |
+| Ext-02 | [COMPONENTE_EXTERNO_02_ECHO.md](COMPONENTE_EXTERNO_02_ECHO.md) | Echo — Retry Engine (Golang, backoff exp.) |
+| Ext-06 | [COMPONENTE_EXTERNO_06_METRI_MCP.md](COMPONENTE_EXTERNO_06_METRI_MCP.md) | MCP Proxy — TypeScript / AWS Lambda Streaming |
+| **—** | **[ANEXO_ESTRUCTURA_CODIGO.md](ANEXO_ESTRUCTURA_CODIGO.md)** | **SSOT — Carpetas, ficheros y capas del proyecto** |

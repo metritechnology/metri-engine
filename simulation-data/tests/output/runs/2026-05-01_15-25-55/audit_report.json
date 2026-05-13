@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-05-01_15-25-55",
+  "environment": "local",
+  "total_passed": 54,
+  "total_failed": 0,
+  "phases": {
+    "2": {
+      "passed": 14,
+      "failed": 0
+    },
+    "3": {
+      "passed": 4,
+      "failed": 0
+    },
+    "4": {
+      "passed": 11,
+      "failed": 0
+    },
+    "5": {
+      "passed": 22,
+      "failed": 0
+    },
+    "6": {
+      "passed": 3,
+      "failed": 0
+    }
+  }
+}

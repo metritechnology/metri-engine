@@ -1,0 +1,1042 @@
+{
+  "meta": {
+    "endpoint": "https://engine.metri.one/",
+    "tenant": "golden-tenant",
+    "captured_at": "2026-05-05T20:34:31.804097+00:00",
+    "total_queries": 16,
+    "engines_tested": [
+      "OLAP (Athena/Iceberg)",
+      "OLTP (Datahike)"
+    ]
+  },
+  "responses": {
+    "olap_lte_value": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "sum_reading_value",
+            "label": "sum_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                1500.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 1500.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "8261",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "dc798a3f-e81a-44bb-aeda-c39a423573b7"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_lte_value",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_lte_value",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_between_value": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                60.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 60.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "6600",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "2b183548-320d-4291-b48f-aba2b84fd584"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_between_value",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_between_value",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_neq_unit": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                90.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 90.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "4954",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "e2f67558-ddfc-4e91-9fc9-14d20eb5801a"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_neq_unit",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_neq_unit",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_and_group": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                90.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 90.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "6554",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "3db83f82-1d48-448f-8967-ce09699c45c8"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_and_group",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_and_group",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_not_in_unit": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                90.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 90.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "6534",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "532b85f5-f1e2-4a7f-87a9-8b62d38b406e"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_not_in_unit",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_not_in_unit",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_or_group": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                60.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 60.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "4906",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "e8ed6de8-e04c-4b17-87e2-fcb38e0d97f6"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_or_group",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_or_group",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_gt_value": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                30.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 30.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "3323",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "a143bbc7-fb0b-4386-8bb1-4af8b38ceee0"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_gt_value",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_gt_value",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_not_group": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                60.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 60.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "4938",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "0106c5ec-8e6b-4084-b245-140d041e9601"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_not_group",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_not_group",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_eq_unit": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                0.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {}
+      },
+      "metadata": {
+        "execution_time_ms": "4919",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "4637db05-221c-4a2b-8ea4-1f1a5e6e1003"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_eq_unit",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_eq_unit",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "olap_in_unit": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_reading_value",
+            "label": "count_reading_value",
+            "type": "number"
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                90.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 90.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "1656",
+        "total_count": "1",
+        "engine": "olap",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "9719da4e-bb3a-47ca-8049-3634ca01a49a"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=olap_in_unit",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=olap_in_unit",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "oltp_gt_quantity": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_quantity",
+            "label": "count_quantity",
+            "type": "number",
+            "is_measure": true
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                30.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 30.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "1571",
+        "total_count": "30",
+        "engine": "oltp",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "18173f2d-07ac-4582-b67e-3efb18127e97"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=oltp_gt_quantity",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=oltp_gt_quantity",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "oltp_eq_type": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_quantity",
+            "label": "count_quantity",
+            "type": "number",
+            "is_measure": true
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                90.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 90.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "157",
+        "total_count": "90",
+        "engine": "oltp",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "e26f7715-59df-489f-b790-8eeeac077259"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=oltp_eq_type",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=oltp_eq_type",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "oltp_and_group": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "avg_quantity",
+            "label": "avg_quantity",
+            "type": "number",
+            "is_measure": true
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                125.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 125.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "111",
+        "total_count": "60",
+        "engine": "oltp",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "63da6474-0946-420f-88c0-401b112cb043"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=oltp_and_group",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=oltp_and_group",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "oltp_between_quantity": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_quantity",
+            "label": "count_quantity",
+            "type": "number",
+            "is_measure": true
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                60.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 60.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "102",
+        "total_count": "60",
+        "engine": "oltp",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "c6be7daf-551b-4dc3-b6bd-94231d4a74ca"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=oltp_between_quantity",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=oltp_between_quantity",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "oltp_in_type": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "sum_quantity",
+            "label": "sum_quantity",
+            "type": "number",
+            "is_measure": true
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                9000.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 9000.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "108",
+        "total_count": "90",
+        "engine": "oltp",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "5e06cfea-940c-44ca-b97b-9b1a4b04f3cd"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=oltp_in_type",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=oltp_in_type",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    },
+    "oltp_or_group": {
+      "status": {
+        "success": true
+      },
+      "data": {
+        "columns": [
+          {
+            "key": "count_quantity",
+            "label": "count_quantity",
+            "type": "number",
+            "is_measure": true
+          }
+        ],
+        "rows_json": {
+          "iter": [
+            {
+              "values": [
+                60.0
+              ]
+            }
+          ]
+        }
+      },
+      "viz_ext": {
+        "type": "kpi",
+        "signal": {
+          "value": 60.0
+        }
+      },
+      "metadata": {
+        "execution_time_ms": "58",
+        "total_count": "60",
+        "engine": "oltp",
+        "total_queries": 1,
+        "parallelism_factor": 1.0,
+        "query_id": "f43b69e2-11a7-4a21-a22f-408d48924bb9"
+      },
+      "pagination": {
+        "page_size": 100,
+        "links": [
+          {
+            "rel": "first",
+            "href": "/query?tenant_id=golden-tenant&cursor=&query_key=oltp_or_group",
+            "method": "POST"
+          },
+          {
+            "rel": "last",
+            "href": "/query?tenant_id=golden-tenant&cursor=LAST&query_key=oltp_or_group",
+            "method": "POST"
+          }
+        ]
+      },
+      "links": [
+        {
+          "rel": "self",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        },
+        {
+          "rel": "refresh",
+          "href": "/query?tenant_id=golden-tenant",
+          "method": "POST"
+        }
+      ]
+    }
+  }
+}

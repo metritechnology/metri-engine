@@ -1,0 +1,136 @@
+;; =============================================================================
+;; METRI ENGINE - CEDAR TO JANUS RLS PUSH-DOWN CONTRACT v1.2
+;; =============================================================================
+;; Este contrato formaliza la frontera de seguridad ("Zero-Trust Bridge") entre
+;; la fase de Evaluación ABAC (Cedar) y el enrutador de datos (Janus Router).
+;;
+;; RACIONAL DE DISEÑO (Multi-Role Support):
+;; ----------------------------------------
+;; Para prevenir la "Escalación Transversal de Privilegios", no se permite
+;; aplanar localizaciones ni `scopes` si el usuario posee múltiples roles.
+;;
+;; 1. Janus es ciego: No lee Datahike ni sabe qué es Auth0.
+;; 2. Cedar empuja (Push-Down RLS): Devuelve un mapa `domain-boundaries`
+;;    indexado por dominio (entity-type), con las fronteras de cada rol.
+;; 3. Semilla dual — hay DOS tipos de retorno válidos en [:ok cedar-ctx]:
+;;    - ANALÍTICO (VIEW):    domain-boundaries contiene N entradas, una por
+;;      entidad RAÍZ evaluada por Cedar. JOINs y sub-recursos del request
+;;      NO generan entradas propias (ver Root RLS Guardian al final).
+;;    - MUTACIONAL (CREATE/UPDATE/DELETE/UPSERT): domain-boundaries es {} vacío.
+;;      Cedar validó la acción en memoria; Janus no necesita filtros RLS.
+;; 4. Malli Valida: Evitamos propagar null-pointers o typos que generen
+;;    queries erróneas en AWS Athena.
+;; =============================================================================
+
+{
+ :metri.cedar/registry
+ {
+  ;; --- DOMINIO 1: TIPOS BÁSICOS CORE ---
+  :metri.spec/uuid :uuid
+
+  ;; --- DOMINIO 2: SCOPES ABAC ---
+  ;; Define dinámicamente cómo estructurar el nodo `[:where]` de Janus:
+  ;; ALL             -> Sin límites extra de propiedad (Role Alto)
+  ;; OWN             -> [:= schema[:owner-field] cedar-ctx/user-id]
+  ;; ASSIGNED        -> [:= schema[:assignee-field] cedar-ctx/user-id]
+  ;; OWN_OR_ASSIGNED -> [:or ...] de propiedad cruzada (Role Dual)
+  ;; NONE            -> Intercepta la consulta con :JANUS_400
+  ;;
+  ;; NOTA: Los query-scopes solo son relevantes en el camino ANALÍTICO (VIEW).
+  ;; Las acciones mutacionales (CREATE/UPDATE/DELETE/UPSERT) no generan boundaries
+  ;; y retornan domain-boundaries {} vacío al IOP como señal de validación exitosa.
+  :metri.cedar/query-scope
+  [:enum "ALL" "OWN" "ASSIGNED" "OWN_OR_ASSIGNED" "NONE"]
+
+  ;; --- DOMINIO 3: PERMISSION BOUNDARY ---
+  ;; Una frontera agrupa un grado de poder (scope) a unas limitantes
+  ;; geográficas y perimetrales estrictas, resolviendo la pertenencia de 1 Rol.
+  :metri.cedar/permission-boundary
+  [:map
+   [:query-scope        :metri.cedar/query-scope]
+   [:permitted-locations [:vector :metri.spec/uuid]]
+   [:permitted-assets    [:vector :metri.spec/uuid]]]
+
+  ;; --- DOMINIO 4: PAYLOAD FINAL CEDAR-CTX ---
+  ;; Este es el objeto `[:ok cedar-ctx]` que el CedarAuthorizer entrega al IOP.
+  ;; Documentado en detalle en `06_FASE_CEDAR_AUTHORIZER.md`.
+  ;;
+  ;; `domain-boundaries` acepta DOS estados válidos (ver cabecera del contrato):
+  ;;
+  ;;   1. ANALÍTICO  -> {"work_order" [{...}] "asset" [{...}]}
+  ;;      • Las llaves son entity-types RAÍZ (los que Cedar evaluó explícitamente).
+  ;;      • Los sub-recursos y JOINs del request NO tienen entrada propia aqui.
+  ;;        Ej: si el request pide {:work_order/location [:location/name]},
+  ;;        "location" NO aparece en domain-boundaries a menos que el request
+  ;;        pida locaciones como entidad raíz independiente.
+  ;;      • Al menos 1 boundary por dominio raíz ({:min 1} aplica POR VECTOR interno).
+  ;;      • Un mapa vacío {} pasa Malli porque no hay vectores que violen :min 1.
+  ;;
+  ;;   2. MUTACIONAL -> {} (mapa vacío — Cedar ya validó ACTION+BODY en memoria).
+  ;;
+  ;; VALIDADO POR TESTS: caso C20 del cedar_contract_test.py confirma que
+  ;; domain-boundaries con entidades parciales (no todas las del request) es VALID.
+  ;;
+  ;; `tenant-id` y `user-id` son inyectados por Cedar desde Valkey (Zero-Trust).
+  ;; Janus NUNCA los lee del request body del cliente — los sobreescribe con los del ctx.
+  :metri.cedar/cedar-ctx
+  [:map
+   [:tenant-id         :metri.spec/uuid]
+   [:user-id           :metri.spec/uuid]
+   [:roles             [:set :string]]
+   [:domain-boundaries [:map-of :string [:vector {:min 1} :metri.cedar/permission-boundary]]]
+   ;; Passthrough opaco del payload gRPC original — Cedar no lo modifica
+   [:request :any]]
+
+  ;; --- DOMINIO 5: SCOPE → FIELD RESOLUTION ---
+  ;; Janus necesita saber qué atributos de Datahike usar según el `query-scope`
+  ;; para construir el nodo [:where] correcto. En lugar de hardcodear los nombres,
+  ;; cada entidad en el Códice DEBE declarar las llaves convencionales:
+  ;;   :entity/owner-field    → atributo que identifica al creador (OWN)
+  ;;   :entity/assignee-field → atributo que identifica al asignado (ASSIGNED)
+  ;; Janus lee estos campos del schema vía `codice/load-schema` en runtime.
+  ;;
+  ;; Matriz de resolución por scope:
+  ;;   ALL             → Sin filtro de propiedad (ningún predicado adicional)
+  ;;   OWN             → [:= schema[:owner-field]    cedar-ctx/user-id]
+  ;;   ASSIGNED        → [:= schema[:assignee-field]  cedar-ctx/user-id]
+  ;;   OWN_OR_ASSIGNED → [:or [:= schema[:owner-field]    cedar-ctx/user-id]
+  ;;                          [:= schema[:assignee-field] cedar-ctx/user-id]]
+  ;;   NONE            → Intercepta la consulta con :JANUS_400
+  :metri.cedar/scope-field-resolution
+  [:map
+   [:scope          :metri.cedar/query-scope]
+   ;; Nombres convencionales del Códice resueltos en runtime por Janus.
+   ;; nil es válido para ALL y NONE donde el campo no aplica.
+   [:owner-field    [:maybe :string]]
+   [:assignee-field [:maybe :string]]]
+
+ }
+}
+
+;; =============================================================================
+;; NOTA ARQUITECTÓNICA: Root RLS Guardian (JOINs y sub-recursos)
+;; =============================================================================
+;; El contrato `domain-boundaries` solo indexa entidades RAÍZ evaluadas por Cedar.
+;; Los sub-recursos jalados por Pull (JOINs) NO generan entradas en domain-boundaries.
+;;
+;; REGLA CONTRACTUAL (formalizada por test C20 — cedar_contract_test.py):
+;;   Un cedar-ctx donde domain-boundaries tiene MENOS entidades que las que
+;;   aparecen en el request.body es COMPLETAMENTE VÁLIDO.
+;;   La ausencia de una clave en domain-boundaries significa:
+;;     "este entity-type es un sub-recurso de otra entidad raíz" (herencia de dominio).
+;;
+;; GARANTÍA MATEMÁTICA:
+;;   Si el registro raíz (work_order) pasó el filtro RLS de location,
+;;   sus sub-recursos (location.name, asset.serial) heredan el dominio
+;;   geográfico implícito. No pueden pertenecer a otro tenant ni
+;;   a otra localización que el propio registro raíz no permitiera ver.
+;;
+;; Janus NO debe hacer (get domain-boundaries "location") para resolver
+;; el campo {:work_order/location [:location/name]} en un JOIN.
+;; Hacerlo provocaría un ABAC_403 erróneo para usuarios sin acceso
+;; al catálogo maestro de locaciones.
+;;
+;; EXCEPCIÓN: Si el request pide locaciones como entidad RAÍZ directa
+;; (entity-type = "location"), entonces SÍ se aplica domain-boundaries.
+;; =============================================================================

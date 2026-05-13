@@ -74,7 +74,7 @@ Los canales de escritura no son `if/else` condicionales — son implementaciones
   (route [this ctx]
     "ctx  :: {:tenant-id         uuid   ;; inyectado desde Cedar — nunca del cliente
               :user-id           uuid
-              :role              map
+              :roles             set    ;; #{"tenant-admin" ...} (desde Cedar)
               :entity-type       str    ;; leído del Códice por el router
               :schema            map    ;; schema ya resuelto — el canal NO llama al Códice
               :operation         kw     ;; :create :update :delete :upsert
@@ -157,7 +157,7 @@ El router recibe el `channel-registry` como dependencia inyectada por Integrant 
 
 ### I.3 — Contratos gRPC (Parachoques Arquitectónico)
 
-El sistema repudia las rutas HTTP crudas. Toda ingesta se somete a las reglas del archivo maestro **`metri-data/src/main/proto/metri.proto`** — SSOT para la red:
+El sistema repudia las rutas HTTP crudas. Toda ingesta se somete a las reglas del archivo maestro **`metri.proto`** — ubicado en la raíz de `metri-engine/` y es el SSOT del contrato de red:
 
 1. **`OperationAction` Taxativa:** El backend prohíbe deducir la intención. El contrato fuerza explícitamente (`CREATE`, `UPDATE`, `DELETE`, `UPSERT`).
 2. **Contexto Base obligatorio (`required`):** `tenant_id` y `entity_type` son `required` en el proto. Si el cliente los omite, aborta con `INVALID_ARGUMENT` antes de llegar a Janus.
@@ -539,9 +539,13 @@ graph TD
         OC -->|"Datalog Write"| DBO[(Event Outbox Table)]
     end
 
-    DBO -. "CDC DynamoDB Streams" .-> Hermes[AWS Lambda Event Router]
-    Hermes -->|"CloudEvents (Protobuf/Msgpack)"| SQS[AWS SQS / EventBridge]
+    DBO -.->|"Moira los despacha (FASE 04)"| SQS[SQS FIFO Queue]
 ```
+
+> [!NOTE]
+> La entrega del evento desde el `Outbox` hacia SQS es responsabilidad de **Moira** ([04_FASE_MOIRA.md](04_FASE_MOIRA.md)),
+> que corre como `future` fire-and-forget dentro de `metri-engine`. El `OLTPChannel` solo escribe el `outbox_event PENDING`.
+> El consumo de SQS por componentes externos ocurre fuera del scope de este documento.
 
 ---
 
@@ -850,7 +854,7 @@ sequenceDiagram
     participant IOP  as IOP (run-iop)
     participant JR   as JanusRouter (janus/route)
     participant COD  as Códice (codice/api)
-    participant GEN  as codice/generator (Fase 02 — SSOT)
+    participant GEN  as metri.codice.generator (Fase 02 — SSOT)
     participant DH   as Datahike (conn)
     participant KMS  as AWS KMS
 
@@ -1195,19 +1199,16 @@ clj -A:dev
 # 2. Ejecutar todos los tests de Janus en aislamiento
 clj -M:test --namespace-regex "metri.janus.*"
 
-# 3. Ejecutar tests del generador secuencial (scope resolution)
-clj -M:test --namespace-regex "metri.janus.generator.*"
-
-# 4. Test de integración del pipeline IOP completo (stubs Cedar + QuotaGuard)
+# 3. Test de integración del pipeline IOP completo (stubs Cedar + QuotaGuard)
 clj -M:test --var metri.iop.iop-core-test/happy-path-returns-ok
 
-# 5. Test de multitenancy — verifica que tenant_id del cliente es ignorado
+# 4. Test de multitenancy — verifica que tenant_id del cliente es ignorado
 clj -M:test --var metri.janus.core-test/tenant-id-injected
 
-# 6. Recargar el Códice en REPL sin reiniciar la JVM (development only)
+# 5. Recargar el Códice en REPL sin reiniciar la JVM (development only)
 => (metri.codice.api/reload! "resources/models")
 
-# 7. Inspeccionar el registry del Códice en REPL
+# 6. Inspeccionar el registry del Códice en REPL
 => @metri.codice.api/registry  ;; mapa completo de entidades compiladas
 ```
 
@@ -1246,8 +1247,8 @@ clj -M:test --var metri.janus.core-test/tenant-id-injected
 
  ;; ── Funciones puras inyectables (sin estado) ─────────────────────────────────
  ;; Estas fns se usan en OLTPChannel — inyectadas, nunca importadas directamente
- :janus/ulid-fn   {:impl metri.ulid/generate}      ;; fn pura — sin estado
- :janus/quota-fn  {:impl metri.quotas/confirm!}    ;; wraps el namespace real
+ :janus/ulid-fn   {:impl metri.common.ulid/generate}   ;; fn pura — sin estado
+ :janus/quota-fn  {:impl metri.quota.guard/confirm!}   ;; QuotaGuard — Fase 07
 
  ;; ── Projection Registry (Open/Closed — añadir proyecciones aquí) ─────────────
  ;; Para agregar NotificationBuilder:

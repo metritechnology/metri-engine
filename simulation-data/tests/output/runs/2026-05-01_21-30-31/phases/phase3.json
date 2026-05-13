@@ -1,0 +1,30 @@
+[
+  {
+    "id": "TC-F3-AND-BASIC",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F3-OR-BASIC",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F3-NOT-BASIC",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F3-CROSS-FILTER",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  }
+]

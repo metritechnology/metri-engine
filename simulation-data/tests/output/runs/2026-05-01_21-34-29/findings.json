@@ -1,0 +1,46 @@
+[
+  {
+    "bug_id": "BUG-001",
+    "test_id": "TC-F2-IN",
+    "layer": "AST-IR",
+    "severity": "HIGH",
+    "description": "[CAPA 2 - VizMeta] TableMeta.columns est\u00e1 vac\u00edo para 'table'.",
+    "expected": "{}",
+    "actual": "FIX_ENGINE",
+    "status": "OPEN",
+    "opened_at": "2026-05-02T02:36:31.416682"
+  },
+  {
+    "bug_id": "BUG-002",
+    "test_id": "TC-F3-OR-BASIC",
+    "layer": "AST-IR",
+    "severity": "HIGH",
+    "description": "[CAPA 2 - VizMeta] TableMeta.columns est\u00e1 vac\u00edo para 'table'.",
+    "expected": "{}",
+    "actual": "FIX_ENGINE",
+    "status": "OPEN",
+    "opened_at": "2026-05-02T02:36:31.645296"
+  },
+  {
+    "bug_id": "BUG-003",
+    "test_id": "TC-F6-RELATIVE",
+    "layer": "AST-IR",
+    "severity": "HIGH",
+    "description": "[CAPA 2 - Request] Comparison[0].type est\u00e1 vac\u00edo/UNSPECIFIED en la query 'q1'.",
+    "expected": "{}",
+    "actual": "FIX_ENGINE",
+    "status": "OPEN",
+    "opened_at": "2026-05-02T02:37:58.844070"
+  },
+  {
+    "bug_id": "BUG-004",
+    "test_id": "TC-F12-EXPLAIN-QUERY",
+    "layer": "AST-IR",
+    "severity": "HIGH",
+    "description": "[CAPA 2 - VizMeta] TableColumn[0].type est\u00e1 vac\u00edo.",
+    "expected": "{'has_ast': True}",
+    "actual": "FIX_ENGINE",
+    "status": "OPEN",
+    "opened_at": "2026-05-02T02:38:03.513242"
+  }
+]

@@ -1,0 +1,75 @@
+;; config/system.dev.edn — ENTORNO LOCAL MINIMALISTA (PoC gRPC)
+;; Solo incluye componentes con ig/init-key registrado.
+;; Componentes de Capa 2-3 (Cedar, QuotaGuard, Moira, Audit) se activan
+;; en fases posteriores cuando sus namespaces estén implementados.
+
+{;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 1: Infraestructura local (Docker)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ ;; Session Store in-memory — no requiere Redis/Valkey local
+ :infra/session-store
+ {:strategy :memory}
+
+ :infra/dynamodb
+ {:region "us-east-1" :endpoint "http://localhost:8000"}
+
+ ;; OLAP stubs in-memory (sin AWS)
+ :infra/stubs/kinesis     {}
+ :infra/stubs/eventbridge {}
+ :infra/stubs/athena      {}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 4: Pipelines stub (toda la lógica de negocio → stub)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :iop/pipeline      {}
+ :iop/bulk-pipeline {}
+ :janus/ast-compiler
+ {:codice-registry #ig/ref :codice/registry}
+
+ :aegis/transmuter
+ {:datahike     #ig/ref :infra/datahike
+  :query-engine #ig/ref :infra/athena
+  :database     "metri_olap"}
+
+ :janus/query
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :ast-compiler     #ig/ref :janus/ast-compiler
+  :aegis-transmuter #ig/ref :aegis/transmuter}
+ :codice/registry    {:models-dir "resources/models"}
+ :codice/event-seeder {}  ;; stub — sin Datahike en dev, seed se omite automáticamente
+ :eda/rule-matcher  {}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 5: Transporte gRPC
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :grpc/health-manager {}
+
+ :janus/discovery
+ {:codice-registry  #ig/ref :codice/registry}
+
+ :janus/explore
+ {:codice-registry  #ig/ref :codice/registry}
+
+ :janus/rule-matcher
+ {:rule-matcher     #ig/ref :eda/rule-matcher}
+
+ :grpc/dispatcher
+ {:iop-pipeline       #ig/ref :iop/pipeline
+  :janus-query        #ig/ref :janus/query
+  :janus-discovery    #ig/ref :janus/discovery
+  :janus-explore      #ig/ref :janus/explore
+  :janus-rule-matcher #ig/ref :janus/rule-matcher}
+
+ :grpc/service-impl
+ {:dispatcher #ig/ref :grpc/dispatcher}
+
+ :grpc/server
+ {:service-impl        #ig/ref :grpc/service-impl
+  :port                9090
+  :enable-reflection   true
+  :health-manager      #ig/ref :grpc/health-manager
+  :max-inbound-msg-size-mb 16
+  :deadline-ms         30000}}

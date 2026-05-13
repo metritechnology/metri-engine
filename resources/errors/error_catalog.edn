@@ -1,13 +1,16 @@
 {:catalog
- {:version "1.0.0"
-  :generated-at "2026-04-15"
+ {:version "2.0.0"
+  :generated-at "2026-04-22"
   :description "ÚNICA FUENTE DE VERDAD para todos los códigos de error de Metri Engine.
                PROHIBIDO definir códigos de error fuera de este archivo.
                El Bootstrapper valida este catálogo al arrancar — JVM no acepta requests
                hasta que todos los entries pasen la validación estructural."
 
   :entries
-  [;; ── Familia JNS — Janus Router ───────────────────────────────────────────
+  [;; ══════════════════════════════════════════════════════════════════════
+   ;; FAMILIA JNS — Janus Router
+   ;; ══════════════════════════════════════════════════════════════════════
+
    {:code             :JNS_001
     :family           :jns
     :stage            :janus
@@ -108,7 +111,10 @@
     :context-required [:parent_ulid :cal_def]
     :retryable?       true}
 
-   ;; ── Familia COD — Códice / Schema-Driven Core ────────────────────────────
+   ;; ══════════════════════════════════════════════════════════════════════
+   ;; FAMILIA COD — Códice / Schema-Driven Core
+   ;; ══════════════════════════════════════════════════════════════════════
+
    {:code             :COD_001
     :family           :cod
     :stage            :codice
@@ -139,6 +145,36 @@
     :context-required [:entity :field :entityRef]
     :retryable?       false}
 
+   {:code             :COD_002
+    :family           :cod
+    :stage            :codice
+    :severity         :fatal
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Bootstrap: two JSON model files declare the same entity name — Códice cannot resolve SSOT. JVM halted."
+    :context-required [:entity]
+    :retryable?       false}
+
+   {:code             :COD_003
+    :family           :cod
+    :stage            :codice
+    :severity         :fatal
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Bootstrap: SHA-256 fingerprint collision between two distinct entity schemas — identical attribute sets detected. JVM halted."
+    :context-required [:entity-a :entity-b :hash]
+    :retryable?       false}
+
+   {:code             :COD_SEED_001
+    :family           :cod
+    :stage            :codice
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Bootstrap: seed-event-routing-rules! failed to write event_routing_rule entities to Datahike. System integrity not guaranteed."
+    :context-required [:cause]
+    :retryable?       false}
+
    {:code             :COD_KMS_001
     :family           :cod
     :stage            :codice
@@ -149,7 +185,10 @@
     :context-required [:field :kms_key_id]
     :retryable?       true}
 
-   ;; ── Familia SEC — Seguridad / Cedar ABAC ────────────────────────────────
+   ;; ══════════════════════════════════════════════════════════════════════
+   ;; FAMILIA SEC — Seguridad / Cedar ABAC
+   ;; ══════════════════════════════════════════════════════════════════════
+
    {:code             :SEC_401
     :family           :sec
     :stage            :auth
@@ -180,26 +219,380 @@
     :context-required [:quota_type :current :limit]
     :retryable?       false}
 
-   ;; ── Familia SYS — Sistema / Infraestructura ──────────────────────────────
+   ;; ══════════════════════════════════════════════════════════════════════
+   ;; FAMILIA SYS — Sistema / Infraestructura General
+   ;; ══════════════════════════════════════════════════════════════════════
+
    {:code             :SYS_000
     :family           :sys
     :stage            :infra
     :severity         :error
     :http-status      503
     :grpc-status      :UNAVAILABLE
-    :description      "Infrastructure failure — Datahike timeout, OOM, or network error"
+    :description      "Unclassified infrastructure failure — Datahike timeout, OOM, or network error. Check :service and :anomaly for root cause."
     :context-required [:service :timeout_ms]
     :retryable?       true}
 
-   {:code             :SYS_KNS_001
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: Datahike / OLTP (datahike.clj)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_DH_001
     :family           :sys
-    :stage            :kinesis
+    :stage            :datahike
     :severity         :fatal
     :http-status      503
     :grpc-status      :UNAVAILABLE
-    :description      "Kinesis Firehose PutRecordBatch failed — OLAP ingestion pipeline is broken"
-    :context-required [:stream_name :record_count]
+    :description      "Datahike BOOT failed — could not connect or create DynamoDB-backed database on startup. JVM halted."
+    :context-required [:uri :cause]
+    :retryable?       false}
+
+   {:code             :INFRA_DH_002
+    :family           :sys
+    :stage            :datahike
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Datahike d/transact failed — transaction data was rejected or DynamoDB write timed out."
+    :context-required [:tx_data_size :cause]
     :retryable?       true}
+
+   {:code             :INFRA_DH_003
+    :family           :sys
+    :stage            :datahike
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Datahike d/q (query) failed — Datalog query threw exception or timed out."
+    :context-required [:query_hash :cause]
+    :retryable?       true}
+
+   {:code             :INFRA_DH_004
+    :family           :sys
+    :stage            :datahike
+    :severity         :warning
+    :http-status      404
+    :grpc-status      :NOT_FOUND
+    :description      "Datahike entity lookup returned nil — entity-id or ident not found in the database."
+    :context-required [:entity_id :entity_type]
+    :retryable?       false}
+
+   {:code             :INFRA_DH_005
+    :family           :sys
+    :stage            :datahike
+    :severity         :fatal
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Datahike schema transact failed during bootstrap — required audit/* or tenant/id attribute could not be transacted."
+    :context-required [:attr_count :cause]
+    :retryable?       false}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: Tenant Guard / Pool Model (tenant_guard.clj)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_TG_001
+    :family           :sys
+    :stage            :tenant-guard
+    :severity         :fatal
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "TenantGuard: :tenant/id attribute missing from Datahike schema and transact to create it failed. Multitenancy isolation is broken."
+    :context-required [:cause]
+    :retryable?       false}
+
+   {:code             :INFRA_TG_002
+    :family           :sys
+    :stage            :tenant-guard
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "TenantGuard: query attempted without a :tenant/id filter — Pool Model isolation invariant violated."
+    :context-required [:entity_type :operation]
+    :retryable?       false}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: DynamoDB SDK (dynamodb.clj — QuotaGuard / schemas)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_DDB_001
+    :family           :sys
+    :stage            :dynamodb
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "DynamoDB GetItem failed — item could not be retrieved. Check :table and :anomaly for AWS error code."
+    :context-required [:table :key :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_DDB_002
+    :family           :sys
+    :stage            :dynamodb
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "DynamoDB PutItem failed — item could not be written. Possible: ProvisionedThroughputExceededException or ConditionalCheckFailed."
+    :context-required [:table :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_DDB_003
+    :family           :sys
+    :stage            :dynamodb
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "DynamoDB UpdateItem failed — item could not be updated via UpdateExpression."
+    :context-required [:table :key :update_expr :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_DDB_004
+    :family           :sys
+    :stage            :dynamodb
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "DynamoDB AccessDeniedException — Lambda IAM role lacks permission for this operation. Check IAM policy and table ARN."
+    :context-required [:table :operation :iam_arn]
+    :retryable?       false}
+
+   {:code             :INFRA_DDB_005
+    :family           :sys
+    :stage            :dynamodb
+    :severity         :error
+    :http-status      429
+    :grpc-status      :RESOURCE_EXHAUSTED
+    :description      "DynamoDB ProvisionedThroughputExceededException — request rate too high for this table."
+    :context-required [:table :operation]
+    :retryable?       true}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: Session Store (session_store.clj — InMemory / DynamoDB TTL)
+   ;; Reemplaza: Valkey/Redis (eliminado junto con VPC para reducción de costos)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_SESSION_001
+    :family           :sys
+    :stage            :session-store
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Session Store operation failed — InMemory atom error or DynamoDB TTL write/read failed."
+    :context-required [:detail]
+    :retryable?       true}
+
+   {:code             :INFRA_SESSION_002
+    :family           :sys
+    :stage            :session-store
+    :severity         :warning
+    :http-status      404
+    :grpc-status      :NOT_FOUND
+    :description      "Session token not found or already expired (TTL elapsed)."
+    :context-required [:token_hint]
+    :retryable?       false}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: SQS FIFO (sqs.clj — Outbox / Moira)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_SQS_001
+    :family           :sys
+    :stage            :sqs
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "SQS SendMessage failed — outbox event could not be enqueued. Check :queue and :anomaly. Event may be lost if not retried."
+    :context-required [:queue :operation :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_SQS_002
+    :family           :sys
+    :stage            :sqs
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "SQS ReceiveMessage failed — consumer could not poll for outbox events."
+    :context-required [:queue :operation :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_SQS_003
+    :family           :sys
+    :stage            :sqs
+    :severity         :warning
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "SQS DeleteMessage failed — message was processed but ReceiptHandle deletion failed. Duplicate processing risk."
+    :context-required [:queue :receipt_handle :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_SQS_004
+    :family           :sys
+    :stage            :sqs
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "SQS AccessDeniedException — Lambda IAM role lacks permission for this queue operation."
+    :context-required [:queue :operation :iam_arn]
+    :retryable?       false}
+
+   {:code             :INFRA_SQS_005
+    :family           :sys
+    :stage            :sqs
+    :severity         :warning
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "SQS GetQueueAttributes failed during bootstrap — queue existence could not be verified. Continuing with warning."
+    :context-required [:queue :anomaly]
+    :retryable?       true}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: EventBridge (eventbridge.clj — Fault Bus / EDA)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_EVENTBRIDGE_001
+    :family           :sys
+    :stage            :eventbridge
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "EventBridge PutEvents failed at API level — network or service error. Fault notification was not delivered."
+    :context-required [:bus_name :source :detail_type :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_EVENTBRIDGE_002
+    :family           :sys
+    :stage            :eventbridge
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "EventBridge PutEvents succeeded at API level but entry-level ErrorCode returned — event rejected by the bus rule engine."
+    :context-required [:bus_name :error_code :error_message]
+    :retryable?       true}
+
+   {:code             :INFRA_EVENTBRIDGE_003
+    :family           :sys
+    :stage            :eventbridge
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "EventBridge AccessDeniedException — Lambda IAM role lacks events:PutEvents on this bus."
+    :context-required [:bus_name :iam_arn]
+    :retryable?       false}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: Kinesis Firehose (kinesis.clj — OLAP ingestion)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_KINESIS_001
+    :family           :sys
+    :stage            :kinesis
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Kinesis Firehose PutRecord failed — OLAP ingestion pipeline is broken. Record may be lost."
+    :context-required [:stream_name :anomaly]
+    :retryable?       true}
+
+   {:code             :INFRA_KINESIS_002
+    :family           :sys
+    :stage            :kinesis
+    :severity         :error
+    :http-status      429
+    :grpc-status      :RESOURCE_EXHAUSTED
+    :description      "Kinesis Firehose ServiceUnavailableException — delivery stream is temporarily overwhelmed or in CREATING state."
+    :context-required [:stream_name]
+    :retryable?       true}
+
+   {:code             :INFRA_KINESIS_003
+    :family           :sys
+    :stage            :kinesis
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "Kinesis Firehose AccessDeniedException — Lambda IAM role lacks firehose:PutRecord on this stream."
+    :context-required [:stream_name :iam_arn]
+    :retryable?       false}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: Athena (athena.clj — OLAP queries)
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_ATHENA_001
+    :family           :sys
+    :stage            :athena
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Athena StartQueryExecution failed — query could not be submitted. Check workgroup, S3 output location, and IAM permissions."
+    :context-required [:workgroup :database :cause]
+    :retryable?       true}
+
+   {:code             :INFRA_ATHENA_002
+    :family           :sys
+    :stage            :athena
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Athena GetQueryResults failed — query execution-id exists but results could not be fetched."
+    :context-required [:execution_id :cause]
+    :retryable?       true}
+
+   {:code             :INFRA_ATHENA_003
+    :family           :sys
+    :stage            :athena
+    :severity         :warning
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Athena query FAILED state — SQL was rejected by the engine (syntax error or missing table/partition)."
+    :context-required [:execution_id :state_change_reason]
+    :retryable?       false}
+
+   {:code             :INFRA_ATHENA_004
+    :family           :sys
+    :stage            :athena
+    :severity         :warning
+    :http-status      504
+    :grpc-status      :DEADLINE_EXCEEDED
+    :description      "Athena query exceeded polling timeout — query may still be running in AWS. execution-id preserved for async reconciliation."
+    :context-required [:execution_id :timeout_ms]
+    :retryable?       false}
+
+   {:code             :INFRA_ATHENA_005
+    :family           :sys
+    :stage            :athena
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "Athena AccessDeniedException — Lambda IAM role lacks athena:StartQueryExecution or s3:PutObject on output bucket."
+    :context-required [:workgroup :iam_arn]
+    :retryable?       false}
+
+   ;; ──────────────────────────────────────────────────────────────────────
+   ;; Sub-familia: Cedar Policy Engine
+   ;; ──────────────────────────────────────────────────────────────────────
+
+   {:code             :INFRA_CEDAR_001
+    :family           :sec
+    :stage            :cedar
+    :severity         :error
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Cedar Policy Engine unavailable or policy parsing error — authorization cannot be evaluated."
+    :context-required [:action :resource :cause]
+    :retryable?       false}
+
+   {:code             :INFRA_CEDAR_002
+    :family           :sec
+    :stage            :cedar
+    :severity         :fatal
+    :http-status      503
+    :grpc-status      :UNAVAILABLE
+    :description      "Cedar policy store could not be loaded from DynamoDB during bootstrap — ABAC is non-functional. JVM halted."
+    :context-required [:table :cause]
+    :retryable?       false}
+
+   ;; ══════════════════════════════════════════════════════════════════════
+   ;; FAMILIA MCP — LLM / AI Integrations
+   ;; ══════════════════════════════════════════════════════════════════════
 
    {:code             :MCP_503
     :family           :mcp
@@ -209,4 +602,122 @@
     :grpc-status      :UNAVAILABLE
     :description      "LLM service unavailable — Anthropic or Ollama timeout or capacity exceeded"
     :context-required [:model :timeout_ms]
-    :retryable?       true}]}}
+    :retryable?       true}
+
+   ;; ══════════════════════════════════════════════════════════════════════
+   ;; FAMILIA JANUS — Read Path (Cerebro AST Compiler)
+   ;; ══════════════════════════════════════════════════════════════════════
+
+   {:code             :JANUS_400
+    :family           :janus
+    :stage            :janus-cerebro
+    :severity         :warning
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Janus rejected request — tenant_id empty, cedar_ctx invalid, AST missing tenant, enum sentinel=0, or scope=NONE"
+    :context-required [:reason :tenant-id]
+    :retryable?       false}
+
+   {:code             :JANUS_VAL_001
+    :family           :janus
+    :stage            :janus-validator
+    :severity         :warning
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Janus Validator rejected request — Malli schema validation failed against AST IR contract (Defensa Inquebrantable)"
+    :context-required [:tenant-id :schema_key :errors]
+    :retryable?       false}
+
+   {:code             :JANUS_403
+    :family           :janus
+    :stage            :janus-cerebro
+    :severity         :warning
+    :http-status      403
+    :grpc-status      :PERMISSION_DENIED
+    :description      "Janus rejected request — Cedar DENY (cross-tenant or insufficient grant)"
+    :context-required [:tenant-id :user-id]
+    :retryable?       false}
+
+   ;; ══════════════════════════════════════════════════════════════════════
+   ;; FAMILIA AEG — Aegis Transmuter (Motor Analítico Core)
+   ;; ══════════════════════════════════════════════════════════════════════
+
+   {:code             :AEG_001
+    :family           :aeg
+    :stage            :aegis
+    :severity         :error
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Aegis received AST IR with unknown engine type — must be :oltp or :olap"
+    :context-required [:engine :tenant-id]
+    :retryable?       false}
+
+   {:code             :AEG_002
+    :family           :aeg
+    :stage            :aegis
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Aegis OLTP: Datahike query failed during execution"
+    :context-required [:detail :tenant-id]
+    :retryable?       true}
+
+   {:code             :AEG_003
+    :family           :aeg
+    :stage            :aegis
+    :severity         :warning
+    :http-status      404
+    :grpc-status      :NOT_FOUND
+    :description      "Aegis OLTP pull: entity-id not found or belongs to a different tenant"
+    :context-required [:eid :tenant-id]
+    :retryable?       false}
+
+   {:code             :AEG_004
+    :family           :aeg
+    :stage            :aegis
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Aegis OLAP: IQueryEngine.start-query! failed — Athena could not initiate execution"
+    :context-required [:detail :tenant-id]
+    :retryable?       true}
+
+   {:code             :AEG_005
+    :family           :aeg
+    :stage            :aegis
+    :severity         :error
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Aegis OLAP: IQueryEngine.get-query-results failed — Athena execution error or timeout"
+    :context-required [:execution-id :tenant-id]
+    :retryable?       false}
+
+   {:code             :AEG_COMPILE_001
+    :family           :aeg
+    :stage            :aegis
+    :severity         :error
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Aegis OLTP: failed to compile AST IR to Datalog — unsupported operator or malformed node"
+    :context-required [:detail :tenant-id]
+    :retryable?       false}
+
+   {:code             :AEG_COMPILE_002
+    :family           :aeg
+    :stage            :aegis
+    :severity         :error
+    :http-status      400
+    :grpc-status      :INVALID_ARGUMENT
+    :description      "Aegis OLAP: failed to compile AST IR to SQL — unsupported operator or malformed node"
+    :context-required [:detail :tenant-id]
+    :retryable?       false}
+
+   {:code             :AEG_TENANT_MISSING
+    :family           :aeg
+    :stage            :aegis
+    :severity         :fatal
+    :http-status      500
+    :grpc-status      :INTERNAL
+    :description      "Aegis received an AST IR without tenant isolation in :where — data exfiltration risk blocked"
+    :context-required [:tenant-id]
+    :retryable?       false}]}}

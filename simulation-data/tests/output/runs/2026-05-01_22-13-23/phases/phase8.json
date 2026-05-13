@@ -1,0 +1,26 @@
+[
+  {
+    "id": "TC-F8-DIMENSIONS",
+    "passed": true,
+    "duration_ms": 26,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "TC-F12-EXPLAIN-QUERY",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F12-SEARCH-ASSET",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F12-HIERARCHY-BASIC",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F12-SELECT-TREE",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  }
+]

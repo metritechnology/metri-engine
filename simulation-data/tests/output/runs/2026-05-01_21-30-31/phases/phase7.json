@@ -1,0 +1,51 @@
+[
+  {
+    "id": "TC-F7-KPI",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F7-TABLE",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F7-PIE",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F7-DONUT",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F7-BAR",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F7-LINE",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F7-AREA",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  }
+]

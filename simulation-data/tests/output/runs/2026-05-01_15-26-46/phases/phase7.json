@@ -1,0 +1,44 @@
+[
+  {
+    "id": "TC-F7-KPI",
+    "passed": true,
+    "duration_ms": 66,
+    "errors": []
+  },
+  {
+    "id": "TC-F7-TABLE",
+    "passed": true,
+    "duration_ms": 11,
+    "errors": []
+  },
+  {
+    "id": "TC-F7-PIE",
+    "passed": true,
+    "duration_ms": 20,
+    "errors": []
+  },
+  {
+    "id": "TC-F7-DONUT",
+    "passed": true,
+    "duration_ms": 6,
+    "errors": []
+  },
+  {
+    "id": "TC-F7-BAR",
+    "passed": true,
+    "duration_ms": 6,
+    "errors": []
+  },
+  {
+    "id": "TC-F7-LINE",
+    "passed": true,
+    "duration_ms": 4,
+    "errors": []
+  },
+  {
+    "id": "TC-F7-AREA",
+    "passed": true,
+    "duration_ms": 10,
+    "errors": []
+  }
+]

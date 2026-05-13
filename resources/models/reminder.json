@@ -1,0 +1,116 @@
+{
+  "entity": "reminder",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "T\u00edtulo del recordatorio libre (Ej: 'Limpieza de V\u00e1lvulas')."
+    },
+    {
+      "name": "message",
+      "type": "string",
+      "required": false,
+      "description": "Texto f\u00edsico exacto que Twilio enviar\u00e1 al operador en el momento estipulado."
+    },
+    {
+      "name": "target_user_id",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "description": "Quien recibir\u00e1 la notificaci\u00f3n."
+    },
+    {
+      "name": "target_group_id",
+      "type": "reference",
+      "entityRef": "user_group",
+      "cardinality": "one",
+      "description": "Si recae sobre un grupo entero, se env\u00eda masivo (Broadcasting)."
+    },
+    {
+      "name": "reminder_datetime",
+      "type": "string",
+      "required": true,
+      "description": "La fecha ISO 8601 del l\u00edmite temporal maestro para este recordatorio."
+    },
+    {
+      "name": "prenotify_minutes_array",
+      "type": "array",
+      "of": "scalar",
+      "scalarType": "integer",
+      "required": true,
+      "description": "Array M\u00e1gico. Los minutos previos donde Schedulers despertar\u00e1. Ej: [30, 5]."
+    },
+    {
+      "name": "iana_timezone",
+      "type": "string",
+      "required": true,
+      "description": "Control estricto de DST para no evadir horarios mundiales."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "OPEN",
+        "TRIGGERED",
+        "DISMISSED"
+      ],
+      "default_value": "OPEN",
+      "is_dimension": true
+    }
+  ],
+  "events": {
+    "create": "REMINDER_CREATED",
+    "update": "REMINDER_UPDATED",
+    "delete": "REMINDER_DELETED"
+  },
+  "shadow_sagas_mapping": {
+    "target_user_id": [
+      "target_user_id"
+    ],
+    "target_group_id": [
+      "target_group_id"
+    ],
+    "action_payload.content.message_override": [
+      "message"
+    ]
+  },
+  "calendar_mapping": {
+    "start_date": [
+      "reminder_datetime"
+    ],
+    "end_date": [
+      "reminder_datetime"
+    ],
+    "display_title": [
+      "title"
+    ]
+  },
+  "event_rules": [
+    {
+      "rule_code": "REMINDER_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.reminder.created",
+      "description": "Expande al dominio de mensajer\u00eda la creaci\u00f3n inminente de un recordatorio."
+    },
+    {
+      "rule_code": "REMINDER_UPDATED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [],
+      "detail_type_output": "system.reminder.updated",
+      "description": "Reporta re-agendamientos en los Recordatorios y sus intervalos m\u00e1gicos."
+    },
+    {
+      "rule_code": "REMINDER_DELETED",
+      "event_trigger_type": "on_delete",
+      "filter_conditions": [],
+      "detail_type_output": "system.reminder.deleted",
+      "description": "Evita estelas visuales hu\u00e9rfanas en microservicios consumidores sat\u00e9lites."
+    }
+  ]
+}

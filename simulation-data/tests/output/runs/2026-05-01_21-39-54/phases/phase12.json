@@ -1,0 +1,100 @@
+[
+  {
+    "id": "TC-F12-EXPLAIN-QUERY",
+    "passed": false,
+    "duration_ms": 8,
+    "layer1_errors": [],
+    "layer2_errors": [
+      "[CAPA 2 - VizMeta] TableColumn[0].type est\u00e1 vac\u00edo."
+    ],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F12-SEARCH-ASSET",
+    "passed": true,
+    "duration_ms": 37,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F12-HIERARCHY-BASIC",
+    "passed": true,
+    "duration_ms": 26,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F12-SELECT-TREE",
+    "passed": true,
+    "duration_ms": 25,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  }
+]

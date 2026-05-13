@@ -1,0 +1,47 @@
+{
+  "entity": "check_list_section",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "check_list_id",
+      "type": "reference",
+      "entityRef": "check_list",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "form_template_section_id",
+      "type": "reference",
+      "entityRef": "form_template_section",
+      "cardinality": "one",
+      "description": "Crucial para vincular anal\u00edticamente esta instancia de grupo a su origen estandarizado."
+    },
+    {
+      "name": "section_order",
+      "type": "decimal",
+      "required": true,
+      "index": true
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true
+    },
+    {
+      "name": "is_completed",
+      "type": "boolean",
+      "default_value": false,
+      "is_dimension": true
+    }
+  ]
+}

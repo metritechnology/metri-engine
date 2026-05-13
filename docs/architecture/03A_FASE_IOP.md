@@ -111,30 +111,36 @@ Carril :error →  [Cedar-DENY] ──► cortocircuita ──► gRPC 401|403
 ### Configuración declarativa
 
 ```clojure
-;; config/system.edn — componentes del IOP
+;; config/system.edn — componentes del IOP (v3.1)
 {
  ;; ── Infraestructura ────────────────────────────────────────────────────────
- :infra/valkey        {:host #env "VALKEY_HOST" :port 6379
+ :infra/valkey        {:host     #env "VALKEY_HOST"  :port 6379
                        :password #env "VALKEY_PASSWORD"}
- :infra/datahike      {:store {:backend :cloud
+ :infra/datahike      {:store {:backend :dynamodb          ;; Datahike Serverless
                                :region  #env "AWS_REGION"
-                               :table   #env "DATAHIKE_TABLE"}}
- :infra/dynamodb      {:region #env "AWS_REGION"}
+                               :table   #env "DATAHIKE_DDB_TABLE"}}  ;; ← corregido
+ :infra/dynamodb      {:region    #env "AWS_REGION"
+                       :quota-table #env "QUOTA_TABLE"}              ;; ← añadido
  :infra/cedar-engine  {:policies-table #env "CEDAR_POLICIES_TABLE"}
  :infra/kinesis       {:stream-prefix  #env "KINESIS_STREAM_PREFIX"}
- :infra/eventbridge   {:event-bus-name #env "EVENT_BUS_NAME"  ;; Sherlog emit-fault-event!
+ :infra/eventbridge   {:event-bus-name #env "EVENT_BUS_NAME"         ;; Sherlog emit-fault-event!
                        :region         #env "AWS_REGION"}
 
  ;; D7 Pool Model: tenant-guard asegura que toda op Datahike lleva :tenant/id
  :infra/tenant-guard  {:datahike-conn  #ig/ref :infra/datahike}
 
- ;; ── Paso 1: CedarAuthorizer ────────────────────────────────────────────────
- ;; El interceptor extrae el token internamente — el IOP pasa el request completo.
+ ;; ── Paso 1: CedarAuthorizer (v3.1) ─────────────────────────────────────────
+ ;; validate-master-env! y load-master-env-config! se invocan en init-key.
+ ;; Si metri_MASTER_* falta → ExceptionInfo → ig/init falla → System/exit 2.
+ ;; metri_MASTER_USER_IDS = CSV de UUIDs (multi-admin, Brecha A resuelta).
+ ;; install-sighup-handler! habilita recarga en caliente sin redeploy (Brecha E).
  :cedar/cache          {:strategy :ttl :ttl-ms 10000 :max-size 50000}
  :iop/cedar-authorizer {:valkey-store  #ig/ref :infra/valkey
                          :datahike-conn #ig/ref :infra/datahike
                          :cache         #ig/ref :cedar/cache
                          :cedar-engine  #ig/ref :infra/cedar-engine}
+ ;; master-env-config atom es inicializado internamente en init-key — no es una dep Integrant.
+ ;; SIGHUP handler queda instalado para recargar: metri_MASTER_USER_IDS, ROLE_ID, SCOPE.
 
  ;; ── Paso 2: QuotaGuard ─────────────────────────────────────────────────────
  :iop/quota-guard      {:dynamodb #ig/ref :infra/dynamodb}
@@ -145,8 +151,8 @@ Carril :error →  [Cedar-DENY] ──► cortocircuita ──► gRPC 401|403
  :janus/oltp-channel   {:datahike-conn  #ig/ref :infra/datahike
                          :tenant-guard   #ig/ref :infra/tenant-guard}  ;; D7 Pool Model
  :janus/olap-channel   {:kinesis        #ig/ref :infra/kinesis}
- :iop/janus-router     {:channel-registry #ig/ref :janus/channel-registry
-                         :codice-registry  #ig/ref :codice/registry
+ :iop/janus-router     {:channel-registry  #ig/ref :janus/channel-registry
+                         :codice-registry   #ig/ref :codice/registry
                          ;; D6 FASE 10: Janus necesita Sherlog para errores Códice WARNING+
                          :sherlog-notifiers #ig/ref :iop/sherlog-notifier
                          :olap-channel      #ig/ref :janus/olap-channel}
@@ -160,11 +166,13 @@ Carril :error →  [Cedar-DENY] ──► cortocircuita ──► gRPC 401|403
  ;; ── Sherlog (IFaultNotifier — EventBridge + OLAPChannel) ────────────────────
  ;; emit-fault-event! → EventBridge  |  record-fault! → :janus/olap-channel
  :iop/sherlog-notifier {:eventbridge   #ig/ref :infra/eventbridge
-                         :olap-channel  #ig/ref :janus/olap-channel}   ;; IFaultNotifier
+                         :olap-channel  #ig/ref :janus/olap-channel}
  :util/ulid-fn         {}                                              ;; fn: () → ulid
 
  ;; ── AuditInterceptor (fuera de :steps — SIEMPRE, [:ok] y [:error]) ─────────
  ;; Comparte :janus/olap-channel — un solo stream Kinesis para todo el OLAP.
+ ;; Brecha D: audit trail de accesos cross-tenant ya está en CedarAuthorizer.
+ ;; Este interceptor audita TODOS los requests (access denied, quota, janus).
  :audit/interceptor    {:olap-channel   #ig/ref :janus/olap-channel
                          :ulid-fn        #ig/ref :util/ulid-fn
                          :fault-notifier #ig/ref :iop/sherlog-notifier}
@@ -218,9 +226,19 @@ Carril :error →  [Cedar-DENY] ──► cortocircuita ──► gRPC 401|403
        :cache         cache
        :cedar-engine  cedar-engine})))
 ;;  Entrada: request gRPC completo (header Authorization intacto)
-;;  Salida:  [:ok  {:tenant-id :user-id :role :permitted-locations :permitted-assets :request}]
-;;         | [:error {:stage :cedar :code :ABAC_401 :detail "..."}]  ;; token
-;;         | [:error {:stage :cedar :code :ABAC_403 :detail "..."}]  ;; policy
+;;  Salida v3.1 (Cedar ABAC):
+;;    [:ok  {:tenant-id            "tnt_01J..."
+;;           :user-id              "usr_01J..."
+;;           :roles                #{"field-tech"}                    ;; Set<String>
+;;           :status               "ACTIVE"                          ;; para F-SUSPENDED
+;;           :granted-action-keys  #{"work_order:VIEW" "asset:VIEW"} ;; Set<"domain:ACTION">
+;;           :is-super-master      false                             ;; COMPUTADO — nunca DB
+;;           :cross-tenant-scope   "NONE"                           ;; COMPUTADO — env var
+;;           :domain-boundaries    {...}                             ;; para Janus Capa 3
+;;           :request              <grpc-request-intacto>}]
+;;         | [:error {:stage :cedar :code :ABAC_401 :detail "..."}]  ;; token inválido
+;;         | [:error {:stage :cedar :code :ABAC_403 :detail "..."}]  ;; DENY / suspendido
+;;         | [:error {:stage :cedar :code :ABAC_403 :detail "..." :reason :MFA_REQUIRED}] ;; SM sin MFA
 
 ;; ── Paso 2: QuotaGuard ──────────────────────────────────────────────────────
 (defmethod ig/init-key :iop/quota-guard [_ deps]
@@ -283,31 +301,56 @@ Paso 4:  extrae action  ← request.operation   (CREATE|GET|UPDATE|DELETE|UPSERT
          Cedar ABAC: is-authorized(principal, action, resource{domain}) → ALLOW|DENY
 ```
 
-**Contrato de salida (todo lo que el IOP necesita saber):**
+**Contrato de salida — Cedar v3.1 (todo lo que el IOP necesita saber):**
 
 ```clojure
-;; [:ok] — ALLOW
-{:tenant-id           "tnt_01J..."    ;; resuelto desde Valkey
- :user-id             "usr_01J..."    ;; resuelto desde Valkey
- :role                {:role/id ... :role/grants [...]}    ;; desde Datahike
- :permitted-locations [id...]         ;; techo ∪ descendientes — disponibles en ctx para validación de escritura
- :permitted-assets    [id...]         ;; techo ∪ descendientes — disponibles en ctx para validación de escritura
- :request             <grpc-request-original-intacto>}     ;; nunca modificado
+;; [:ok] — ALLOW (Cedar v3.1 — Zero-Trust Pipeline)
+;; Todos los atributos de seguridad son COMPUTADOS por CedarAuthorizer.
+;; Ninguno es un campo directo de Datahike.
+{:tenant-id            "tnt_01J..."              ;; resuelto desde Valkey (token opaco)
+ :user-id              "usr_01J..."              ;; resuelto desde Valkey
+ :roles                #{"field-tech"}           ;; Set<String> desde Datahike
+ :status               "ACTIVE"                  ;; para que F-SUSPENDED evalúe en Cedar
+ :granted-action-keys  #{"work_order:VIEW"       ;; Set<"domain:ACTION"> — COMPUTADO
+                          "work_order:UPDATE"     ;; #{} si is-super-master=true
+                          "asset:VIEW"}           ;; P-GRANT evalúa este set vs action_key
+ :is-super-master      false                     ;; COMPUTADO — AND(tenant+UUID_set+role)
+                                                 ;; UUID_set = metri_MASTER_USER_IDS
+ :cross-tenant-scope   "NONE"                   ;; "FULL"|"READ_ALL"|"NONE" — env var
+ :domain-boundaries    {:work_order {:scope "ASSIGNED" :locations [...] :assets [...]}
+                         :asset      {:scope "OWN_OR_ASSIGNED"}}
+                                                 ;; para Janus Capa 3 (RLS)
+ :request              <grpc-request-intacto>}   ;; nunca modificado por el IOP
+
+;; NOTA sobre is-super-master=true:
+;; → granted-action-keys = #{}       (P-GRANT no activa — P-SUPER-MASTER es el único permit)
+;; → cross-tenant-scope = "FULL"     (leído de metri_MASTER_ROLE_SCOPE)
+;; → El SM pasó assert-mfa-for-super-master! ANTES de llegar aquí
+;; → emit-cross-tenant-audit! ya fue llamado hacia Kinesis
 
 ;; [:error] — token inválido o ausente (FASE 10 I.1 — Rich Context DTO)
 ;; errors/error construye el mapa con :retryable?, :severity del catálogo
 ;; :trace-id se obtiene del OTel span activo — no se pasa en ctx sino via otel/trace-id
-[:error {:stage    :cedar
-         :code     :ABAC_401
-         :detail   "Invalid or expired token"
-         :tenant-id nil           ;; aún no resuelto en ABAC_401
-         :trace-id "<otel-trace-id>"}]  ;; otel/trace-id del span ROOT activo
+[:error {:stage     :cedar
+         :code      :ABAC_401
+         :detail    "Invalid or expired token"
+         :tenant-id nil                          ;; aún no resuelto en ABAC_401
+         :trace-id  "<otel-trace-id>"}]
 
 ;; [:error] — DENY: usuario suspendido / policy / fuera de ventana temporal
-[:error {:stage    :cedar
-         :code     :ABAC_403
-         :detail   "Access denied — suspended/policy/window"
-         :tenant-id "tnt_01J..."  ;; resuelto antes del policy check
+[:error {:stage     :cedar
+         :code      :ABAC_403
+         :detail    "Access denied — suspended/policy/window"
+         :tenant-id "tnt_01J..."
+         :user-id   "usr_01J..."
+         :trace-id  "<otel-trace-id>"}]
+
+;; [:error] — Super-Master sin MFA verificado (v3.1 — Brecha B)
+[:error {:stage     :cedar
+         :code      :ABAC_403
+         :detail    "FORBIDDEN: Super-Master access requires MFA verification."
+         :reason    :MFA_REQUIRED
+         :tenant-id "tnt_master_..."
          :user-id   "usr_01J..."
          :trace-id  "<otel-trace-id>"}]
 ```
@@ -315,6 +358,10 @@ Paso 4:  extrae action  ← request.operation   (CREATE|GET|UPDATE|DELETE|UPSERT
 > [!NOTE]
 > `CedarAuthorizer` no valida el payload de negocio, no ruta el canal ni produce ULID.
 > Entrega el `:request` original **sin modificar** — la validación del payload (entity schema) y el ruteo al canal son responsabilidad exclusiva de Janus.
+>
+> `is-super-master` y `granted-action-keys` son **atributos computados** — no columnas de Datahike.
+> Un atacante que comprometa la DB no puede auto-promoverte a super-master.
+> La única superficie de elevación de privilegio es el host (SSM / `metri_MASTER_USER_IDS`).
 
 ---
 
@@ -460,17 +507,29 @@ Max retries → status FAILED → OTEL alert + dead-letter manual
 ```
 request (gRPC crudo — nunca modificado por el IOP)
   │
-  ├─► [Paso 1] cedar/intercept(request)
+  ├─► [Paso 1] cedar/intercept(request)              ;; Cedar v3.1
   │          El interceptor extrae el token internamente.
   │          El IOP no toca metadata.authorization.
-  │          → [:ok { :tenant-id   "tnt_01J..."
-  │                   :user-id     "usr_01J..."
-  │                   :role        {:role/id ... :role/grants [...]}
-  │                   :permitted-locations [id...]   ← techo ∪ descendientes
-  │                   :permitted-assets    [id...]   ← techo ∪ descendientes
-  │                   :request     <original-intacto> }]
+  │          Pipeline interno Cedar:
+  │            1. Valkey → Session{tenant_id, user_id, mfa_verified}
+  │            2. Datahike pull (user/roles/grants) + cache TTL 10s
+  │            3. compute-is-super-master (AND: tenant + UUID∈Set + role)
+  │            4. assert-mfa-for-super-master! (SM sin MFA → ABAC_403 :MFA_REQUIRED)
+  │            5. emit-cross-tenant-audit! (si SM → Kinesis, fire-and-forget)
+  │            6. build-granted-action-keys (#{} si SM, Set<"domain:ACTION"> si no)
+  │            7. Cedar ABAC: metri.cedar v3.1 → P-GRANT | P-SUPER-MASTER | F-*
+  │          → [:ok { :tenant-id            "tnt_01J..."
+  │                   :user-id              "usr_01J..."
+  │                   :roles                #{"field-tech"}
+  │                   :status               "ACTIVE"
+  │                   :granted-action-keys  #{"work_order:VIEW" ...}  ;; #{} si SM
+  │                   :is-super-master      false
+  │                   :cross-tenant-scope   "NONE"
+  │                   :domain-boundaries    {...}
+  │                   :request              <original-intacto> }]
   │          → [:error {:stage :cedar :code :ABAC_401}]  ;; token inválido
   │          → [:error {:stage :cedar :code :ABAC_403}]  ;; DENY / suspendido
+  │          → [:error {:stage :cedar :code :ABAC_403 :reason :MFA_REQUIRED}]  ;; SM sin MFA
   │
   ├─► [Paso 2] quota/check(ctx)
   │          Lee desde request: operation → limit_type mapping
@@ -699,15 +758,28 @@ test/metri/application/audit/
 
 ### Variables de entorno requeridas
 
-| Variable                | Paso que la usa                        | Descripción                           |
-| :---------------------- | :------------------------------------- | :------------------------------------ |
-| `VALKEY_HOST`           | Paso 1 — Cedar                         | Host Valkey/Redis                     |
-| `VALKEY_PASSWORD`       | Paso 1 — Cedar                         | Password Valkey                       |
-| `CEDAR_POLICIES_TABLE`  | Paso 1 — Cedar                         | DynamoDB table de PolicySets          |
-| `DATAHIKE_STORE_URI`    | Paso 1, 3 — Cedar + Janus              | URI de la store Datahike              |
-| `AWS_REGION`            | Paso 2, Moira                          | Región AWS (DynamoDB + SQS)           |
-| `OUTBOX_QUEUE_URL`      | Moira                                  | URL de la cola SQS FIFO del Outbox    |
-| `KINESIS_STREAM_PREFIX` | Paso 3 — Janus OLAP + AuditInterceptor | Prefijo del stream Kinesis compartido |
+> [!IMPORTANT]
+> Las variables `metri_MASTER_*` son validadas por `validate-master-env!` durante `ig/init-key :metri/cedar-authorizer`.
+> Si alguna falta, el sistema **no arranca** (fail-fast). Ver [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md).
+
+| Variable                              | Paso que la usa                  | Descripción                                        | Ejemplo local            | Ejemplo producción                |
+| :------------------------------------ | :------------------------------- | :------------------------------------------------- | :----------------------- | :-------------------------------- |
+| `VALKEY_HOST`                         | Paso 1 — Cedar                   | Host del cluster Valkey/Redis (sesiones opacas)    | `localhost`              | `metri.cache.amazonaws.com`       |
+| `VALKEY_PASSWORD`                     | Paso 1 — Cedar                   | Password de autenticación Valkey                   | `""`                     | `<ssm-secret>`                    |
+| `CEDAR_POLICIES_TABLE`                | Paso 1 — Cedar                   | DynamoDB table de PolicySets compilados            | `cedar-policies-local`   | `cedar-policies-prod`             |
+| `DATAHIKE_DDB_TABLE`                  | Paso 1, 3 — Cedar + Janus        | Tabla DynamoDB que actúa como store Datahike       | `metri-dh-shared`        | `metri-dh-prod`                   |
+| `AWS_REGION`                          | Todos                            | Región AWS para todos los clientes SDK             | `us-east-1`              | `us-east-1`                       |
+| `QUOTA_TABLE`                         | Paso 2 — QuotaGuard              | Tabla DynamoDB de cuotas por tenant                | `metri-quotas-local`     | `metri-quotas-prod`               |
+| `OUTBOX_QUEUE_URL`                    | Moira                            | URL SQS FIFO del Outbox (EDA)                      | `http://localhost:4566…` | `https://sqs.amazonaws.com/…`     |
+| `KINESIS_STREAM_PREFIX`               | Paso 3 OLAP + AuditInterceptor   | Prefijo del stream Kinesis compartido OLAP + Audit | `metri-local`            | `metri-prod`                      |
+| `EVENT_BUS_NAME`                      | Sherlog — IFaultNotifier         | EventBridge bus para emit-fault-event!             | `metri-fault-bus-local`  | `metri-fault-bus-prod`            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`         | Observabilidad — todos los spans | Endpoint ADOT sidecar (gRPC localhost)             | `http://localhost:4317`  | `http://localhost:4317` (sidecar) |
+| **`metri_MASTER_TENANT_ID`**          | Paso 1 — CedarAuthorizer         | UUID del Tenant Master de plataforma (fail-fast)   | `00000000-0000-…`        | `<ssm-secret>`                    |
+| **`metri_MASTER_USER_IDS`**           | Paso 1 — CedarAuthorizer         | CSV de UUIDs de admins de plataforma (multi-admin) | `uuid_local_admin`       | `uuid_A,uuid_B,uuid_C`            |
+| **`metri_MASTER_ROLE_ID`**            | Paso 1 — CedarAuthorizer         | UUID del rol Super-Master                          | `00000000-…`             | `<ssm-secret>`                    |
+| **`metri_MASTER_ROLE_SCOPE`**         | Paso 1 — CedarAuthorizer         | Scope del Super-Master (`READ_ALL` \| `FULL`)      | `FULL`                   | `FULL`                            |
+| **`metri_MASTER_USER_EMAIL`**         | Bootstrap — seed                 | Email del primer User Master                       | `admin@local.dev`        | `admin@metri.io`                  |
+| **`metri_MASTER_USER_PASSWORD_HASH`** | Bootstrap — seed                 | Hash Bcrypt del User Master                        | `$2b$12$…`               | `<ssm-secret>`                    |
 
 ### Matriz TDD
 
@@ -752,11 +824,25 @@ test/metri/application/audit/
 | `audit-noop-in-non-audit-tests`       | `NoOpAuditInterceptor` inyectado         | Tests de pipeline no relacionados con auditoría pasan sin cambios         |
 | `audit-receives-execution-time`       | Happy path                               | `result+` contiene `:execution-time-ms` — `audit!` lo recibe              |
 
+**Cedar v3.1 — Super-Master y MFA (`iop_cedar_v31_test.clj`)**
+
+| Test                                   | Escenario                                          | Resultado esperado                                                            |
+| :------------------------------------- | :------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `sm-without-mfa-blocked`               | is-super-master=true, mfa-verified=false en sesión | `[:error {:code :ABAC_403 :reason :MFA_REQUIRED}]` — Cedar nunca invocado     |
+| `sm-with-mfa-allowed`                  | is-super-master=true, mfa-verified=true            | `[:ok {...:is-super-master true :granted-action-keys #{}}]`                   |
+| `sm-granted-action-keys-empty`         | Super-Master happy path                            | `:granted-action-keys = #{}` — P-SUPER-MASTER es el único permit              |
+| `regular-user-granted-action-keys-set` | Usuario normal con grants                          | `:granted-action-keys = #{"work_order:VIEW" "asset:VIEW"}` — P-GRANT activa   |
+| `sm-audit-emitted-before-cedar`        | Super-Master request cross-tenant                  | `KinesisSpy` recibe 1 evento `:PLATFORM_CROSS_TENANT_ACCESS` antes del result |
+| `sm-uuid-not-in-set-is-not-sm`         | UUID en Datahike correcto pero no en `USER_IDS`    | `is-super-master = false` — usuario ordinario del Tenant Master               |
+| `multi-admin-both-uuids-compute-sm`    | `metri_MASTER_USER_IDS = uuid_A,uuid_B`            | Request de uuid_A → SM=true. Request de uuid_B → SM=true                      |
+| `sighup-reloads-master-env-config`     | SIGHUP enviado después de añadir uuid_C            | `compute-is-super-master` con uuid_C → true tras reload del atom              |
+
 **Integración del sistema (`system.dev.edn`)**
 
 | Test                               | Escenario                                   | Resultado esperado                                 |
 | :--------------------------------- | :------------------------------------------ | :------------------------------------------------- |
 | `integrant-start-stop`             | Arranque del sistema completo               | Todos los componentes inician/paran sin errores    |
+| `validate-master-env-fail-fast`    | `metri_MASTER_TENANT_ID` no seteada         | `ig/init` lanza antes de aceptar requests — exit 1 |
 | `add-new-step-no-existing-changes` | Añadir `DlpScanner` a `:steps`              | `run-iop`, `chain`, pasos existentes = sin cambios |
 | `stub-cedar-swap`                  | Reemplazar Cedar con stub en test           | Pipeline funciona con `[:ok stub-ctx]`             |
 | `noop-audit-interceptor-in-dev`    | `system.dev.edn` usa `NoOpAuditInterceptor` | Sin llamadas reales a Kinesis en entorno dev       |
@@ -778,10 +864,11 @@ test/metri/application/audit/
 > [!WARNING]
 > **FASE 02 Breaking Changes (D1-D7):**
 > Las llamadas al Códice desde Janus (Paso 3) cambiaron:
+>
 > - `codice/load-schema`, `entity-engine`, `entity-model` → reciben `ctx`, retornan Railway `[:ok]`/`[:error]`
 > - `codice/validate-payload` → recibe `entity-type` y `ctx` adicional
 > - `codice-generator-fn` closure captura `tenant-guard` (D7)
-> Ver: [02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md → MÓDULO XI](02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md)
+>   Ver: [02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md → MÓDULO XI](02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md)
 
 ---
 
@@ -826,4 +913,3 @@ test/metri/application/audit/
 - [ ] `clj -M:test --namespace-regex 'metri.iop.*'` → todos los tests en verde
 - [ ] `error-response-dto-test` verifica que `build-error-dto` incluye `trace-id` del span OTel
 - [ ] `pipeline-test` verifica cortocircuito Rails en cada paso (Cedar, Quota, Janus)
-

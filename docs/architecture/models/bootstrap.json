@@ -1,0 +1,295 @@
+{
+  "_doc": [
+    "Bootstrap seed del Tenant Master, Super Master Role y User Master.",
+    "",
+    "PRINCIPIO DE SEGURIDAD — IDENTIDAD POR UUID, NO POR FLAGS:",
+    "  Los modelos de datos (tenant.json, user.json, role.json) NO contienen",
+    "  flags booleanos is_master/is_super_master. Un flag mutable en Datahike",
+    "  es un vector de ataque: un bug en una ruta de escritura permitiría",
+    "  a un atacante elevarse a plataforma.",
+    "",
+    "  La identidad del Tenant Master, User Master y Super Master Role",
+    "  se resuelve EXCLUSIVAMENTE comparando UUIDs contra variables de entorno",
+    "  en el proceso CedarAuthorizer en runtime. Nadie puede inyectar",
+    "  un privilegio de plataforma a través de la API.",
+    "",
+    "  is_master e is_super_master son atributos COMPUTADOS que el",
+    "  CedarAuthorizer inyecta en el contexto Cedar \u2014 no son columnas en Datahike.",
+    "",
+    "Idempotente: si ya existe un tenant con id=METRI_MASTER_TENANT_ID, el",
+    "procesoen esa entidad es no-op. El bootstrap verifica por UUID, no por flag.",
+    "",
+    "Este archivo contiene SOLO placeholders $ENV_VAR \u2014 nunca valores reales."
+  ],
+
+  "env_vars_required": [
+    "METRI_MASTER_TENANT_ID",
+    "METRI_MASTER_TENANT_NAME",
+    "METRI_MASTER_TENANT_STORAGE_REGION",
+    "METRI_MASTER_TENANT_BILLING_EMAIL",
+    "METRI_MASTER_ROLE_ID",
+    "METRI_MASTER_ROLE_SCOPE",
+    "METRI_MASTER_USER_ID",
+    "METRI_MASTER_USER_EMAIL",
+    "METRI_MASTER_USER_PASSWORD_HASH",
+    "METRI_MASTER_USER_FIRST_NAME",
+    "METRI_MASTER_USER_LAST_NAME"
+  ],
+
+  "bootstrap_sequence": [
+
+    {
+      "step": 1,
+      "entity": "tenant",
+      "operation": "upsert-by-id",
+      "idempotency_key": "id = $METRI_MASTER_TENANT_ID",
+      "_doc": "El Tenant Master no tiene ningún flag especial en sus datos. Es especial SOLO porque su UUID coincide con METRI_MASTER_TENANT_ID en el entorno.",
+      "data": {
+        "id":                  "$METRI_MASTER_TENANT_ID",
+        "name":                "$METRI_MASTER_TENANT_NAME",
+        "status":              "ACTIVE",
+        "tier":                "ENTERPRISE",
+        "storage_region":      "$METRI_MASTER_TENANT_STORAGE_REGION",
+        "billing_admin_email": "$METRI_MASTER_TENANT_BILLING_EMAIL",
+        "industry":            "Platform"
+      }
+    },
+
+    {
+      "step": 2,
+      "entity": "role",
+      "operation": "upsert-by-id",
+      "idempotency_key": "id = $METRI_MASTER_ROLE_ID",
+      "_doc": [
+        "El Super Master Role NO tiene is_super_master=true en Datahike.",
+        "Es especial SOLO porque su UUID coincide con METRI_MASTER_ROLE_ID.",
+        "El campo cross_tenant_scope=FULL SÍ se almacena en Datahike —",
+        "es un dato ordinario del rol. CedarAuthorizer lo lee SOLO si el",
+        "rol ya fue autenticado como Super Master via ID comparison.",
+        "",
+        "grants sigue la firma abstracta de role.json: {domain, actions, scope}.",
+        "Define qué puede operar el Super Master dentro del Tenant Master.",
+        "El acceso cross-tenant viene de P06 Cedar, no de grants."
+      ],
+      "data": {
+        "id":                 "$METRI_MASTER_ROLE_ID",
+        "name":               "super-master",
+        "description":        "Platform Super-Master Role. Identified by METRI_MASTER_ROLE_ID env var. Cross-tenant scope defined by METRI_MASTER_ROLE_SCOPE env var. Assigned only to users of the Tenant Master.",
+        "tenant_id":          "$METRI_MASTER_TENANT_ID",
+        "grants": [
+          { "domain": "tenant",     "actions": ["VIEW", "CREATE", "UPDATE", "DELETE"], "scope": "ALL" },
+          { "domain": "user",       "actions": ["VIEW", "CREATE", "UPDATE", "DELETE"], "scope": "ALL" },
+          { "domain": "role",       "actions": ["VIEW", "CREATE", "UPDATE", "DELETE"], "scope": "ALL" },
+          { "domain": "user_group", "actions": ["VIEW", "CREATE", "UPDATE", "DELETE"], "scope": "ALL" }
+        ],
+        "allowed_locations": [],
+        "allowed_assets":    []
+      }
+    },
+
+    {
+      "step": 3,
+      "entity": "user",
+      "operation": "upsert-by-id",
+      "idempotency_key": "id = $METRI_MASTER_USER_ID",
+      "_doc": [
+        "El User Master NO tiene is_master=true en Datahike.",
+        "Es especial SOLO porque su UUID coincide con METRI_MASTER_USER_ID.",
+        "password_hash se almacena en Datahike \u2014 es un atributo ordinario del schema.",
+        "Todos los dem\u00e1s usuarios tienen password_hash=nil (usan IdP externo)."
+      ],
+      "data": {
+        "id":            "$METRI_MASTER_USER_ID",
+        "email":         "$METRI_MASTER_USER_EMAIL",
+        "password_hash": "$METRI_MASTER_USER_PASSWORD_HASH",
+        "first_name":    "$METRI_MASTER_USER_FIRST_NAME",
+        "last_name":     "$METRI_MASTER_USER_LAST_NAME",
+        "status":        "ACTIVE",
+        "tenant_id":     "$METRI_MASTER_TENANT_ID",
+        "role_ids":      ["$METRI_MASTER_ROLE_ID"],
+        "group_ids":     []
+      }
+    }
+
+  ],
+
+  "cedar_authorizer_computation": {
+    "_doc": [
+      "Pseudocódigo Clojure del CedarAuthorizer — v4.0 (10/10).",
+      "Implementa las 5 brechas identificadas en la auditoría de seguridad."
+    ],
+
+    "brecha_A_multi_admin": {
+      "_doc": "Brecha A: Bus factor 1. METRI_MASTER_USER_ID → METRI_MASTER_USER_IDS (lista CSV de UUIDs).",
+      "code": [
+        "(defn load-master-user-ids []",
+        "  ;; Soporta N admins de plataforma. Formato: UUID1,UUID2,UUID3",
+        "  (-> (System/getenv \"METRI_MASTER_USER_IDS\")",
+        "      (str/split #\",\")",
+        "      (->> (map str/trim))",
+        "      (set)))",
+        "",
+        "(defn compute-is-super-master [session user-graph env-cfg]",
+        "  (let [master-user-ids (:master-user-ids env-cfg)   ;; Set de UUIDs",
+        "        master-tenant   (:master-tenant-id env-cfg)",
+        "        master-role-id  (:master-role-id env-cfg)",
+        "        role-ids        (set (map :role/id (:user/role-ids user-graph)))",
+        "        tenant-match?   (= (:tenant-id session) master-tenant)",
+        "        user-match?     (contains? master-user-ids (:user-id session))  ;; ← Set check",
+        "        role-match?     (contains? role-ids master-role-id)]",
+        "    (and tenant-match? user-match? role-match?)))"
+      ]
+    },
+
+    "brecha_B_mfa_mandate": {
+      "_doc": "Brecha B: Sin MFA para la cuenta más privilegiada. Mandato MFA para is_super_master=true.",
+      "code": [
+        "(defn assert-mfa-for-super-master! [session is-super-master]",
+        "  ;; metri-auth escribe mfa-verified en el payload de la sesión Valkey.",
+        "  ;; Si la sesión fue creada antes del challenge MFA, mfa-verified está ausente o false.",
+        "  (when (and is-super-master",
+        "             (not (true? (:mfa-verified session))))",
+        "    (throw (ex-info \"FORBIDDEN: Super-Master access requires MFA verification.\"",
+        "                    {:code   :JANUS_403",
+        "                     :reason :MFA_REQUIRED",
+        "                     :hint   \"Re-authenticate with TOTP/FIDO2 to obtain an MFA-verified session.\"}))))))",
+        "",
+        ";; Llamado en CedarAuthorizer DESPUÉS de compute-is-super-master y ANTES de build-cedar-principal",
+        ";; (assert-mfa-for-super-master! session is-sm)"
+      ]
+    },
+
+    "brecha_C_empty_granted_action_keys": {
+      "_doc": "Brecha C: granted_action_keys con wildcard *:VIEW es confuso — Cedar hace comparación literal. Super-master accede por P-SUPER-MASTER únicamente.",
+      "code": [
+        "(defn build-granted-action-keys [user-graph is-super-master]",
+        "  (if is-super-master",
+        "    #{}   ;; Super-master NO pasa por P-GRANT. P-SUPER-MASTER es su único permit.",
+        "          ;; Dejar #{} evita confusión semántica con wildcards no soportados en Cedar.",
+        "    (->> (:user/roles user-graph)",
+        "         (mapcat :role/grants)",
+        "         (mapcat (fn [{:keys [domain actions]}]",
+        "                   (map #(str domain \":\" %) actions)))",
+        "         (set))))",
+        "",
+        ";; Para el User Master:  granted-action-keys = #{}",
+        ";; Para Carlos (field-tech): granted-action-keys = #{\"work_order:VIEW\" \"work_order:UPDATE\" \"asset:VIEW\"}"
+      ]
+    },
+
+    "brecha_D_audit_trail": {
+      "_doc": "Brecha D: Sin audit trail cuando P-SUPER-MASTER activa acceso cross-tenant. Obligatorio antes de la evaluación Cedar.",
+      "code": [
+        "(defn emit-cross-tenant-audit! [session resource-tenant-id rpc-method action-key scope]",
+        "  ;; Emitido SIEMPRE que is_super_master=true, independientemente del resultado Cedar.",
+        "  ;; Fire-and-forget asíncrono — no bloquea el pipeline de autorización.",
+        "  ;; El consumidor (AuditSink) escribe en Kinesis → Athena → Iceberg.",
+        "  (moira/emit-async!",
+        "    {:event/type        :PLATFORM_CROSS_TENANT_ACCESS",
+        "     :event/timestamp   (java.time.Instant/now)",
+        "     :actor/user-id     (:user-id session)",
+        "     :actor/tenant-id   (:tenant-id session)   ;; el tenant del master",
+        "     :target/tenant-id  resource-tenant-id     ;; el tenant ACCEDIDO",
+        "     :action/rpc        rpc-method",
+        "     :action/key        action-key             ;; \"work_order:VIEW\"",
+        "     :access/scope      scope                  ;; READ_ALL | FULL",
+        "     :trace/id          (get-correlation-id)}))",
+        "",
+        ";; Llamado en CedarAuthorizer ANTES de la evaluación Cedar:",
+        ";; (when is-sm",
+        ";;   (emit-cross-tenant-audit! session resource-tenant-id rpc-method action-key ct-scope))"
+      ]
+    },
+
+    "brecha_E_sighup_reload": {
+      "_doc": "Brecha E: Rotación de credenciales requiere redeploy. SIGHUP recarga en caliente desde env vars o AWS SSM.",
+      "code": [
+        "(defonce ^:private master-env-config",
+        "  (atom nil))",
+        "",
+        "(defn load-master-env-config! []",
+        "  ;; Valida y recarga la configuración de plataforma desde el entorno del host.",
+        "  ;; Seguro para llamadas concurrentes — atom es un valor inmutable swapeado atómicamente.",
+        "  (validate-master-env!)",
+        "  (reset! master-env-config",
+        "          {:master-tenant-id  (System/getenv \"METRI_MASTER_TENANT_ID\")",
+        "           :master-user-ids   (load-master-user-ids)   ;; Brecha A: Set de UUIDs",
+        "           :master-role-id    (System/getenv \"METRI_MASTER_ROLE_ID\")",
+        "           :master-role-scope (System/getenv \"METRI_MASTER_ROLE_SCOPE\")}))",
+        "",
+        "(defn install-sighup-handler! []",
+        "  ;; En JVM: sun.misc.Signal",
+        "  ;; En producción: kubectl rollout NUNCA es necesario para rotar el User Master.",
+        "  ;; Solo hay que actualizar SSM y enviar SIGHUP al proceso.",
+        "  (try",
+        "    (sun.misc.Signal/handle",
+        "      (sun.misc.Signal. \"HUP\")",
+        "      (reify sun.misc.SignalHandler",
+        "        (handle [_ _]",
+        "          (log/info \"[CedarAuthorizer] SIGHUP recibido — recargando master-env-config\")",
+        "          (load-master-env-config!)",
+        "          (log/info \"[CedarAuthorizer] Configuración recargada exitosamente.\"))))",
+        "    (catch Exception e",
+        "      (log/warn \"[CedarAuthorizer] SIGHUP handler no disponible en este runtime:\" e))))",
+        "",
+        ";; (defmethod ig/init-key :metri/cedar-authorizer [_ config]",
+        ";;   (load-master-env-config!)  ;; valida + carga al atom",
+        ";;   (install-sighup-handler!)  ;; habilita recarga en caliente",
+        ";;   (->CedarAuthorizer master-env-config ...))"
+      ]
+    },
+
+    "step2b_build_cedar_principal": {
+      "_doc": "Pipeline principal del CedarAuthorizer — v4.0 integrado con todas las brechas.",
+      "code": [
+        "(def grpc-action-table",
+        "  {\"ListWorkOrders\"    {:domain \"work_order\" :action \"VIEW\"}",
+        "   \"GetWorkOrder\"      {:domain \"work_order\" :action \"VIEW\"}",
+        "   \"CreateWorkOrder\"   {:domain \"work_order\" :action \"CREATE\"}",
+        "   \"UpdateWorkOrder\"   {:domain \"work_order\" :action \"UPDATE\"}",
+        "   \"DeleteWorkOrder\"   {:domain \"work_order\" :action \"DELETE\"}",
+        "   \"ListAssets\"        {:domain \"asset\"      :action \"VIEW\"}",
+        "   \"CreateAsset\"       {:domain \"asset\"      :action \"CREATE\"}",
+        "   ;; ... resto de entidades",
+        "   })",
+        "",
+        "(defn build-cedar-principal [session user-graph env-cfg rpc-method resource-tenant-id]",
+        "  (let [is-sm    (compute-is-super-master session user-graph env-cfg)  ;; Brecha A",
+        "        ct-scope (if is-sm (:master-role-scope @env-cfg) \"NONE\")       ;; Brecha E: @atom",
+        "        _        (assert-mfa-for-super-master! session is-sm)           ;; Brecha B: MFA",
+        "        _        (when is-sm                                            ;; Brecha D: audit",
+        "                   (emit-cross-tenant-audit! session resource-tenant-id",
+        "                                            rpc-method",
+        "                                            (let [{:keys [domain action]} (get grpc-action-table rpc-method)]",
+        "                                              (str domain \":\" action))",
+        "                                            ct-scope))]",
+        "  {:tenant-id            (:tenant-id session)",
+        "   :user-id              (:user-id session)",
+        "   :roles                (extract-role-names user-graph)",
+        "   :status               (:user/status user-graph)",
+        "   :granted-action-keys  (build-granted-action-keys user-graph is-sm)  ;; Brecha C: #{} si super-master",
+        "   :is-super-master      is-sm",
+        "   :cross-tenant-scope   ct-scope",
+        "   :domain-boundaries    (when-not is-sm (build-domain-boundaries user-graph))}))"
+      ]
+    },
+
+    "security_invariants": [
+      "[A] Bus factor eliminado: METRI_MASTER_USER_IDS soporta N admins de plataforma.",
+      "[B] MFA mandado: super-master sin mfa_verified=true en sesión → JANUS_403 inmediato, antes de Cedar.",
+      "[C] Semántica Cedar correcta: super-master llega por P-SUPER-MASTER. granted_action_keys=#{} evita confusión por wildcard literal.",
+      "[D] Audit trail: cada acceso cross-tenant emite evento en Kinesis antes de la evaluación Cedar. Inmutable, fire-and-forget.",
+      "[E] Rotación sin redeploy: SIGHUP recarga master-env-config desde env vars. Integración con AWS SSM via entrypoint script."
+    ]
+  },
+
+  "normal_user_isolation_invariants": {
+    "guarantees": [
+      { "guarantee": "No puede ver datos de otro tenant", "mechanism": "P03 Cedar + Janus AST Capa 1", "layer": "Cedar + Janus" },
+      { "guarantee": "No puede ver datos del Tenant Master", "mechanism": "P07 Cedar: is_master_tenant_resource && !is_super_master", "layer": "Cedar" },
+      { "guarantee": "Su AST siempre tiene tenant_id forzado", "mechanism": "Janus [:= :entity/tenant-id principal.tenant_id] — primer nodo :where, inviolable", "layer": "Janus AST IR" },
+      { "guarantee": "El tenant_id nunca viene del client", "mechanism": "Valkey resuelve el token opaco soberanamente", "layer": "Valkey" },
+      { "guarantee": "Permisos abstractos y data-driven", "mechanism": "role.json grants=[{domain, actions, scope}]. Cedar verifica grants.containsAny(entity_type), sin hardcoding.", "layer": "role.json + Cedar" }
+    ]
+  }
+}

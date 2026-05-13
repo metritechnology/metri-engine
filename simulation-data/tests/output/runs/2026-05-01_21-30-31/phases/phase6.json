@@ -1,0 +1,23 @@
+[
+  {
+    "id": "TC-F6-RELATIVE",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F6-SHORTCUT",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  },
+  {
+    "id": "TC-F6-BENCHMARK",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  }
+]

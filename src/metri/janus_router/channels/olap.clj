@@ -1,39 +1,73 @@
 (ns metri.janus-router.channels.olap
   "OLAPChannel — Canal de escritura bypass Big Data via IStreamWriter.
    Solo acepta rpc BulkIngest — bloquea rpc Transact con JNS_OLAP_001.
-   Datos con engine:olap → IStreamWriter → S3 Parquet → Athena.
 
-   SCHEMA DE ENTIDAD:
-   El registro final se aplana combinando los metadatos y los campos del dominio.
-   Esto permite mapeo 1:1 con las columnas Glue (ej. asset_id, reading_value)
-   para aprovechar el predicate pushdown columnar en S3 Parquet."
-  (:require [integrant.core :as ig]
+   Arquitectura: Columnar Nativo (sin Raw Zone genérica)
+   ─────────────────────────────────────────────────────
+   Cada entidad OLAP escribe en su propio stream Firehose dedicado:
+     meter_reading  → metri-olap-stream-meter-reading
+     audit_log      → metri-olap-stream-audit-log
+     domain_fault   → metri-olap-stream-domain-fault
+
+   El registro se aplana combinando metadatos del sistema + campos del dominio.
+   Esto permite mapeo 1:1 con las columnas Iceberg nativas para aprovechar
+   predicate pushdown columnar en S3 Parquet/Athena."
+  (:require [clojure.string :as str]
+            [integrant.core :as ig]
             [taoensso.timbre :as log]
-            [cheshire.core :as json]
             [metri.janus-router.channels.protocol :refer [IJanusWriteChannel]]
             [metri.domain.protocols :as proto]
             [metri.domain.errors :as errors]
             [metri.janus-router.ulid :as ulid]
-            [metri.janus-router.partition :as partition]))
+            [metri.codice.api :as codice]))
+
+;; ── Helpers ──────────────────────────────────────────────────────────────────
+
+(defn- entity->stream-name
+  "Construye el nombre del stream Firehose para una entidad.
+   Convierte underscores a hyphens: meter_reading → <prefix>-meter-reading"
+  [stream-prefix entity-type]
+  (let [entity-str (-> entity-type name (str/replace #"_" "-"))]
+    (str stream-prefix "-" entity-str)))
+
+(defn- coerce-numeric-fields
+  "Coerce campos numéricos del Códice que lleguen como strings.
+   Crítico para Parquet/Iceberg donde los tipos deben coincidir exactamente."
+  [record attributes]
+  (let [numeric-types #{"double" "float" "decimal" "epoch" "long" "int" "bigint" "timestamp"}
+        numeric-attrs (filter #(numeric-types (:type %)) attributes)]
+    (reduce
+     (fn [rec attr]
+       (let [k (keyword (:name attr))
+             v (get rec k)]
+         (if (string? v)
+           (assoc rec k (try (Double/parseDouble v) (catch Exception _ v)))
+           rec)))
+     record
+     numeric-attrs)))
 
 (defn- decorate-record
-  "Construye el registro inyectando los metadatos estructurales de la arquitectura Zero-Trust
-   y la ruta dinámica de partición generada por el motor.
-   Los campos de dominio se mantienen en el primer nivel para mapear a columnas Parquet."
-  [record tenant-id entity-type timestamp ulid partition-path]
-  (assoc record
-         :id             ulid
-         :_tenant        tenant-id
-         :_entity        (name entity-type)
-         :_timestamp     timestamp
-         :_partition_path partition-path))
+  "Aplana el payload con los metadatos del sistema como campos nativos.
+   Produce un mapa plano compatible con el esquema Iceberg de la entidad.
+
+   Columnas del sistema inyectadas:
+     :id         → ULID del registro (clave única Iceberg)
+     :_tenant    → ID del tenant (columna de partición)
+     :created_at → epoch-ms del momento de ingestión (server-side)"
+  [record tenant-id created-at ulid]
+  (merge record
+         {:id         ulid
+          :_tenant    tenant-id
+          :created_at created-at}))
+
+;; ── OLAPChannel ──────────────────────────────────────────────────────────────
 
 (defrecord OLAPChannel [stream-writer stream-prefix]
   IJanusWriteChannel
   (route [_ ctx]
     (let [{:keys [tenant-id entity-type operation]} ctx
           op   (or operation (get-in ctx [:request :operation]))
-          data (get-in ctx [:request :data])] ;; data es ahora un sequence de native maps
+          data (get-in ctx [:request :data])]
 
       ;; rpc Transact es inválido para engine:olap — solo BulkIngest
       ;; Transact no envía :data (data = nil), BulkIngest envía :data (lista, puede ser vacía)
@@ -42,47 +76,45 @@
           (log/warn "[Janus OLAP] rpc Transact bloqueado | entity:" entity-type
                     "— use rpc BulkIngest")
           (errors/error :JNS_OLAP_001
-                        {:stage     :janus
-                         :detail    "rpc Transact is forbidden for engine:olap — use BulkIngest"
+                        {:stage       :janus
+                         :detail      "rpc Transact is forbidden for engine:olap — use BulkIngest"
                          :entity_type entity-type
-                         :tenant-id tenant-id}))
+                         :tenant-id   tenant-id}))
 
-        ;; Bypass directo Stream Writer (Un solo stream genérico para todo OLAP)
-        (let [stream-name stream-prefix ;; 'metri-olap-stream' inyectado
+        ;; Escritura directa en el stream Firehose de la entidad
+        (let [stream-name (entity->stream-name stream-prefix entity-type)
               records     (or data [])
-              timestamp   (System/currentTimeMillis)
-              schema      (:schema ctx)
-              strategy    (:partition_strategy schema "YYYY-MM-DD")
-              
-              ;; OPTIMIZACIÓN CPU: Evaluar fechas UTC una sola vez por todo el batch (O(1))
-              date-evaluated-strategy (partition/pre-evaluate-date-strategy strategy timestamp)
-              
-              ;; Procesar en batch cada registro
+              created-at  (System/currentTimeMillis)
+
+              ;; Recuperar atributos del Códice para coerción dinámica de tipos
+              attrs-res  (codice/describe-attributes (name entity-type) ctx)
+              attributes (if (= :ok (first attrs-res)) (second attrs-res) [])
+
               results
               (mapv (fn [record]
-                      (let [ulid (ulid/generate)
-                            partition-path (partition/build-dynamic-path date-evaluated-strategy record)
-                            ;; Schema genérico: metadatos tipados + payload serializado como JSON string
-                            decorated (decorate-record record tenant-id entity-type timestamp ulid partition-path)]
-                        (proto/put-record! stream-writer stream-name ulid decorated)))
+                      (let [record-ulid  (ulid/generate)
+                            ;; 1. Coerción de tipos numéricos (string → double/long)
+                            coerced      (coerce-numeric-fields record attributes)
+                            ;; 2. Aplanado final: campos de dominio + metadatos del sistema
+                            decorated    (decorate-record coerced tenant-id created-at record-ulid)]
+                        (proto/put-record! stream-writer stream-name record-ulid decorated)))
                     records)
-              
-              ;; Encontrar posibles errores
+
               first-error (first (filter #(= (first %) :error) results))]
-          
+
           (if first-error
-            first-error ;; Escalar fallo de infraestructura (:INFRA_KINESIS_001, etc.)
+            first-error
             (do
-              (log/info "[Janus OLAP] ✅ Bypass Stream Writer exitoso | stream:" stream-name
-                        "| count:" (count records)
+              (log/info "[Janus OLAP] ✅ Ingestión exitosa"
+                        "| stream:" stream-name
+                        "| registros:" (count records)
                         "| tenant:" tenant-id)
-              ;; Retornamos el payload de BulkResponse esperado
               [:ok {:ingested-count (count records)
                     :outbox-count   0}])))))))
 
 (defmethod ig/init-key :janus-router/olap-channel
   [_ {:keys [stream-writer stream-prefix]}]
-  (log/info "  -> [Janus] OLAPChannel activo | Stream Writer backend | prefix:" stream-prefix)
+  (log/info "  -> [Janus] OLAPChannel activo | Columnar Nativo | prefix:" stream-prefix)
   (->OLAPChannel stream-writer stream-prefix))
 
 (defmethod ig/halt-key! :janus-router/olap-channel [_ _] nil)

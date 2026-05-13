@@ -1,0 +1,132 @@
+{
+  "entity": "asset",
+  "engine": "oltp",
+  "is_system": false,
+  "is_sequence_scope_provider": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "name",
+      "type": "string",
+      "fts": true,
+      "required": true
+    },
+    {
+      "name": "serial_number",
+      "type": "string",
+      "unique": "identity",
+      "fts": true
+    },
+    {
+      "name": "tag",
+      "type": "string",
+      "unique": "identity",
+      "pattern": "^A-[A-Z0-9]{7}$",
+      "fts": true,
+      "auto_generate": {
+        "strategy": "stochastic_base36",
+        "prefix": "A-",
+        "length": 7
+      }
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "ACTIVE",
+        "INACTIVE",
+        "IN_MAINTENANCE"
+      ],
+      "default_value": "ACTIVE",
+      "is_dimension": true
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "is_dimension": true
+    },
+    {
+      "name": "omniclass_category",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:omniclass"
+    },
+    {
+      "name": "type",
+      "type": "string",
+      "is_dimension": true
+    },
+    {
+      "name": "category",
+      "type": "string",
+      "is_dimension": true
+    },
+    {
+      "name": "criticality",
+      "type": "string",
+      "is_dimension": true
+    },
+    {
+      "name": "manufacturer",
+      "type": "string",
+      "is_dimension": true
+    },
+    {
+      "name": "model",
+      "type": "string"
+    },
+    {
+      "name": "omniclass_code",
+      "type": "string"
+    },
+    {
+      "name": "omniclass_name",
+      "type": "string"
+    },
+    {
+      "name": "uniclass_code",
+      "type": "string"
+    },
+    {
+      "name": "health_score",
+      "type": "number"
+    },
+    {
+      "name": "current_meter_reading",
+      "type": "number"
+    },
+    {
+      "name": "telemetry_config",
+      "type": "string"
+    },
+    {
+      "name": "timestamp",
+      "type": "epoch",
+      "index": true
+    }
+  ],
+  "event_rules": [
+    {
+      "rule_code": "ASSET_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.asset.created",
+      "description": "Notificaci\u00f3n sist\u00e9mica global al crear cualquier activo nuevo."
+    },
+    {
+      "rule_code": "ASSET_STATUS_CHANGED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [
+        {
+          "field_name": "status",
+          "operator": "neq",
+          "target_value": ""
+        }
+      ],
+      "detail_type_output": "system.asset.status_changed",
+      "description": "Auditor\u00eda global de cambios de estado en activos."
+    }
+  ]
+}

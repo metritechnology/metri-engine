@@ -3,6 +3,7 @@
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
+  "doc": "Authorization role. The Super Master Role is identified by UUID matching METRI_MASTER_ROLE_ID (env var). Its cross-tenant access level (READ_ALL vs FULL) is defined by METRI_MASTER_ROLE_SCOPE (env var). NO field in this model influences cross-tenant authorization — all security-critical decisions are based on immutable env var constants evaluated in-process by CedarAuthorizer.",
   "attributes": [
     {
       "name": "id",

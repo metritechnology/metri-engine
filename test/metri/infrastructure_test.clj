@@ -1,8 +1,9 @@
 (ns metri.infrastructure-test
   "Suite de Integración FASE 1: Verificación Local de Infraestructura.
    Conecta los clientes REALES contra la red de Docker Compose
-   (LocalStack, DynamoDB-Local, ElasticMQ, Valkey) garantizando
+   (LocalStack, DynamoDB-Local, ElasticMQ) garantizando
    que se cumpla el contrato de Excepciones Zero (Railway Pattern).
+   Session Store: InMemory atom — no requiere Docker Valkey.
 
    REQUIERE: docker compose up (ver docker-compose.yml)
    SKIP en CI normal — ejecutar con:
@@ -12,16 +13,16 @@
             [metri.domain.protocols :as proto]
             [metri.infrastructure.dynamodb :as ddb]
             [metri.infrastructure.sqs]
-            [metri.infrastructure.valkey]
+            [metri.infrastructure.session-store]
             [metri.infrastructure.eventbridge]
             [metri.infrastructure.kinesis]))
 
 ;; ── Configuración Dinámica para apuntar a Docker ──────────────────────────────
 
 (def local-config
-  {;; Valkey en puerto 6379 (Redis)
-   :infra/valkey
-   {:host "metri-valkey-local" :port 6379 :password "" :ssl? false}
+  {;; Session Store in-memory — no requiere Docker Valkey
+   :infra/session-store
+   {:strategy :memory}
 
    ;; DynamoDB Local en puerto 8000
    :infra/dynamodb
@@ -46,9 +47,9 @@
 
 ;; ── Tests de Contrato Railway (^:integration) ────────────────────────────────
 
-(deftest ^:integration valkey-integration-test
-  (testing "Valkey escribe, lee y elimina sin lanzar excepciones crudas"
-    (let [store (:infra/valkey *system*)]
+(deftest ^:integration session-store-integration-test
+  (testing "SessionStore (InMemory) escribe, lee y elimina sin lanzar excepciones crudas"
+    (let [store (:infra/session-store *system*)]
       (is (= :ok (proto/put-session! store "test-token" {:user "juan"} 60)))
       (is (= {:user "juan"} (proto/get-session store "test-token")))
       (is (= :ok (proto/del-session! store "test-token")))

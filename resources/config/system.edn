@@ -1,0 +1,171 @@
+;; config/system.edn — PRODUCCIÓN (AWS)
+;; Usado cuando ENVIRONMENT=production / staging
+;; Lee todas las variables desde el entorno.
+;; Requires: metri.config.readers (registra #env, #env-bool, #env-int)
+
+{;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 1: Infraestructura AWS
+ ;; ═══════════════════════════════════════════════════════════════
+
+ ;; HMAC Token Store — verificación local, <0.1ms, $0, sin red.
+ :infra/session-store
+ {:secret-arn #env "HMAC_SECRET_ARN"
+  :region     #env "AWS_REGION"
+  :ddb-client #ig/ref :infra/dynamodb
+  :table-name #env "CEDAR_POLICIES_TABLE"}
+
+ :infra/datahike
+ {:store {:backend :dynamodb
+          :table   #env "DATAHIKE_DDB_TABLE"
+          :region  #env "AWS_REGION"}
+  :keep-alive? true
+  :store-cache-size 10000
+  :search-cache-size 10000}
+
+ :infra/dynamodb
+ {:region #env "AWS_REGION"}
+
+ :infra/kinesis
+ {:stream-prefix #env "KINESIS_STREAM_PREFIX"
+  :region        #env "AWS_REGION"}
+
+ :infra/cedar-engine
+ {:policies-table #env "CEDAR_POLICIES_TABLE"}
+
+ :infra/eventbridge
+ {:event-bus-name #env "FAULT_BUS_NAME"
+  :region         #env "AWS_REGION"}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 2: Utilidades
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :util/ulid-fn {}
+
+ :infra/tenant-guard
+ {:datahike-conn #ig/ref :infra/datahike}
+
+ :iop/sherlog-notifier
+ {:eventbridge #ig/ref :infra/eventbridge}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 3: Dominio
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :cedar/cache
+ {:strategy :ttl :ttl-ms 10000 :max-size 50000}
+
+ :iop/cedar-authorizer
+ {:session-store #ig/ref :infra/session-store
+  :datahike-conn #ig/ref :infra/datahike
+  :cache         #ig/ref :cedar/cache
+  :cedar-engine  #ig/ref :infra/cedar-engine}
+
+ :iop/quota-guard
+ {:dynamodb #ig/ref :infra/dynamodb}
+
+ :moira/sqs-bus
+ {:region    #env "AWS_REGION"
+  :queue-url #env "OUTBOX_QUEUE_URL"}
+
+ :moira/emitter
+ {:datahike-conn #ig/ref :infra/datahike
+  :sqs-bus       #ig/ref :moira/sqs-bus}
+
+ :audit/interceptor
+ {:olap-channel   #ig/ref :infra/kinesis
+  :ulid-fn        #ig/ref :util/ulid-fn
+  :fault-notifier #ig/ref :iop/sherlog-notifier}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 4: Pipelines reales (implementados en fases 03A, 05, 06)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :infra/athena
+ {:region          #env "AWS_REGION"
+  :workgroup       #env "ATHENA_WORKGROUP"
+  :output-location #env "ATHENA_OUTPUT_LOCATION"}
+
+ :janus-router/oltp-channel
+ {:datahike-conn #ig/ref :infra/datahike}
+
+ :janus-router/olap-channel
+ {:stream-writer #ig/ref :infra/kinesis
+  :stream-prefix #env "KINESIS_STREAM_PREFIX"}
+
+ :iop/janus-router
+ {:channel-registry {:oltp #ig/ref :janus-router/oltp-channel
+                     :olap #ig/ref :janus-router/olap-channel}}
+
+ :iop/pipeline
+ {:steps             [#ig/ref :iop/cedar-authorizer
+                      #ig/ref :iop/quota-guard
+                      #ig/ref :iop/janus-router]
+  :moira-emitter     #ig/ref :moira/emitter
+  :audit-interceptor #ig/ref :audit/interceptor}
+
+ :iop/bulk-pipeline #ig/ref :iop/pipeline
+
+ ;; Códice — FASE 02: scan+compile en registry, seed EDA en event-seeder (SRP)
+ :codice/registry    {:models-dir "resources/models"}
+
+ :codice/event-seeder {:codice-state #ig/ref :codice/registry
+                       :tenant-guard #ig/ref :infra/tenant-guard
+                       :datahike     #ig/ref :infra/datahike}
+
+ :eda/rule-matcher {}
+
+ ;; ── Read Path: Janus Cerebro + Aegis Transmuter (FASE 05) ────────────────
+ :janus/ast-compiler
+ {:codice-registry #ig/ref :codice/registry}
+
+ :aegis/transmuter
+ {:datahike     #ig/ref :infra/datahike
+  :query-engine #ig/ref :infra/athena
+  :database     "metri_olap"}
+
+ 
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 5: Transporte gRPC
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :grpc/health-manager {}
+
+ :janus/query
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :ast-compiler     #ig/ref :janus/ast-compiler
+  :aegis-transmuter #ig/ref :aegis/transmuter}
+
+ :janus/discovery
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :codice-registry  #ig/ref :codice/registry}
+
+ :janus/explore
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :codice-registry  #ig/ref :codice/registry}
+
+ :janus/rule-matcher
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :rule-matcher     #ig/ref :eda/rule-matcher}
+
+ :grpc/dispatcher
+ {:iop-pipeline       #ig/ref :iop/pipeline
+  :janus-query        #ig/ref :janus/query
+  :janus-discovery    #ig/ref :janus/discovery
+  :janus-explore      #ig/ref :janus/explore
+  :janus-rule-matcher #ig/ref :janus/rule-matcher}
+
+ :grpc/service-impl
+ {:dispatcher #ig/ref :grpc/dispatcher}
+
+ :grpc/server
+ {:service-impl          #ig/ref :grpc/service-impl
+  :port                  #env-int "GRPC_PORT"
+  :enable-reflection     #env-bool "GRPC_REFLECTION_ENABLED"
+  :health-manager        #ig/ref :grpc/health-manager
+  :otel-sdk              #ig/ref :otel/sdk
+  :max-inbound-msg-size-mb 16
+  :deadline-ms           30000}
+
+ :otel/sdk {}}

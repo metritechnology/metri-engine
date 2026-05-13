@@ -1,0 +1,74 @@
+[
+  {
+    "id": "TC-F6-RELATIVE",
+    "passed": true,
+    "duration_ms": 2199,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F6-SHORTCUT",
+    "passed": true,
+    "duration_ms": 2419,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F6-BENCHMARK",
+    "passed": true,
+    "duration_ms": 2144,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  }
+]

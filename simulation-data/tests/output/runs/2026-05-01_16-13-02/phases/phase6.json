@@ -1,0 +1,53 @@
+[
+  {
+    "id": "TC-F6-RELATIVE",
+    "passed": false,
+    "duration_ms": 120,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F6-SHORTCUT",
+    "passed": false,
+    "duration_ms": 123,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  },
+  {
+    "id": "TC-F6-BENCHMARK",
+    "passed": false,
+    "duration_ms": 122,
+    "layer1_errors": [
+      "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno"
+    ],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": false,
+        "error_code": "INTERNAL_ERROR",
+        "error_message": "Error interno"
+      }
+    }
+  }
+]

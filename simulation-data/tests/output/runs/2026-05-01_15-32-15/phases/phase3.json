@@ -1,0 +1,26 @@
+[
+  {
+    "id": "TC-F3-AND-BASIC",
+    "passed": true,
+    "duration_ms": 308,
+    "errors": []
+  },
+  {
+    "id": "TC-F3-OR-BASIC",
+    "passed": true,
+    "duration_ms": 147,
+    "errors": []
+  },
+  {
+    "id": "TC-F3-NOT-BASIC",
+    "passed": true,
+    "duration_ms": 318,
+    "errors": []
+  },
+  {
+    "id": "TC-F3-CROSS-FILTER",
+    "passed": true,
+    "duration_ms": 144,
+    "errors": []
+  }
+]

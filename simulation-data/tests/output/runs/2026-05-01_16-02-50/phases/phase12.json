@@ -1,0 +1,101 @@
+[
+  {
+    "id": "TC-F12-EXPLAIN-QUERY",
+    "passed": true,
+    "duration_ms": 4,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      }
+    }
+  },
+  {
+    "id": "TC-F12-SEARCH-ASSET",
+    "passed": true,
+    "duration_ms": 19,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F12-HIERARCHY-BASIC",
+    "passed": true,
+    "duration_ms": 332,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F12-SELECT-TREE",
+    "passed": true,
+    "duration_ms": 28,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  }
+]

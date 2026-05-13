@@ -1,0 +1,35 @@
+[
+  {
+    "id": "TC-F1-INGEST-LOC",
+    "passed": true,
+    "duration_ms": 4877,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "total_processed": 1000
+    }
+  },
+  {
+    "id": "TC-F1-INGEST-AST",
+    "passed": true,
+    "duration_ms": 5221,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "total_processed": 1000
+    }
+  },
+  {
+    "id": "TC-F1-INGEST-MRD",
+    "passed": true,
+    "duration_ms": 112376,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "total_processed": 1000
+    }
+  }
+]

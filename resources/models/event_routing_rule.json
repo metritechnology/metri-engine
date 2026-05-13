@@ -1,0 +1,109 @@
+{
+  "entity": "event_routing_rule",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "disable_eda": true,
+  "doc": "Entidad gestionada exclusivamente por el Bootstrapper. disable_eda=true previene que mutaciones v\u00eda API generen outbox_events accidentales. Esta entidad define las reglas EDA \u2014 no puede ser ella misma una fuente de eventos.",
+  "attributes": [
+    {
+      "name": "rule_code",
+      "type": "string",
+      "unique": "identity",
+      "required": true,
+      "description": "Slug \u00fanico (ej: GLOBAL_ASSET_AUDIT) para identificar la regla en el proceso de bootstrap y sincronizaci\u00f3n."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": false
+    },
+    {
+      "name": "is_system_seeded",
+      "type": "boolean",
+      "required": true,
+      "default_value": "true",
+      "description": "Indica si la regla fue compilada por el Bootstrapper usando el Patr\u00f3n de Herencia Global. Los usuarios tenant no pueden aniquilar, modificar ni deshabilitar estas reglas in-memory, salvando la integridad as\u00edncrona del COTS."
+    },
+    {
+      "name": "target_entity_name",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "event_trigger_type",
+      "type": "enum",
+      "options": [
+        "on_create",
+        "on_update",
+        "on_delete"
+      ],
+      "required": true
+    },
+    {
+      "name": "filter_conditions",
+      "type": "array",
+      "of": "object",
+      "required": true,
+      "description": "Grafo estructurado del AST. Descompone los filtros en tuplas nativas para que Datomic eval\u00fae los Webhooks directamente cruzando atributos indexados.",
+      "schema": [
+        {
+          "name": "logical_operator",
+          "type": "enum",
+          "options": [
+            "AND",
+            "OR",
+            "NONE"
+          ],
+          "default_value": "NONE"
+        },
+        {
+          "name": "field_name",
+          "type": "string",
+          "required": true,
+          "description": "El atributo de la Entidad que detonar\u00e1 la regla (ej: 'status', 'total_cost')."
+        },
+        {
+          "name": "operator",
+          "type": "enum",
+          "options": [
+            "eq",
+            "neq",
+            "gt",
+            "lt",
+            "gte",
+            "lte",
+            "contains",
+            "in"
+          ],
+          "required": true
+        },
+        {
+          "name": "target_value",
+          "type": "string",
+          "required": true,
+          "description": "El umbral o valor esperado para igualar."
+        },
+        {
+          "name": "target_value_type",
+          "type": "enum",
+          "options": [
+            "string",
+            "long",
+            "double",
+            "boolean",
+            "uuid"
+          ],
+          "default_value": "string",
+          "description": "Permite castear visualmente el Datatype en el Motor Anal\u00edtico sin romper el esquema estricto."
+        }
+      ]
+    },
+    {
+      "name": "detail_type_output",
+      "type": "string",
+      "required": true,
+      "description": "El nombre del Topic EventBridge que el usuario desea emitir (ej: 'my_alerts.budget_exceeded')"
+    }
+  ]
+}

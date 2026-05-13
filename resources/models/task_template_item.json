@@ -1,0 +1,30 @@
+{
+  "entity": "task_template_item",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "task_template_id",
+      "type": "reference",
+      "entityRef": "task_template",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "step_order",
+      "type": "decimal",
+      "required": true,
+      "index": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "Especificaci\u00f3n exacta del paso f\u00edsico en el protocolo"
+    }
+  ]
+}

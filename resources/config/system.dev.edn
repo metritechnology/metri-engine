@@ -1,0 +1,124 @@
+;; config/system.dev.edn — ENTORNO LOCAL MINIMALISTA (PoC gRPC)
+;; Solo incluye componentes con ig/init-key registrado.
+;; Componentes de Capa 2-3 (Cedar, QuotaGuard, Moira, Audit) se activan
+;; en fases posteriores cuando sus namespaces estén implementados.
+
+{;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 1: Infraestructura local (Docker)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ ;; HMAC Token Store con secret fijo de desarrollo.
+ ;; NUNCA usar dev-secret en producción — prod usa :secret-arn de Secrets Manager.
+ :infra/session-store
+ {:dev-secret "metri-dev-hmac-secret-insecure-do-not-use-in-prod"}
+
+ :infra/dynamodb
+ {:region "us-east-1" :endpoint "http://dynamodb-local:8000"}
+
+ ;; OLAP in-memory stubs (sin AWS) - Reemplazados por instancias reales
+ :infra/athena
+ {:region          "us-east-1"
+  :workgroup       "metri-analytics"
+  :output-location "s3://metri-lake-local/athena-query-results/"}
+
+ :infra/kinesis
+ {:stream-prefix "metri-olap-stream-iceberg"
+  :region        "us-east-1"}
+
+ :infra/eventbridge
+ {:event-bus-name "metri-faults"
+  :region         "us-east-1"}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 4: Pipelines stub (toda la lógica de negocio → stub)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :iop/pipeline
+ {:steps             [#ig/ref :iop/cedar-authorizer
+                      #ig/ref :iop/quota-guard
+                      #ig/ref :iop/janus-router]
+  :moira-emitter     #ig/ref :moira/emitter
+  :audit-interceptor #ig/ref :audit/interceptor}
+
+ :infra/datahike
+ {:store {:backend    :dynamodb
+          :table      "metri-datahike-local"
+          :region     "us-east-1"
+          :access-key "test"
+          :secret     "test"
+          :endpoint   "http://dynamodb-local:8000"}}
+
+ :infra/tenant-guard
+ {:datahike-conn #ig/ref :infra/datahike}
+
+ :janus-router/olap-channel
+ {:stream-writer  #ig/ref :infra/kinesis
+  :stream-prefix  "metri-olap-stream-iceberg"}
+
+ :codice/generator-inject
+ {:tenant-guard #ig/ref :infra/tenant-guard}
+
+ :janus-router/oltp-channel
+ {:datahike-conn #ig/ref :infra/datahike
+  :codice-generator-fn #ig/ref :codice/generator-inject}
+
+ :iop/cedar-authorizer {}
+ :iop/quota-guard {}
+ :iop/janus-router {:channel-registry {:oltp #ig/ref :janus-router/oltp-channel
+                                       :olap #ig/ref :janus-router/olap-channel}}
+ :moira/emitter {}
+ :audit/interceptor {}
+ :codice/registry    {:models-dir "resources/models"}
+ :codice/event-seeder {}  ;; stub — sin Datahike en dev, seed se omite automáticamente
+ :eda/rule-matcher  {}
+
+ ;; ── Read Path: Janus Cerebro + Aegis Transmuter (FASE 05) ────────────────
+ :janus/ast-compiler
+ {:codice-registry #ig/ref :codice/registry}
+
+ :aegis/transmuter
+ {:datahike     #ig/ref :infra/datahike
+  :query-engine #ig/ref :infra/athena
+  :database     "metri_olap"}
+
+ ;; :aegis/pipeline implementado por metres.janus.core (JanusCerebro)
+ :janus/query
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :ast-compiler     #ig/ref :janus/ast-compiler
+  :aegis-transmuter #ig/ref :aegis/transmuter}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 5: Transporte gRPC
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :grpc/health-manager {}
+
+ :janus/discovery
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :codice-registry  #ig/ref :codice/registry}
+
+ :janus/explore
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :codice-registry  #ig/ref :codice/registry}
+
+ :janus/rule-matcher
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :rule-matcher     #ig/ref :eda/rule-matcher}
+
+ :grpc/dispatcher
+ {:iop-pipeline       #ig/ref :iop/pipeline
+  :janus-query        #ig/ref :janus/query
+  :janus-discovery    #ig/ref :janus/discovery
+  :janus-explore      #ig/ref :janus/explore
+  :janus-rule-matcher #ig/ref :janus/rule-matcher}
+
+ :grpc/service-impl
+ {:dispatcher #ig/ref :grpc/dispatcher}
+
+ :grpc/server
+ {:service-impl        #ig/ref :grpc/service-impl
+  :port                9090
+  :enable-reflection   true
+  :health-manager      #ig/ref :grpc/health-manager
+  :max-inbound-msg-size-mb 16
+  :deadline-ms         30000}}

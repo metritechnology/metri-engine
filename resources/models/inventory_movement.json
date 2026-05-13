@@ -1,0 +1,72 @@
+{
+  "entity": "inventory_movement",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": false,
+  "partition_strategy": "YYYY-MM-DD",
+  "attributes": [
+    {
+      "name": "part_id",
+      "type": "reference",
+      "entityRef": "part",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "type",
+      "type": "enum",
+      "options": [
+        "RECEIPT",
+        "CONSUMPTION",
+        "RETURN",
+        "ADJUSTMENT",
+        "TRANSFER_IN",
+        "TRANSFER_OUT"
+      ],
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "quantity",
+      "type": "decimal",
+      "required": true,
+      "description": "Can be negative for consumption/transfer_out, positive for receipt/transfer_in"
+    },
+    {
+      "name": "unit_cost",
+      "type": "decimal",
+      "description": "The cost of the part at the exact moment of this movement"
+    },
+    {
+      "name": "reference_entity",
+      "type": "string",
+      "description": "Which entity spawned this movement (e.g. work_order, purchase_order)"
+    },
+    {
+      "name": "reference_id",
+      "type": "uuid",
+      "description": "The ID of the reference entity"
+    },
+    {
+      "name": "timestamp",
+      "type": "epoch",
+      "index": true,
+      "required": true
+    },
+    {
+      "name": "performed_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one"
+    }
+  ]
+}

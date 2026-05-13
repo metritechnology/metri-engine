@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.replikativ</groupId>
+  <artifactId>datahike-dynamodb</artifactId>
+  <packaging>jar</packaging>
+  <name>datahike-dynamodb</name>
+  <description>Datahike DynamoDB Backend</description>
+  <licenses>
+    <license>
+      <name>Eclipse</name>
+      <url>http://www.eclipse.org/legal/epl-v10.html</url>
+    </license>
+  </licenses>
+  <scm>
+    <connection>scm:git:git@github.com:replikativ/datahike-dynamodb.git</connection>
+    <developerConnection>scm:git:git@github.com/replikativ/datahike-dynamodb.git</developerConnection>
+    <url>https://github.com/replikativ/datahike-dynamodb</url>
+  </scm>
+  <dependencies>
+    <dependency>
+      <groupId>io.replikativ</groupId>
+      <artifactId>konserve-dynamodb</artifactId>
+      <version>0.1.18</version>
+    </dependency>
+    <dependency>
+      <groupId>org.clojure</groupId>
+      <artifactId>clojure</artifactId>
+      <version>1.11.1</version>
+    </dependency>
+    <dependency>
+      <groupId>io.replikativ</groupId>
+      <artifactId>datahike</artifactId>
+      <version>0.6.1597</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <sourceDirectory>src</sourceDirectory>
+  </build>
+  <repositories>
+    <repository>
+      <id>clojars</id>
+      <url>https://repo.clojars.org/</url>
+    </repository>
+  </repositories>
+  <version>0.1.9</version>
+</project>

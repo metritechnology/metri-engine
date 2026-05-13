@@ -1,0 +1,56 @@
+{
+  "entity": "outbox_event",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": false,
+  "attributes": [
+    {
+      "name": "status",
+      "type": "string",
+      "options": [
+        "PENDING",
+        "PROCESSING",
+        "FAILED",
+        "DELIVERED"
+      ],
+      "default_value": "PENDING",
+      "index": true
+    },
+    {
+      "name": "detail_type",
+      "type": "string",
+      "required": true
+    },
+    {
+      "name": "payload",
+      "type": "json",
+      "required": true,
+      "description": "El Fat-Event pre-calculado por el Motor Transaccional durante la mutaci\u00f3n original. Incluye 'state', 'delta' y firma criptogr\u00e1fica 'signature_hmac'."
+    },
+    {
+      "name": "retry_count",
+      "type": "long",
+      "default_value": 0
+    },
+    {
+      "name": "retry_at",
+      "type": "epoch",
+      "index": true,
+      "required": false,
+      "description": "Timestamp a partir del cual el evento es elegible para reintento. Null en el primer intento. Calculado por mark-failed! con backoff exponencial: min(2^retry_count \u00d7 30s, 30min)."
+    },
+    {
+      "name": "claimed_at",
+      "type": "epoch",
+      "index": true,
+      "required": false,
+      "description": "Timestamp en que una instancia de Moira reclam\u00f3 el evento (PENDING \u2192 PROCESSING). Usado por el watchdog para detectar eventos PROCESSING hu\u00e9rfanos tras un crash de JVM (TTL: 10 min)."
+    },
+    {
+      "name": "created_at",
+      "type": "epoch",
+      "index": true,
+      "description": "Garantiza el ordenamiento cronol\u00f3gico First-In-First-Out (FIFO) para el despacho."
+    }
+  ]
+}

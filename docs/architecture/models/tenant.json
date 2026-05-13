@@ -3,6 +3,7 @@
   "engine": "oltp",
   "is_system": true,
   "track_history": true,
+  "doc": "Represents a platform tenant. The Tenant Master is identified by its UUID matching METRI_MASTER_TENANT_ID (env var) — NOT by any mutable database flag. All other tenants are strictly isolated from each other.",
   "attributes": [
     {
       "name": "id",

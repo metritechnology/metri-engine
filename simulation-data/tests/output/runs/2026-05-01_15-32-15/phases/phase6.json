@@ -1,0 +1,20 @@
+[
+  {
+    "id": "TC-F6-RELATIVE",
+    "passed": true,
+    "duration_ms": 135,
+    "errors": []
+  },
+  {
+    "id": "TC-F6-SHORTCUT",
+    "passed": true,
+    "duration_ms": 266,
+    "errors": []
+  },
+  {
+    "id": "TC-F6-BENCHMARK",
+    "passed": true,
+    "duration_ms": 139,
+    "errors": []
+  }
+]

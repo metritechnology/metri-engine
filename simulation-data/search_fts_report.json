@@ -1,0 +1,92 @@
+{
+  "meta": {
+    "timestamp": "2026-05-06T00:50:50.730596+00:00",
+    "suite": "search_fts_oltp_olap"
+  },
+  "fase_a": {
+    "a1": {
+      "ok": true,
+      "rows": 10,
+      "val": 1778015584.0,
+      "err": ""
+    },
+    "a2": {
+      "ok": true,
+      "rows": 7,
+      "val": 1778014868.0,
+      "err": ""
+    },
+    "a3": {
+      "ok": true,
+      "rows": 1,
+      "val": 12.0,
+      "err": ""
+    },
+    "a4": {
+      "ok": true,
+      "rows": 1,
+      "val": 470.0,
+      "err": ""
+    },
+    "a5": {
+      "ok": true,
+      "rows": 10,
+      "val": 1778015584.0,
+      "err": ""
+    }
+  },
+  "fase_b": {
+    "b1": {
+      "ok": true,
+      "rows": 3,
+      "err": ""
+    },
+    "b2": {
+      "ok": true,
+      "rows": 3,
+      "err": ""
+    },
+    "b3": {
+      "ok": true,
+      "rows": 1,
+      "err": ""
+    },
+    "b4": {
+      "ok": true,
+      "rows": 2,
+      "err": ""
+    },
+    "b5": {
+      "ok": true,
+      "rows": 1,
+      "err": ""
+    },
+    "b6": {
+      "ok": true,
+      "rows": 7,
+      "err": ""
+    },
+    "b7": {
+      "ok": true,
+      "rows": 3,
+      "err": ""
+    }
+  },
+  "fase_c": {
+    "c1": {
+      "ok": true,
+      "val": 404.0,
+      "err": ""
+    },
+    "c2": {
+      "ok": true,
+      "val": 38845.06,
+      "err": ""
+    },
+    "c3": {
+      "ok": true,
+      "val": 470.0,
+      "err": ""
+    }
+  }
+}

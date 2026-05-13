@@ -81,35 +81,17 @@
     present?
     "debe ser el nombre de la tabla DynamoDB de Datahike"))
 
-(deftest env-04-valkey-host
-  "ENV-04 — VALKEY_HOST presente y parece un hostname o IP válido
-   Origen: template.yaml !GetAtt MetriValkeyCache.Endpoint.Address
-   Propósito: endpoint privado del cluster Valkey Serverless (VPC-only)"
+(deftest env-04-hmac-secret-arn
+  "ENV-04 — HMAC_SECRET_ARN presente y tiene forma de ARN de Secrets Manager
+   Origen: template.yaml !Ref MetriHMACSecret
+   Propósito: ARN del secret HMAC-SHA256 para firma de tokens Metri.
+   CRITICO: Sin este secret, la Lambda no puede verificar ningún token."
   (env-assertion
-    "VALKEY_HOST"
+    "HMAC_SECRET_ARN"
     (fn [v]
       (and (present? v)
-           ;; Hostname real de AWS: *.cache.amazonaws.com
-           ;; o nombre Docker local: metri-valkey-local
-           (re-matches #"[a-zA-Z0-9]([a-zA-Z0-9\-\.]+)?[a-zA-Z0-9]" v)))
-    "debe ser un hostname o IP válido (sin esquema)"))
-
-(deftest env-05-valkey-port
-  "ENV-05 — VALKEY_PORT presente y parseable como entero en rango [1-65535]
-   Origen: template.yaml !GetAtt MetriValkeyCache.Endpoint.Port
-   Valor esperado en producción: 6379"
-  (let [raw (env "VALKEY_PORT")]
-    (if (production?)
-      (testing "En producción: VALKEY_PORT debe ser un int válido"
-        (is (present? raw) "VALKEY_PORT debe estar presente")
-        (let [port (try (Integer/parseInt raw) (catch Exception _ nil))]
-          (is (some? port)    "VALKEY_PORT debe ser parseable como entero")
-          (is (< 0 port 65536) "VALKEY_PORT debe estar en rango [1, 65535]")
-          (is (= 6379 port)  "VALKEY_PORT esperado es 6379 (Valkey default)")))
-      (do
-        (when (and raw (not (present? raw)))
-          (println "  [ENV-WARN] VALKEY_PORT ausente/inválida en entorno local — OK en prod"))
-        (is true "VALKEY_PORT — skip en entorno local")))))
+           (clojure.string/starts-with? v "arn:aws:secretsmanager:")))
+    "debe ser un ARN de Secrets Manager válido"))
 
 (deftest env-06-metri-origin-token
   "ENV-06 — METRI_ORIGIN_TOKEN presente y no vacío (Zero-Trust perimetral)
@@ -123,22 +105,12 @@
 
 ;; ─── Validación cruzada ───────────────────────────────────────────────────────
 
-(deftest env-cross-valkey-host-port-consistency
-  "ENV-CROSS — VALKEY_HOST y VALKEY_PORT deben estar presentes o ausentes juntos"
-  (let [host (env "VALKEY_HOST")
-        port (env "VALKEY_PORT")]
-    (if (production?)
-      (is (= (present? host) (present? port))
-          "VALKEY_HOST y VALKEY_PORT deben estar ambos presentes en producción")
-      (is true "Consistencia Valkey — skip en entorno local"))))
-
 (deftest env-cross-all-required-in-production
   "ENV-CROSS-ALL — En producción, TODAS las vars críticas deben estar presentes"
   (let [required-vars ["OUTBOX_QUEUE_URL"
                        "CEDAR_POLICIES_TABLE"
                        "DATAHIKE_DDB_TABLE"
-                       "VALKEY_HOST"
-                       "VALKEY_PORT"
+                       "HMAC_SECRET_ARN"
                        "METRI_ORIGIN_TOKEN"]
         missing (filterv #(not (present? (env %))) required-vars)]
     (if (production?)

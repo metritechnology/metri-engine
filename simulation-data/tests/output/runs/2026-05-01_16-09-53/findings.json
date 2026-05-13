@@ -1,0 +1,13 @@
+[
+  {
+    "bug_id": "BUG-001",
+    "test_id": "TC-F2-BETWEEN",
+    "layer": "Proto",
+    "severity": "CRITICAL",
+    "description": "[CAPA 1] Motor retorn\u00f3 error_code='INTERNAL_ERROR': Error interno",
+    "expected": "{}",
+    "actual": "FIX_REQUEST",
+    "status": "OPEN",
+    "opened_at": "2026-05-01T21:09:55.593280"
+  }
+]

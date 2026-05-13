@@ -1,0 +1,33 @@
+{
+  "entity": "task_template",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "is_dimension": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Standard operating procedure or protocol instructions for this task"
+    },
+    {
+      "name": "estimated_duration_minutes",
+      "type": "decimal",
+      "description": "Used to automatically estimate total work order labor requirements"
+    },
+    {
+      "name": "required_role_id",
+      "type": "reference",
+      "entityRef": "role",
+      "cardinality": "one",
+      "description": "Optional specific skill or role required to execute this task template"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "TC-F1-INGEST-LOC": {
+    "count": 1000
+  },
+  "TC-F1-INGEST-AST": {
+    "count": 1000
+  },
+  "TC-F1-INGEST-MRD": {
+    "count": 1000
+  },
+  "TC-F2-EQ-ACTIVE": {
+    "count": 334
+  },
+  "TC-F2-IN-STATUS": {
+    "count": 667
+  },
+  "TC-F4-SUM-READING": {
+    "sum": 124625.0
+  },
+  "TC-F4-AVG-READING": {
+    "avg": 124.625
+  },
+  "TC-F4-STD-DEV": {
+    "std_dev": 43.322395535738266
+  },
+  "TC-F5-ALL-TIME": {
+    "count": 1000
+  }
+}

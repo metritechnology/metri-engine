@@ -1,0 +1,100 @@
+{
+  "entity": "iot_alert_rule",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "disable_eda": false,
+  "attributes": [
+    {
+      "name": "asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true,
+      "description": "El equipo f\u00edsico bajo vigilancia in-flight."
+    },
+    {
+      "name": "threshold_operator",
+      "type": "enum",
+      "options": [
+        "GT",
+        "LT",
+        "EQ",
+        "GTE",
+        "LTE"
+      ],
+      "required": true,
+      "description": "Condici\u00f3n matem\u00e1tica a evaluar sobre lectura."
+    },
+    {
+      "name": "threshold_value",
+      "type": "decimal",
+      "required": true,
+      "description": "Punto de quiebre algor\u00edtmico."
+    },
+    {
+      "name": "unit_of_measure",
+      "type": "string",
+      "required": true,
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:uncefact",
+      "description": "Unidad f\u00edsica a comparar. Crucial para que si el gerente escribe '90', Metri sepa si la m\u00e1quina se compara en 'CEL' o 'FAH'."
+    },
+    {
+      "name": "alert_severity",
+      "type": "enum",
+      "options": [
+        "WARNING",
+        "CRITICAL",
+        "FATAL"
+      ],
+      "default": "WARNING",
+      "required": true
+    },
+    {
+      "name": "notify_users",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "many",
+      "required": false,
+      "description": "Lista de empleados o supervisores a notificar directamente v\u00eda @metri-notifications al detonarse la regla."
+    },
+    {
+      "name": "notify_groups",
+      "type": "reference",
+      "entityRef": "role",
+      "cardinality": "many",
+      "required": false,
+      "description": "Lista de grupos (roles) a notificar en masa, por ejemplo, 'Mantenimiento Planta Sur'."
+    }
+  ],
+  "events": {
+    "create": "IOT_ALERT_RULE_CREATED",
+    "update": "IOT_ALERT_RULE_UPDATED",
+    "delete": "IOT_ALERT_RULE_DELETED"
+  },
+  "event_rules": [
+    {
+      "rule_code": "IOT_ALERT_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.iot.alert.created",
+      "description": "Inyecta al vuelo la ejecuci\u00f3n SQL de la regla perimetral en la nube de AWS."
+    },
+    {
+      "rule_code": "IOT_ALERT_UPDATED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [],
+      "detail_type_output": "system.iot.alert.updated",
+      "description": "Reacomoda un Umbral/Threshold matem\u00e1tico dentro de la misma regla AWS IoT."
+    },
+    {
+      "rule_code": "IOT_ALERT_DELETED",
+      "event_trigger_type": "on_delete",
+      "filter_conditions": [],
+      "detail_type_output": "system.iot.alert.deleted",
+      "description": "Destruye la regla AWS IoT Core apagando el monitoreo inmediato."
+    }
+  ]
+}

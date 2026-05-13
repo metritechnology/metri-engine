@@ -1,0 +1,58 @@
+{
+  "entity": "part",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "name",
+      "type": "string",
+      "fts": true,
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "sku",
+      "type": "string",
+      "unique": "identity",
+      "fts": true
+    },
+    {
+      "name": "barcode",
+      "type": "string",
+      "fts": true
+    },
+    {
+      "name": "description",
+      "type": "string"
+    },
+    {
+      "name": "category",
+      "type": "string",
+      "is_dimension": true
+    },
+    {
+      "name": "default_unit_cost",
+      "type": "decimal",
+      "is_measure": true,
+      "default_rollup": "avg"
+    },
+    {
+      "name": "min_quantity",
+      "type": "decimal",
+      "description": "Stock m\u00ednimo recomendado para reorden"
+    },
+    {
+      "name": "uom",
+      "type": "string",
+      "description": "Unidad de medida (Unit of Measure), ej. Pieces, Kg, Liters",
+      "is_dimension": true
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "description": "Moneda utilizada para el costo (ej. USD, EUR, MXN)",
+      "is_dimension": true
+    }
+  ]
+}

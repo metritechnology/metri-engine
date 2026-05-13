@@ -1,0 +1,247 @@
+
+
+ ;; ══════════════════════════════════════════════════════════════
+ ;; SECCIÓN CEDAR — Modelo de Autorización Zero-Trust
+ ;; Derivado de: grpc Descriptors + role.json + user_group.json
+ ;; Patrón: principal(User) × action(MetriAction) × resource(MetriResource)
+ ;;
+ ;; PRINCIPIO: Los NOMBRES de roles son datos en Datahike (runtime).
+ ;;            El contrato formaliza la ESTRUCTURA del grant y los scopes.
+ ;; ══════════════════════════════════════════════════════════════
+ :metri.cedar/schema-namespace
+ "Metri"
+
+ ;; Entity types del schema Cedar
+ :metri.cedar/entity-types
+ [:enum :User :MetriResource :ActionGroup]
+
+ ;; Actions analíticas (READ-ONLY — producen domain-boundaries RLS Push-Down)
+ :metri.cedar/analytical-actions
+ [:set
+   :DiscoverSchema
+   :ExploreSchema
+   :QueryMetrics
+   :MatchRoutingRulesBatch
+   :QueryKpi
+   :QueryTimeseries
+   :QueryTable
+   :QueryPie
+   :QueryBubble
+   :QueryCsvExport]
+
+ ;; Actions mutacionales (WRITE — Cedar evalúa ABAC in-memory, domain-boundaries={})
+ :metri.cedar/mutational-actions
+ [:set
+   :MutateEntity
+   :BulkIngestData
+   :CREATE
+   :UPDATE
+   :DELETE
+   :UPSERT
+   :GET]
+
+ ;; Mapa gRPC RPC → Cedar Action
+ :metri.cedar/rpc-action-map
+ [:map
+   [:Discovery     :DiscoverSchema]
+   [:Explore       :ExploreSchema]
+   [:Query         :QueryMetrics]
+   [:Transact      :MutateEntity]
+   [:BulkIngest    :BulkIngestData]
+   [:MatchRoutingRules :MatchRoutingRules]
+   [:MatchRoutingRulesBatch :MatchRoutingRulesBatch]]
+
+ ;; Resources Zero-Trust (mensajes con tenant_id en el proto)
+ :metri.cedar/zero-trust-resources
+ [:set
+   "DiscoveryRequest"
+   "ExploreRequest"
+   "AnalyticsRequest"
+   "QueryRequest"
+   "TransactionRequest"
+   "BulkRequest"
+   "MatchRoutingRulesRequest"]
+
+ ;; Las políticas Cedar concretas (P00–P08) son datos de runtime.
+ ;; Viven en el artefacto generado: cedar/metri.cedar
+ ;; El contrato solo define la ESTRUCTURA (tipo) que debe cumplir cada entrada,
+ ;; no las instancias — eso violaría el principio de abstracción del contrato.
+ ;;
+ ;; Para consultar las políticas activas:
+ ;;   → docs/architecture/cedar/metri.cedar  (texto Cedar P00–P08)
+ ;;   → docs/architecture/cedar/cedar-schema.json  (schema namespace Metri)
+ ;;
+ ;; :metri.cedar/policy-shape (más abajo) define la forma validable de cada política.
+ :metri.cedar/policy-registry
+ [:vector :metri.cedar/policy-shape]
+
+ ;; Spec abstracto de los conjuntos de políticas activas (solo tipos — no instancias).
+ ;; Los IDs concretos de permit/forbid están en cedar/metri.cedar.
+ :metri.cedar/permit-policies
+ [:set :string]  ;; IDs de política tipo :permit — evaluated before forbids
+
+ :metri.cedar/forbid-policies
+ [:set :string]  ;; IDs de política tipo :forbid — precedencia over permits (Cedar semantíca)
+
+ ;; ─────────────────────────────────────────────────────────────────────
+ ;; MODELO DE ROL (role.json) — Estructura abstracta de autorización
+ ;;
+ ;; Los NOMBRES de los roles son datos en Datahike (runtime).
+ ;; El contrato documenta la ESTRUCTURA del grant y sus invariantes.
+ ;;
+ ;; Ciclo de vida:
+ ;;   Datahike: role.grants[] → CedarAuthorizer.step3 → principal.grants
+ ;;   Cedar:    grants.containsAny(resource.entity_type) → ALLOW/DENY
+ ;;   Janus:    scope → AST IR [:where ...] predicados de propiedad
+ ;; ─────────────────────────────────────────────────────────────────────
+
+ ;; Scopes válidos derivados de role.grants.scope (role.json)
+ ;; Determina el predicado Cedar y el nodo [:where] del AST IR
+ :metri.cedar/valid-scopes
+ [:enum :ALL :OWN :ASSIGNED :OWN_OR_ASSIGNED]
+
+ ;; NONE no es un valor del modelo role.json — es un estado DERIVADO Cedar.
+ ;; Ocurre cuando el usuario no tiene grant sobre el dominio solicitado.
+ ;; CedarAuthorizer lo emite como query-scope=NONE en el domain-boundary.
+ ;; Janus intercepta este estado y emite :JANUS_400 sin construir el AST IR.
+ :metri.cedar/derived-scopes
+ [:enum :NONE]
+
+ ;; Acciones derivadas de role.grants.actions (role.json)
+ ;; Analítica → domain-boundaries RLS | Mutacional → ABAC in-memory
+ :metri.cedar/grant-actions
+ [:set :Allowed :CREATE :UPDATE :DELETE :EXECUTE :EXPORT.]
+
+ ;; Estructura abstracta del grant (role.json → grants[*])
+ ;; Los NOMBRES de dominio son datos en Datahike (e.g. "work_order", "asset")
+ :metri.cedar/grant-shape
+ [:map
+  [:domain  :string]     ;; Nombre del entity-type (datos Datahike — no hardcodeado)
+  [:actions [:set [:enum :Allowed :CREATE :UPDATE :DELETE :EXECUTE :EXPORT.]]]
+  [:scope   [:enum :ALL :OWN :ASSIGNED :OWN_OR_ASSIGNED]]]
+
+ ;; Resolución scope → predicado Cedar when{} y predicado AST IR
+ ;; Janus usa esta tabla para construir el nodo [:where] del AST IR
+ :metri.cedar/scope-field-resolution
+ [:map
+   [:ALL                "principal.tenant_id == resource.tenant_id"]
+   [:OWN                "principal.tenant_id == resource.tenant_id && principal.user_id == resource.owner_field"]
+   [:ASSIGNED           "principal.tenant_id == resource.tenant_id && principal.user_id == resource.assignee_field"]
+   [:OWN_OR_ASSIGNED    "principal.tenant_id == resource.tenant_id && (principal.user_id == resource.owner_field || principal.user_id == resource.assignee_field)"]
+   [:NONE               "false  ;; Janus emite :JANUS_400 — sin visibilidad sobre el dominio"]]
+
+ ;; ─────────────────────────────────────────────────────────────────────
+ ;; MODELO DE GRUPO (user_group.json) — Refinamiento contextual del rol
+ ;;
+ ;; user_group define fronteras geográficas (allowed_locations,
+ ;; allowed_assets) y temporales (time_restrictions) que se intersectan
+ ;; con las del rol en CedarAuthorizer.step3.
+ ;;
+ ;; INVARIANTE:
+ ;;   principal.locations = INTERSECT(role.allowed_locations, group.allowed_locations)
+ ;;   principal.assets    = INTERSECT(role.allowed_assets,    group.allowed_assets)
+ ;;
+ ;; Ninguno de los dos puede EXPANDIR permisos del otro — solo REDUCIRLOS.
+ ;; ─────────────────────────────────────────────────────────────────────
+
+ ;; Estructura del grupo (user_group.json → atributos de autorización contextual)
+ ;; Note: time-restrictions referencia :metri.cedar/group-time-restriction (key raíz separada abajo).
+ :metri.cedar/group-shape
+ [:map
+  [:allowed-locations {:optional true} [:vector :uuid]]
+  [:allowed-assets    {:optional true} [:vector :uuid]]
+  [:time-restrictions {:optional true} [:vector :metri.cedar/group-time-restriction]]]
+
+ ;; Ventanas temporales del grupo (user_group.time_restrictions)
+ ;; Validadas en CedarAuthorizer.step3b ANTES de evaluar Cedar (gate temporal).
+ ;; Si el request cae fuera de toda ventana activa → :JANUS_403 inmediato.
+ :metri.cedar/group-time-restriction
+ [:map
+  [:days-of-week  [:vector :int]]   ;; 1=Lunes … 7=Domingo
+  [:start-minute  :int]             ;; minutos desde 00:00 (e.g. 480 = 08:00)
+  [:end-minute    :int]]            ;; minutos desde 00:00 (e.g. 1080 = 18:00)
+
+ ;; Intersección de fronteras rol+grupo (calculada por CedarAuthorizer.step3)
+ ;; Ninguno de los dos puede expandir permisos del otro — solo reducirlos
+ :metri.cedar/location-boundary-rule
+ "principal.locations = INTERSECT(role.allowed_locations, group.allowed_locations)"
+
+ ;; Spec formal de la operación de intersección role ↔ user_group.
+ ;; Documenta las invariantes que CedarAuthorizer.step3 debe satisfacer
+ ;; antes de hidratar el principal Cedar.
+ :metri.cedar/intersection-invariant
+ [:map
+  [:role-locations    {:optional true} [:set :uuid]]   ;; role.allowed_locations
+  [:group-locations   {:optional true} [:set :uuid]]   ;; group.allowed_locations
+  [:effective-locations              [:set :uuid]]       ;; = INTERSECT(role, group)
+  [:role-assets       {:optional true} [:set :uuid]]   ;; role.allowed_assets
+  [:group-assets      {:optional true} [:set :uuid]]   ;; group.allowed_assets
+  [:effective-assets                 [:set :uuid]]       ;; = INTERSECT(role, group)
+  [:rule :string]]                                       ;; "effective ⊆ role ∧ effective ⊆ group"
+
+ ;; ─────────────────────────────────────────────────────────────────────
+ ;; PRINCIPAL SHAPE (Metri::User hidratado en runtime)
+ ;;
+ ;; El CedarAuthorizer llena estos atributos desde Datahike + Valkey.
+ ;; Cedar NO los lee del request body del cliente — Zero-Trust.
+ ;;
+ ;; Fuente por atributo:
+ ;;   tenant-id   ← Valkey session token
+ ;;   user-id     ← Valkey session token
+ ;;   status      ← Datahike user.status (ACTIVE|INACTIVE|SUSPENDED)
+ ;;   grants      ← Datahike role.grants[] expandido (domain+scope+actions)
+ ;;                 Cada grant refleja la estructura de :metri.cedar/grant-shape.
+ ;;                 NONE no aparece en grants — es el estado AUSENTE (no-grant).
+ ;;   locations   ← INTERSECT(role.allowed_locations, group.allowed_locations)
+ ;;   assets      ← INTERSECT(role.allowed_assets, group.allowed_assets)
+ ;;   query-scope ← scope efectivo resuelto por Cedar para el dominio del request
+ ;; ─────────────────────────────────────────────────────────────────────
+ :metri.cedar/principal-shape
+ [:map
+  [:tenant-id   {:optional false} :uuid]
+  [:user-id     {:optional false} :uuid]
+  [:status      {:optional false} [:enum :ACTIVE :INACTIVE :SUSPENDED]]
+  ;; grants: Set de grants estructurados — NO strings opacos.
+  ;; Cada grant refleja la estructura de :metri.cedar/grant-shape (domain+scope+actions).
+  ;; La ausencia de grant para un dominio equivale a scope=NONE → :JANUS_400.
+  [:grants      {:optional false} [:set :metri.cedar/grant-shape]]
+  ;; query-scope: scope efectivo para el dominio del request en curso.
+  ;; Resuelto por Cedar tras evaluar grants contra resource.entity_type.
+  ;; :NONE indica no-grant para ese dominio (→ :JANUS_400 sin construir AST IR).
+  [:query-scope {:optional false} [:enum :ALL :OWN :ASSIGNED :OWN_OR_ASSIGNED :NONE]]
+  ;; Fronteras geográficas efectivas = INTERSECT(role.allowed_locations, group.allowed_locations)
+  [:locations   {:optional true}  [:set :uuid]]
+  ;; Fronteras de activos efectivas = INTERSECT(role.allowed_assets, group.allowed_assets)
+  [:assets      {:optional true}  [:set :uuid]]]
+
+ ;; Spec formal de la estructura de una política Cedar.
+ ;; Permite validar con Malli que las políticas P00–P08 están bien formadas.
+ :metri.cedar/policy-shape
+ [:map
+  [:id                  {:optional false} :string]
+  [:effect              {:optional false} [:enum :permit :forbid]]
+  [:principal-condition {:optional true}  :string]
+  [:action-spec         {:optional false} :string]
+  [:when-clause         {:optional true}  :string]
+  [:comment             {:optional false} :string]]
+
+ ;; Invariante de contexto Cedar (validación pre-gRPC — Railway gate)
+ ;; Recibido del CedarAuthorizer → Janus lo valida con Malli antes del AST IR
+ :metri.cedar/context-invariant
+ [:map
+  [:tenant-id  {:optional false} :uuid]
+  [:user-id    {:optional false} :uuid]
+  [:roles      {:optional false} [:set :string]]
+  [:domain-boundaries {:optional true}
+   [:map-of :string
+    [:vector [:map
+     [:query-scope    [:enum :ALL :OWN :ASSIGNED :OWN_OR_ASSIGNED :NONE]]
+     [:permitted-locations {:optional true} [:vector :uuid]]
+     [:permitted-assets    {:optional true} [:vector :uuid]]]]]]
+  [:request    {:optional false} :any]]
+
+ ;; Railway: Cedar authorization gate
+ :metri.cedar/auth-gate
+ [:or
+  [:map [:principal-ok true] [:action-ok true] [:resource-ok true]]
+  [:map [:cedar-error :string] [:janus-code [:enum :JANUS_403 :JANUS_400 :JANUS_401]]]]

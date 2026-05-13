@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-05-01_16-02-50",
+  "environment": "local",
+  "total_passed": 33,
+  "total_failed": 38,
+  "phases": {
+    "2": {
+      "passed": 5,
+      "failed": 9
+    },
+    "3": {
+      "passed": 3,
+      "failed": 1
+    },
+    "4": {
+      "passed": 11,
+      "failed": 0
+    },
+    "5": {
+      "passed": 0,
+      "failed": 22
+    },
+    "6": {
+      "passed": 0,
+      "failed": 3
+    },
+    "7": {
+      "passed": 7,
+      "failed": 0
+    },
+    "8": {
+      "passed": 1,
+      "failed": 0
+    },
+    "9": {
+      "passed": 1,
+      "failed": 0
+    },
+    "12": {
+      "passed": 4,
+      "failed": 0
+    },
+    "13": {
+      "passed": 1,
+      "failed": 2
+    },
+    "14": {
+      "passed": 0,
+      "failed": 1
+    }
+  }
+}

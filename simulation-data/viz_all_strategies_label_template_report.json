@@ -1,0 +1,176 @@
+{
+  "meta": {
+    "suite": "viz_all_strategies",
+    "description": "Validación completa de estrategias VIZ (OLTP+OLAP) con label_template",
+    "generated_at": "2026-05-13T14:06:41.991086+00:00",
+    "engine_url": "https://engine.metri.one/",
+    "tenant_id": "golden-tenant-53bb9ea8-c3d2-4536-821b-1168a0ab8648",
+    "proto_fields": "label_template @ DimensionDefinition + ChartDecoration",
+    "pb2_tool": "grpc_tools.protoc libprotoc 31.1"
+  },
+  "summary": {
+    "total_queries": 10,
+    "passed": 5,
+    "failed": 5,
+    "pass_rate_pct": 50.0,
+    "oltp_queries": 5,
+    "olap_queries": 5,
+    "label_template_queries": 6
+  },
+  "ingest": {
+    "location_roots": 2,
+    "location_children": 3,
+    "parts": 10,
+    "inventory_movements": 300,
+    "meter_readings": 1000,
+    "total_records": 1315
+  },
+  "label_templates_used": {
+    "oltp_line": "{{timestamp}}",
+    "oltp_scatter": "Tipo: {{type}}",
+    "oltp_pie": "{{type}}",
+    "olap_line": "{{timestamp}}",
+    "olap_scatter": "{{unit_of_measure}} — {{reading_value}} avg",
+    "olap_pie": "{{unit_of_measure}}"
+  },
+  "queries": [
+    {
+      "query_key": "oltp_table",
+      "engine": "OLTP",
+      "viz_strategy": "table",
+      "label_template": null,
+      "status": "OK",
+      "viz_ext": {
+        "type": "table",
+        "table": {}
+      },
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "oltp_line",
+      "engine": "OLTP",
+      "viz_strategy": "line",
+      "label_template": "{{timestamp}}",
+      "status": "OK",
+      "viz_ext": {
+        "type": "line",
+        "chart": {
+          "show_legend": true,
+          "show_tooltip": true,
+          "label_template": "{{timestamp}}",
+          "fill_gaps": true
+        }
+      },
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "oltp_scatter",
+      "engine": "OLTP",
+      "viz_strategy": "scatter",
+      "label_template": "Tipo: {{type}}",
+      "status": "OK",
+      "viz_ext": {
+        "type": "scatter",
+        "chart": {
+          "x_dimension": "type",
+          "y_dimensions": [
+            "avg_quantity"
+          ],
+          "show_legend": true,
+          "show_tooltip": true,
+          "label_template": "Tipo: {{type}}"
+        }
+      },
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "oltp_pie",
+      "engine": "OLTP",
+      "viz_strategy": "pie",
+      "label_template": "{{type}}",
+      "status": "OK",
+      "viz_ext": {
+        "type": "pie",
+        "breakdown": {}
+      },
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "oltp_tree",
+      "engine": "OLTP",
+      "viz_strategy": "tree",
+      "label_template": null,
+      "status": "OK",
+      "viz_ext": {
+        "type": "tree",
+        "table": {}
+      },
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "olap_table",
+      "engine": "OLAP",
+      "viz_strategy": "table",
+      "label_template": null,
+      "status": "MISSING",
+      "viz_ext": null,
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "olap_line",
+      "engine": "OLAP",
+      "viz_strategy": "line",
+      "label_template": "{{timestamp}}",
+      "status": "MISSING",
+      "viz_ext": null,
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "olap_scatter",
+      "engine": "OLAP",
+      "viz_strategy": "scatter",
+      "label_template": "{{unit_of_measure}} — {{reading_value}} avg",
+      "status": "MISSING",
+      "viz_ext": null,
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "olap_pie",
+      "engine": "OLAP",
+      "viz_strategy": "pie",
+      "label_template": "{{unit_of_measure}}",
+      "status": "MISSING",
+      "viz_ext": null,
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    },
+    {
+      "query_key": "olap_tree",
+      "engine": "OLAP",
+      "viz_strategy": "tree",
+      "label_template": null,
+      "status": "MISSING",
+      "viz_ext": null,
+      "columns": [],
+      "total_rows_returned": 0,
+      "sample_rows": []
+    }
+  ]
+}

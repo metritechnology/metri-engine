@@ -61,14 +61,14 @@ El Metri Engine opera bajo un modelo **B2B multitenant con infraestructura compa
 
 ### ¿Por qué Pool Model?
 
-| Criterio | Pool Model (elegido) | Silo Model (descartado) |
-| :------- | :------------------- | :---------------------- |
-| Escalabilidad | ✅ Sin límite de tenants | ⚠️ Máx. 2,500 tablas DynamoDB/cuenta |
-| Costo operativo | ✅ Una tabla, un backup, un alarm | ❌ N tablas × N backups × N alarms |
-| Provisioning | ✅ Inmediato — solo registrar tenant | ❌ Crear tabla + schema + DB Athena |
-| Throughput | ✅ Compartido — autoescalado global | ⚠️ Per-table provisioning |
-| Seguridad | ⚠️ Depende del código (Cedar + IOP) | ✅ Físico — imposible cross-tenant |
-| Complejidad | ✅ Baja | ❌ Alta (conn pool, routing) |
+| Criterio        | Pool Model (elegido)                 | Silo Model (descartado)              |
+| :-------------- | :----------------------------------- | :----------------------------------- |
+| Escalabilidad   | ✅ Sin límite de tenants             | ⚠️ Máx. 2,500 tablas DynamoDB/cuenta |
+| Costo operativo | ✅ Una tabla, un backup, un alarm    | ❌ N tablas × N backups × N alarms   |
+| Provisioning    | ✅ Inmediato — solo registrar tenant | ❌ Crear tabla + schema + DB Athena  |
+| Throughput      | ✅ Compartido — autoescalado global  | ⚠️ Per-table provisioning            |
+| Seguridad       | ⚠️ Depende del código (Cedar + IOP)  | ✅ Físico — imposible cross-tenant   |
+| Complejidad     | ✅ Baja                              | ❌ Alta (conn pool, routing)         |
 
 > [!IMPORTANT]
 > **El Pool Model transfiere la responsabilidad de aislamiento al código.**
@@ -205,16 +205,16 @@ El Metri Engine opera bajo un modelo **B2B multitenant con infraestructura compa
 
 ### Tabla de Garantías por Canal
 
-| Canal | Storage | Modelo | Mecanismo de Aislamiento |
-| :---- | :------ | :----- | :----------------------- |
-| **OLTP Write** | Datahike + DynamoDB | **Pool** — tabla compartida | `transact-with-tenant!` inyecta `:tenant/id` |
-| **OLTP Read** | Datahike + DynamoDB | **Pool** — tabla compartida | `query-with-tenant` inyecta `[:where ... :tenant/id]` |
-| **OLAP Write** | Kinesis → S3 Parquet | **Pool** — bucket compartido | `tenant-s3-prefix` como partition key |
-| **OLAP Query** | S3 Parquet → Athena | **Pool** — database compartida | `WHERE tenant_id = ?` + partition pruning |
-| **Outbox** | SQS FIFO | Pool — cola compartida | `tenant_id` en message attribute |
-| **Audit** | Kinesis → S3 Parquet | Pool — bucket compartido | `tenant_id` en partition key |
-| **Session** | Valkey | Pool — clúster compartido | `sess:{tenant_id}:*` namespace |
-| **Quota** | DynamoDB | Pool — tabla compartida | `quota#{tenant_id}#{dimension}` PK |
+| Canal          | Storage              | Modelo                         | Mecanismo de Aislamiento                              |
+| :------------- | :------------------- | :----------------------------- | :---------------------------------------------------- |
+| **OLTP Write** | Datahike + DynamoDB  | **Pool** — tabla compartida    | `transact-with-tenant!` inyecta `:tenant/id`          |
+| **OLTP Read**  | Datahike + DynamoDB  | **Pool** — tabla compartida    | `query-with-tenant` inyecta `[:where ... :tenant/id]` |
+| **OLAP Write** | Kinesis → S3 Parquet | **Pool** — bucket compartido   | `tenant-s3-prefix` como partition key                 |
+| **OLAP Query** | S3 Parquet → Athena  | **Pool** — database compartida | `WHERE tenant_id = ?` + partition pruning             |
+| **Outbox**     | SQS FIFO             | Pool — cola compartida         | `tenant_id` en message attribute                      |
+| **Audit**      | Kinesis → S3 Parquet | Pool — bucket compartido       | `tenant_id` en partition key                          |
+| **Session**    | Valkey               | Pool — clúster compartido      | `sess:{tenant_id}:*` namespace                        |
+| **Quota**      | DynamoDB             | Pool — tabla compartida        | `quota#{tenant_id}#{dimension}` PK                    |
 
 > [!IMPORTANT]
 > **El `tenant-guard` es el ÚNICO módulo autorizado a ejecutar operaciones Datahike.**
@@ -231,6 +231,7 @@ El Metri Engine opera bajo un modelo **B2B multitenant con infraestructura compa
 
 > [!WARNING]
 > **Prohibiciones absolutas:**
+>
 > - ❌ Llamar `d/transact` o `d/q` sin pasar por `tenant-guard`
 > - ❌ Confiar en el `tenant_id` del payload del cliente
 > - ❌ Queries Athena sin `WHERE tenant_id = ?`
@@ -268,13 +269,13 @@ Toda la capa de ingesta cumple el contrato de la [FASE 10 — Gestión de Errore
 
 ### Propietarios de Sherlog en FASE 03
 
-| Componente | Cuándo invoca Sherlog | Severity | Código |
-| :--------- | :-------------------- | :------- | :----- |
-| `JanusRouter` | Códice retorna `[:error]` (schema inválido, tipo desconocido) | `:warning` | `:COD_001`, `:COD_VAL_001` |
-| `JanusRouter` | Error de escritura Datahike (`d/transact` falla) | `:error` | `:JNS_TX_001`, `:JNS_OLTP_001` |
-| `JanusRouter` | Error de escritura Kinesis (`OLAPChannel`) | `:error` | `:JNS_OLAP_002` |
-| `AuditInterceptor` | Error de escritura OLAP (Kinesis falla para audit_log) | `:warning` | `:AUD_001` |
-| `handle-unary` (gRPC) | Excepción inesperada — escapa del pipeline | `:error` | `:SYS_000` |
+| Componente            | Cuándo invoca Sherlog                                         | Severity   | Código                         |
+| :-------------------- | :------------------------------------------------------------ | :--------- | :----------------------------- |
+| `JanusRouter`         | Códice retorna `[:error]` (schema inválido, tipo desconocido) | `:warning` | `:COD_001`, `:COD_VAL_001`     |
+| `JanusRouter`         | Error de escritura Datahike (`d/transact` falla)              | `:error`   | `:JNS_TX_001`, `:JNS_OLTP_001` |
+| `JanusRouter`         | Error de escritura Kinesis (`OLAPChannel`)                    | `:error`   | `:JNS_OLAP_002`                |
+| `AuditInterceptor`    | Error de escritura OLAP (Kinesis falla para audit_log)        | `:warning` | `:AUD_001`                     |
+| `handle-unary` (gRPC) | Excepción inesperada — escapa del pipeline                    | `:error`   | `:SYS_000`                     |
 
 > [!NOTE]
 > **`IOP` (`run-iop`) NO invoca Sherlog directamente.**
@@ -303,33 +304,218 @@ Componente (JanusRouter, Cedar, Quota)
 
 ### Observabilidad OTel de la capa de ingesta
 
-| Span | Propietario | Atributos clave |
-| :--- | :---------- | :-------------- |
-| `grpc.{method}` (ROOT) | OTel interceptor Netty | `trace_id` W3C |
-| `grpc.handle-unary` | gRPC Runtime | `entity.type`, `operation` |
-| `iop.pipeline.start` | IOP | `tenant_id`, `request_id` |
-| `iop.step1.cedar.*` | CedarAuthorizer | `tenant_id`, `user_id`, latencia |
-| `iop.step2.quota.*` | QuotaGuard | `tenant_id`, `debit`, `remaining` |
-| `iop.step3.janus.*` | JanusRouter | `ulid`, `channel`, `entity_type` |
-| `janus.route.*` | JanusRouter interno | Ver [03B_FASE_JANUS_ROUTER.md](03B_FASE_JANUS_ROUTER.md) |
+| Span                   | Propietario            | Atributos clave                                          |
+| :--------------------- | :--------------------- | :------------------------------------------------------- |
+| `grpc.{method}` (ROOT) | OTel interceptor Netty | `trace_id` W3C                                           |
+| `grpc.handle-unary`    | gRPC Runtime           | `entity.type`, `operation`                               |
+| `iop.pipeline.start`   | IOP                    | `tenant_id`, `request_id`                                |
+| `iop.step1.cedar.*`    | CedarAuthorizer        | `tenant_id`, `user_id`, latencia                         |
+| `iop.step2.quota.*`    | QuotaGuard             | `tenant_id`, `debit`, `remaining`                        |
+| `iop.step3.janus.*`    | JanusRouter            | `ulid`, `channel`, `entity_type`                         |
+| `janus.route.*`        | JanusRouter interno    | Ver [03B_FASE_JANUS_ROUTER.md](03B_FASE_JANUS_ROUTER.md) |
 
 ---
 
-## Infraestructura Runtime
+## MÓDULO VI: Conexión a Clientes de Infraestructura
 
-| Documento | Componente | Vínculo |
-| :-------- | :--------- | :------ |
-| [01.01_FASE_RUNTIME_GRPC.md](01.01_FASE_RUNTIME_GRPC.md) | Runtime gRPC | Servidor gRPC, main.clj, Integrant system.edn, Protobuf compilation, deployment |
+Esta sección formaliza **qué cliente de infraestructura consume cada componente del pipeline IOP**,
+qué Protocol usa, cómo se inyecta via Integrant, y qué stub canónico se usa en tests.
+
+> [!IMPORTANT]
+> **Regla de Oro DIP:** Ningún componente del pipeline IOP importa `metri.infrastructure.*` directamente.
+> Todos reciben sus dependencias via `#ig/ref` en `system.edn`.
+> La dirección de dependencia es siempre: `CAPA 2+ → Protocol → #ig/ref → CAPA 1`.
+
+### VI.1 — Tabla de Vínculos: Componente → Cliente → Protocol
+
+| Componente IOP              | Cliente `:infra/*`   | Protocol consumido                  | Método usado                     | Stub en tests         |
+| :-------------------------- | :------------------- | :---------------------------------- | :------------------------------- | :-------------------- |
+| `CedarAuthorizer`           | `:infra/valkey`      | `ISessionStore`                     | `get-session`                    | `make-session-stub`   |
+| `CedarAuthorizer`           | `:infra/datahike`    | — (conn directo via `tenant-guard`) | `tenant-guard/query-with-tenant` | `dh mem-backend`      |
+| `CedarAuthorizer`           | `:cedar/engine`      | — (SDK JNI directo)                 | `is-authorized`                  | `AlwaysAllowEngine`   |
+| `QuotaGuard`                | `:infra/dynamodb`    | — (SDK directo)                     | `get-item / update-item`         | LocalStack DDB        |
+| `JanusRouter` (OLTPChannel) | `:infra/datahike`    | — (tenant-guard)                    | `transact-with-tenant!`          | `dh mem-backend`      |
+| `JanusRouter` (OLAPChannel) | `:infra/kinesis`     | `IStreamWriter`                     | `put-record!`                    | `make-stream-stub`    |
+| `Moira EventEmitter`        | `:moira/sqs-bus`     | `ISQSBus`                           | `publish!`                       | `make-sqs-stub`       |
+| `Sherlog`                   | `:infra/eventbridge` | `IEventBus`                         | `put-event!`                     | `make-event-bus-stub` |
+| `AuditInterceptor`          | `:infra/kinesis`     | `IStreamWriter`                     | `put-record!`                    | `make-stream-stub`    |
+| Todos                       | `:infra/tracer`      | — (OTel API)                        | `with-span` / `set-attribute!`   | NoOp OTel SDK         |
+
+> [!NOTE]
+> `CedarAuthorizer` y `JanusRouter` comparten la misma **instancia** de `:infra/datahike`
+> (singleton en Integrant). El aislamiento multitenant se garantiza via `tenant-guard`,
+> no via instancias separadas.
+
+### VI.2 — DAG Integrant completo del pipeline IOP
+
+```clojure
+;; config/system.edn — DAG COMPLETO de la Fase 03 (IOP)
+
+;; ═══ CAPA 1: Clientes de Infraestructura ══════════════════════════════════
+:infra/datahike  {... backend DynamoDB ...}   ;; compartido — OLTPChannel + Cedar + Audit
+:infra/valkey    {... ElastiCache Serverless ...}  ;; ISessionStore — solo Cedar
+:infra/dynamodb  {... tabla quotas ...}        ;; solo QuotaGuard
+:infra/kinesis   {... stream-prefix ...}       ;; IStreamWriter — OLAPChannel + Audit
+:infra/eventbridge {... fault bus ...}         ;; IEventBus — solo Sherlog
+:moira/sqs-bus   {... SQS FIFO ...}            ;; ISQSBus — solo Moira
+:infra/tracer    {... OTel ADOT ...}           ;; todos los spans
+
+;; ═══ CAPA 1.5: Cedar Engine + Caches ══════════════════════════════════════
+:cedar/engine        {:policies-table #env "CEDAR_POLICIES_TABLE"}
+:cedar/cache         {:strategy :ttl :ttl-ms 10000 :max-size 50000}
+:cedar/policy-cache  {:strategy :lru :max-size 5000}
+
+;; ═══ CAPA 2: Componentes del Pipeline IOP ════════════════════════════════
+
+;; Interceptor 1 — CedarAuthorizer
+:iop/cedar-authorizer
+  {:auth-deps
+    {:valkey-store  #ig/ref :infra/valkey       ;; ISessionStore — token lookup
+     :db            #ig/ref :infra/datahike     ;; user hydration via tenant-guard
+     :cache         #ig/ref :cedar/cache        ;; IPrincipalCache — TTL
+     :cedar-engine  #ig/ref :cedar/engine       ;; ABAC evaluator
+     :policy-cache  #ig/ref :cedar/policy-cache ;; LRU compiled PolicySets
+     :tracer        #ig/ref :infra/tracer}}
+
+;; Interceptor 2 — QuotaGuard
+:iop/quota-guard
+  {:dynamodb  #ig/ref :infra/dynamodb           ;; quota table — no Protocol, SDK directo
+   :tracer    #ig/ref :infra/tracer}
+
+;; Etapa 3 — JanusRouter
+:janus/router
+  {:datahike      #ig/ref :infra/datahike       ;; OLTPChannel via tenant-guard
+   :stream-writer #ig/ref :infra/kinesis        ;; OLAPChannel via IStreamWriter
+   :tracer        #ig/ref :infra/tracer}
+
+;; Etapa 4 — MoiraEventEmitter
+:moira/emitter
+  {:datahike  #ig/ref :infra/datahike           ;; outbox read/update (tenant-guard)
+   :sqs-bus   #ig/ref :moira/sqs-bus            ;; ISQSBus.publish!
+   :tracer    #ig/ref :infra/tracer}
+
+;; Etapa 5 — AuditInterceptor (fire-and-forget)
+:audit/interceptor
+  {:stream-writer #ig/ref :infra/kinesis        ;; IStreamWriter — audit_log Parquet
+   :tracer        #ig/ref :infra/tracer}
+
+;; Orchestrator raiz — IOP
+:iop/pipeline
+  {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+   :quota-guard      #ig/ref :iop/quota-guard
+   :janus-router     #ig/ref :janus/router
+   :moira-emitter    #ig/ref :moira/emitter
+   :audit-interceptor #ig/ref :audit/interceptor
+   :tracer           #ig/ref :infra/tracer}
+```
+
+### VI.3 — Grafo de Dependencias (visualización)
+
+```
+CAPA 1 (Infraestructura)
+  :infra/datahike  ──────────────┬──► :iop/cedar-authorizer
+                                 ├──► :janus/router
+                                 └──► :moira/emitter
+
+  :infra/valkey    ──────────────► :iop/cedar-authorizer
+
+  :infra/dynamodb  ──────────────► :iop/quota-guard
+
+  :infra/kinesis   ──────────────┬──► :janus/router (OLAPChannel)
+                                 └──► :audit/interceptor
+
+  :infra/eventbridge ────────────► :sherlog/handler  (via :janus/router)
+
+  :moira/sqs-bus   ──────────────► :moira/emitter
+
+  :cedar/engine    ──────────────► :iop/cedar-authorizer
+  :cedar/cache     ──────────────► :iop/cedar-authorizer
+  :cedar/policy-cache ───────────► :iop/cedar-authorizer
+
+  :infra/tracer    ──────────────► TODOS (via deps grouping)
+
+CAPA 2 (Pipeline)
+  :iop/cedar-authorizer ─────────► :iop/pipeline (paso 1)
+  :iop/quota-guard ──────────────► :iop/pipeline (paso 2)
+  :janus/router ─────────────────► :iop/pipeline (paso 3)
+  :moira/emitter ────────────────► :iop/pipeline (paso 4, async)
+  :audit/interceptor ────────────► :iop/pipeline (paso 5, async)
+```
+
+### VI.4 — Inyección de Stubs en Tests Unit del Pipeline
+
+```clojure
+;; test/metri/iop/pipeline_test.clj
+;; Principio: tests Unit del pipeline NO levantan Docker,
+;;            NO hacen I/O externo, usan SOLO stubs canonicos.
+
+(deftest iop-happy-path-test
+  (let [;; stubs canonicos — satisfacen los mismos Protocols
+        session-store  (infra.stubs/make-session-stub)
+        sqs-bus        (infra.stubs/make-sqs-stub)
+        stream-writer  (infra.stubs/make-stream-stub)
+        event-bus      (infra.stubs/make-event-bus-stub)
+
+        ;; Datahike in-memory — sin DynamoDB
+        dh-conn        {:conn (d/connect {:store {:backend :mem}})}
+
+        ;; Cedar stub — siempre ALLOW (happy path)
+        cedar-engine   {:engine (constantly {:decision :allow})}
+
+        ;; Construir el pipeline con stubs
+        cedar          (->CedarAuthorizer {:valkey-store session-store
+                                           :db           dh-conn
+                                           :cedar-engine cedar-engine})
+        quota          (->QuotaGuard {:dynamodb (mock-dynamodb {:quota 1000})})
+        janus          (->JanusRouter {:datahike     dh-conn
+                                       :stream-writer stream-writer})
+        moira          (->MoiraEmitter {:datahike dh-conn
+                                        :sqs-bus  sqs-bus})
+        audit          (->AuditInterceptor {:stream-writer stream-writer})
+        pipeline       (->IOPipeline {:cedar-authorizer cedar
+                                      :quota-guard      quota
+                                      :janus-router     janus
+                                      :moira-emitter    moira
+                                      :audit-interceptor audit})]
+
+    ;; Ejecutar el pipeline completo
+    (let [[status ctx] (run-iop pipeline test-request)]
+      (is (= :ok status))
+      ;; Verificar que SQS recibio el evento (Moira)
+      (is (= 1 (count @(:queue-atom sqs-bus))))
+      ;; Verificar que Kinesis recibio el audit_log (AuditInterceptor)
+      (is (= 1 (count @(:records-atom stream-writer)))))))
+```
+
+> [!TIP]
+> Los stubs `make-session-stub`, `make-sqs-stub`, `make-stream-stub`, `make-event-bus-stub`
+> son constructores determinísticos definidos en `01.02_FASE_CLIENTES_INFRAESTRUCTURA.md`.
+> Implementan los mismos Protocols que las implementaciones reales — **Liskov garantizado**.
+
+### VI.5 — Matriz de Verificación por Componente
+
+| Componente                   | Client real             | Client en test Unit    | Client en test Integration |
+| :--------------------------- | :---------------------- | :--------------------- | :------------------------- |
+| `CedarAuthorizer` — Valkey   | `ValkeySessionStore`    | `InMemorySessionStore` | TestContainers Valkey 7.2  |
+| `CedarAuthorizer` — Datahike | `DH DynamoDB conn`      | `DH mem-backend`       | LocalStack DynamoDB        |
+| `JanusRouter` — OLTPChannel  | `DH DynamoDB conn`      | `DH mem-backend`       | LocalStack DynamoDB        |
+| `JanusRouter` — OLAPChannel  | `KinesisFirehoseWriter` | `InMemoryStreamWriter` | LocalStack Kinesis         |
+| `MoiraEmitter` — SQS         | `SQSFifoBus`            | `InMemorySQSBus`       | LocalStack SQS FIFO        |
+| `Sherlog` — EventBridge      | `EventBridgeEventBus`   | `InMemoryEventBus`     | LocalStack EventBridge     |
+| `AuditInterceptor` — Kinesis | `KinesisFirehoseWriter` | `InMemoryStreamWriter` | LocalStack Kinesis         |
+
+---
 
 ## Referencias Cruzadas de Arquitectura
 
-| Documento | Componente | Vínculo |
-| :-------- | :--------- | :------ |
-| [03A_FASE_IOP.md](03A_FASE_IOP.md) | IOP | Coordinación del pipeline, `run-iop`, composición de pasos, diagrama de secuencia |
-| [03B_FASE_JANUS_ROUTER.md](03B_FASE_JANUS_ROUTER.md) | Janus | Contratos gRPC, ULID, ruteo agnóstico, canal OLTP/OLAP |
-| [05.01-JANUS.md](05.01-JANUS.md) | Janus Cerebro | Aislamiento multitenant Pool Model en Janus |
-| [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md) | CedarAuthorizer | `defrecord`, Opaque Token, Hidratación Datalog→Cedar, Malli ATS, RLS Shield |
-| [07_FASE_QUOTA_GUARD.md](07_FASE_QUOTA_GUARD.md) | QuotaGuard | `defrecord`, dimensiones, estrategias de reset, TX Functions Datahike |
-| [04_FASE_MOIRA.md](04_FASE_MOIRA.md) | Moira | CloudEvents, SQS FIFO, OTEL Span, At-Least-Once delivery |
-| [09_FASE_AUDITORIA.md](09_FASE_AUDITORIA.md) | AuditInterceptor | `IAuditInterceptor`, derive-action-type, OLAPChannel, fire-and-forget |
-| [10_FASE_GESTION_ERRORES_EDA.md](10_FASE_GESTION_ERRORES_EDA.md) | Error Management | Railway Pattern, Sherlog, error_catalog.edn, domain_fault OLAP |
+| Documento                                                                        | Componente       | Vínculo                                                                           |
+| :------------------------------------------------------------------------------- | :--------------- | :-------------------------------------------------------------------------------- |
+| [03A_FASE_IOP.md](03A_FASE_IOP.md)                                               | IOP              | Coordinación del pipeline, `run-iop`, composición de pasos, diagrama de secuencia |
+| [03B_FASE_JANUS_ROUTER.md](03B_FASE_JANUS_ROUTER.md)                             | Janus            | Contratos gRPC, ULID, ruteo agnóstico, canal OLTP/OLAP                            |
+| [05.01-JANUS.md](05.01-JANUS.md)                                                 | Janus Cerebro    | Aislamiento multitenant Pool Model en Janus                                       |
+| [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md)                       | CedarAuthorizer  | `defrecord`, Opaque Token, Hidratación Datalog→Cedar, Malli ATS, RLS Shield       |
+| [07_FASE_QUOTA_GUARD.md](07_FASE_QUOTA_GUARD.md)                                 | QuotaGuard       | `defrecord`, dimensiones, estrategias de reset, TX Functions Datahike             |
+| [04_FASE_MOIRA.md](04_FASE_MOIRA.md)                                             | Moira            | CloudEvents, SQS FIFO, OTEL Span, At-Least-Once delivery                          |
+| [09_FASE_AUDITORIA.md](09_FASE_AUDITORIA.md)                                     | AuditInterceptor | `IAuditInterceptor`, derive-action-type, OLAPChannel, fire-and-forget             |
+| [10_FASE_GESTION_ERRORES_EDA.md](10_FASE_GESTION_ERRORES_EDA.md)                 | Error Management | Railway Pattern, Sherlog, error_catalog.edn, domain_fault OLAP                    |
+| [01.02_FASE_CLIENTES_INFRAESTRUCTURA.md](01.02_FASE_CLIENTES_INFRAESTRUCTURA.md) | Infraestructura  | Protocols, records, stubs canónicos, DAG CAPA 1                                   |

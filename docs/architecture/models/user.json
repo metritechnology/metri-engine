@@ -3,11 +3,18 @@
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
+  "doc": "Platform user. The User Master is identified by UUID matching METRI_MASTER_USER_ID (env var) — NOT by any mutable database flag. Its credentials (password_hash) are seeded from environment variables at bootstrap.",
   "attributes": [
     {
       "name": "id",
       "type": "uuid",
       "is_system": false
+    },
+    {
+      "name": "password_hash",
+      "type": "string",
+      "is_system": true,
+      "doc": "Bcrypt/Argon2 hash. Never stored in plaintext. Populated at bootstrap from METRI_MASTER_USER_PASSWORD_HASH (env var) for the User Master only. Normal users authenticate via external IdP — this field is null for them."
     },
     {
       "name": "email",
@@ -42,13 +49,13 @@
       "is_dimension": true
     },
     {
-      "name": "role_id",
+      "name": "role_ids",
       "type": "reference",
       "entityRef": "role",
-      "cardinality": "one",
+      "cardinality": "many",
       "required": true,
       "is_dimension": true,
-      "doc": "Reference to the User's primary authorization role."
+      "doc": "Reference to the User's authorization roles (Matrix dimension)."
     },
     {
       "name": "group_ids",

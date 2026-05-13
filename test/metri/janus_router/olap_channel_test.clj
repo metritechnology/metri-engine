@@ -79,9 +79,11 @@
       (is (some? (:id r))                            ":id (ULID) presente")
       (is (some? (:_timestamp r))                    ":_timestamp presente")
       (is (some? (:_partition_path r))               ":_partition_path presente")
-      ;; Campos de dominio al mismo nivel
-      (is (= "a1" (:asset_id r))                     "asset_id presente en la raíz")
-      (is (= 42.0 (:reading_value r))                "reading_value presente en la raíz"))))
+      ;; Campos de dominio encapsulados en JSON
+      (is (some? (:data r))                          "campo data presente")
+      (let [data-map (cheshire.core/parse-string (:data r) true)]
+        (is (= "a1" (:asset_id data-map))            "asset_id presente en JSON")
+        (is (= 42.0 (:reading_value data-map))       "reading_value presente en JSON")))))
 
 (deftest olap-05-tenant-id-in-partition-path
   "OLAP-05 — El tenant_id no aparece en la ruta (está en el Firehose prefix), pero el _tenant sí."

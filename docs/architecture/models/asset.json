@@ -2,6 +2,7 @@
   "entity": "asset",
   "engine": "oltp",
   "is_system": false,
+  "is_sequence_scope_provider": true,
   "track_history": true,
   "attributes": [
     {

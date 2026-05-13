@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Metri Infrastructure Core
+  Centraliza toda la persistencia en una única tabla DynamoDB (Single Table Design) 
+  y un único S3 Bucket (Data Lake).
+
+Resources:
+  # ── KMS Master Key (Escudo Criptográfico) ──
+  MetriKmsMasterKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "Llave Simétrica Maestra compartida para cifrar S3 y DynamoDB."
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Id: "metri-key-policy"
+        Statement:
+          - Sid: "AllowKeyAdministration"
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  MetriKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: "alias/metri-core-cmk"
+      TargetKeyId: !Ref MetriKmsMasterKey
+
+  # ── Almacenamiento Analítico Centralizado (S3 Data Lake) ──
+  MetriCentralDataLakeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "metri-datalake-${AWS::AccountId}-${AWS::Region}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref MetriKmsMasterKey
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  # ── Base de Datos Centralizada (DynamoDB Single Table Design) ──
+  MetriCentralTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "metri-core-table"
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref MetriKmsMasterKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+Outputs:
+  MetriCentralDataLakeArn:
+    Description: "ARN del lago de datos centralizado (S3)"
+    Value: !GetAtt MetriCentralDataLakeBucket.Arn
+  MetriCentralDataLakeName:
+    Description: "Nombre del lago de datos centralizado (S3)"
+    Value: !Ref MetriCentralDataLakeBucket
+  MetriCentralTableArn:
+    Description: "ARN de la tabla DynamoDB centralizada (Single Table)"
+    Value: !GetAtt MetriCentralTable.Arn
+  MetriCentralTableName:
+    Description: "Nombre de la tabla DynamoDB centralizada"
+    Value: !Ref MetriCentralTable
+  MetriKmsMasterKeyArn:
+    Description: "ARN de la llave KMS central"
+    Value: !GetAtt MetriKmsMasterKey.Arn

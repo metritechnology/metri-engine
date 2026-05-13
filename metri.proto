@@ -86,31 +86,109 @@ message Pagination {
 
 message DiscoveryRequest {
   string tenant_id = 1;
-  string type = 2; // Optional filter by type
+
+  // Optional filter: return only schemas matching this entity name.
+  // Empty string = return all entities registered in the Codex for this tenant.
+  string type = 2;
+
+  // Performance optimization: if false, return only EntitySchema metadata
+  // without AttributeSchema[] children. Useful for sidebar navigation.
+  bool include_attributes = 3;
+
+  // Keyset cursor for paginated Codex discovery (large multitenant catalogs).
+  string cursor = 4;
+
+  // Max entities per page (default: 50, max: 200).
+  int32 page_size = 5;
 }
 
 message AttributeSchema {
+  // ── Core Identity ─────────────────────────────────────────────────────────
+  // Codex attribute name (Clojure namespace key: :entity/name)
   string name = 1;
+
+  // Primitive type: "string", "number", "boolean", "date", "uuid", "json"
   string type = 2;
+
+  // Secondary type qualifier: "enum", "currency", "percentage", "relative_time"
   string subtype = 3;
-  repeated string options = 4;
+
+  // ── Relational ────────────────────────────────────────────────────────────
+  // For enum/select attributes: the allowed discrete values.
+  // Replaces legacy `options` field for semantic clarity.
+  repeated string enum_values = 4;
+
+  // For UUID attributes pointing to a related entity (join reference).
   string entity_ref = 5;
+
+  // Default value rendered by the UI form when creating a new record.
   string default_value = 6;
-  
+
+  // ── Search & Indexing ─────────────────────────────────────────────────────
   // FTS (Full Text Search) Flag.
-  // If true, Hermes dynamically injects this attribute into the "Omnisearch" OR tree 
+  // If true, Hermes dynamically injects this attribute into the "Omnisearch" OR tree
   // for Fuzzy matching (Levenshtein on OLAP or Lucene on OLTP).
   bool fts = 7;
+
+  // ── UI Rendering Hints ────────────────────────────────────────────────────
+  // Human-readable label rendered in the UI (e.g. "Work Order Status").
+  string label = 8;
+
+  // UI icon identifier (mdi: prefix for Material Design, e.g. "mdi:tag").
+  string icon = 9;
+
+  // SI unit suffix displayed in the UI (e.g. "USD", "%", "kWh", "°C").
+  string unit = 10;
+
+  // ── Query Capabilities ───────────────────────────────────────────────────
+  // Janus DSL gate: if false, FilterCriteria using this attribute is rejected.
+  bool filterable = 11;
+
+  // Janus DSL gate: if false, ORDER BY on this attribute is rejected.
+  bool sortable = 12;
+
+  // Janus DSL gate: if false, GROUP BY on this attribute is rejected.
+  bool groupable = 13;
+
+  // Janus DSL gate: if false, aggregate functions (SUM/AVG/COUNT) are rejected.
+  bool aggregatable = 14;
 }
 
 message EntitySchema {
+  // ── Core Identity ─────────────────────────────────────────────────────────
+  // Codex entity name (Clojure namespace: :work_order, :asset, :location).
   string entity = 1;
+
+  // Full hydrated attribute list. Omitted when DiscoveryRequest.include_attributes=false.
   repeated AttributeSchema attributes = 2;
+
+  // ── UI Rendering Hints ────────────────────────────────────────────────────
+  // Human-readable label for UI headers/breadcrumbs (e.g. "Work Order").
+  string label = 3;
+
+  // UI icon identifier (mdi: prefix, e.g. "mdi:clipboard-check").
+  string icon = 4;
+
+  // ── Record Identity ───────────────────────────────────────────────────────
+  // The attribute name used as the primary key in RowSet results (typically "id").
+  string primary_key = 5;
+
+  // ── Full Text Search ──────────────────────────────────────────────────────
+  // Ordered list of attribute names fed to the Omnisearch OR tree.
+  // Hermes uses this to build the Levenshtein/Lucene composite query.
+  repeated string fts_fields = 6;
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  // Estimated total entities in Codex for this tenant (used by UI for skeleton rendering).
+  int64 total_count = 7;
 }
 
 message DiscoveryResponse {
   Status status = 1;
   repeated EntitySchema schemas = 2; // Flat list of entities and their root attributes
+  // Keyset cursor for the next page (empty if this is the last page).
+  string next_cursor = 3;
+  bool has_next = 4;
 }
 
 message ExploreRequest {
@@ -135,25 +213,29 @@ message ExploreResponse {
 // - Trino/Athena: Pushdown columnar functions (e.g., `CORR()`, `REGR_SLOPE()`)
 // - Datomic/Clojure: In-memory JVM math reductions via Transducers.
 enum AggregationFunction {
+  // Safe default — Janus rechaza MetricDefinition con este valor via :JANUS_400.
+  // proto3 best-practice: el valor 0 SIEMPRE debe ser un sentinel no-op.
+  AGGREGATION_FUNCTION_UNSPECIFIED = 0;
+
   // Descriptive Math
-  COUNT = 0;
-  SUM = 1;
-  AVG = 2;
-  MIN = 3;
-  MAX = 4;
+  COUNT = 1;
+  SUM = 2;
+  AVG = 3;
+  MIN = 4;
+  MAX = 5;
   
   // Advanced Statistics
-  MEDIAN = 5;
-  STD_DEV = 6;       // Standard Deviation
-  VARIANCE = 7;
-  PERCENTILE_90 = 8;
-  PERCENTILE_95 = 9;
-  PERCENTILE_99 = 10;
+  MEDIAN = 6;
+  STD_DEV = 7;       // Standard Deviation
+  VARIANCE = 8;
+  PERCENTILE_90 = 9;
+  PERCENTILE_95 = 10;
+  PERCENTILE_99 = 11;
   
   // Predictive ML / Bivariate
-  CORRELATION = 11;       // Pearson Correlation (requires a secondary `attribute` in measures)
-  LINEAR_REGRESSION = 12; // Outputs the slope for forecasting
-  LOGISTIC_REGRESSION = 13; // Output probability models
+  CORRELATION = 12;       // Pearson Correlation (requires a secondary `attribute` in measures)
+  LINEAR_REGRESSION = 13; // Outputs the slope for forecasting
+  LOGISTIC_REGRESSION = 14; // Output probability models
 }
 
 // Self-describing metric: carries its own entity (domain) and attribute.
@@ -189,6 +271,13 @@ message DimensionDefinition {
   string entity    = 1; // Entity domain for the dimension
   string attribute = 2; // Attribute to group by
   string interval  = 3; // Optional time interval: "day", "week", "month", etc.
+
+  // Label Template — Mustache-style interpolation for data-point labels.
+  // Supports: {{attribute_name}} placeholders resolved against each data row.
+  // Example: "{{asset_name}} - {{area_value}} KW"
+  // If empty, the engine uses the raw attribute value as the label.
+  // Applies to: PIE slice names, LINE/AREA series legends, TABLE cell display.
+  string label_template = 4;
 }
 
 
@@ -226,21 +315,40 @@ message FilterValue {
 }
 
 enum FilterOperator {
-  EQ = 0;
-  NEQ = 1;
-  GT = 2;
-  GTE = 3;
-  LT = 4;
-  LTE = 5;
-  IN = 6;
-  BETWEEN = 7;
-  LIKE = 8;
-  IS_NULL = 9;
-  IS_NOT_NULL = 10;
-  MATCHES = 11;
+  // Safe default — Janus rechaza FilterCriteria con este valor via :JANUS_400.
+  // Un filtro no especificado no debe ejecutar silenciosamente una comparación.
+  FILTER_OPERATOR_UNSPECIFIED = 0;
+  EQ          = 1;   // igualdad estricta
+  NEQ         = 2;   // desigualdad
+  GT          = 3;   // mayor que
+  GTE         = 4;   // mayor o igual que
+  LT          = 5;   // menor que
+  LTE         = 6;   // menor o igual que
+  IN          = 7;   // pertenece a un conjunto de valores
+  NOT_IN      = 8;   // excluye un conjunto de valores (complemento de IN)
+  BETWEEN     = 9;   // rango inclusivo [a, b]
+  LIKE        = 10;  // patrón SQL (%, _) — búsqueda textual parcial
+  IS_NULL     = 11;  // campo nulo
+  IS_NOT_NULL = 12;  // campo no nulo
+  MATCHES     = 13;  // expresión regular (regex)
+  CONTAINS    = 14;  // contiene elemento (arrays / substring semántico)
 }
 
 message FilterCriteria {
+  // Attribute name to filter on.
+  //
+  // Simple field: "status", "name", "area_value"
+  //   → Janus validates against the entity schema and compiles to a direct predicate.
+  //
+  // Dot-path (cross-entity): "location_id.type", "location_id.area_value"
+  //   → Janus resolves the dot-path against the Codex schema:
+  //     1. The left segment (e.g. "location_id") must be a type=reference attribute.
+  //     2. The right segment (e.g. "type") must exist in the referenced entity's schema.
+  //     3. Arbitrary nesting is supported: "location_id.parent_location_id.type"
+  //   → Compiled to engine-specific join predicates:
+  //     - OLTP (Datahike): intermediate variable binding [?e :entity/ref ?ref] [?ref :ref-entity/attr val]
+  //     - OLAP (Athena):   implicit JOIN via denormalized composite table columns
+  //   → No proto schema change required. Standard FilterOperator and FilterValue apply.
   string field = 1;
   FilterValue value = 2;
   FilterOperator op_ref = 3;
@@ -248,9 +356,10 @@ message FilterCriteria {
 
 message FilterGroup {
   enum Conjunction {
-    AND = 0;
-    OR = 1;
-    NOT = 2;
+    CONJUNCTION_UNSPECIFIED = 0;
+    AND = 1;
+    OR = 2;
+    NOT = 3;
   }
   Conjunction conjunction = 1;
   repeated FilterNode nodes = 2;
@@ -276,46 +385,48 @@ message SortDefinition {
 // relative comparisons (like "vs Yesterday") need to dynamically know the baseline.
 message TimeFrameContext {
   enum TimeFilterType {
+    TIME_FILTER_TYPE_UNSPECIFIED = 0;
+    
     // Custom Static
-    CUSTOM_RANGE = 0; 
+    CUSTOM_RANGE = 1; 
     
     // Daily / Hourly
-    TODAY = 1;
-    YESTERDAY = 2;
-    TOMORROW = 3;
-    LAST_N_MINUTES = 4;
-    LAST_N_HOURS = 5;
-    LAST_N_DAYS = 6;
-    NEXT_N_DAYS = 7;
+    TODAY = 2;
+    YESTERDAY = 3;
+    TOMORROW = 4;
+    LAST_N_MINUTES = 5;
+    LAST_N_HOURS = 6;
+    LAST_N_DAYS = 7;
+    NEXT_N_DAYS = 8;
 
     // Weekly
-    THIS_WEEK = 8;
-    LAST_WEEK = 9;
-    NEXT_WEEK = 10;
-    LAST_N_WEEKS = 11;
-    NEXT_N_WEEKS = 12;
-    WEEK_TO_DATE = 13;
+    THIS_WEEK = 9;
+    LAST_WEEK = 10;
+    NEXT_WEEK = 11;
+    LAST_N_WEEKS = 12;
+    NEXT_N_WEEKS = 13;
+    WEEK_TO_DATE = 14;
 
     // Monthly
-    THIS_MONTH = 14;
-    LAST_MONTH = 15;
-    NEXT_MONTH = 16;
-    LAST_N_MONTHS = 17;
-    NEXT_N_MONTHS = 18;
-    MONTH_TO_DATE = 19;
+    THIS_MONTH = 15;
+    LAST_MONTH = 16;
+    NEXT_MONTH = 17;
+    LAST_N_MONTHS = 18;
+    NEXT_N_MONTHS = 19;
+    MONTH_TO_DATE = 20;
 
     // Quarterly / Yearly
-    THIS_QUARTER = 20;
-    LAST_QUARTER = 21;
-    LAST_N_QUARTERS = 22;
-    QUARTER_TO_DATE = 23;
-    THIS_YEAR = 24;
-    LAST_YEAR = 25;
-    LAST_N_YEARS = 26;
-    YEAR_TO_DATE = 27;
+    THIS_QUARTER = 21;
+    LAST_QUARTER = 22;
+    LAST_N_QUARTERS = 23;
+    QUARTER_TO_DATE = 24;
+    THIS_YEAR = 25;
+    LAST_YEAR = 26;
+    LAST_N_YEARS = 27;
+    YEAR_TO_DATE = 28;
 
     // Absolute
-    ALL_TIME = 28;
+    ALL_TIME = 29;
   }
   
   // Strategies the backend will compile to Absolute Date parameters based on User's clock
@@ -328,31 +439,33 @@ message TimeFrameContext {
 
 message AnalyticalComparison {
   enum ComparisonType {
+    COMPARISON_TYPE_UNSPECIFIED = 0;
     // Relative Shift: If timeframe is "Last 15 days", and offset is "-1" it looks at the immediate previous 15 days automatically.
-    TIME_SHIFT_RELATIVE = 0; 
+    TIME_SHIFT_RELATIVE = 1; 
     // Shortcut Shift: Exact semantic constants defined by BI standard (e.g. YESTERDAY_LAST_YEAR)
-    TIME_SHIFT_SHORTCUT = 1;
+    TIME_SHIFT_SHORTCUT = 2;
     // Absolute Shift: Explicitly queries a static past window (e.g. compare "Today" vs "Last Black Friday")
-    TIME_SHIFT_ABSOLUTE = 2; 
+    TIME_SHIFT_ABSOLUTE = 3; 
     // Benchmark: Compares the metric output against a mathematical static threshold or overall system average.
-    BENCHMARK = 3;           
+    BENCHMARK = 4;           
     // Smart: Automatically performs anomaly detection (Gaussian distribution) across the data history
-    SMART = 4;               
+    SMART = 5;               
   }
   
   enum ShiftShortcut {
-    PREVIOUS_PERIOD = 0;
-    SAME_PERIOD_LAST_YEAR = 1;
-    SAME_PERIOD_LAST_QUARTER = 2;
-    SAME_PERIOD_LAST_MONTH = 3;
-    SAME_DAY_LAST_WEEK = 4;
-    SAME_DAY_LAST_MONTH = 5;
-    SAME_DAY_LAST_YEAR = 6;
-    YESTERDAY_LAST_YEAR = 7;
-    YESTERDAY_LAST_MONTH = 8;
-    YESTERDAY_LAST_WEEK = 9;
-    TODAY_LAST_YEAR = 10;
-    TODAY_LAST_MONTH = 11;
+    SHIFT_SHORTCUT_UNSPECIFIED = 0;
+    PREVIOUS_PERIOD = 1;
+    SAME_PERIOD_LAST_YEAR = 2;
+    SAME_PERIOD_LAST_QUARTER = 3;
+    SAME_PERIOD_LAST_MONTH = 4;
+    SAME_DAY_LAST_WEEK = 5;
+    SAME_DAY_LAST_MONTH = 6;
+    SAME_DAY_LAST_YEAR = 7;
+    YESTERDAY_LAST_YEAR = 8;
+    YESTERDAY_LAST_MONTH = 9;
+    YESTERDAY_LAST_WEEK = 10;
+    TODAY_LAST_YEAR = 11;
+    TODAY_LAST_MONTH = 12;
   }
   
   ComparisonType type = 1;
@@ -545,6 +658,9 @@ message QueryRequest {
   
   // Directriz de Estado HATEOAS / Drill-Down Global para interconexión de Dashboards.
   DashboardCrossFilterContext cross_filter_context = 6;
+  
+  // Dry-Run / Debugging - Omite Aegis Transmute y retorna Janus AST IR compilado.
+  bool explain_plan = 99;
 }
 
 // 3. CHRONOS ALERTING & BURSTING (Inatendido)
@@ -619,9 +735,10 @@ message AnalyticalSignal {
 
 message TableColumn {
   enum Alignment {
-    LEFT = 0;
-    CENTER = 1;
-    RIGHT = 2;
+    ALIGNMENT_UNSPECIFIED = 0;
+    LEFT = 1;
+    CENTER = 2;
+    RIGHT = 3;
   }
   string key = 1;
   string label = 2;
@@ -667,6 +784,17 @@ message ChartDecoration {
   // Specific Visual Hooks
   bool stacked = 7;                 // Automatically assigns `stack: 'total'` to ECharts series
   bool smooth = 8;                  // For 'line' charts: applies `smooth: true`
+
+  // Label Template — Mustache-style interpolation for series/slice labels.
+  // Supports {{field}} placeholders resolved against each data row at render time.
+  // Example: "{{asset_name}} - {{total_cost}} USD"
+  // Applied via ECharts `series.label.formatter` and `tooltip.formatter`.
+  string label_template = 9;
+
+  // Fill Gaps — ANO-005: when true, the frontend must interpolate missing time buckets
+  // in TIMESERIES visualizations (connect null values or insert zero-value points).
+  // Set by the engine for TIMESERIES output_cast when data is sparse.
+  bool fill_gaps = 10;
 }
 
 // =============================================================================
@@ -717,11 +845,15 @@ message VizMeta {
 // =============================================================================
 
 enum OperationAction {
-  CREATE = 0;
-  UPDATE = 1;
-  DELETE = 2;
-  UPSERT = 3;
-  GET = 4;
+  // Safe default — Prioridad MÁXIMA: Janus rechaza TransactionRequest con :JANUS_400.
+  // Un mensaje no inicializado con action=0 NUNCA debe ejecutar una escritura en Datahike.
+  // proto3 best-practice: el valor 0 SIEMPRE debe ser un sentinel no-op (never execute).
+  OPERATION_ACTION_UNSPECIFIED = 0;
+  CREATE = 1;
+  UPDATE = 2;
+  DELETE = 3;
+  UPSERT = 4;
+  GET = 5;
 }
 
 message TransactionRequest {
@@ -767,19 +899,50 @@ message MatchRoutingRulesRequest {
 }
 
 message WebhookTarget {
+  // Absolute HTTPS URL of the target endpoint.
   string target_url = 1;
-  string http_method = 2; // POST, PUT, PATCH
-  string auth_type = 3;   // NONE, BEARER_TOKEN, BASIC_AUTH, CUSTOM_HEADER
-  // El token real inyectado por Clojure tras resolver el secret_reference_id en los bóvedas corporativas
+
+  // HTTP verb: "POST", "PUT", "PATCH" (default: "POST").
+  string http_method = 2;
+
+  // Auth strategy: NONE | BEARER_TOKEN | BASIC_AUTH | CUSTOM_HEADER
+  string auth_type = 3;
+
+  // The resolved secret injected by Clojure after looking up the corporate vault.
+  // Never sourced from client input — always resolved server-side.
   string resolved_auth_secret = 4;
+
+  // Max delivery attempts before dead-lettering (0 = no retry, max: 10).
   int32 max_retries = 5;
+
+  // Timeout per delivery attempt in seconds (default: 10, max: 60).
+  int32 timeout_seconds = 6;
+
+  // Arbitrary HTTP headers injected into the webhook delivery.
+  // Common use: Authorization, X-Tenant-ID, Content-Type overrides.
+  map<string, string> headers = 7;
 }
 
 message MatchedRule {
+  // Unique rule identifier (maps to the Codex routing_rule entity).
   string rule_code = 1;
+
+  // EventBridge / SQS detail-type for the outbound event envelope.
   string detail_type_output = 2;
-  // Expansión dinámica 1:N hacia clientes (Adaptado a webhook_endpoint.json)
+
+  // Dynamic 1:N fan-out to webhook endpoints (adapted from webhook_endpoint.json).
   repeated WebhookTarget webhooks = 3;
+
+  // Execution priority: lower integer = evaluated first.
+  // Rules with the same priority are evaluated in lexicographic rule_code order.
+  int32 priority = 4;
+
+  // Human-readable name for observability dashboards and audit logs.
+  string name = 5;
+
+  // Optional filter tree that must match the CDC payload for this rule to fire.
+  // When null, the rule matches ALL events of the registered trigger_type.
+  FilterNode condition = 6;
 }
 
 message MatchRoutingRulesResponse {

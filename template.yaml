@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
+# Force deployment
 Transform: AWS::Serverless-2016-10-31
 Description: >
   metri-engine
@@ -28,11 +29,23 @@ Parameters:
     Type: String
     Default: metri-analytics
     Description: "Workgroup operativo de AWS Athena."
+  # Origen CORS adicional para desarrollo local.
+  # En producción dejar vacío (default). Ejemplo: sam deploy --parameter-overrides DevCorsOrigin=http://localhost:3000
+  DevCorsOrigin:
+    Type: String
+    Default: ""
+    Description: "Origen CORS de desarrollo (http://localhost:PORT). Vacío en producción."
 
 Globals:
   Function:
     Timeout: 900
-    MemorySize: 2048
+    MemorySize: 3008
+
+Conditions:
+  # Activo solo cuando el deployer pasa un origen de desarrollo explicitamente.
+  # En produccion (default DevCorsOrigin="") esta condicion es FALSE →
+  # los origenes localhost JAMAS aparecen en la Function URL de produccion.
+  HasDevCorsOrigin: !Not [!Equals [!Ref DevCorsOrigin, ""]]
 
 Resources:
   # ── Escudo Criptográfico FASE 10 (Zero-Trust Data At Rest) ──
@@ -45,11 +58,61 @@ Resources:
         Version: "2012-10-17"
         Id: "metri-key-policy"
         Statement:
-          - Sid: "Enable IAM Account Root / Admin Full Access"
+          # ── Statement 1: Operaciones catastróficas — requieren MFA ──────────────────
+          # SOLO las dos acciones que destruyen o paralizan la llave irreversiblemente.
+          # ScheduleKeyDeletion: destruye la llave y TODOS los datos cifrados (7-30 días).
+          # DisableKey: detiene toda encriptación/desencriptación hasta que se reactive.
+          # aws:MultiFactorAuthPresent bloquea ejecución desde Access Keys largas sin MFA.
+          - Sid: "AllowDestructiveOpsWithMFA"
             Effect: Allow
             Principal:
               AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-            Action: "kms:*"
+            Action:
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+              - "kms:DisableKey"
+            Resource: "*"
+            Condition:
+              Bool:
+                "aws:MultiFactorAuthPresent": "true"
+
+          # ── Statement 2: Administración no-destructiva — sin MFA ────────────────────
+          # CloudFormation (SAM deploy) necesita kms:PutKeyPolicy para actualizar
+          # la política de la llave en cada deploy. Separado del Statement 1 para
+          # que la automatización CI/CD no quede bloqueada por la condición MFA.
+          # Incluye: rotación, etiquetado, descripción — NO incluye Delete ni Disable.
+          - Sid: "AllowKeyAdministration"
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*" # kms:PutKeyPolicy — requerido por CloudFormation
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:TagResource"
+              - "kms:UntagResource"
+            Resource: "*"
+
+          # ── Statement 3: Delegación IAM — operaciones criptográficas ────────────────
+          # Permite que los roles IAM adjuntos a Lambda, Firehose, SQS, DynamoDB y
+          # Secrets Manager usen la llave via sus propias políticas IAM (least privilege).
+          - Sid: "AllowIAMDelegation"
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "kms:Decrypt"
+              - "kms:Encrypt"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+              - "kms:ReEncrypt*"
+              - "kms:CreateGrant"
+              - "kms:ListGrants"
+              - "kms:RevokeGrant"
             Resource: "*"
 
   MetriKmsAlias:
@@ -71,7 +134,45 @@ Resources:
         CloudWatchMetricsEnabled: true
         MetricName: MetriWebACLMetrics
       Rules:
-        # 1. Rate Limiting (Anti-DDoS / Denial of Wallet) - Limita cada IP a 1000 iteraciones / 5 seg.
+        # ── REGLA 1: Filtro Protocolar — solo POST y OPTIONS (Priority 5) ────────────
+        # Metri Engine es gRPC-Web puro. El protocolo solo emite:
+        #   POST  → llamadas gRPC (Discovery, Query, Transact, BulkIngest…)
+        #   OPTIONS → preflight CORS del browser
+        # GET, PUT, DELETE, HEAD, TRACE → bloqueo directo en el edge de CloudFront.
+        # Elimina scanners REST, herramientas de fuzzing y bots HTTP genéricos.
+        - Name: MetriBlockNonGrpcMethods
+          Priority: 5
+          Action:
+            Block: {}
+          Statement:
+            NotStatement:
+              Statement:
+                OrStatement:
+                  Statements:
+                    - ByteMatchStatement:
+                        FieldToMatch:
+                          Method: {}
+                        SearchString: "POST"
+                        PositionalConstraint: EXACTLY
+                        TextTransformations:
+                          - Priority: 0
+                            Type: NONE # HTTP methods ya llegan en mayúsculas (RFC 7231)
+                    - ByteMatchStatement:
+                        FieldToMatch:
+                          Method: {}
+                        SearchString: "OPTIONS"
+                        PositionalConstraint: EXACTLY
+                        TextTransformations:
+                          - Priority: 0
+                            Type: NONE # HTTP methods ya llegan en mayúsculas (RFC 7231)
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: MetriBlockNonGrpcMethodsMetrics
+
+        # ── REGLA 2: Rate Limiting por IP (Priority 10) ──────────────────────────────
+        # Anti-DDoS y Anti-Denial-of-Wallet (Athena cobra por query ejecutada).
+        # 1000 req/5min ≈ 3.3 req/s por IP — suficiente para dashboards B2B legítimos.
         - Name: MetriRateLimitRule
           Priority: 10
           Action:
@@ -85,7 +186,8 @@ Resources:
             CloudWatchMetricsEnabled: true
             MetricName: MetriRateLimitRuleMetrics
 
-        # 2. Bloqueo Reputacional (Botnets, Proxies Toxicos) - AWS Telemetry
+        # ── REGLA 3: IP Reputation List (Priority 20) ────────────────────────────────
+        # Bloquea IPs de botnets, C&C servers y proxies tóxicos — telemetría AWS.
         - Name: AWS-AmazonIpReputationList
           Priority: 20
           Statement:
@@ -99,7 +201,27 @@ Resources:
             CloudWatchMetricsEnabled: true
             MetricName: AWSIpReputationMetrics
 
-        # 3. Proteccion Java/JVM (Vital para Clojure: Corta cadenas JNDI y log4shell)
+        # ── REGLA 4: Anonymous IP List (Priority 25) ─────────────────────────────────
+        # Bloquea Tor exit nodes y VPNs anónimas usadas para evasión de rate-limit.
+        # ExcludedRules: HostingProviderIPList — los tenants empresariales pueden
+        # legítimamente llamar desde sus propios ambientes cloud (AWS/GCP/Azure).
+        - Name: AWS-AWSManagedRulesAnonymousIpList
+          Priority: 25
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAnonymousIpList
+              ExcludedRules:
+                - Name: HostingProviderIPList
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSAnonymousIpMetrics
+
+        # ── REGLA 5: Known Bad Inputs — Log4Shell / JNDI (Priority 30) ──────────────
+        # Crítico para Clojure/JVM: intercepta cadenas ${jndi:...} en cualquier campo.
         - Name: AWS-KnownBadInputsRuleSet
           Priority: 30
           Statement:
@@ -112,6 +234,82 @@ Resources:
             SampledRequestsEnabled: true
             CloudWatchMetricsEnabled: true
             MetricName: AWSKnownBadInputsMetrics
+
+        # ── REGLA 6: Common Rule Set — Protecciones Generales (Priority 40) ─────────
+        # Cubre: path traversal (../), command injection, HTTP protocol violations,
+        # header injection y HTTP request smuggling.
+        # ExcludedRules: SizeRestrictions_BODY — QueryRequest (batch de N analytics)
+        # y BulkIngest pueden superar los 8KB de inspección de WAF CloudFront.
+        - Name: AWS-AWSManagedRulesCommonRuleSet
+          Priority: 40
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              ExcludedRules:
+                - Name: SizeRestrictions_BODY
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSCommonRuleSetMetrics
+
+        # ── REGLA 7: SQL Injection — Protección Athena (Priority 45) ────────────────
+        # CRÍTICO para Metri Engine: el Janus Router compila FilterCriteria,
+        # FormulaEntry y FilterOperator.MATCHES en SQL real de AWS Athena.
+        # Esta regla intercepta patrones SQLi en URI y headers ANTES de que
+        # lleguen al compilador JVM — previene query injection y exfiltración de datos.
+        - Name: AWS-AWSManagedRulesSQLiRuleSet
+          Priority: 45
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSSQLiMetrics
+
+        # ── REGLA 8: gRPC-Web Protocol Enforcement (Priority 50) ─────────────────────
+        # Todo POST a Metri DEBE incluir Content-Type: application/grpc-web[+proto|text].
+        # Bloquea: scanners REST (Postman, curl genérico), fuzzing tools (ffuf, wfuzz),
+        # bots HTTP que no conocen el protocolo gRPC-Web.
+        # La condición AND asegura que OPTIONS (preflight CORS) nunca sea bloqueado.
+        - Name: MetriGrpcProtocolEnforcement
+          Priority: 50
+          Action:
+            Block: {}
+          Statement:
+            AndStatement:
+              Statements:
+                # Aplica solo a POST — OPTIONS no lleva Content-Type gRPC
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      Method: {}
+                    SearchString: "POST"
+                    PositionalConstraint: EXACTLY
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE # HTTP methods ya llegan en mayúsculas (RFC 7231)
+                # Bloquea si Content-Type NO es application/grpc-web[+proto|text]
+                - NotStatement:
+                    Statement:
+                      ByteMatchStatement:
+                        FieldToMatch:
+                          SingleHeader:
+                            Name: "content-type"
+                        SearchString: "application/grpc-web"
+                        PositionalConstraint: STARTS_WITH
+                        TextTransformations:
+                          - Priority: 0
+                            Type: LOWERCASE
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: MetriGrpcProtocolEnforcementMetrics
 
   MetriLambdaPublicPermission:
     Type: AWS::Lambda::Permission
@@ -140,7 +338,9 @@ Resources:
               ]
             OriginCustomHeaders:
               - HeaderName: X-Metri-Origin-Token
-                HeaderValue: !Sub "${AWS::StackId}" # Usamos el StackId de CF como secreto inmutable
+                # Resuelve el valor real del secret en tiempo de deploy — criptográficamente seguro.
+                # Rotación: actualizar MetriHMACSecret invalida TODOS los tokens Y el origin token simultaneamente.
+                HeaderValue: !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}"
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
         DefaultCacheBehavior:
@@ -156,11 +356,28 @@ Resources:
             - DELETE
           # ID Política administrada: CachingDisabled (Esencial para Streams/gRPC)
           CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-          # ID Política administrada: AllViewerExceptHostHeader (Deja pasar gRPC tokens evitando choque TLS de Lambda)
-          OriginRequestPolicyId: "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+          # Usamos nuestra política personalizada para asegurar que gRPC-Web pase íntegro
+          OriginRequestPolicyId: !Ref MetriOriginRequestPolicy
         ViewerCertificate:
           AcmCertificateArn: !Ref AcmCertificateArn
           SslSupportMethod: sni-only
+
+  # Política de Origen para gRPC-Web (Pasa headers críticos sin colisionar con Host/TLS)
+  MetriOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub "metri-grpc-policy-${AWS::StackName}"
+        CookiesConfig:
+          CookieBehavior: all
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers:
+            - "Content-Type"
+            - "Accept"
+            - "X-GRPC-Web"
+        QueryStringsConfig:
+          QueryStringBehavior: all
 
   MetriDnsRecord:
     Type: AWS::Route53::RecordSet
@@ -174,166 +391,33 @@ Resources:
         DNSName: !GetAtt MetriCloudFrontDistribution.DomainName
         EvaluateTargetHealth: false
 
-  # ── Infraestructura de Red Zero-Trust (VPC) ──
-  MetriVpc:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: metri-engine-vpc
-
-  PrivateSubnetA:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref MetriVpc
-      CidrBlock: 10.0.1.0/24
-      AvailabilityZone: !Select [0, !GetAZs ""]
-
-  PrivateSubnetB:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref MetriVpc
-      CidrBlock: 10.0.2.0/24
-      AvailabilityZone: !Select [1, !GetAZs ""]
-
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref MetriVpc
-
-  PrivateRouteTableAssocA:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnetA
-      RouteTableId: !Ref PrivateRouteTable
-
-  PrivateRouteTableAssocB:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnetB
-      RouteTableId: !Ref PrivateRouteTable
-
-  # Grupo de Seguridad Lambda
-  SecurityGroupLambda:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: "Controla egreso de Metri Engine hacia VPC Endpoints y Valkey"
-      VpcId: !Ref MetriVpc
-      SecurityGroupEgress:
-        - IpProtocol: "-1"
-          CidrIp: "0.0.0.0/0"
-          Description: "Permite egreso total, filtrado eficientemente hacia AWS Endpoints"
-
-  # Grupo de Seguridad VPC Endpoints (Internal HTTPS)
-  SecurityGroupVPCEndpoints:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: "Controla acceso interno a los VPC Interface Endpoints"
-      VpcId: !Ref MetriVpc
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          SourceSecurityGroupId: !Ref SecurityGroupLambda
-
-  # Grupo de Seguridad Valkey
-  SecurityGroupValkey:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: "Restringe trafico a Valkey Serverless unicamente desde Lambda"
-      VpcId: !Ref MetriVpc
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 6379
-          ToPort: 6379
-          SourceSecurityGroupId: !Ref SecurityGroupLambda
-
-  # Endpoints Gateway (Gratuitos AWS backbone para S3 y DynamoDB)
-  S3Endpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref MetriVpc
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
-      VpcEndpointType: Gateway
-      RouteTableIds:
-        - !Ref PrivateRouteTable
-
-  DynamoDBEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref MetriVpc
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.dynamodb"
-      VpcEndpointType: Gateway
-      RouteTableIds:
-        - !Ref PrivateRouteTable
-
-  # Endpoints Interface (Acceso sin internet publico a SQS y Athena)
-  SQSEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref MetriVpc
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.sqs"
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnetA
-      SecurityGroupIds:
-        - !Ref SecurityGroupVPCEndpoints
-
-  AthenaEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref MetriVpc
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.athena"
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnetA
-      SecurityGroupIds:
-        - !Ref SecurityGroupVPCEndpoints
-
-  FirehoseEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref MetriVpc
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.kinesis-firehose"
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnetA
-      SecurityGroupIds:
-        - !Ref SecurityGroupVPCEndpoints
-
-  EventBridgeEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref MetriVpc
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.events"
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      SubnetIds:
-        - !Ref PrivateSubnetA
-      SecurityGroupIds:
-        - !Ref SecurityGroupVPCEndpoints
-
-  # ── Valkey Serverless (Cache & Autorizador) ──
-  MetriValkeyCache:
-    Type: AWS::ElastiCache::ServerlessCache
-    Properties:
-      ServerlessCacheName: metri-valkey-cache
-      Engine: valkey
-      SecurityGroupIds:
-        - !Ref SecurityGroupValkey
-      SubnetIds:
-        - !Ref PrivateSubnetA
-        - !Ref PrivateSubnetB
+  # ── Nota de Arquitectura (Zero-Trust sin VPC) ──
+  # La VPC, subnets, route tables, security groups, Interface Endpoints (SQS, Athena,
+  # Firehose, Glue, EventBridge) y Valkey Serverless fueron ELIMINADOS deliberadamente.
+  #
+  # Razón: los Interface Endpoints costaban ~$36/mes fijos + Valkey ~$5-20/mes,
+  # representando el 80%+ de la factura AWS. No añaden protección real porque:
+  #   1. Lambda ya está detrás de CloudFront + WAF (rate-limit, IP reputation, JNDI)
+  #   2. X-Metri-Origin-Token valida que solo CloudFront llame a Lambda
+  #   3. IAM Least Privilege controla acceso a cada servicio AWS
+  #   4. KMS CMK cifra todos los datos en reposo
+  #
+  # Todos los servicios (DynamoDB, S3, SQS, Athena, Firehose, Glue, EventBridge)
+  # son accesibles desde Lambda vía sus APIs públicas de AWS con autenticación IAM.
+  #
+  # Autenticación: tokens HMAC-SHA256 auto-contenidos (mk_<payload>.<sig>).
+  #   - Verificación local en JVM: <0.1ms, $0, sin red.
+  #   - Secret en AWS Secrets Manager (MetriHMACSecret), cargado una vez en SnapStart.
+  #   - Revocación masiva: rotar MetriHMACSecret → todos los tokens inválidos al instante.
+  #   - Revocación individual: blacklist REVOKED#<jti> en MetriSchemasTable con TTL.
+  #
+  # Ahorro: ~$41-56/mes (≥ 80% reducción de costos de red).
 
   # ── Almacenamiento Analítico (OLAP) ──
   MetriDataLakeBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub "metri-lake-${AWS::AccountId}-${AWS::Region}"
       BucketEncryption:
@@ -347,136 +431,37 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  # ── Glue Data Catalog — OLAP Schema Registry (Parquet) ───────────────────────────────────
-  # Schema genérico: columnas de metadatos tipadas + payload como STRING.
-  # Permite predicate pushdown sobre _tenant, _entity, _timestamp en Athena.
-  # FASE 05: el Códice generará tablas Glue por entidad para columnar completo.
+  # ── Glue Data Catalog — OLAP Schema Registry (Columnar Nativo) ────────────────────────────
+  # Una base de datos por ambiente — las tablas Iceberg se crean via iceberg-seeder (CI/CD).
+  # Arquitectura: una tabla Iceberg nativa por entidad OLAP (sin Raw Zone genérica).
+  #   metre_olap.meter_reading  → columnas: id, _tenant, created_at, asset_id, reading_value ...
+  #   metre_olap.audit_log      → columnas: id, _tenant, created_at, tenant_id, action_type ...
+  #   metre_olap.domain_fault   → columnas: id, _tenant, created_at, trace_id, error_code ...
+  #   metre_olap.inventory_ledger → columnas: id, _tenant, created_at, part_id, quantity_change ...
   MetriGlueDatabase:
     Type: AWS::Glue::Database
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
         Name: metri_olap
-        Description: "Metri Engine — Data Lake OLAP (Parquet/Snappy via Firehose)"
+        Description: "Metri Engine — Data Lake OLAP Columnar (Iceberg/Parquet por Entidad)"
+        LocationUri: !Sub "s3://metri-lake-${AWS::AccountId}-${AWS::Region}/iceberg-data/"
 
-  MetriGlueOlapTable:
-    Type: AWS::Glue::Table
-    DependsOn: MetriGlueDatabase
-    Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseName: metri_olap
-      TableInput:
-        Name: olap_events
-        Description: "Tabla genérica multientidad — metadatos tipados + payload serializado"
-        TableType: EXTERNAL_TABLE
-        StorageDescriptor:
-          Location: !Sub "s3://metri-lake-${AWS::AccountId}-${AWS::Region}/"
-          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
-          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
-          SerdeInfo:
-            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
-            Parameters:
-              serialization.format: "1"
-          Columns:
-            # ── Metadatos Zero-Trust (inyectados por OLAPChannel) ──
-            - Name: id
-              Type: string
-              Comment: "ULID del registro — monotonónico, lexicográficamente ordenable"
-            - Name: _tenant
-              Type: string
-              Comment: "tenant_id inyectado por CedarAuthorizer — NUNCA del cliente"
-            - Name: _entity
-              Type: string
-              Comment: "Tipo de entidad del Códice (meter_reading, asset, etc.)"
-            - Name: _timestamp
-              Type: bigint
-              Comment: "Epoch millis UTC del momento de ingestión"
-            - Name: _partition_path
-              Type: string
-              Comment: "Ruta de partición Hive evaluada por partition.clj"
-            # ── Payload de la entidad (meter_reading) ──────────────────────────
-            # Campos de dominio para mapeo nativo a columnas Parquet.
-            # Permite predicate pushdown O(1) directo sobre valores del sensor.
-            - Name: asset_id
-              Type: string
-              Comment: "FK al asset (presente en entidades IoT)"
-            - Name: reading_value
-              Type: double
-              Comment: "Valor de la medición"
-            - Name: unit_of_measure
-              Type: string
-              Comment: "Unidad UN/CEFACT"
-            - Name: timestamp
-              Type: bigint
-              Comment: "Epoch millis del evento de campo"
-            - Name: timestamp_epoch
-              Type: bigint
-              Comment: "Epoch millis enviado por mass_simulation.py"
-            - Name: metadata
-              Type: string
-              Comment: "Diccionario clave-valor dinámico serializado como JSON"
-        # Orden de partición: tenant_id PRIMERO (aislamiento multitenant)
-        # tenant_id=acme/entity=meter_reading/YYYY/MM/DD/HH/
-        # Athena puede usar partition pruning completo con solo WHERE tenant_id='acme'
-        # sin necesidad de escanear otras entidades.
-        PartitionKeys:
-          - Name: tenant_id
-            Type: string
-          - Name: entity
-            Type: string
-
-  # ── Firehose Delivery Stream para OLAP (Multitenant & Multi-Entity) ──
-  MetriOlapDeliveryStream:
-    Type: AWS::KinesisFirehose::DeliveryStream
-    DependsOn: MetriGlueOlapTable
-    Properties:
-      DeliveryStreamName: "metri-olap-stream"
-      DeliveryStreamType: DirectPut
-      ExtendedS3DestinationConfiguration:
-        BucketARN: !GetAtt MetriDataLakeBucket.Arn
-        RoleARN: !GetAtt FirehoseDeliveryRole.Arn
-        # tenant_id PRIMERO: aislamiento multitenant garantizado en S3.
-        # Ruta final: tenant_id=acme/entity=meter_reading/2026/04/25/14/
-        # Athena prune por tenant sin leer datos de otros tenants.
-        Prefix: "tenant_id=!{partitionKeyFromQuery:_tenant}/entity=!{partitionKeyFromQuery:_entity}/!{partitionKeyFromQuery:_partition_path}/"
-        ErrorOutputPrefix: "errors/!{firehose:error-output-type}/"
-        DynamicPartitioningConfiguration:
-          Enabled: true
-        ProcessingConfiguration:
-          Enabled: true
-          Processors:
-            - Type: MetadataExtraction
-              Parameters:
-                - ParameterName: MetadataExtractionQuery
-                  ParameterValue: "{_tenant: ._tenant, _entity: ._entity, _partition_path: ._partition_path}"
-                - ParameterName: JsonParsingEngine
-                  ParameterValue: JQ-1.6
-        BufferingHints:
-          SizeInMBs: 128
-          IntervalInSeconds: 300
-        # ── Conversión JSON → Parquet (Snappy) via Glue Data Catalog ──
-        # Ahorro: ~5-10x en costo Athena (scan columnar) + ~5x en storage S3 (Snappy).
-        # Schema: MetriGlueOlapTable en metri_olap database.
-        DataFormatConversionConfiguration:
-          Enabled: true
-          InputFormatConfiguration:
-            Deserializer:
-              OpenXJsonSerDe:
-                CaseInsensitive: false
-                ConvertDotsInJsonKeysToUnderscores: false
-          OutputFormatConfiguration:
-            Serializer:
-              ParquetSerDe:
-                Compression: SNAPPY
-                EnableDictionaryCompression: true
-                WriterVersion: V2
-          SchemaConfiguration:
-            CatalogId: !Ref AWS::AccountId
-            DatabaseName: metri_olap
-            TableName: olap_events
-            Region: !Ref AWS::Region
-            VersionId: LATEST
-            RoleARN: !GetAtt FirehoseDeliveryRole.Arn
+  # ── Firehose Delivery Streams (gestionados dinámicamente por firehose-seeder) ───────────────
+  # Los streams se crean vía `make sync-firehose` (metri.codice.firehose-seeder/sync-streams!)
+  # que lee el registry de Códice y hace upsert idempotente de un DeliveryStream por entidad OLAP.
+  #
+  # Naming convention: metri-olap-stream-<entity-slug>
+  #   entity:  meter_reading     → stream: metri-olap-stream-meter-reading
+  #   entity:  audit_log         → stream: metri-olap-stream-audit-log
+  #   entity:  domain_fault      → stream: metri-olap-stream-domain-fault
+  #   entity:  inventory_ledger  → stream: metri-olap-stream-inventory-ledger
+  #
+  # Para añadir una nueva entidad OLAP:
+  #   1. Crear resources/models/<entity>.json con "engine": "olap"
+  #   2. Ejecutar: make sync-iceberg   (crea la tabla Athena/Iceberg)
+  #   3. Ejecutar: make sync-firehose  (crea el DeliveryStream)
+  #   CERO cambios en este archivo template.yaml.
 
   FirehoseDeliveryRole:
     Type: AWS::IAM::Role
@@ -489,7 +474,7 @@ Resources:
               Service: firehose.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: firehose-s3-access
+        - PolicyName: firehose-s3-iceberg-access
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -509,22 +494,22 @@ Resources:
                   - kms:Decrypt
                   - kms:GenerateDataKey*
                 Resource: !GetAtt MetriKmsMasterKey.Arn
-              # ── Glue: permisos para DataFormatConversion JSON → Parquet ──
+              # ── Glue: wildcard sobre todas las tablas OLAP (no requiere cambios al añadir entidades) ──
               - Effect: Allow
                 Action:
                   - glue:GetTable
-                  - glue:GetTableVersion
-                  - glue:GetTableVersions
+                  - glue:UpdateTable
                   - glue:GetDatabase
-                  - glue:GetDatabases
                 Resource:
                   - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/metri_olap"
-                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/metri_olap/olap_events"
+                  - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/metri_olap/*"
 
   # ── Diccionario JSON & Validador (OLTP) ──
   MetriSchemasTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
       SSESpecification:
@@ -533,12 +518,32 @@ Resources:
         KMSMasterKeyId: !Ref MetriKmsMasterKey
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      # TTL nativo — borra automáticamente items REVOKED#<jti> expirados (blacklist HMAC)
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
       AttributeDefinitions:
         - AttributeName: PK
           AttributeType: S
       KeySchema:
         - AttributeName: PK
           KeyType: HASH
+
+  # ── HMAC Signing Secret ─────────────────────────────────────────────────
+  # Secret auto-generado de 64 bytes (512 bits) para firmar tokens HMAC-SHA256.
+  # Rotación: rotar este secret invalida TODOS los tokens emitidos (revocación masiva).
+  # Lambda lo carga UNA VEZ al arranque via Secrets Manager API — SnapStart lo congela en RAM.
+  MetriHMACSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "metri-hmac-secret-${AWS::StackName}"
+      Description: "Secret HMAC-SHA256 para firma de tokens Metri Engine. Rotar = invalida todos los tokens."
+      KmsKeyId: !Ref MetriKmsMasterKey
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: true
+        ExcludeUppercase: false
+        IncludeSpace: false
 
   # ── Despacho EDA (Outbox) ──
   MetriOutboxDLQ:
@@ -583,24 +588,41 @@ Resources:
         AuthType: NONE
         InvokeMode: BUFFERED
         Cors:
-          AllowOrigins:
-            - !Sub "https://${CustomDomainName}"
-            - "http://localhost:3000"
-            - "http://localhost:8080"
-          AllowHeaders:
-            - "*"
-          AllowMethods:
-            - "*"
-          ExposeHeaders:
-            - "grpc-status"
-            - "grpc-message"
+          # ── Origenes permitidos ─────────────────────────────────────────────────────────────
+          # Si HasDevCorsOrigin=false (produccion): solo https://engine.metri.one
+          # Si HasDevCorsOrigin=true  (dev):        + DevCorsOrigin (ej: localhost:3000)
+          AllowOrigins: !If
+            - HasDevCorsOrigin
+            - - !Sub "https://${CustomDomainName}"
+              - !Ref DevCorsOrigin
+            - - !Sub "https://${CustomDomainName}"
 
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref SecurityGroupLambda
-        SubnetIds:
-          - !Ref PrivateSubnetA
-          - !Ref PrivateSubnetB
+          # ── Headers permitidos: whitelist estricta gRPC-Web ─────────────────────────────
+          # Excluye: X-Metri-Origin-Token (CloudFront→Lambda, nunca desde el browser)
+          AllowHeaders:
+            - "Content-Type" # application/grpc-web+proto | application/grpc-web-text
+            - "X-Grpc-Web" # requerido por el protocolo gRPC-Web
+            - "Grpc-Timeout" # propagación de deadlines
+            - "Authorization" # tokens HMAC del cliente
+            - "Accept" # negociación de contenido
+            - "X-Request-Id" # trazabilidad OTel / Sherlog
+
+          # ── Métodos permitidos: gRPC-Web usa POST exclusivamente ──────────────────
+          # OPTIONS omitido: Lambda Function URL maneja CORS preflight automáticamente.
+          AllowMethods:
+            - "POST" # único verbo gRPC-Web
+
+          # ── Headers expuestos al browser ────────────────────────────────────────
+          ExposeHeaders:
+            - "grpc-status" # código de estado gRPC
+            - "grpc-message" # mensaje de error legible
+            - "grpc-status-details-bin" # detalles serializados (google.rpc.Status)
+            - "Content-Type" # tipo de respuesta gRPC-Web
+
+          # ── Cache de preflight: reduce round-trips del browser ─────────────────
+          MaxAge: 3600 # 1 hora — el browser no repite OPTIONS en cada llamada
+
+      # Sin VpcConfig: Lambda accede a servicios AWS via API publica + IAM (sin costo de red)
 
       # Reglas de Cero Confianza (Minimum Least Privilege)
       Policies:
@@ -608,8 +630,9 @@ Resources:
             BucketName: !Ref MetriDataLakeBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref MetriSchemasTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref DatahikeTableName
+        # DatahikeTableName: política explícita sin DeleteItem.
+        # Datahike es una base de datos inmutable (append-only log de datoms);
+        # la eliminación física de ítems nunca debe ser posible desde Lambda.
         - SQSSendMessagePolicy:
             QueueName: !GetAtt MetriOutboxQueue.QueueName
         # Asignación manual para Athena ya que asegura todos los endpoints internos (Glue, LakeFormation)
@@ -622,11 +645,38 @@ Resources:
               Resource: !GetAtt MetriKmsMasterKey.Arn
             - Effect: Allow
               Action:
+                - glue:GetDatabase
+                - glue:GetTable
+                - glue:CreateTable
+                - glue:UpdateTable
+              Resource:
+                - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/metri_olap"
+                - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/metri_olap/*"
+            - Effect: Allow
+              Action:
                 - athena:StartQueryExecution
                 - athena:GetQueryExecution
                 - athena:GetQueryResults
                 - athena:StopQueryExecution
               Resource: !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkGroup}"
+            # ── Datahike: plano de datos (sin DeleteItem — inmutable por diseño) ──
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:BatchGetItem
+                - dynamodb:BatchWriteItem
+                - dynamodb:ConditionCheckItem
+                - dynamodb:TransactWriteItems
+                - dynamodb:TransactGetItems
+              Resource:
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DatahikeTableName}"
+                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DatahikeTableName}/index/*"
+            # ── Datahike: ciclo de vida de la tabla (schema bootstrap) ──
             - Effect: Allow
               Action:
                 - dynamodb:CreateTable
@@ -638,6 +688,14 @@ Resources:
                 - firehose:PutRecord
                 - firehose:PutRecordBatch
               Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/metri-olap-*"
+            - Effect: Allow
+              Action:
+                - events:PutEvents
+              Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-faults"
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref MetriHMACSecret
 
       Environment:
         Variables:
@@ -648,12 +706,12 @@ Resources:
           CEDAR_POLICIES_TABLE: !Ref MetriSchemasTable
           OUTBOX_QUEUE_URL: !GetAtt MetriOutboxQueue.QueueUrl
           KINESIS_STREAM_PREFIX: "metri-olap-stream"
+          GLUE_DATABASE_NAME: "metri_olap"
           FAULT_BUS_NAME: "metri-faults"
-          VALKEY_HOST: !GetAtt MetriValkeyCache.Endpoint.Address
-          VALKEY_PORT: !GetAtt MetriValkeyCache.Endpoint.Port
-          VALKEY_PASSWORD: ""
-          FORCE_DEPLOY: "2"
-          METRI_ORIGIN_TOKEN: !Ref AWS::StackId
+          HMAC_SECRET_ARN: !Ref MetriHMACSecret
+          # METRI_ORIGIN_TOKEN eliminado: Lambda valida el header X-Metri-Origin-Token
+          # Incrementa este valor para forzar un cold-start del Lambda (útil cuando se limpia Datahike/DynamoDB y la cache interna queda sucia)
+          FORCE_DEPLOY: "18"
 
 Outputs:
   MetriEngineFunctionPublicUrl:
@@ -671,6 +729,6 @@ Outputs:
   MetriGlueDatabaseName:
     Description: "Glue Database para queries Athena OLAP (Parquet/Snappy)"
     Value: metri_olap
-  MetriValkeyEndpointInternal:
-    Description: "Punto de anclaje privado interno (TCP: 6379) para el servidor Valkey (Solo accesible en la VPC)"
-    Value: !GetAtt MetriValkeyCache.Endpoint.Address
+  MetriHMACTokenStore:
+    Description: "Autenticación: HMAC-SHA256 auto-contenido | Secret: MetriHMACSecret (Secrets Manager + KMS)"
+    Value: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:metri-hmac-secret-${AWS::StackName}"

@@ -1,0 +1,326 @@
+{
+  "Metri": {
+    "entityTypes": {
+      "User": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenant_id": {
+              "type": "String",
+              "required": true
+            },
+            "user_id": {
+              "type": "String",
+              "required": true
+            },
+            "roles": {
+              "type": "Set",
+              "element": {
+                "type": "String"
+              },
+              "required": true
+            },
+            "email": {
+              "type": "String",
+              "required": false
+            }
+          }
+        }
+      },
+      "MetriResource": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenant_id": {
+              "type": "String",
+              "required": true
+            },
+            "entity_type": {
+              "type": "String",
+              "required": false
+            },
+            "rpc": {
+              "type": "String",
+              "required": false
+            }
+          }
+        }
+      },
+      "ActionGroup": {}
+    },
+    "actions": {
+      "DiscoverSchema": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "ExploreSchema": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "QueryMetrics": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "MutateEntity": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"mutational\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "BulkIngestData": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"mutational\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "MatchRoutingRulesBatch": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "CREATE": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"mutational\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "UPDATE": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"mutational\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "DELETE": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"mutational\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "UPSERT": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"mutational\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "GET": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"mutational\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "QueryKpi": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "QueryTimeseries": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "QueryTable": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "QueryPie": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "QueryBubble": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      },
+      "QueryCsvExport": {
+        "appliesTo": {
+          "principalTypes": [
+            "User"
+          ],
+          "resourceTypes": [
+            "MetriResource"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "ActionGroup::\"analytical\"",
+            "type": "Action"
+          }
+        ]
+      }
+    }
+  }
+}

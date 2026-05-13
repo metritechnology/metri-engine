@@ -1,0 +1,601 @@
+{
+  "meta": {
+    "suite": "filter_suite_v1",
+    "version": "2026-05-05",
+    "environment": "production",
+    "endpoint": "https://engine.metri.one",
+    "tenant": "golden-tenant",
+    "timestamp": "2026-05-05T20:13:58.804291+00:00",
+    "total_queries": 20,
+    "ok": 18,
+    "failed": 2,
+    "pass_rate_pct": 90.0
+  },
+  "session_fixes": [
+    {
+      "bug_id": "BUG-001",
+      "severity": "CRITICAL",
+      "category": "enum_keyword_mismatch",
+      "file": "src/metri/janus/filter_compiler.clj",
+      "function": "compile-group",
+      "description": "proto->clj convierte conjunctions a keywords (:AND, :OR, :NOT). El case usaba strings \"AND\". OR siempre compilaba como AND, NOT era ignorado silenciosamente.",
+      "fix": "(name conjunction) para normalizar keyword→string antes del case.",
+      "verified_by": [
+        "olap_or_group → 60.0 ✅",
+        "olap_not_group → 60.0 ✅"
+      ]
+    },
+    {
+      "bug_id": "BUG-002",
+      "severity": "CRITICAL",
+      "category": "list_val_extraction",
+      "file": "src/metri/janus/filter_compiler.clj",
+      "function": "build-leaf-node",
+      "description": "StringList proto→clj = {:values [\"a\",\"b\"]}. IN/NOT_IN usaban (:list-val val-map) directamente → HoneySQL recibia el map completo y lo vectorizaba como [[\"values\" [...]] ].",
+      "fix": "Extraer (get-in val-map [:list-val :values] []) para obtener el vector de strings.",
+      "verified_by": [
+        "oltp_in_type → sum=9000 ✅",
+        "olap_not_in_unit → 90 ✅"
+      ]
+    }
+  ],
+  "pending_bugs": [
+    {
+      "bug_id": "BUG-003",
+      "severity": "LOW",
+      "category": "datos_seed",
+      "affected_query": "olap_in_asset",
+      "root_cause": "asset_id en Athena son ULIDs generados por Códice, no strings literales \"ast-001\". El operador IN en si funciona (validado via oltp_in_type).",
+      "fix_strategy": "Consultar ULID real via Discovery/Explore y actualizar el test con IDs reales."
+    },
+    {
+      "bug_id": "BUG-004",
+      "severity": "MEDIUM",
+      "category": "arquitectural_oltp_or",
+      "affected_query": "oltp_or_group",
+      "root_cause": "Datahike or-join falla en runtime (AEG_COMPILE_001) con predicados de funcion numerica (> ?v 140) dentro de or-join branches. Las variables ?v no se pueden bindear dentro del scope del or-join.",
+      "fix_strategy": "Opcion A: mover OR groups en OLTP a evaluador in-memory post-hoc en aggregation.clj. Opcion B: compilar cada rama del OR como query separada y unir resultados en Clojure."
+    }
+  ],
+  "failures": {
+    "olap_in_asset": {
+      "operator": "IN",
+      "engine": "OLAP",
+      "error_code": null,
+      "error_message": null,
+      "known_bug": "BUG-003",
+      "root_cause": "asset_id en Athena son ULIDs generados por Códice, no strings literales \"ast-001\". El operador IN en si funciona (validado via oltp_in_type)."
+    },
+    "oltp_or_group": {
+      "operator": "OR_GROUP",
+      "engine": "OLTP",
+      "error_code": null,
+      "error_message": null,
+      "known_bug": "BUG-004",
+      "root_cause": "Datahike or-join falla en runtime (AEG_COMPILE_001) con predicados de funcion numerica (> ?v 140) dentro de or-join branches. Las variables ?v no se pueden bindear dentro del scope del or-join."
+    }
+  },
+  "semantic_anomalies": {},
+  "operator_coverage": {
+    "EQ": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 3323,
+        "value_correct": true
+      },
+      "OLTP": {
+        "status": "OK",
+        "exec_ms": 1673,
+        "value_correct": true
+      }
+    },
+    "NEQ": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 4967,
+        "value_correct": true
+      }
+    },
+    "GT": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 4991,
+        "value_correct": true
+      },
+      "OLTP": {
+        "status": "OK",
+        "exec_ms": 1706,
+        "value_correct": true
+      }
+    },
+    "GTE": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 3290,
+        "value_correct": true
+      }
+    },
+    "LT": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 4934,
+        "value_correct": true
+      }
+    },
+    "LTE": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 8451,
+        "value_correct": true
+      },
+      "OLTP": {
+        "status": "OK",
+        "exec_ms": 1741,
+        "value_correct": true
+      }
+    },
+    "BETWEEN": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 6628,
+        "value_correct": true
+      },
+      "OLTP": {
+        "status": "OK",
+        "exec_ms": 1694,
+        "value_correct": true
+      }
+    },
+    "IN": {
+      "OLAP": {
+        "status": "FAIL",
+        "exec_ms": 1652,
+        "value_correct": null
+      },
+      "OLTP": {
+        "status": "OK",
+        "exec_ms": 1708,
+        "value_correct": true
+      }
+    },
+    "NOT_IN": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 3287,
+        "value_correct": true
+      }
+    },
+    "AND_GROUP": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 7054,
+        "value_correct": true
+      },
+      "OLTP": {
+        "status": "OK",
+        "exec_ms": 3811,
+        "value_correct": true
+      }
+    },
+    "OR_GROUP": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 1634,
+        "value_correct": true
+      },
+      "OLTP": {
+        "status": "FAIL",
+        "exec_ms": null,
+        "value_correct": null
+      }
+    },
+    "NOT_GROUP": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 4921,
+        "value_correct": true
+      }
+    },
+    "IS_NOT_NULL": {
+      "OLAP": {
+        "status": "OK",
+        "exec_ms": 1647,
+        "value_correct": true
+      }
+    }
+  },
+  "performance": {
+    "min_ms": 1634,
+    "max_ms": 8451,
+    "avg_ms": 3637.5,
+    "p95_ms": 8451,
+    "slow_queries_5s": [
+      {
+        "query": "olap_lte_value",
+        "exec_ms": 8451
+      },
+      {
+        "query": "olap_between_value",
+        "exec_ms": 6628
+      },
+      {
+        "query": "olap_and_group",
+        "exec_ms": 7054
+      }
+    ]
+  },
+  "results": {
+    "olap_eq_unit": {
+      "status": "OK",
+      "operator": "EQ",
+      "engine": "OLAP",
+      "field_type": "string",
+      "exec_ms": 3323,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 0.0,
+      "expected_value": 0.0,
+      "value_correct": true,
+      "test_note": "unit=kWh pero seed usa CEL/KWH uppercase → 0 matches",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_neq_unit": {
+      "status": "OK",
+      "operator": "NEQ",
+      "engine": "OLAP",
+      "field_type": "string",
+      "exec_ms": 4967,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 90.0,
+      "expected_value": 90.0,
+      "value_correct": true,
+      "test_note": "!= kWh → todos 90",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_gt_value": {
+      "status": "OK",
+      "operator": "GT",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 4991,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 30.0,
+      "expected_value": 30.0,
+      "value_correct": true,
+      "test_note": "rv>100 → 30 registros rv=150",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_gte_value": {
+      "status": "OK",
+      "operator": "GTE",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 3290,
+      "columns": [
+        "avg_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 150.0,
+      "expected_value": 150.0,
+      "value_correct": true,
+      "test_note": "rv>=150 → avg=150",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_lt_value": {
+      "status": "OK",
+      "operator": "LT",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 4934,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 30.0,
+      "expected_value": 30.0,
+      "value_correct": true,
+      "test_note": "rv<100 → 30 registros rv=50",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_lte_value": {
+      "status": "OK",
+      "operator": "LTE",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 8451,
+      "columns": [
+        "sum_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 1500.0,
+      "expected_value": 1500.0,
+      "value_correct": true,
+      "test_note": "rv<=50 → sum=1500",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_between_value": {
+      "status": "OK",
+      "operator": "BETWEEN",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 6628,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 60.0,
+      "expected_value": 60.0,
+      "value_correct": true,
+      "test_note": "50<=rv<=100 → 60 registros",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_in_asset": {
+      "status": "FAIL",
+      "operator": "IN",
+      "engine": "OLAP",
+      "field_type": "reference",
+      "exec_ms": 1652,
+      "columns": [
+        "sum_reading_value"
+      ],
+      "row_count": 0,
+      "actual_value": null,
+      "expected_value": null,
+      "value_correct": null,
+      "test_note": "IDs son ULIDs, no ast-001 → datos seed",
+      "issues": [
+        "⚠️  0 rows — posible bug de filtro o sin datos seed"
+      ],
+      "error_code": null,
+      "error_message": null,
+      "known_bug": {
+        "bug_id": "BUG-003",
+        "severity": "LOW",
+        "category": "datos_seed"
+      }
+    },
+    "olap_not_in_unit": {
+      "status": "OK",
+      "operator": "NOT_IN",
+      "engine": "OLAP",
+      "field_type": "string",
+      "exec_ms": 3287,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 90.0,
+      "expected_value": 90.0,
+      "value_correct": true,
+      "test_note": "NOT IN [psi,lpm] → todos 90",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_and_group": {
+      "status": "OK",
+      "operator": "AND_GROUP",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 7054,
+      "columns": [
+        "avg_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 100.0,
+      "expected_value": 100.0,
+      "value_correct": true,
+      "test_note": "50<=rv<=150 → avg=100",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_or_group": {
+      "status": "OK",
+      "operator": "OR_GROUP",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 1634,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 60.0,
+      "expected_value": 60.0,
+      "value_correct": true,
+      "test_note": "rv<60 OR rv>140 → 60",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_not_group": {
+      "status": "OK",
+      "operator": "NOT_GROUP",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 4921,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 60.0,
+      "expected_value": 60.0,
+      "value_correct": true,
+      "test_note": "NOT(rv=100) → 60",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "olap_is_not_null": {
+      "status": "OK",
+      "operator": "IS_NOT_NULL",
+      "engine": "OLAP",
+      "field_type": "decimal",
+      "exec_ms": 1647,
+      "columns": [
+        "count_reading_value"
+      ],
+      "row_count": 1,
+      "actual_value": 90.0,
+      "expected_value": 90.0,
+      "value_correct": true,
+      "test_note": "rv IS NOT NULL → 90",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "oltp_eq_type": {
+      "status": "OK",
+      "operator": "EQ",
+      "engine": "OLTP",
+      "field_type": "string",
+      "exec_ms": 1673,
+      "columns": [
+        "count_quantity"
+      ],
+      "row_count": 1,
+      "actual_value": 90.0,
+      "expected_value": 90.0,
+      "value_correct": true,
+      "test_note": "type=RECEIPT → 90",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "oltp_gt_quantity": {
+      "status": "OK",
+      "operator": "GT",
+      "engine": "OLTP",
+      "field_type": "decimal",
+      "exec_ms": 1706,
+      "columns": [
+        "count_quantity"
+      ],
+      "row_count": 1,
+      "actual_value": 30.0,
+      "expected_value": 30.0,
+      "value_correct": true,
+      "test_note": "qty>100 → 30",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "oltp_between_quantity": {
+      "status": "OK",
+      "operator": "BETWEEN",
+      "engine": "OLTP",
+      "field_type": "decimal",
+      "exec_ms": 1694,
+      "columns": [
+        "count_quantity"
+      ],
+      "row_count": 1,
+      "actual_value": 60.0,
+      "expected_value": 60.0,
+      "value_correct": true,
+      "test_note": "50<=qty<=100 → 60",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "oltp_lte_quantity": {
+      "status": "OK",
+      "operator": "LTE",
+      "engine": "OLTP",
+      "field_type": "decimal",
+      "exec_ms": 1741,
+      "columns": [
+        "sum_quantity"
+      ],
+      "row_count": 1,
+      "actual_value": 1500.0,
+      "expected_value": 1500.0,
+      "value_correct": true,
+      "test_note": "qty<=50 → sum=1500",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "oltp_in_type": {
+      "status": "OK",
+      "operator": "IN",
+      "engine": "OLTP",
+      "field_type": "string",
+      "exec_ms": 1708,
+      "columns": [
+        "sum_quantity"
+      ],
+      "row_count": 1,
+      "actual_value": 9000.0,
+      "expected_value": 9000.0,
+      "value_correct": true,
+      "test_note": "IN [RECEIPT] → sum=9000",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "oltp_and_group": {
+      "status": "OK",
+      "operator": "AND_GROUP",
+      "engine": "OLTP",
+      "field_type": "decimal",
+      "exec_ms": 3811,
+      "columns": [
+        "avg_quantity"
+      ],
+      "row_count": 1,
+      "actual_value": 125.0,
+      "expected_value": 125.0,
+      "value_correct": true,
+      "test_note": "100<=qty<=150 → avg=125",
+      "issues": [],
+      "error_code": null,
+      "error_message": null
+    },
+    "oltp_or_group": {
+      "status": "FAIL",
+      "operator": "OR_GROUP",
+      "engine": "OLTP",
+      "field_type": "decimal",
+      "exec_ms": null,
+      "columns": [],
+      "row_count": 0,
+      "actual_value": null,
+      "expected_value": 60.0,
+      "value_correct": null,
+      "test_note": "qty<60 OR qty>140 → 60",
+      "issues": [
+        "❌ error []: "
+      ],
+      "error_code": null,
+      "error_message": null,
+      "known_bug": {
+        "bug_id": "BUG-004",
+        "severity": "MEDIUM",
+        "category": "arquitectural_oltp_or"
+      }
+    }
+  }
+}

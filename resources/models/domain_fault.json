@@ -1,0 +1,89 @@
+{
+  "entity": "domain_fault",
+  "engine": "olap",
+  "is_system": true,
+  "track_history": false,
+  "disable_eda": true,
+  "description": "Registro persistente de errores severos del sistema (WARNING, ERROR, FATAL). Consultable via Janus para BI de errores, an\u00e1lisis de tendencias y correlaci\u00f3n causal con telemetry_span por trace_id.",
+  "attributes": [
+    {
+      "name": "trace_id",
+      "type": "string",
+      "index": true,
+      "required": true,
+      "description": "W3C trace_id del span OTel activo en el momento del error. Correlaciona con telemetry_span para diagn\u00f3stico causal completo."
+    },
+    {
+      "name": "tenant_id",
+      "type": "reference",
+      "entityRef": "tenant",
+      "cardinality": "one",
+      "is_dimension": true,
+      "required": true,
+      "description": "Tenant afectado. Requerido para aislamiento multitenant en BI de errores y dashboards operacionales."
+    },
+    {
+      "name": "user_id",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Usuario que accion\u00f3 la operaci\u00f3n fallida. Opcional \u2014 puede ser M2M (machine-to-machine) sin usuario asociado."
+    },
+    {
+      "name": "error_code",
+      "type": "string",
+      "index": true,
+      "required": true,
+      "is_dimension": true,
+      "description": "C\u00f3digo del cat\u00e1logo maestro (error_catalog.edn). Ej: JNS_REF_002, COD_VAL_001, SYS_000."
+    },
+    {
+      "name": "severity",
+      "type": "enum",
+      "options": [
+        "WARNING",
+        "ERROR",
+        "FATAL"
+      ],
+      "is_dimension": true,
+      "required": true,
+      "description": "Severidad del error. WARNING=cliente, ERROR=infra, FATAL=pipeline roto."
+    },
+    {
+      "name": "stage",
+      "type": "string",
+      "index": true,
+      "is_dimension": true,
+      "required": true,
+      "description": "Componente del sistema donde ocurri\u00f3 el error. Ej: janus, codice, auth, abac, kinesis."
+    },
+    {
+      "name": "entity_type",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Tipo de entidad involucrada en la operaci\u00f3n fallida. Ej: work_order, asset, location."
+    },
+    {
+      "name": "retryable",
+      "type": "boolean",
+      "is_dimension": true,
+      "description": "Indica si el error es recuperable con un reintento. Derivado del cat\u00e1logo maestro."
+    },
+    {
+      "name": "occurred_at",
+      "type": "epoch",
+      "required": true,
+      "is_dimension": true,
+      "description": "Timestamp exacto del error en milisegundos epoch."
+    },
+    {
+      "name": "context",
+      "type": "json",
+      "description": "Contexto forense completo del error. Campos marcados como sensitive:true en el schema son sustituidos por [REDACTED] antes de persistir."
+    }
+  ],
+  "events": {
+    "create": "DOMAIN_FAULT_RECORDED"
+  }
+}

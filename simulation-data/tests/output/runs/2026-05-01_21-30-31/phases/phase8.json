@@ -1,0 +1,9 @@
+[
+  {
+    "id": "TC-F8-DIMENSIONS",
+    "passed": false,
+    "errors": [
+      "Field metri.AnalyticsRequest.search does not have presence."
+    ]
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "bug_id": "BUG-001",
+    "test_id": "TC-F5-ALL_TIME",
+    "layer": "Proto",
+    "severity": "CRITICAL",
+    "description": "[CAPA 1] Motor retorn\u00f3 error_code='JANUS_VAL_001': Error interno del servidor",
+    "expected": "{}",
+    "actual": "FIX_REQUEST",
+    "status": "OPEN",
+    "opened_at": "2026-05-02T02:45:34.850655"
+  }
+]

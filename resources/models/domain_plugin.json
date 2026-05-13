@@ -1,0 +1,43 @@
+{
+  "entity": "domain_plugin",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "target_domain",
+      "type": "string",
+      "required": true,
+      "doc": "The entity name this plugin attaches to (e.g., 'asset', 'location')."
+    },
+    {
+      "name": "hook_type",
+      "type": "enum",
+      "options": [
+        "PRE_VALIDATE",
+        "POST_VALIDATE",
+        "PRE_COMMIT",
+        "POST_COMMIT",
+        "ON_QUERY_STREAM"
+      ],
+      "required": true,
+      "doc": "Specific point in the execution pipeline where the plugin is executed."
+    },
+    {
+      "name": "clojure_fn",
+      "type": "string",
+      "required": true,
+      "doc": "Fully qualified namespace and function name (e.g., 'metri.plugins.inventory/validate-stock')."
+    },
+    {
+      "name": "active",
+      "type": "boolean",
+      "required": true
+    },
+    {
+      "name": "config",
+      "type": "json",
+      "doc": "Optional parameters passed to the plugin during execution."
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "TC-F12-EXPLAIN-QUERY",
+    "passed": true,
+    "duration_ms": 72,
+    "errors": []
+  },
+  {
+    "id": "TC-F12-SEARCH-ASSET",
+    "passed": true,
+    "duration_ms": 7,
+    "errors": []
+  },
+  {
+    "id": "TC-F12-HIERARCHY-BASIC",
+    "passed": true,
+    "duration_ms": 13,
+    "errors": []
+  },
+  {
+    "id": "TC-F12-SELECT-TREE",
+    "passed": true,
+    "duration_ms": 43,
+    "errors": []
+  }
+]

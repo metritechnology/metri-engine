@@ -19,6 +19,10 @@
         com.cognitect.aws/sqs       {:mvn/version "871.2.34.1"}
         com.cognitect.aws/firehose  {:mvn/version "871.2.31.64"}
         com.cognitect.aws/events    {:mvn/version "871.2.32.30"}
+        com.cognitect.aws/glue      {:mvn/version "848.2.1413.0"}
+        com.cognitect.aws/secretsmanager {:mvn/version "871.2.40.9"}
+        com.cognitect.aws/sts {:mvn/version "871.2.39.3"}
+        com.cognitect.aws/cloudformation {:mvn/version "871.2.39.3"}
         software.amazon.awssdk/athena {:mvn/version "2.25.11"}
         com.github.f4b6a3/ulid-creator {:mvn/version "5.2.3"}
         
@@ -60,6 +64,11 @@
 
         ;; ULID — Universally Unique Lexicographically Sortable Identifier
         ;; Referencia estándar JVM: 0 deps transitivas, monotónico, thread-safe
+
+        ;; SQL Builder — Athena OLAP path (CTEs, CASE WHEN, EXISTS, date_trunc)
+        ;; Requerido por: janus-ast-ir.edn §4 AnalyticalComparison, §4 MetricDefinition.filter,
+        ;;                §4 HierarchyContext, §4 DimensionDefinition.interval, §1 OutputCastType
+        com.github.seancorfield/honeysql {:mvn/version "2.6.1126"}
         }
 
  :aliases
@@ -68,7 +77,7 @@
    :extra-deps  {integrant/repl {:mvn/version "0.3.3"}}}
 
   :test
-  {:extra-paths ["test"]
+  {:extra-paths ["test" "target/classes"]
    :extra-deps  {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
    :main-opts   ["-m" "cognitect.test-runner"
                  ;; Exclude metri.infrastructure-test (requires Docker/LocalStack)
@@ -77,12 +86,12 @@
                  "metri\\.infrastructure\\.[a-z].*|metri\\.iop\\..*|metri\\.domain\\..*|metri\\.lambda\\..*|metri\\.grpc\\..*|metri\\.codice\\..*|metri\\.janus-router\\..*"]}
 
   ;; ── Tests de gRPC — incluye el JAR compilado con los stubs Protobuf ──────
-  ;; Requiere: clojure -T:build uber (o que target/metres-engine.jar exista)
+  ;; Requiere: clojure -T:build uber (o que target/metri-engine.jar exista)
   ;; Ejecutar: clojure -M:test-grpc --namespace-regex 'metri.grpc.*'
   :test-grpc
   {:extra-paths ["test"]
    :extra-deps  {io.github.cognitect-labs/test-runner {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
-   :jvm-opts    ["-cp" "target/metres-engine.jar"]
+   :jvm-opts    ["-cp" "target/metri-engine.jar"]
    :main-opts   ["-m" "cognitect.test-runner"
                  "--namespace-regex" "metri\\.grpc\\..*"]}
 

@@ -1,0 +1,86 @@
+[
+  {
+    "id": "TC-F2-EQ",
+    "passed": true,
+    "duration_ms": 262,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-NEQ",
+    "passed": true,
+    "duration_ms": 6,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-GT",
+    "passed": true,
+    "duration_ms": 9,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-GTE",
+    "passed": true,
+    "duration_ms": 9,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-LT",
+    "passed": true,
+    "duration_ms": 9,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-LTE",
+    "passed": true,
+    "duration_ms": 9,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-IN",
+    "passed": true,
+    "duration_ms": 10,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-NOT_IN",
+    "passed": true,
+    "duration_ms": 12,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-BETWEEN",
+    "passed": true,
+    "duration_ms": 12,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-LIKE",
+    "passed": true,
+    "duration_ms": 13,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-IS_NULL",
+    "passed": true,
+    "duration_ms": 11,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-IS_NOT_NULL",
+    "passed": true,
+    "duration_ms": 7,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-MATCHES",
+    "passed": true,
+    "duration_ms": 6,
+    "errors": []
+  },
+  {
+    "id": "TC-F2-CONTAINS",
+    "passed": true,
+    "duration_ms": 7,
+    "errors": []
+  }
+]

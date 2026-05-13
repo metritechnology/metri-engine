@@ -1,0 +1,825 @@
+;; ==========================================================================
+;; METRI ENGINE — JANUS-AEGIS CONTRACT
+;; ==========================================================================
+;; GENERADO AUTOMÁTICAMENTE por proto2edn — NO EDITAR MANUALMENTE
+;; Fuente:    metri.proto
+;; Generado: 2026-04-30T21:00:01.930916Z
+;; Servicio: MetriService
+;;
+;; RACIONAL DE DISEÑO (DIP):
+;; ─────────────────────────────────────────────────────────────────────────
+;; • Aegis implementa :ast-definition — es ciego a gRPC y tipos de gráficas.
+;; • Janus gestiona :orchestration-meta — decora el resultado de Aegis.
+;; • Este contrato es la ÚNICA fuente de verdad derivada de metri.proto.
+;; ==========================================================================
+
+{
+ :metri.ast/registry
+ {
+
+  ;; ══════════════════════════════════════════════════════════════
+  ;; SECCIÓN 1 — Enums (proto3 → [:enum :V1 :V2 ...])
+  ;; ══════════════════════════════════════════════════════════════
+  ;; proto-source: enum AggregationFunction
+  ;; tags: enum has-sentinel
+  :metri.spec/aggregation-function
+  [:enum
+   :COUNT
+   :SUM
+   :AVG
+   :MIN
+   :MAX
+   :MEDIAN
+   :STD_DEV
+   :VARIANCE
+   :PERCENTILE_90
+   :PERCENTILE_95
+   :PERCENTILE_99
+   :CORRELATION
+   :LINEAR_REGRESSION
+   :LOGISTIC_REGRESSION]
+
+  ;; proto-source: enum FilterOperator
+  ;; tags: enum has-sentinel
+  :metri.spec/filter-operator
+  [:enum
+   :EQ
+   :NEQ
+   :GT
+   :GTE
+   :LT
+   :LTE
+   :IN
+   :NOT_IN
+   :BETWEEN
+   :LIKE
+   :IS_NULL
+   :IS_NOT_NULL
+   :MATCHES
+   :CONTAINS]
+
+  ;; proto-source: enum OutputCastType
+  ;; tags: enum has-sentinel
+  :metri.spec/output-cast-type
+  [:enum :KPI :TIMESERIES :TABLE :PIE :BUBBLE :CSV_EXPORT]
+
+  ;; proto-source: enum OperationAction
+  ;; tags: enum has-sentinel
+  :metri.spec/operation-action
+  [:enum :CREATE :UPDATE :DELETE :UPSERT :GET]
+
+
+  ;; ══════════════════════════════════════════════════════════════
+  ;; SECCIÓN 2 — Schemas Recursivos (ciclos intencionales del DSL)
+  ;; [:schema {:registry {::N ...}} [:ref ::N]]
+  ;; ══════════════════════════════════════════════════════════════
+  ;; proto-source: message FilterNode
+  ;; tags: recursive
+  :metri.spec/filter-node
+  [:schema
+   {:registry {:metri.spec.local/filter-node [:map
+      [:node
+       {:optional true}
+       [:or
+        [:map [:criteria [:ref :metri.spec/filter-criteria]]]
+        [:map [:group [:ref :metri.spec/filter-group]]]]]]}}
+   [:ref :metri.spec.local/filter-node]]
+
+  ;; proto-source: message FilterGroup
+  ;; tags: recursive
+  :metri.spec/filter-group
+  [:schema
+   {:registry {:metri.spec.local/filter-group [:map
+      [:conjunction {:optional true} [:enum :AND :OR :NOT]]
+      [:nodes {:optional true} [:vector [:ref :metri.spec/filter-node]]]]}}
+   [:ref :metri.spec.local/filter-group]]
+
+  ;; proto-source: message QueryResponse
+  ;; tags: recursive
+  :metri.spec/query-response
+  [:schema
+   {:registry {:metri.spec.local/query-response [:map
+      [:status {:optional true} [:ref :metri.spec/status]]
+      [:data {:optional true} [:ref :metri.spec/row-set]]
+      [:viz-ext {:optional true} [:ref :metri.spec/viz-meta]]
+      [:batch-results
+       {:optional true}
+       [:map-of :keyword [:ref :metri.spec/query-response]]]
+      [:metadata {:optional true} [:ref :metri.spec/query-metadata]]
+      [:pagination {:optional true} [:ref :metri.spec/pagination]]
+      [:links {:optional true} [:vector [:ref :metri.spec/link]]]]}}
+   [:ref :metri.spec.local/query-response]]
+
+
+  ;; ══════════════════════════════════════════════════════════════
+  ;; SECCIÓN 3 — Mensajes Zero-Trust (contienen tenant_id)
+  ;; ══════════════════════════════════════════════════════════════
+  ;; proto-source: message AnalyticsRequest
+  ;; tags: zero-trust-boundary
+  :metri.spec/analytics-request
+  [:map
+   [:tenant-id :string]
+   [:entity {:optional true} :string]
+   [:metrics {:optional true} [:vector [:ref :metri.spec/metric-definition]]]
+   [:dimensions {:optional true} [:vector [:ref :metri.spec/dimension-definition]]]
+   [:time-frame {:optional true} [:ref :metri.spec/time-frame-context]]
+   [:filters {:optional true} [:vector [:ref :metri.spec/filter-node]]]
+   [:limit {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:cursor {:optional true} :string]
+   [:sort {:optional true} [:vector [:ref :metri.spec/sort-definition]]]
+   [:viz {:optional true} :string]
+   [:measures {:optional true} [:vector [:ref :metri.spec/formula-entry]]]
+   [:comparisons
+    {:optional true}
+    [:vector [:ref :metri.spec/analytical-comparison]]]
+   [:search {:optional true} :string]
+   [:hierarchy {:optional true} [:ref :metri.spec/hierarchy-context]]
+   [:semantic-measures
+    {:optional true}
+    [:vector [:ref :metri.spec/semantic-metric-ref]]]
+   [:select-tree {:optional true} :map]
+   [:output-cast {:optional true} [:ref :metri.spec/output-cast-type]]]
+
+  ;; proto-source: message MatchRoutingRulesRequest
+  ;; tags: zero-trust-boundary
+  :metri.spec/match-routing-rules-request
+  [:map
+   [:tenant-id :string]
+   [:entity-name {:optional true} :string]
+   [:trigger-type {:optional true} :string]
+   [:cdc-payload-json {:optional true} :bytes]]
+
+  ;; proto-source: message QueryRequest
+  ;; tags: zero-trust-boundary
+  :metri.spec/query-request
+  [:map
+   [:tenant-id :string]
+   [:queries
+    {:optional true}
+    [:map-of :keyword [:ref :metri.spec/analytics-request]]]
+   [:context {:optional true} [:ref :metri.spec/batch-context]]
+   [:merge-groups {:optional true} [:vector [:ref :metri.spec/multi-series-group]]]
+   [:aliases {:optional true} [:map-of :keyword :string]]
+   [:cross-filter-context
+    {:optional true}
+    [:ref :metri.spec/dashboard-cross-filter-context]]
+   [:explain-plan {:optional true} :boolean]]
+
+  ;; proto-source: message BulkRequest
+  ;; tags: zero-trust-boundary
+  :metri.spec/bulk-request
+  [:map
+   [:tenant-id :string]
+   [:entity-type :string]
+   [:action [:ref :metri.spec/operation-action]]
+   [:data {:optional true} [:ref :metri.spec/row-set]]]
+
+  ;; proto-source: message TransactionRequest
+  ;; tags: zero-trust-boundary
+  :metri.spec/transaction-request
+  [:map
+   [:tenant-id :string]
+   [:entity-type :string]
+   [:entity-id {:optional true} :string]
+   [:action [:ref :metri.spec/operation-action]]
+   [:payload {:optional true} :map]
+   [:suppress-events {:optional true} :boolean]]
+
+  ;; proto-source: message ExploreRequest
+  ;; tags: zero-trust-boundary
+  :metri.spec/explore-request
+  [:map
+   [:tenant-id :string]
+   [:entity {:optional true} :string]
+   [:attribute {:optional true} :string]
+   [:limit {:optional true} [:int {:min -2147483648, :max 2147483647}]]]
+
+  ;; proto-source: message DiscoveryRequest
+  ;; tags: zero-trust-boundary
+  :metri.spec/discovery-request
+  [:map
+   [:tenant-id :string]
+   [:type {:optional true} :string]
+   [:include-attributes {:optional true} :boolean]
+   [:cursor {:optional true} :string]
+   [:page-size {:optional true} [:int {:min -2147483648, :max 2147483647}]]]
+
+
+  ;; ══════════════════════════════════════════════════════════════
+  ;; SECCIÓN 4 — Mensajes de Dominio
+  ;; ══════════════════════════════════════════════════════════════
+  ;; proto-source: message FilterCriteria
+  :metri.spec/filter-criteria
+  [:map
+   [:field {:optional true} :string]
+   [:value {:optional true} [:ref :metri.spec/filter-value]]
+   [:op-ref {:optional true} [:ref :metri.spec/filter-operator]]]
+
+  ;; proto-source: message FilterValue
+  :metri.spec/filter-value
+  [:map
+   [:kind
+    {:optional true}
+    [:or
+     [:map [:string-val :string]]
+     [:map [:number-val :double]]
+     [:map [:bool-val :boolean]]
+     [:map [:timestamp-val :int]]
+     [:map [:list-val [:ref :metri.spec/string-list]]]
+     [:map [:range-values [:ref :metri.spec/filter-value-list]]]]]]
+
+  ;; proto-source: message FilterValueList
+  :metri.spec/filter-value-list
+  [:map [:values {:optional true} [:vector [:ref :metri.spec/filter-value]]]]
+
+  ;; proto-source: message MetricDefinition
+  :metri.spec/metric-definition
+  [:map
+   [:entity {:optional true} :string]
+   [:attribute {:optional true} :string]
+   [:aggregation {:optional true} [:ref :metri.spec/aggregation-function]]
+   [:name {:optional true} :string]
+   [:secondary-attribute {:optional true} :string]
+   [:filter {:optional true} [:ref :metri.spec/filter-node]]
+   [:interval {:optional true} :string]]
+
+  ;; proto-source: message Link
+  :metri.spec/link
+  [:map
+   [:rel {:optional true} :string]
+   [:href {:optional true} :string]
+   [:method {:optional true} :string]]
+
+  ;; proto-source: message IndicatorThreshold
+  :metri.spec/indicator-threshold
+  [:map
+   [:value {:optional true} :double]
+   [:color {:optional true} :string]
+   [:label {:optional true} :string]]
+
+  ;; proto-source: message IntelligenceSignal
+  :metri.spec/intelligence-signal
+  [:map
+   [:direction {:optional true} :string]
+   [:percentage {:optional true} :double]
+   [:delta-abs {:optional true} :double]
+   [:previous-value {:optional true} :double]
+   [:label {:optional true} :string]
+   [:is-anomaly {:optional true} :boolean]
+   [:z-score {:optional true} :double]
+   [:represents-initial {:optional true} :boolean]]
+
+  ;; proto-source: message WebhookTarget
+  :metri.spec/webhook-target
+  [:map
+   [:target-url {:optional true} :string]
+   [:http-method {:optional true} :string]
+   [:auth-type {:optional true} :string]
+   [:resolved-auth-secret {:optional true} :string]
+   [:max-retries {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:timeout-seconds {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:headers {:optional true} [:map-of :keyword :string]]]
+
+  ;; proto-source: message DataRow
+  :metri.spec/data-row
+  [:map [:values {:optional true} [:vector :any]]]
+
+  ;; proto-source: message TableColumn
+  :metri.spec/table-column
+  [:map
+   [:key {:optional true} :string]
+   [:label {:optional true} :string]
+   [:type {:optional true} :string]
+   [:align {:optional true} [:enum :LEFT :CENTER :RIGHT]]
+   [:sortable {:optional true} :boolean]
+   [:format {:optional true} :string]
+   [:metadata {:optional true} :map]
+   [:entity-ref {:optional true} :string]]
+
+  ;; proto-source: message Action
+  :metri.spec/action
+  [:map
+   [:id {:optional true} :string]
+   [:label {:optional true} :string]
+   [:icon {:optional true} :string]
+   [:link {:optional true} [:ref :metri.spec/link]]
+   [:type {:optional true} :string]]
+
+  ;; proto-source: message AnalyticalSignal
+  :metri.spec/analytical-signal
+  [:map
+   [:value {:optional true} :double]
+   [:previous-value {:optional true} :double]
+   [:intelligence {:optional true} [:ref :metri.spec/intelligence-signal]]
+   [:history {:optional true} [:vector :double]]
+   [:thresholds {:optional true} [:vector [:ref :metri.spec/indicator-threshold]]]
+   [:unit {:optional true} :string]
+   [:status-label {:optional true} :string]
+   [:entity-ref {:optional true} :string]]
+
+  ;; proto-source: message FormulaEntry
+  :metri.spec/formula-entry
+  [:map [:name {:optional true} :string] [:formula {:optional true} :string]]
+
+  ;; proto-source: message AnalyticalComparison
+  :metri.spec/analytical-comparison
+  [:map
+   [:type
+    {:optional true}
+    [:enum
+     :TIME_SHIFT_RELATIVE
+     :TIME_SHIFT_SHORTCUT
+     :TIME_SHIFT_ABSOLUTE
+     :BENCHMARK
+     :SMART]]
+   [:label {:optional true} :string]
+   [:relative-granularity {:optional true} :string]
+   [:relative-amount {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:shortcut
+    {:optional true}
+    [:enum
+     :PREVIOUS_PERIOD
+     :SAME_PERIOD_LAST_YEAR
+     :SAME_PERIOD_LAST_QUARTER
+     :SAME_PERIOD_LAST_MONTH
+     :SAME_DAY_LAST_WEEK
+     :SAME_DAY_LAST_MONTH
+     :SAME_DAY_LAST_YEAR
+     :YESTERDAY_LAST_YEAR
+     :YESTERDAY_LAST_MONTH
+     :YESTERDAY_LAST_WEEK
+     :TODAY_LAST_YEAR
+     :TODAY_LAST_MONTH]]
+   [:absolute-start-ts {:optional true} :int]
+   [:absolute-end-ts {:optional true} :int]
+   [:benchmark-value {:optional true} :double]]
+
+  ;; proto-source: message HierarchyContext
+  :metri.spec/hierarchy-context
+  [:map
+   [:parent-field {:optional true} :string]
+   [:current-node-id {:optional true} :string]
+   [:inject-has-children {:optional true} :boolean]]
+
+  ;; proto-source: message TimeFrameContext
+  :metri.spec/time-frame-context
+  [:map
+   [:type
+    {:optional true}
+    [:enum
+     :CUSTOM_RANGE
+     :TODAY
+     :YESTERDAY
+     :TOMORROW
+     :LAST_N_MINUTES
+     :LAST_N_HOURS
+     :LAST_N_DAYS
+     :NEXT_N_DAYS
+     :THIS_WEEK
+     :LAST_WEEK
+     :NEXT_WEEK
+     :LAST_N_WEEKS
+     :NEXT_N_WEEKS
+     :WEEK_TO_DATE
+     :THIS_MONTH
+     :LAST_MONTH
+     :NEXT_MONTH
+     :LAST_N_MONTHS
+     :NEXT_N_MONTHS
+     :MONTH_TO_DATE
+     :THIS_QUARTER
+     :LAST_QUARTER
+     :LAST_N_QUARTERS
+     :QUARTER_TO_DATE
+     :THIS_YEAR
+     :LAST_YEAR
+     :LAST_N_YEARS
+     :YEAR_TO_DATE
+     :ALL_TIME]]
+   [:n-value {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:start-ts {:optional true} :int]
+   [:end-ts {:optional true} :int]
+   [:timezone {:optional true} :string]]
+
+  ;; proto-source: message SortDefinition
+  :metri.spec/sort-definition
+  [:map [:field {:optional true} :string] [:descending {:optional true} :boolean]]
+
+  ;; proto-source: message DimensionDefinition
+  :metri.spec/dimension-definition
+  [:map
+   [:entity {:optional true} :string]
+   [:attribute {:optional true} :string]
+   [:interval {:optional true} :string]
+   [:label-template {:optional true} :string]]
+
+  ;; proto-source: message SemanticMetricRef
+  :metri.spec/semantic-metric-ref
+  [:map [:metric-key {:optional true} :string]]
+
+  ;; proto-source: message Status
+  :metri.spec/status
+  [:map
+   [:success {:optional true} :boolean]
+   [:error-code {:optional true} :string]
+   [:error-message {:optional true} :string]]
+
+  ;; proto-source: message MatchedRule
+  :metri.spec/matched-rule
+  [:map
+   [:rule-code {:optional true} :string]
+   [:detail-type-output {:optional true} :string]
+   [:webhooks {:optional true} [:vector [:ref :metri.spec/webhook-target]]]
+   [:priority {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:name {:optional true} :string]
+   [:condition {:optional true} [:ref :metri.spec/filter-node]]]
+
+  ;; proto-source: message ColumnSchema
+  :metri.spec/column-schema
+  [:map
+   [:key {:optional true} :string]
+   [:label {:optional true} :string]
+   [:type {:optional true} :string]
+   [:format {:optional true} :string]
+   [:is-dimension {:optional true} :boolean]
+   [:is-measure {:optional true} :boolean]]
+
+  ;; proto-source: message DataRowList
+  :metri.spec/data-row-list
+  [:map [:iter {:optional true} [:vector [:ref :metri.spec/data-row]]]]
+
+  ;; proto-source: message TableMeta
+  :metri.spec/table-meta
+  [:map
+   [:columns {:optional true} [:vector [:ref :metri.spec/table-column]]]
+   [:row-actions {:optional true} [:vector [:ref :metri.spec/action]]]
+   [:global-links {:optional true} [:vector [:ref :metri.spec/link]]]]
+
+  ;; proto-source: message BreakdownSignal
+  :metri.spec/breakdown-signal
+  [:map
+   [:signals
+    {:optional true}
+    [:map-of :keyword [:ref :metri.spec/analytical-signal]]]]
+
+  ;; proto-source: message TreeMeta
+  :metri.spec/tree-meta
+  [:map
+   [:id-key {:optional true} :string]
+   [:parent-id-key {:optional true} :string]
+   [:label-key {:optional true} :string]
+   [:has-children-key {:optional true} :string]
+   [:icon-key {:optional true} :string]]
+
+  ;; proto-source: message ChartDecoration
+  :metri.spec/chart-decoration
+  [:map
+   [:x-dimension {:optional true} :string]
+   [:y-dimensions {:optional true} [:vector :string]]
+   [:color-scheme {:optional true} :string]
+   [:show-legend {:optional true} :boolean]
+   [:show-tooltip {:optional true} :boolean]
+   [:title {:optional true} :string]
+   [:stacked {:optional true} :boolean]
+   [:smooth {:optional true} :boolean]
+   [:label-template {:optional true} :string]]
+
+  ;; proto-source: message MultiSeriesGroup
+  :metri.spec/multi-series-group
+  [:map
+   [:group-id {:optional true} :string]
+   [:query-keys {:optional true} [:vector :string]]
+   [:override-viz {:optional true} :string]]
+
+  ;; proto-source: message DashboardCrossFilterContext
+  :metri.spec/dashboard-cross-filter-context
+  [:map
+   [:source-chart-id {:optional true} :string]
+   [:cross-filters {:optional true} [:vector [:ref :metri.spec/filter-node]]]]
+
+  ;; proto-source: message BatchContext
+  :metri.spec/batch-context
+  [:map
+   [:common-filters {:optional true} [:vector [:ref :metri.spec/filter-node]]]
+   [:common-entity {:optional true} :string]]
+
+  ;; proto-source: message AttributeSchema
+  :metri.spec/attribute-schema
+  [:map
+   [:name {:optional true} :string]
+   [:type {:optional true} :string]
+   [:subtype {:optional true} :string]
+   [:enum-values {:optional true} [:vector :string]]
+   [:entity-ref {:optional true} :string]
+   [:default-value {:optional true} :string]
+   [:fts {:optional true} :boolean]
+   [:label {:optional true} :string]
+   [:icon {:optional true} :string]
+   [:unit {:optional true} :string]
+   [:filterable {:optional true} :boolean]
+   [:sortable {:optional true} :boolean]
+   [:groupable {:optional true} :boolean]
+   [:aggregatable {:optional true} :boolean]]
+
+  ;; proto-source: message MatchRoutingRulesResponse
+  :metri.spec/match-routing-rules-response
+  [:map
+   [:status {:optional true} [:ref :metri.spec/status]]
+   [:matched-rules {:optional true} [:vector [:ref :metri.spec/matched-rule]]]]
+
+  ;; proto-source: message RowSet
+  :metri.spec/row-set
+  [:map
+   [:columns {:optional true} [:vector [:ref :metri.spec/column-schema]]]
+   [:payload-strategy
+    {:optional true}
+    [:or
+     [:map [:rows-json [:ref :metri.spec/data-row-list]]]
+     [:map [:arrow-binary-blob :bytes]]
+     [:map [:presigned-csv-url :string]]]]]
+
+  ;; proto-source: message QueryMetadata
+  :metri.spec/query-metadata
+  [:map
+   [:execution-time-ms {:optional true} :int]
+   [:total-count {:optional true} :int]
+   [:engine {:optional true} :string]
+   [:is-semantic {:optional true} :boolean]
+   [:total-queries {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:parallelism-factor {:optional true} :double]
+   [:cache-hits {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:query-id {:optional true} :string]
+   [:cache-ttl-seconds {:optional true} :int]]
+
+  ;; proto-source: message VizMeta
+  :metri.spec/viz-meta
+  [:map
+   [:type {:optional true} :string]
+   [:payload
+    {:optional true}
+    [:or
+     [:map [:signal [:ref :metri.spec/analytical-signal]]]
+     [:map [:chart [:ref :metri.spec/chart-decoration]]]
+     [:map [:table [:ref :metri.spec/table-meta]]]
+     [:map [:breakdown [:ref :metri.spec/breakdown-signal]]]
+     [:map [:tree [:ref :metri.spec/tree-meta]]]]]]
+
+  ;; proto-source: message Pagination
+  :metri.spec/pagination
+  [:map
+   [:next-cursor {:optional true} :string]
+   [:previous-cursor {:optional true} :string]
+   [:page-size {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:has-next {:optional true} :boolean]
+   [:has-previous {:optional true} :boolean]
+   [:links {:optional true} [:vector [:ref :metri.spec/link]]]]
+
+  ;; proto-source: message EntitySchema
+  :metri.spec/entity-schema
+  [:map
+   [:entity {:optional true} :string]
+   [:attributes {:optional true} [:vector [:ref :metri.spec/attribute-schema]]]
+   [:label {:optional true} :string]
+   [:icon {:optional true} :string]
+   [:primary-key {:optional true} :string]
+   [:fts-fields {:optional true} [:vector :string]]
+   [:total-count {:optional true} :int]]
+
+  ;; proto-source: message MatchRoutingRulesBatchResponse
+  :metri.spec/match-routing-rules-batch-response
+  [:map
+   [:status {:optional true} [:ref :metri.spec/status]]
+   [:responses
+    {:optional true}
+    [:vector [:ref :metri.spec/match-routing-rules-response]]]]
+
+  ;; proto-source: message MatchRoutingRulesBatchRequest
+  :metri.spec/match-routing-rules-batch-request
+  [:map
+   [:requests
+    {:optional true}
+    [:vector [:ref :metri.spec/match-routing-rules-request]]]]
+
+  ;; proto-source: message BulkResponse
+  :metri.spec/bulk-response
+  [:map
+   [:status {:optional true} [:ref :metri.spec/status]]
+   [:ingested-count {:optional true} [:int {:min -2147483648, :max 2147483647}]]
+   [:outbox-count {:optional true} [:int {:min -2147483648, :max 2147483647}]]]
+
+  ;; proto-source: message TransactionResponse
+  :metri.spec/transaction-response
+  [:map
+   [:status {:optional true} [:ref :metri.spec/status]]
+   [:entity-id {:optional true} :string]
+   [:result {:optional true} :map]]
+
+  ;; proto-source: message ChronosAlertTask
+  :metri.spec/chronos-alert-task
+  [:map
+   [:task-id {:optional true} :string]
+   [:cron-expression {:optional true} :string]
+   [:condition-query {:optional true} [:ref :metri.spec/query-request]]
+   [:alert-threshold {:optional true} :double]
+   [:webhook-url {:optional true} :string]
+   [:email-recipients {:optional true} [:vector :string]]]
+
+  ;; proto-source: message StringList
+  :metri.spec/string-list
+  [:map [:values {:optional true} [:vector :string]]]
+
+  ;; proto-source: message ExploreResponse
+  :metri.spec/explore-response
+  [:map
+   [:status {:optional true} [:ref :metri.spec/status]]
+   [:values {:optional true} [:vector :string]]]
+
+  ;; proto-source: message DiscoveryResponse
+  :metri.spec/discovery-response
+  [:map
+   [:status {:optional true} [:ref :metri.spec/status]]
+   [:schemas {:optional true} [:vector [:ref :metri.spec/entity-schema]]]
+   [:next-cursor {:optional true} :string]
+   [:has-next {:optional true} :boolean]]
+
+
+  ;; ══════════════════════════════════════════════════════════════
+  ;; SECCIÓN 5 — Railway-Oriented Error Contracts
+  ;; [:or success-branch failure-branch]
+  ;; ══════════════════════════════════════════════════════════════
+  ;; proto-source: Global Railway-Oriented Pattern
+  ;; tags: railway error-union
+  metri.spec/railway-error-union
+  [:or
+   [:map [:status [:map [:success [:= true]]]]]
+   [:map
+    [:status
+     [:map
+      [:success [:= false]]
+      [:error-code :string]
+      [:error-message {:optional true} :string]]]]]
+
+
+  ;; ══════════════════════════════════════════════════════════════
+  ;; SECCIÓN 6 — Contratos de RPCs
+  ;; ══════════════════════════════════════════════════════════════
+  ;; rpc: Discovery | tags: zero-trust-scoped
+  :metri.rpc/discovery
+  [:map
+   [:request :metri.spec/discovery-request]
+   [:response :metri.spec/discovery-response]
+   [:streaming false]
+   [:zero-trust-scoped true]]
+
+  ;; rpc: Explore | tags: zero-trust-scoped
+  :metri.rpc/explore
+  [:map
+   [:request :metri.spec/explore-request]
+   [:response :metri.spec/explore-response]
+   [:streaming false]
+   [:zero-trust-scoped true]]
+
+  ;; rpc: Query | tags: streaming zero-trust-scoped
+  :metri.rpc/query
+  [:map
+   [:request :metri.spec/query-request]
+   [:response :metri.spec/query-response]
+   [:streaming true]
+   [:zero-trust-scoped true]]
+
+  ;; rpc: Transact | tags: zero-trust-scoped
+  :metri.rpc/transact
+  [:map
+   [:request :metri.spec/transaction-request]
+   [:response :metri.spec/transaction-response]
+   [:streaming false]
+   [:zero-trust-scoped true]]
+
+  ;; rpc: BulkIngest | tags: zero-trust-scoped
+  :metri.rpc/bulk-ingest
+  [:map
+   [:request :metri.spec/bulk-request]
+   [:response :metri.spec/bulk-response]
+   [:streaming false]
+   [:zero-trust-scoped true]]
+
+  ;; rpc: MatchRoutingRulesBatch | tags: —
+  :metri.rpc/match-routing-rules-batch
+  [:map
+   [:request :metri.spec/match-routing-rules-batch-request]
+   [:response :metri.spec/match-routing-rules-batch-response]
+   [:streaming false]
+   [:zero-trust-scoped false]]
+
+
+  ;; ══════════════════════════════════════════════════════════════
+  ;; SECCIÓN 7 — Cláusulas Zero-Trust Globales (Janus invariants)
+  ;; ══════════════════════════════════════════════════════════════
+  :janus/tenant-isolation-rule
+  "Todo RPC tenant-scoped rechaza requests con tenant_id vacío (:JANUS_400)"
+
+  :janus/ast-tenant-invariant
+  [:fn
+ every?
+ [:or
+  [:contains? :tenant-id]
+  [:contains? :entity/tenant-id]
+  [:contains? :*/tenant-id]]]
+
+  :janus/zero-trust-boundary-messages
+  [:metri.spec/discovery-request
+ :metri.spec/explore-request
+ :metri.spec/analytics-request
+ :metri.spec/query-request
+ :metri.spec/transaction-request
+ :metri.spec/bulk-request
+ :metri.spec/match-routing-rules-request]
+
+  :janus/enum-sentinel-gate
+  "Janus rechaza cualquier campo enum con valor = 0 (_UNSPECIFIED) con :JANUS_400"
+
+ 
+
+
+ ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ ;; SECCIÓN CEDAR — Modelo de Autorización Zero-Trust
+ ;; Derivado de: role.json + user.json + user_group.json → CedarPolicyEngine
+ ;; Alineado con:  cedar-janus-contract-v1.edn (DOMINIO 2-5)
+ ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+ :metri.cedar/schema-namespace
+ "Metri"
+
+ ;; EntityTypes Cedar derivados de los modelos del Códice
+ :metri.cedar/entity-types
+ [:enum :User :MetriResource :ActionGroup]
+
+ ;; Scopes ABAC — :metri.cedar/query-scope (contrato v1 DOMINIO 2)
+ ;; ALL: sin filtro propiedad | OWN: propietario | ASSIGNED: asignado
+ ;; OWN_OR_ASSIGNED: ambos | NONE: :JANUS_400 inmediato
+ :metri.cedar/query-scope
+ [:enum "ALL" "OWN" "ASSIGNED" "OWN_OR_ASSIGNED" "NONE"]
+
+ ;; Actions analíticas (VIEW, EXPORT) — producen domain-boundaries RLS
+ :metri.cedar/analytical-actions
+ [:set
+]
+
+ ;; Actions mutacionales — Cedar evalúa in-memory, domain-boundaries = {}
+ :metri.cedar/mutational-actions
+ [:set
+  :CREATE
+  :DELETE
+  :EXECUTE
+  :UPDATE]
+
+ :metri.cedar/permit-policies
+ [:set "P00_SUPERADMIN" "P01_ALL_VIEW_EXPORT" "P01_ALL_VIEW_VIEW" "P02_ALL_MUTATE_CREATE" "P02_ALL_MUTATE_DELETE" "P02_ALL_MUTATE_EXECUTE" "P02_ALL_MUTATE_UPDATE" "P02_ALL_MUTATE_UPSERT" "P03_OWN_VIEW_EXPORT" "P03_OWN_VIEW_VIEW" "P04_OWN_MUTATE_CREATE" "P04_OWN_MUTATE_DELETE" "P04_OWN_MUTATE_EXECUTE" "P04_OWN_MUTATE_UPDATE" "P04_OWN_MUTATE_UPSERT" "P05_ASSIGNED_VIEW_EXPORT" "P05_ASSIGNED_VIEW_VIEW" "P06_ASSIGNED_MUTATE_CREATE" "P06_ASSIGNED_MUTATE_DELETE" "P06_ASSIGNED_MUTATE_EXECUTE" "P06_ASSIGNED_MUTATE_UPDATE" "P06_ASSIGNED_MUTATE_UPSERT" "P07_OWN_OR_ASSIGNED_VIEW_EXPORT" "P07_OWN_OR_ASSIGNED_VIEW_VIEW" "P08_OWN_OR_ASSIGNED_MUTATE_CREATE" "P08_OWN_OR_ASSIGNED_MUTATE_DELETE" "P08_OWN_OR_ASSIGNED_MUTATE_EXECUTE" "P08_OWN_OR_ASSIGNED_MUTATE_UPDATE" "P08_OWN_OR_ASSIGNED_MUTATE_UPSERT"]
+
+ ;; Políticas de denegación explícita — NUNCA eliminar P_CROSS_TENANT
+ :metri.cedar/forbid-policies
+ [:set "P_NONE_DENY" "P_CROSS_TENANT" "P_SUSPENDED"]
+
+ ;; Resolución scope → predicado Cedar when{}
+ ;; Consumido por Janus para construir el nodo [:where] del AST IR
+ :metri.cedar/scope-field-resolution
+ [:map
+  [:all "principal.tenant_id == resource.tenant_id"]
+  [:own "principal.tenant_id == resource.tenant_id && principal.user_id == resource.owner_field"]
+  [:assigned "principal.tenant_id == resource.tenant_id && principal.user_id == resource.assignee_field"]
+  [:own_or_assigned "principal.tenant_id == resource.tenant_id && (principal.user_id == resource.owner_field || principal.user_id == resource.assignee_field)"]
+  [:none "false"]
+ ]
+
+ ;; Invariante de contexto Cedar — validado ANTES de construir el AST IR
+ ;; Alineado con cedar-janus-contract-v1.edn :metri.cedar/cedar-ctx
+ :metri.cedar/context-invariant
+ [:map
+  [:tenant-id  {:optional false} :string]   ;; Valkey session — Zero-Trust
+  [:user-id    {:optional false} :string]   ;; Valkey session — identidad
+  [:roles      {:optional false} [:set :string]] ;; role.name expandido
+  [:domain-boundaries {:optional true}
+   [:map-of :string
+    [:vector {:min 0} [:map
+     [:query-scope    [:enum "ALL" "OWN" "ASSIGNED" "OWN_OR_ASSIGNED" "NONE"]]
+     [:permitted-locations {:optional true} [:vector :uuid]]
+     [:permitted-assets    {:optional true} [:vector :uuid]]]]]]
+  [:request {:optional false} :any]] ;; Passthrough gRPC — Cedar no modifica
+
+ ;; Permission Boundary — contrato v1 DOMINIO 3
+ ;; Root RLS Guardian: domain-boundaries solo contiene entidades RAÍZ.
+ ;; Sub-recursos (JOINs) heredan el dominio del registro raíz.
+ :metri.cedar/domain-boundary
+ [:map
+  [:query-scope        [:enum "ALL" "OWN" "ASSIGNED" "OWN_OR_ASSIGNED" "NONE"]]
+  [:permitted-locations {:optional true} [:vector :uuid]]
+  [:permitted-assets    {:optional true} [:vector :uuid]]]
+
+ ;; Railway: Cedar authorization gate (auth-ok | :JANUS_40x)
+ :metri.cedar/auth-gate
+ [:or
+  [:map [:principal-ok true] [:action-ok true] [:resource-ok true]]
+  [:map [:cedar-error :string] [:janus-code [:enum :JANUS_403 :JANUS_400 :JANUS_401]]]]
+
+}
+}

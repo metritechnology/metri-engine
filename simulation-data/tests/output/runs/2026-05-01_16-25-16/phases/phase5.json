@@ -1,0 +1,552 @@
+[
+  {
+    "id": "TC-F5-TODAY",
+    "passed": true,
+    "duration_ms": 2229,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-YESTERDAY",
+    "passed": true,
+    "duration_ms": 1238,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-TOMORROW",
+    "passed": true,
+    "duration_ms": 2171,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_MINUTES",
+    "passed": true,
+    "duration_ms": 2131,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_HOURS",
+    "passed": true,
+    "duration_ms": 2178,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_DAYS",
+    "passed": true,
+    "duration_ms": 2169,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_N_DAYS",
+    "passed": true,
+    "duration_ms": 2133,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-THIS_WEEK",
+    "passed": true,
+    "duration_ms": 2122,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_WEEK",
+    "passed": true,
+    "duration_ms": 2128,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_WEEK",
+    "passed": true,
+    "duration_ms": 2089,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_WEEKS",
+    "passed": true,
+    "duration_ms": 2141,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_N_WEEKS",
+    "passed": true,
+    "duration_ms": 2159,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-WEEK_TO_DATE",
+    "passed": true,
+    "duration_ms": 2119,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-THIS_MONTH",
+    "passed": true,
+    "duration_ms": 2185,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_MONTH",
+    "passed": true,
+    "duration_ms": 2158,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-NEXT_MONTH",
+    "passed": true,
+    "duration_ms": 2101,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_N_MONTHS",
+    "passed": true,
+    "duration_ms": 2105,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-MONTH_TO_DATE",
+    "passed": true,
+    "duration_ms": 2104,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-THIS_YEAR",
+    "passed": true,
+    "duration_ms": 2107,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-LAST_YEAR",
+    "passed": true,
+    "duration_ms": 2096,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-ALL_TIME",
+    "passed": true,
+    "duration_ms": 2120,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  },
+  {
+    "id": "TC-F5-CUSTOM_RANGE",
+    "passed": true,
+    "duration_ms": 2125,
+    "layer1_errors": [],
+    "layer2_errors": [],
+    "layer3_errors": [],
+    "raw_response": {
+      "status": {
+        "success": true,
+        "error_code": "",
+        "error_message": ""
+      },
+      "has_data": true,
+      "batch_keys": [
+        "q1"
+      ],
+      "metadata": {
+        "engine": "",
+        "execution_time_ms": 0,
+        "total_count": 0
+      },
+      "has_viz_ext": true
+    }
+  }
+]

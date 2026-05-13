@@ -1,0 +1,167 @@
+;; config/system.lambda.edn — MODO LAMBDA (Function URL + SnapStart)
+;; FASE 03: IOP real + JanusRouter + OLTPChannel + OLAPChannel
+;; CedarAuthorizer, QuotaGuard, Moira, AuditInterceptor: stubs canónicos
+;; Igual a system.edn pero SIN:
+;;   - :grpc/server         (no hay Netty en Lambda)
+;;   - :grpc/health-manager (no hay gRPC health protocol)
+;;   - :grpc/service-impl   (el handler traduce directamente)
+
+{;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 1: Infraestructura AWS
+ ;; ═══════════════════════════════════════════════════════════════
+
+ ;; HMAC Token Store — verificación local, <0.1ms, $0, sin red.
+ ;; Secret cargado desde Secrets Manager al arranque (SnapStart lo congela en RAM).
+ :infra/session-store
+ {:secret-arn #env "HMAC_SECRET_ARN"
+  :region     #env "AWS_REGION"
+  :ddb-client #ig/ref :infra/dynamodb
+  :table-name #env "CEDAR_POLICIES_TABLE"}
+
+ :infra/datahike
+ {:store {:backend :dynamodb
+          :table   #env "DATAHIKE_DDB_TABLE"
+          :region  #env "AWS_REGION"}
+  :keep-alive? true
+  :store-cache-size 50000
+  :search-cache-size 50000
+  :allow-unsafe-config true
+  :schema-flexibility :read}
+
+ :infra/dynamodb
+ {:region #env "AWS_REGION"}
+
+ :infra/kinesis
+ {:stream-prefix #env "KINESIS_STREAM_PREFIX"
+  :region        #env "AWS_REGION"}
+
+ :infra/eventbridge
+ {:event-bus-name #env "FAULT_BUS_NAME"
+  :region         #env "AWS_REGION"}
+
+ :infra/glue
+ {:database     #env "GLUE_DATABASE_NAME"
+  :table-name   "olap_events"
+  :region       #env "AWS_REGION"
+  :sync-enabled? false}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 2: Utilidades compartidas
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :infra/tenant-guard
+ {:datahike-conn #ig/ref :infra/datahike}
+
+ :infra/athena
+ {:region          #env "AWS_REGION"
+  :workgroup       #env "ATHENA_WORKGROUP"
+  :output-location "s3://metri-lake-982592308819-us-east-1/athena-query-results/"}
+
+ :iop/sherlog
+ {:event-bus-client #ig/ref :infra/eventbridge
+  :bus-name         #env "FAULT_BUS_NAME"}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 2.5: Códice — FASE 02 (Schema-Driven Core)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ ;; scan+compile 50 JSON models al arranque — O(1) en runtime
+ :codice/registry     {:models-dir "/var/task/models"}
+
+
+ :codice/event-seeder {:codice-state #ig/ref :codice/registry
+                       :tenant-guard #ig/ref :infra/tenant-guard
+                       :datahike     #ig/ref :infra/datahike}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 3: Canales de escritura — FASE 03B (Janus)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :codice/generator-inject
+ {:tenant-guard #ig/ref :infra/tenant-guard}
+
+ :janus-router/oltp-channel
+ {:datahike-conn #ig/ref :infra/datahike
+  :codice-generator-fn #ig/ref :codice/generator-inject}
+
+ :janus-router/olap-channel
+ {:stream-writer  #ig/ref :infra/kinesis
+  :stream-prefix  #env "KINESIS_STREAM_PREFIX"}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 4: Pasos del IOP Pipeline — stubs + real
+ ;; ═══════════════════════════════════════════════════════════════
+
+ ;; Paso 1: CedarAuthorizer — STUB AlwaysAllow (FASE 06 pendiente)
+ :iop/cedar-authorizer {}
+
+ ;; Paso 2: QuotaGuard — STUB pass-through (FASE 07 pendiente)
+ :iop/quota-guard {}
+
+ ;; Paso 3 (Transact): JanusRouter — REAL con canales inyectados
+ :iop/janus-router
+ {:channel-registry {:oltp #ig/ref :janus-router/oltp-channel
+                     :olap #ig/ref :janus-router/olap-channel}}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 5: Componentes async — stubs
+ ;; ═══════════════════════════════════════════════════════════════
+
+ ;; Moira — STUB fire-and-forget (FASE 04 pendiente)
+ :moira/emitter {}
+
+ ;; AuditInterceptor — STUB NoOp (FASE 09 pendiente)
+ :audit/interceptor {}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 6: IOP Orchestrator — REAL
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :iop/pipeline
+ {:steps             [#ig/ref :iop/cedar-authorizer   ;; Paso 1
+                      #ig/ref :iop/quota-guard         ;; Paso 2
+                      #ig/ref :iop/janus-router]        ;; Paso 3 (REAL)
+  :moira-emitter     #ig/ref :moira/emitter
+  :audit-interceptor #ig/ref :audit/interceptor}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 7: EDA + Aegis (sin cambios)
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :janus/ast-compiler
+ {:codice-registry #ig/ref :codice/registry}
+
+ :aegis/transmuter
+ {:datahike     #ig/ref :infra/datahike
+  :query-engine #ig/ref :infra/athena
+  :database     "metri_olap"}
+
+ :janus/query
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :ast-compiler     #ig/ref :janus/ast-compiler
+  :aegis-transmuter #ig/ref :aegis/transmuter}
+ :eda/rule-matcher  {}
+
+ ;; ═══════════════════════════════════════════════════════════════
+ ;; CAPA 8: gRPC Dispatcher Universal
+ ;; ═══════════════════════════════════════════════════════════════
+
+ :janus/discovery
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :codice-registry  #ig/ref :codice/registry}
+
+ :janus/explore
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :codice-registry  #ig/ref :codice/registry}
+
+ :janus/rule-matcher
+ {:cedar-authorizer #ig/ref :iop/cedar-authorizer
+  :rule-matcher     #ig/ref :eda/rule-matcher}
+
+ :grpc/dispatcher
+ {:iop-pipeline       #ig/ref :iop/pipeline
+  :janus-query        #ig/ref :janus/query
+  :janus-discovery    #ig/ref :janus/discovery
+  :janus-explore      #ig/ref :janus/explore
+  :janus-rule-matcher #ig/ref :janus/rule-matcher}
+ }
