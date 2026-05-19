@@ -245,7 +245,51 @@ impl OltpExecutor {
                         }
                     }
 
-                    if passes_business && passes_hierarchy {
+                    // ── Filtro de búsqueda (in-memory Omnisearch) ───────────────────────────
+                    let mut passes_search = true;
+                    if let Some(term) = &ast_ir.search {
+                        if !term.is_empty() {
+                            passes_search = false;
+                            let entity_name = ast_ir.entity.as_deref().unwrap_or("");
+                            
+                            // 1. Intentar buscar en fts_fields configurados
+                            let mut checked = false;
+                            if let Some(model) = crate::codice::registry::global().get_model(entity_name) {
+                                if !model.fts_fields.is_empty() {
+                                    for f in &model.fts_fields {
+                                        // Try bare name and namespaced name
+                                        let bare_f = f.split('/').last().unwrap_or(f);
+                                        let val_opt = row.get(f).or_else(|| row.get(bare_f));
+                                        
+                                        if let Some(val) = val_opt.and_then(|v| v.as_str()) {
+                                            if crate::aegis::oltp::fuzzy::fuzzy_match(val, term) {
+                                                passes_search = true;
+                                                checked = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if !passes_search { checked = true; }
+                                }
+                            }
+                            
+                            // 2. Si no hay fts_fields o no se encontró modelo, OmniSearch global sobre TODOS los valores String
+                            if !checked {
+                                if let Some(obj) = row.as_object() {
+                                    for (_k, v) in obj {
+                                        if let Some(val_str) = v.as_str() {
+                                            if crate::aegis::oltp::fuzzy::fuzzy_match(val_str, term) {
+                                                passes_search = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if passes_business && passes_hierarchy && passes_search {
                         matching_rows.push(row);
                     }
                 }

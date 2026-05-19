@@ -235,13 +235,16 @@ pub fn select_plan_fbs(ast_ir: &fbs::AnalyticsRequestT) -> EavQueryPlan {
     }
 
     // ── P3: ¿Hay búsqueda FTS?
-    // Reactivado: FTS trigrams ya se ingieren asíncronamente vía Degraded Consistency.
+    // FTS Index está en desarrollo asíncrono. Por ahora, hacemos fallback a AevtScan
+    // y aplicamos `fuzzy_match` (Trigrams + DL) in-memory en el executor.
+    /*
     if let Some(term) = &ast_ir.search {
         if !term.is_empty() {
             debug!("[PlanSelector] → FtsSearch term={term}");
             return EavQueryPlan::FtsSearch { term: term.to_string() };
         }
     }
+    */
 
     // ── P4: ¿Hay filtros indexables (AVET)?
     let indexed_filters = extract_indexed_filters_fbs(ast_ir);
