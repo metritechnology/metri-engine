@@ -1,49 +1,21 @@
-// [PORTED_FROM: src/metri/aegis/datalog/fuzzy.clj]
 // aegis/oltp/fuzzy.rs — Fuzzy matching para Omnisearch (operador MATCHES).
 //
-// Algoritmos (puros, sin dependencias externas):
-//   1. Levenshtein-Wagner-Fischer O(m·n) rolling-row O(n)
-//   2. Substring case-insensitive (fast path)
-//   3. Word-level tokenization
+// Algoritmos (aprovechando EAV FTS):
+//   1. Substring case-insensitive (fast path)
+//   2. Trigram Intersection Score (fast fuzzy path)
+//   3. Damerau-Levenshtein distance O(m·n) (deep fuzzy path)
+//   4. Word-level tokenization
 //
 // Threshold adaptativo:
 //   ≤ 2 chars → 0 (solo exacto)
 //   3-8 chars → 1 (1 error tipográfico)
 //   ≥ 9 chars → 2 (2 errores)
 
-/// Distancia de edición mínima Levenshtein entre `a` y `b`.
-/// Usa rolling-row para O(n) espacio.
-///
-/// [PORTED_FROM: (levenshtein-distance a b)]
-pub fn levenshtein(a: &str, b: &str) -> usize {
-    let a_chars: Vec<char> = a.chars().collect();
-    let b_chars: Vec<char> = b.chars().collect();
-    let la = a_chars.len();
-    let lb = b_chars.len();
-
-    if la == 0 { return lb; }
-    if lb == 0 { return la; }
-    if a == b  { return 0; }
-
-    let mut prev: Vec<usize> = (0..=lb).collect();
-
-    for i in 0..la {
-        let mut curr = vec![0usize; lb + 1];
-        curr[0] = i + 1;
-        for j in 0..lb {
-            let cost = if a_chars[i] == b_chars[j] { 0 } else { 1 };
-            curr[j + 1] = (curr[j] + 1)
-                .min(prev[j + 1] + 1)
-                .min(prev[j] + cost);
-        }
-        prev = curr;
-    }
-    prev[lb]
-}
+use crate::eav::fts::searcher::damerau_levenshtein;
+use crate::eav::fts::trigram::generate_trigrams;
+use std::collections::HashSet;
 
 /// Threshold adaptativo por longitud del término.
-///
-/// [PORTED_FROM: (fuzzy-threshold term)]
 pub fn fuzzy_threshold(term: &str) -> usize {
     match term.chars().count() {
         0..=2 => 0,
@@ -54,8 +26,6 @@ pub fn fuzzy_threshold(term: &str) -> usize {
 
 /// Tokeniza un valor en palabras (lowercase) separadas por espacios, guiones, puntos, guiones bajos.
 /// "Chiller A-01" → ["chiller", "a", "01"]
-///
-/// [PORTED_FROM: (tokenize s)]
 fn tokenize(s: &str) -> Vec<String> {
     s.to_lowercase()
         .split(|c: char| c.is_whitespace() || c == '-' || c == '_' || c == '.')
@@ -64,14 +34,13 @@ fn tokenize(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// True si `value` contiene `term` de forma aproximada.
+/// True si `value` contiene `term` de forma aproximada, aprovechando capacidades técnicas EAV.
 ///
 /// Pipeline (short-circuit):
 ///   1. Guard: vacío → false
 ///   2. Fast path: substring case-insensitive
-///   3. Fuzzy path: algún token ≤ levenshtein threshold
-///
-/// [PORTED_FROM: (fuzzy-match? value term)]
+///   3. Fast Fuzzy path: Trigram intersection score (>= 0.75 de coincidencia)
+///   4. Deep Fuzzy path: Damerau-Levenshtein distance <= threshold por token
 pub fn fuzzy_match(value: &str, term: &str) -> bool {
     if value.is_empty() || term.is_empty() { return false; }
 
@@ -81,13 +50,26 @@ pub fn fuzzy_match(value: &str, term: &str) -> bool {
     // Fast path
     if v_lower.contains(&t_lower) { return true; }
 
-    // Fuzzy path
+    // Fast Fuzzy Path via Trigrams (EAV FTS Capability)
+    let term_trigrams = generate_trigrams(&t_lower);
+    let val_trigrams = generate_trigrams(&v_lower);
+    
+    if !term_trigrams.is_empty() && !val_trigrams.is_empty() {
+        let val_set: HashSet<_> = val_trigrams.iter().collect();
+        let matched = term_trigrams.iter().filter(|t| val_set.contains(t)).count();
+        let score = matched as f32 / term_trigrams.len() as f32;
+        if score >= 0.75 {
+            return true;
+        }
+    }
+
+    // Deep Fuzzy path via Damerau-Levenshtein (EAV FTS Capability)
     let thresh = fuzzy_threshold(&t_lower);
     if thresh == 0 { return false; }
 
     tokenize(value)
         .iter()
-        .any(|token| levenshtein(token, &t_lower) <= thresh)
+        .any(|token| damerau_levenshtein(token, &t_lower) <= thresh)
 }
 
 #[cfg(test)]
@@ -102,21 +84,19 @@ mod tests {
 
     #[test]
     fn fuzzy_one_error() {
-        assert!(fuzzy_match("Chiller A-01", "Chiler")); // lev=1
-        assert!(fuzzy_match("Rack Server", "Rak"));     // lev=1 token 'rack'
+        assert!(fuzzy_match("Chiller A-01", "Chiler")); // dl=1
+        assert!(fuzzy_match("Rack Server", "Rak"));     // dl=1 token 'rack'
+    }
+    
+    #[test]
+    fn fuzzy_transposition() {
+        // Damerau-Levenshtein soporta transposiciones (dl=1)
+        assert!(fuzzy_match("Bomba", "Bobma")); 
     }
 
     #[test]
     fn no_match_short_term() {
         // threshold=0 para ≤2 chars, and it should NOT match fast-path.
         assert!(!fuzzy_match("UPS B-12", "xy"));
-    }
-
-    #[test]
-    fn levenshtein_basic() {
-        assert_eq!(levenshtein("rack", "rak"), 1);
-        assert_eq!(levenshtein("chiller", "chiler"), 1);
-        assert_eq!(levenshtein("abc", "abc"), 0);
-        assert_eq!(levenshtein("", "abc"), 3);
     }
 }
