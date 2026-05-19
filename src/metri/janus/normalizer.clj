@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/janus/normalizer.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.janus.normalizer
   "Janus Output Contract Guarantor - Cobertura 100% de TODOS los Response del contrato.
 

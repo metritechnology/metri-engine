@@ -4,9 +4,9 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   metri-engine
 
-  AWS SAM Template optimizado para Metri Engine (Clojure JVM) - gRPC Puro
-  Aplica SnapStart para evadir Cold Starts y Lambda Function URLs para romper 
-  el límite de 29s permitiendo gRPC Streams.
+  AWS SAM Template — Metri Engine (Rust / provided.al2023) - gRPC Puro
+  Binary nativo ARM64 compilado con cargo-lambda. Lambda Function URL para
+  gRPC Streams sin límite de 29s. EAV Single Table Design con 4 GSIs canónicos.
 
 Parameters:
   CustomDomainName:
@@ -21,10 +21,10 @@ Parameters:
     Type: String
     Default: "arn:aws:acm:us-east-1:982592308819:certificate/aadd1dab-ffed-467f-b039-43419a4b318c"
     Description: "ARN del Certificado SSL en us-east-1 (requerido para CloudFront)"
-  DatahikeTableName:
+  EavTableName:
     Type: String
-    Default: metri-datahike-prod
-    Description: "Nombre físico de la tabla transaccional de DynamoDB utilizada por Datahike Serverless."
+    Default: metri-prod
+    Description: "Nombre físico de la tabla EAV principal (Single Table Design con 4 GSIs — EAVT/AEVT/AVET/VAET)."
   AthenaWorkGroup:
     Type: String
     Default: metri-analytics
@@ -39,7 +39,7 @@ Parameters:
 Globals:
   Function:
     Timeout: 900
-    MemorySize: 3008
+    MemorySize: 512 # Rust binary — mucho menor footprint que JVM. Ajustar a 1024 si se habilita análisis in-process.
 
 Conditions:
   # Activo solo cuando el deployer pasa un origen de desarrollo explicitamente.
@@ -301,7 +301,7 @@ Resources:
                         FieldToMatch:
                           SingleHeader:
                             Name: "content-type"
-                        SearchString: "application/grpc-web"
+                        SearchString: "application/grpc"
                         PositionalConstraint: STARTS_WITH
                         TextTransformations:
                           - Priority: 0
@@ -505,7 +505,78 @@ Resources:
                   - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/metri_olap"
                   - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/metri_olap/*"
 
-  # ── Diccionario JSON & Validador (OLTP) ──
+  # ── Tabla EAV Principal (OLTP — Single Table Design con 4 GSIs canónicos) ──
+  # Arquitectura: §III del Blueprint EAV Metri.
+  # PK = "T#<tenant>#E#<eid>"  SK = [attr_id:2B][tx_id:8B][op:1B]
+  # GSI-AEVT: buscar todos los valores de un atributo a través de entidades
+  # GSI-AVET: buscar entidades por valor de atributo (lookup inverso)
+  # GSI-VAET: navegar referencias entre entidades (grafo)
+  # GSI-TENANT: listar todas las entidades de un tenant por tipo
+  MetriEavTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref EavTableName
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref MetriKmsMasterKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: B
+        - AttributeName: AEVT_PK
+          AttributeType: S
+        - AttributeName: AEVT_SK
+          AttributeType: B
+        - AttributeName: AVET_PK
+          AttributeType: S
+        - AttributeName: AVET_SK
+          AttributeType: B
+        - AttributeName: VAET_PK
+          AttributeType: S
+        - AttributeName: VAET_SK
+          AttributeType: B
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # AEVT — (Attribute, Entity, Value, Tx): todos los valores de un atributo
+        - IndexName: GSI-AEVT
+          KeySchema:
+            - AttributeName: AEVT_PK
+              KeyType: HASH
+            - AttributeName: AEVT_SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # AVET — (Attribute, Value, Entity, Tx): lookup inverso por valor
+        - IndexName: GSI-AVET
+          KeySchema:
+            - AttributeName: AVET_PK
+              KeyType: HASH
+            - AttributeName: AVET_SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        # VAET — (Value, Attribute, Entity, Tx): navegación de referencias (grafo)
+        - IndexName: GSI-VAET
+          KeySchema:
+            - AttributeName: VAET_PK
+              KeyType: HASH
+            - AttributeName: VAET_SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # ── Tabla de Metadatos del Sistema (blacklist HMAC, cache schemas) ──
   MetriSchemasTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -567,26 +638,30 @@ Resources:
         deadLetterTargetArn: !GetAtt MetriOutboxDLQ.Arn
         maxReceiveCount: 3
 
-  # ── Clojure Engine ──
+  # ── Rust Engine (provided.al2023 / ARM64) ──
+  # Build: cargo lambda build --release --arm64
+  # Deploy: sam deploy (empaqueta el binario bootstrap desde target/lambda/bootstrap/)
   MetriEngineFunction:
     Type: AWS::Serverless::Function
     Metadata:
       BuildMethod: makefile # usa Makefile target build-MetriEngineFunction
     Properties:
       CodeUri: .
-      Handler: metri.lambda.handler
-      Runtime: java21
+      Handler: bootstrap  # binario Rust compilado por cargo-lambda
+      Runtime: provided.al2023
       Architectures:
-        - x86_64
+        - arm64  # Graviton2: 20% más rápido, 20% más barato que x86_64
+      Layers:
+        # AWS Lambda Web Adapter (convierte Lambda API a HTTP/2 gRPC proxy local al port 9090)
+        - "arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerArm64:24"
 
       KmsKeyArn: !GetAtt MetriKmsMasterKey.Arn
       AutoPublishAlias: live
-      SnapStart:
-        ApplyOn: PublishedVersions
+      # SnapStart no aplica a provided.al2023 — Rust cold start < 10ms nativo
 
       FunctionUrlConfig:
         AuthType: NONE
-        InvokeMode: BUFFERED
+        InvokeMode: RESPONSE_STREAM   # Requerido para gRPC (soporte de HTTP Trailers)
         Cors:
           # ── Origenes permitidos ─────────────────────────────────────────────────────────────
           # Si HasDevCorsOrigin=false (produccion): solo https://engine.metri.one
@@ -630,19 +705,18 @@ Resources:
             BucketName: !Ref MetriDataLakeBucket
         - DynamoDBCrudPolicy:
             TableName: !Ref MetriSchemasTable
-        # DatahikeTableName: política explícita sin DeleteItem.
-        # Datahike es una base de datos inmutable (append-only log de datoms);
-        # la eliminación física de ítems nunca debe ser posible desde Lambda.
         - SQSSendMessagePolicy:
             QueueName: !GetAtt MetriOutboxQueue.QueueName
-        # Asignación manual para Athena ya que asegura todos los endpoints internos (Glue, LakeFormation)
         - Statement:
+            # ── KMS: operaciones criptográficas ──
             - Effect: Allow
               Action:
                 - kms:Decrypt
                 - kms:Encrypt
                 - kms:GenerateDataKey*
               Resource: !GetAtt MetriKmsMasterKey.Arn
+
+            # ── Glue Data Catalog: OLAP schema registry ──
             - Effect: Allow
               Action:
                 - glue:GetDatabase
@@ -653,6 +727,8 @@ Resources:
                 - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                 - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/metri_olap"
                 - !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/metri_olap/*"
+
+            # ── Athena: queries analíticos OLAP ──
             - Effect: Allow
               Action:
                 - athena:StartQueryExecution
@@ -660,7 +736,8 @@ Resources:
                 - athena:GetQueryResults
                 - athena:StopQueryExecution
               Resource: !Sub "arn:aws:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkGroup}"
-            # ── Datahike: plano de datos (sin DeleteItem — inmutable por diseño) ──
+
+            # ── Tabla EAV (OLTP): plano de datos — sin DeleteItem (inmutable append-only) ──
             - Effect: Allow
               Action:
                 - dynamodb:GetItem
@@ -674,24 +751,29 @@ Resources:
                 - dynamodb:TransactWriteItems
                 - dynamodb:TransactGetItems
               Resource:
-                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DatahikeTableName}"
-                - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DatahikeTableName}/index/*"
-            # ── Datahike: ciclo de vida de la tabla (schema bootstrap) ──
+                - !GetAtt MetriEavTable.Arn
+                - !Sub "${MetriEavTable.Arn}/index/*"
+
+            # ── Tabla EAV: describe (bootstrap del engine) ──
             - Effect: Allow
               Action:
-                - dynamodb:CreateTable
                 - dynamodb:DescribeTable
-                - dynamodb:DeleteTable
-              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DatahikeTableName}"
+              Resource: !GetAtt MetriEavTable.Arn
+
+            # ── OLAP: Kinesis Firehose (todos los streams de entidades OLAP) ──
             - Effect: Allow
               Action:
                 - firehose:PutRecord
                 - firehose:PutRecordBatch
               Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/metri-olap-*"
+
+            # ── EDA: EventBridge (fault events) ──
             - Effect: Allow
               Action:
                 - events:PutEvents
               Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-faults"
+
+            # ── HMAC Secret: cargado una vez en cold start ──
             - Effect: Allow
               Action:
                 - secretsmanager:GetSecretValue
@@ -700,35 +782,52 @@ Resources:
       Environment:
         Variables:
           ENVIRONMENT: production
+          # ── Lambda Web Adapter ──
+          PORT: "9090"                            # LWA routea aquí el tráfico HTTP/2
+          AWS_LWA_INVOKE_MODE: "response_stream"  # Soporte gRPC trailers y streaming
+          AWS_LAMBDA_EXEC_WRAPPER: "/opt/bootstrap" # REQUERIDO para provided.al2023
+          # ── Rust Engine — variables de arranque ──
+          RUST_LOG: "info" # Cambiar a "debug" solo para troubleshooting
+          GRPC_PORT: "9090" # Puerto interno Lambda (Function URL redirige aquí)
+          CODICE_MODELS_DIR: "models" # <-- Directorio donde el Makefile empaquetó los modelos # Path relativo al binario; S3 sync en FASE 4
+          # ── Storage ──
+          EAV_TABLE_NAME: !Ref EavTableName # Tabla EAV principal (4 GSIs)
+          CEDAR_POLICIES_TABLE: !Ref MetriSchemasTable
           AWS_S3_LAKE_BUCKET: !Ref MetriDataLakeBucket
           ATHENA_WORKGROUP: !Ref AthenaWorkGroup
-          DATAHIKE_DDB_TABLE: !Ref DatahikeTableName
-          CEDAR_POLICIES_TABLE: !Ref MetriSchemasTable
-          OUTBOX_QUEUE_URL: !GetAtt MetriOutboxQueue.QueueUrl
-          KINESIS_STREAM_PREFIX: "metri-olap-stream"
+          # ── OLAP ──
+          KINESIS_STREAM_PREFIX: "metri-olap-stream" # Naming: <prefix>-<entity-slug>
           GLUE_DATABASE_NAME: "metri_olap"
+          # ── EDA ──
+          OUTBOX_QUEUE_URL: !GetAtt MetriOutboxQueue.QueueUrl
           FAULT_BUS_NAME: "metri-faults"
+          # ── Seguridad ──
           HMAC_SECRET_ARN: !Ref MetriHMACSecret
-          # METRI_ORIGIN_TOKEN eliminado: Lambda valida el header X-Metri-Origin-Token
-          # Incrementa este valor para forzar un cold-start del Lambda (útil cuando se limpia Datahike/DynamoDB y la cache interna queda sucia)
-          FORCE_DEPLOY: "18"
+          # Incrementar para forzar re-deploy limpio (invalida cache de modelos en cold start)
+          FORCE_DEPLOY: "1"
 
 Outputs:
   MetriEngineFunctionPublicUrl:
-    Description: "URL base restringida nativa para Metri Engine (Bloqueada via OAC en CloudFront)"
+    Description: "URL base del Lambda Rust (protegida por CloudFront + WAF)"
     Value: !GetAtt MetriEngineFunctionUrl.FunctionUrl
   MetriCloudFrontDomain:
-    Description: "Dominio administrado nativo intermedio de CloudFront"
+    Description: "Dominio CloudFront intermedio"
     Value: !GetAtt MetriCloudFrontDistribution.DomainName
   MetriEngineCustomDomain:
-    Description: "Endpoint final seguro gRPC (Route 53 + WAF protegido)"
+    Description: "Endpoint gRPC público (Route 53 + CloudFront + WAF)"
     Value: !Sub "https://${CustomDomainName}"
+  MetriEavTableArn:
+    Description: "ARN de la tabla EAV principal (OLTP — Single Table Design 4 GSIs)"
+    Value: !GetAtt MetriEavTable.Arn
+  MetriEavTableName:
+    Description: "Nombre físico de la tabla EAV"
+    Value: !Ref MetriEavTable
   MetriDataLakeArn:
-    Description: "ARN del lago de datos principal (S3)"
+    Description: "ARN del lago de datos OLAP (S3 + Iceberg)"
     Value: !GetAtt MetriDataLakeBucket.Arn
   MetriGlueDatabaseName:
-    Description: "Glue Database para queries Athena OLAP (Parquet/Snappy)"
+    Description: "Glue Database para queries Athena OLAP (Parquet/Iceberg)"
     Value: metri_olap
   MetriHMACTokenStore:
-    Description: "Autenticación: HMAC-SHA256 auto-contenido | Secret: MetriHMACSecret (Secrets Manager + KMS)"
+    Description: "Autenticación HMAC-SHA256 | Secret en Secrets Manager + KMS"
     Value: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:metri-hmac-secret-${AWS::StackName}"

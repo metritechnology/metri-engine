@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/domain/protocols.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.domain.protocols
   "SSOT de todos los protocolos de infraestructura del Metri Engine.
    Ningún namespace de infraestructura implementa lógica — solo satisface estos contratos.

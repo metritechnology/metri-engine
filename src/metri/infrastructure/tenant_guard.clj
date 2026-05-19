@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/tenant_guard.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.infrastructure.tenant-guard
   "Pool Model gate para Datahike.
    Asegura el aislamiento multitenant y que :tenant/id exista en el schema."

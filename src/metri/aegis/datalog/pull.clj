@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/eav/reader/pull.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.aegis.datalog.pull
   "Pull pattern builder: convierte el :select del AST IR → Datahike pull spec.
    SRP: mapeo de proyección — sin I/O, sin estado.

@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/janus/router.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.janus-router.core
   "JanusRouter — Router de escritura del Metri Engine.
    Invocado exclusivamente por el IOP, únicamente después de que

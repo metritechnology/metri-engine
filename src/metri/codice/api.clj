@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/codice/registry.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.codice.api
   "FASE 02 — MÓDULO III: API pública del Códice.
    Registro en memoria de schemas Malli compilados — acceso O(1).

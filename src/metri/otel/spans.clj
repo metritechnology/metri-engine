@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/otel/tracer.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.otel.spans
   "Wrapper de clj-otel para el Metri Engine.
    Provee macros y funciones para crear spans y agregar atributos."

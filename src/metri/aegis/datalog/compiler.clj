@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/aegis/datalog/compiler.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.aegis.datalog.compiler
   "Compilador OLTP: AST IR → mapa de query Datahike ejecutable.
    SRP: orquestar where + pull + time-frame + hierarchy — sin I/O, sin estado.

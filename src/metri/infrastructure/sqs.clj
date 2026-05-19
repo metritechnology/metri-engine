@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/sqs.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.infrastructure.sqs
   "Cliente SQS FIFO para el Outbox Pattern (MoiraEmitter).
    Compatible con ElasticMQ localmente y AWS SQS en producción.

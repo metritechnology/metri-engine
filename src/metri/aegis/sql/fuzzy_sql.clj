@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/aegis/sql/fuzzy.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.aegis.sql.fuzzy-sql
   "Expansor de términos fuzzy para Athena/OLAP.
    SRP: genera expresiones SQL cost-safe desde un término de búsqueda aproximado.

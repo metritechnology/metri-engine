@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/janus/batch_enricher.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.janus.batch-enricher
   "Enriquecedor de queries pre-compilación.
    SRP: aplica BatchContext.common-filters y DashboardCrossFilterContext

@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/session_store.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.infrastructure.session-store
   "Session Store — HMAC Token Auto-contenido.
 

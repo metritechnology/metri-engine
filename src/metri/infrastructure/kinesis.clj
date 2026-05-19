@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/kinesis.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.infrastructure.kinesis
   "Implementación del IStreamWriter para AWS Kinesis Firehose.
    Desacoplado de la lógica de dominio (SOLID).

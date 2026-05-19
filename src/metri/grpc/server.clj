@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/grpc/server.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.grpc.server
   "Servidor gRPC Netty — ciclo de vida Integrant.
    Levanta en el puerto configurado, registra el servicio impl,

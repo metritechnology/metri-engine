@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/domain/audit/protocol.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.domain.audit.protocol
   "Protocolo del AuditInterceptor.
    Se invoca SIEMPRE — [:ok] y [:error].

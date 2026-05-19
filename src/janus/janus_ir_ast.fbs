@@ -1,0 +1,752 @@
+// AUTO-GENERATED from metri.proto — do not edit manually.
+// Generado por proto_to_fbs.py — cobertura 100 %.
+
+namespace metres.eav;
+
+// - Datomic/Clojure: In-memory JVM math reductions via Transducers.
+enum AggregationFunction : int32 {
+  AGGREGATION_FUNCTION_UNSPECIFIED = 0,
+  COUNT = 1,
+  SUM = 2,
+  AVG = 3,
+  MIN = 4,
+  MAX = 5,
+  MEDIAN = 6,
+  STD_DEV = 7,
+  VARIANCE = 8,
+  PERCENTILE_90 = 9,
+  PERCENTILE_95 = 10,
+  PERCENTILE_99 = 11,
+  CORRELATION = 12,
+  LINEAR_REGRESSION = 13,
+  LOGISTIC_REGRESSION = 14,
+}
+
+enum FilterOperator : int32 {
+  FILTER_OPERATOR_UNSPECIFIED = 0,
+  EQ = 1,
+  NEQ = 2,
+  GT = 3,
+  GTE = 4,
+  LT = 5,
+  LTE = 6,
+  IN = 7,
+  NOT_IN = 8,
+  BETWEEN = 9,
+  LIKE = 10,
+  IS_NULL = 11,
+  IS_NOT_NULL = 12,
+  MATCHES = 13,
+  CONTAINS = 14,
+}
+
+// - `viz` for UI decoration defaults
+enum OutputCastType : int32 {
+  OUTPUT_CAST_UNSPECIFIED = 0,
+  KPI = 1,
+  TIMESERIES = 2,
+  TABLE = 3,
+  PIE = 4,
+  BUBBLE = 5,
+  CSV_EXPORT = 6,
+}
+
+// =============================================================================
+enum OperationAction : int32 {
+  OPERATION_ACTION_UNSPECIFIED = 0,
+  CREATE = 1,
+  UPDATE = 2,
+  DELETE = 3,
+  UPSERT = 4,
+  GET = 5,
+}
+
+// Auxiliary KV table for map<string,AnalyticsRequest> field `QueryRequest.queries`
+table QueryRequest_QueriesEntry {
+  key: string;
+  value: AnalyticsRequest;
+}
+
+// Auxiliary KV table for map<string,string> field `QueryRequest.aliases`
+table QueryRequest_AliasesEntry {
+  key: string;
+  value: string;
+}
+
+// Auxiliary KV table for map<string,QueryResponse> field `QueryResponse.batch_results`
+table QueryResponse_Batch_resultsEntry {
+  key: string;
+  value: QueryResponse;
+}
+
+// Auxiliary KV table for map<string,AnalyticalSignal> field `BreakdownSignal.signals`
+table BreakdownSignal_SignalsEntry {
+  key: string;
+  value: AnalyticalSignal;
+}
+
+// Auxiliary KV table for map<string,string> field `WebhookTarget.headers`
+table WebhookTarget_HeadersEntry {
+  key: string;
+  value: string;
+}
+
+// Common response wrapper to indicate success or failure.
+table Status {
+  success: bool;
+  // - OUTPUT_CAST_VIOLATION
+  error_code: string;
+  error_message: string;
+}
+
+// HATEOAS Link definition for discoverable APIs.
+table Link {
+  rel: string;
+  href: string;
+  method: string;
+}
+
+// UI Action definition for HATEOAS-driven interfaces.
+table Action {
+  id: string;
+  label: string;
+  icon: string;
+  link: Link;
+  type: string;
+}
+
+// Opaque cursors ensure O(log N) resumability and prevent page-drifting on concurrent writes.
+table Pagination {
+  next_cursor: string;
+  // Encoded token for the next page pointer (Index-Range)
+  previous_cursor: string;
+  // Encoded token for the backward page pointer
+  page_size: int32;
+  // Number of items requested/returned
+  has_next: bool;
+  // Indicator for UI "Load More" actions
+  has_previous: bool;
+  links: [Link];
+}
+
+// =============================================================================
+table DiscoveryRequest {
+  tenant_id: string;
+  // Empty string = return all entities registered in the Codex for this tenant.
+  type: string;
+  // without AttributeSchema[] children. Useful for sidebar navigation.
+  include_attributes: bool;
+  // Keyset cursor for paginated Codex discovery (large multitenant catalogs).
+  cursor: string;
+  // Max entities per page (default: 50, max: 200).
+  page_size: int32;
+}
+
+table AttributeSchema {
+  // Codex attribute name (Clojure namespace key: :entity/name)
+  name: string;
+  // Primitive type: "string", "number", "boolean", "date", "uuid", "json"
+  type: string;
+  // Secondary type qualifier: "enum", "currency", "percentage", "relative_time"
+  subtype: string;
+  // Replaces legacy `options` field for semantic clarity.
+  enum_values: [string];
+  // For UUID attributes pointing to a related entity (join reference).
+  entity_ref: string;
+  // Default value rendered by the UI form when creating a new record.
+  default_value: string;
+  // for Fuzzy matching (Levenshtein on OLAP or Lucene on OLTP).
+  fts: bool;
+  // Human-readable label rendered in the UI (e.g. "Work Order Status").
+  label: string;
+  // UI icon identifier (mdi: prefix for Material Design, e.g. "mdi:tag").
+  icon: string;
+  // SI unit suffix displayed in the UI (e.g. "USD", "%", "kWh", "°C").
+  unit: string;
+  // Janus DSL gate: if false, FilterCriteria using this attribute is rejected.
+  filterable: bool;
+  // Janus DSL gate: if false, ORDER BY on this attribute is rejected.
+  sortable: bool;
+  // Janus DSL gate: if false, GROUP BY on this attribute is rejected.
+  groupable: bool;
+  // Janus DSL gate: if false, aggregate functions (SUM/AVG/COUNT) are rejected.
+  aggregatable: bool;
+}
+
+table EntitySchema {
+  // Codex entity name (Clojure namespace: :work_order, :asset, :location).
+  entity: string;
+  // Full hydrated attribute list. Omitted when DiscoveryRequest.include_attributes=false.
+  attributes: [AttributeSchema];
+  // Human-readable label for UI headers/breadcrumbs (e.g. "Work Order").
+  label: string;
+  // UI icon identifier (mdi: prefix, e.g. "mdi:clipboard-check").
+  icon: string;
+  // The attribute name used as the primary key in RowSet results (typically "id").
+  primary_key: string;
+  // Hermes uses this to build the Levenshtein/Lucene composite query.
+  fts_fields: [string];
+  // Estimated total entities in Codex for this tenant (used by UI for skeleton rendering).
+  total_count: int64;
+}
+
+table DiscoveryResponse {
+  status: Status;
+  schemas: [EntitySchema];
+  // Keyset cursor for the next page (empty if this is the last page).
+  next_cursor: string;
+  has_next: bool;
+}
+
+table ExploreRequest {
+  tenant_id: string;
+  entity: string;
+  attribute: string;
+  limit: int32;
+}
+
+table ExploreResponse {
+  status: Status;
+  values: [string];
+}
+
+// The backend derives the query domain from this structure.
+table MetricDefinition {
+  entity: string;
+  // Entity domain, e.g. "asset", "work_order"
+  attribute: string;
+  // Attribute name within that entity, e.g. "id", "total_cost"
+  aggregation: AggregationFunction;
+  // Engine-agnostic math operator
+  name: string;
+  // Required only if the aggregation function specifically needs two sources.
+  secondary_attribute: string;
+  // Optional local filter for this metric (v3 EDN contract parity).
+  filter: FilterNode;
+  // Optional metric interval override (e.g. "day", "week", "month").
+  interval: string;
+}
+
+// ==========================================
+table DimensionDefinition {
+  entity: string;
+  // Entity domain for the dimension
+  attribute: string;
+  // Attribute to group by
+  interval: string;
+  // Applies to: PIE slice names, LINE/AREA series legends, TABLE cell display.
+  label_template: string;
+}
+
+table FormulaEntry {
+  name: string;
+  formula: string;
+}
+
+// (ej. "Global_Gross_Margin"). Evita la inyección repetitiva de fórmulas de Frontends dispares.
+table SemanticMetricRef {
+  metric_key: string;
+}
+
+table StringList {
+  values: [string];
+}
+
+table FilterValueList {
+  values: [FilterValue];
+}
+
+table FilterValue {
+  string_val: string;
+  number_val: double;
+  bool_val: bool;
+  timestamp_val: int64;
+  list_val: StringList;
+  // Minimizes string casting overhead in the Java/Clojure backend for scale.
+  range_values: FilterValueList;
+}
+
+table FilterCriteria {
+  // → No proto schema change required. Standard FilterOperator and FilterValue apply.
+  field: string;
+  value: FilterValue;
+  op_ref: FilterOperator;
+}
+
+enum FilterGroup_Conjunction : int32 {
+  CONJUNCTION_UNSPECIFIED = 0,
+  AND = 1,
+  OR = 2,
+  NOT = 3,
+}
+
+table FilterGroup {
+  conjunction: FilterGroup_Conjunction;
+  nodes: [FilterNode];
+}
+
+table FilterNode {
+  criteria: FilterCriteria;
+  group: FilterGroup;
+}
+
+table SortDefinition {
+  field: string;
+  descending: bool;
+}
+
+// relative comparisons (like "vs Yesterday") need to dynamically know the baseline.
+enum TimeFrameContext_TimeFilterType : int32 {
+  TIME_FILTER_TYPE_UNSPECIFIED = 0,
+  CUSTOM_RANGE = 1,
+  TODAY = 2,
+  YESTERDAY = 3,
+  TOMORROW = 4,
+  LAST_N_MINUTES = 5,
+  LAST_N_HOURS = 6,
+  LAST_N_DAYS = 7,
+  NEXT_N_DAYS = 8,
+  THIS_WEEK = 9,
+  LAST_WEEK = 10,
+  NEXT_WEEK = 11,
+  LAST_N_WEEKS = 12,
+  NEXT_N_WEEKS = 13,
+  WEEK_TO_DATE = 14,
+  THIS_MONTH = 15,
+  LAST_MONTH = 16,
+  NEXT_MONTH = 17,
+  LAST_N_MONTHS = 18,
+  NEXT_N_MONTHS = 19,
+  MONTH_TO_DATE = 20,
+  THIS_QUARTER = 21,
+  LAST_QUARTER = 22,
+  LAST_N_QUARTERS = 23,
+  QUARTER_TO_DATE = 24,
+  THIS_YEAR = 25,
+  LAST_YEAR = 26,
+  LAST_N_YEARS = 27,
+  YEAR_TO_DATE = 28,
+  ALL_TIME = 29,
+}
+
+// relative comparisons (like "vs Yesterday") need to dynamically know the baseline.
+table TimeFrameContext {
+  // Strategies the backend will compile to Absolute Date parameters based on User's clock
+  type: TimeFrameContext_TimeFilterType;
+  n_value: int32;
+  // Required if shifting (e.g. 15 for "Last 15 days")
+  start_ts: int64;
+  // Custom Range: Exact epoch millisecond
+  end_ts: int64;
+  // Custom Range: Exact epoch millisecond
+  timezone: string;
+}
+
+enum AnalyticalComparison_ComparisonType : int32 {
+  COMPARISON_TYPE_UNSPECIFIED = 0,
+  TIME_SHIFT_RELATIVE = 1,
+  TIME_SHIFT_SHORTCUT = 2,
+  TIME_SHIFT_ABSOLUTE = 3,
+  BENCHMARK = 4,
+  SMART = 5,
+}
+
+enum AnalyticalComparison_ShiftShortcut : int32 {
+  SHIFT_SHORTCUT_UNSPECIFIED = 0,
+  PREVIOUS_PERIOD = 1,
+  SAME_PERIOD_LAST_YEAR = 2,
+  SAME_PERIOD_LAST_QUARTER = 3,
+  SAME_PERIOD_LAST_MONTH = 4,
+  SAME_DAY_LAST_WEEK = 5,
+  SAME_DAY_LAST_MONTH = 6,
+  SAME_DAY_LAST_YEAR = 7,
+  YESTERDAY_LAST_YEAR = 8,
+  YESTERDAY_LAST_MONTH = 9,
+  YESTERDAY_LAST_WEEK = 10,
+  TODAY_LAST_YEAR = 11,
+  TODAY_LAST_MONTH = 12,
+}
+
+table AnalyticalComparison {
+  type: AnalyticalComparison_ComparisonType;
+  label: string;
+  // Custom Semantic Offset (Only evaluated if type == TIME_SHIFT_RELATIVE).
+  relative_granularity: string;
+  // e.g. "day", "month"
+  relative_amount: int32;
+  // High-Level Pre-computed offset (Evaluated if type == TIME_SHIFT_SHORTCUT)
+  shortcut: AnalyticalComparison_ShiftShortcut;
+  // Parameters for TIME_SHIFT_ABSOLUTE. Overrides all calculation contexts.
+  absolute_start_ts: int64;
+  absolute_end_ts: int64;
+  // Parameters for BENCHMARK
+  benchmark_value: double;
+}
+
+table HierarchyContext {
+  // Field containing the parent reference (e.g., "parent_id" or "location_id")
+  parent_field: string;
+  // ID of the parent node to expand. If empty, the backend fetches root nodes.
+  current_node_id: string;
+  // Instructs the backend to compute a boolean "has_children" dynamically without returning full children.
+  inject_has_children: bool;
+}
+
+table AnalyticsRequest {
+  tenant_id: string;
+  // Primary entity domain for the query (e.g. "asset").
+  entity: string;
+  // Detailed metrics to calculate.
+  metrics: [MetricDefinition];
+  // Dimensions for grouping/segmentation (Powers Time-Series grouping).
+  dimensions: [DimensionDefinition];
+  // Absolute BI Reference Boundaries. (Overrides random temporal filters inside FilterNode)
+  time_frame: TimeFrameContext;
+  // Modern recursive filters (AND/OR/NOT trees). (Excluding Temporal properties)
+  filters: [FilterNode];
+  // Performance and pagination.
+  limit: int32;
+  // Max items per page
+  cursor: string;
+  // Opaque token from the previous `next_cursor` (Index-Range Pointer)
+  sort: [SortDefinition];
+  // e.g. "bar", "line", "area", "scatter", "pie", "donut", "kpi", "gauge", "table", "tree"
+  viz: string;
+  // Used by Janus/Aegis guards to validate matrix shape and constraints before responding.
+  output_cast: OutputCastType;
+  // Modern flexible formulas/measures for ad-hoc math analysis (e.g. "income - tax").
+  measures: [FormulaEntry];
+  // Comparativas "Window" usando Time-Travel (WoW, YoY, vs Benchmark).
+  comparisons: [AnalyticalComparison];
+  // - OLTP: Native Apache Lucene `d/fulltext` index on Datomic.
+  search: string;
+  // Strategy for Lazy-Loading UI visual Trees usando pseudo-queries (has_children).
+  hierarchy: HierarchyContext;
+  // Si está presente, Aegis hace override a las "measures" buscando su fórmula original en el Schema Registry.
+  semantic_measures: [SemanticMetricRef];
+  // árbol MQL, son extensiones interpretadas por Janus sobre este Struct.
+  select_tree: string;
+}
+
+// recorta (ignora) la rama antes de inyectarlo, evitando crashear las demás telemetrías del Dashboard.
+table DashboardCrossFilterContext {
+  source_chart_id: string;
+  // Gráfica que disparó el evento (ej. "pie_chart_status")
+  cross_filters: [FilterNode];
+}
+
+table QueryMetadata {
+  execution_time_ms: int64;
+  total_count: int64;
+  engine: string;
+  // e.g. "datomic", "duckdb"
+  is_semantic: bool;
+  total_queries: int32;
+  parallelism_factor: double;
+  cache_hits: int32;
+  // Distributed Tracing: Correlation ID for logs across Janus, Aegis and Hermes.
+  query_id: string;
+  // Cache Policy Insight: Seconds remaining before this result becomes stale.
+  cache_ttl_seconds: int64;
+}
+
+table ColumnSchema {
+  key: string;
+  label: string;
+  type: string;
+  // "string", "number", "boolean", "date"
+  format: string;
+  // "usd", "percentage", "relative_time"
+  is_dimension: bool;
+  is_measure: bool;
+}
+
+table DataRow {
+  values: [string];
+}
+
+// Wrapper to support oneof mutual exclusivity
+table DataRowList {
+  iter: [DataRow];
+}
+
+table RowSet {
+  // Definition of the columns (Label, Format, Datatype).
+  columns: [ColumnSchema];
+  // Standard Object Mapper Array for small tabular graphics (JSON-like)
+  rows_json: DataRowList;
+  // delegating RAW C++ bytes directly to Arrow/Parquet WASM streams).
+  arrow_binary_blob: [uint8];
+  // dump CSV/Parquet directly to AWS S3, returning a short-lived Presigned URL.
+  presigned_csv_url: string;
+}
+
+table MultiSeriesGroup {
+  group_id: string;
+  // El identificador llave (key) que surgirá en `batch_results`. (Ej. "grafica_ingresos_vs_costos")
+  query_keys: [string];
+  // Referencia las llaves de las consultas a procesar y fusionar en Outer-Join (Ej. ["ingresos_q", "costos_q"])
+  override_viz: string;
+}
+
+table QueryRequest {
+  tenant_id: string;
+  // Mapa gigante de consultas base N (Para dashboards inmensos)
+  queries: [QueryRequest_QueriesEntry];  // map<string,AnalyticsRequest>
+  // Shared configuration to avoid repeating filters
+  context: BatchContext;
+  // Todo lo que quede libre en el mapa `queries` se operará como Pie-charts / Gráficas Individuales Standalone.
+  merge_groups: [MultiSeriesGroup];
+  aliases: [QueryRequest_AliasesEntry];  // map<string,string>
+  // Directriz de Estado HATEOAS / Drill-Down Global para interconexión de Dashboards.
+  cross_filter_context: DashboardCrossFilterContext;
+  // Dry-Run / Debugging - Omite Aegis Transmute y retorna Janus AST IR compilado.
+  explain_plan: bool;
+}
+
+// Motor de Trabajos. Declara y registra qué consulta lanzar asincrónicamente y a dónde enviarla si la validación falla/pasa.
+table ChronosAlertTask {
+  task_id: string;
+  cron_expression: string;
+  // ej. "0 8 * * 1" (Lunes a las 8 AM)
+  condition_query: QueryRequest;
+  // El Mega-Batch a correr silenciosamente
+  alert_threshold: double;
+  // Umbral matemático condicional de la alerta
+  webhook_url: string;
+  // Sistema que recibe la explosión de los datos (Slack/Teams)
+  email_recipients: [string];
+}
+
+table QueryResponse {
+  status: Status;
+  // O Representa la gráfica interna plana cuando viene dentro del `batch_results`.
+  data: RowSet;
+  viz_ext: VizMeta;
+  // Mega-Clusters Multiseries combinados dictados en `merge_groups` (`group_id`).
+  batch_results: [QueryResponse_Batch_resultsEntry];  // map<string,QueryResponse>
+  metadata: QueryMetadata;
+  pagination: Pagination;
+  links: [Link];
+}
+
+table BatchContext {
+  common_filters: [FilterNode];
+  // Applied to ALL queries in the batch
+  common_entity: string;
+}
+
+// Decouples all actuarial mathematics from the Frontend.
+table IntelligenceSignal {
+  direction: string;
+  // "up", "down", "neutral"
+  percentage: double;
+  // Evaluated % change vs previous time-bucket
+  delta_abs: double;
+  // Absolute mathematical difference
+  previous_value: double;
+  // The historical value we compared against
+  label: string;
+  // Advanced Statistical Flags:
+  is_anomaly: bool;
+  // True if this jump breaks the Gaussian limits (Alert UI to paint Red)
+  z_score: double;
+  // Confidence / Deviation algebraic score
+  represents_initial: bool;
+}
+
+// Master wrapper used for non-tabular atomic queries.
+table AnalyticalSignal {
+  value: double;
+  // The absolute Result set (e.g. "Total Costs = 2500")
+  previous_value: double;
+  // Required for visual sparklines
+  intelligence: IntelligenceSignal;
+  // Attached math engine wrapper
+  history: [double];
+  // Micro-arreglo to graph background "Sparklines" immediately
+  thresholds: [IndicatorThreshold];
+  // e.g. [Warning > 80, Error > 95]
+  unit: string;
+  // UI suffix: "USD", "%", "kWh"
+  status_label: string;
+  entity_ref: string;
+}
+
+enum TableColumn_Alignment : int32 {
+  ALIGNMENT_UNSPECIFIED = 0,
+  LEFT = 1,
+  CENTER = 2,
+  RIGHT = 3,
+}
+
+table TableColumn {
+  key: string;
+  label: string;
+  type: string;
+  align: TableColumn_Alignment;
+  sortable: bool;
+  format: string;
+  metadata: string;
+  entity_ref: string;
+}
+
+// Target domain for drill-down action
+table TableMeta {
+  columns: [TableColumn];
+  row_actions: [Action];
+  global_links: [Link];
+}
+
+table IndicatorThreshold {
+  value: double;
+  color: string;
+  // e.g., "success", "warning", "error" or hex
+  label: string;
+}
+
+// Thus, this ChartDecoration merely acts as the ECharts `series.encode` mapper.
+table ChartDecoration {
+  // ECharts Dataset Encoding Strategy
+  x_dimension: string;
+  // Maps to ECharts `encode: { x: '...' }`
+  y_dimensions: [string];
+  // ECharts Component Toggles
+  color_scheme: string;
+  // Applies ECharts `color` registered themes
+  show_legend: bool;
+  // Toggles ECharts `legend: { show: true }`
+  show_tooltip: bool;
+  // Toggles ECharts `tooltip: { trigger: 'axis' }`
+  title: string;
+  // Specific Visual Hooks
+  stacked: bool;
+  // Automatically assigns `stack: 'total'` to ECharts series
+  smooth: bool;
+  // Applied via ECharts `series.label.formatter` and `tooltip.formatter`.
+  label_template: string;
+  // Set by the engine for TIMESERIES output_cast when data is sparse.
+  fill_gaps: bool;
+}
+
+// Frontend translates this gracefully into ECharts `{ data: [{ name, value }] }` natively.
+table BreakdownSignal {
+  // Value = AnalyticalSignal (its % weight inside the donut loop)
+  signals: [BreakdownSignal_SignalsEntry];  // map<string,AnalyticalSignal>
+}
+
+// Maps physical inheritance (e.g. Building -> Floor -> Machine)
+table TreeMeta {
+  id_key: string;
+  // Column mapped to the ID
+  parent_id_key: string;
+  // Column mapped to the parent ID (Foreign Key)
+  label_key: string;
+  // Semantic target to draw as node label
+  has_children_key: string;
+  // Core Optimization: Boolean injected so React doesn't pre-fetch children
+  icon_key: string;
+}
+
+// Tuned specifically to feed Apache ECharts efficiently.
+table VizMeta {
+  // ECharts generic type: "bar", "line", "scatter", "pie", etc.
+  type: string;
+  signal: AnalyticalSignal;
+  chart: ChartDecoration;
+  table: TableMeta;
+  breakdown: BreakdownSignal;
+  tree: TreeMeta;
+}
+
+table TransactionRequest {
+  tenant_id: string;
+  entity_type: string;
+  entity_id: string;
+  action: OperationAction;
+  payload: string;
+  // Bandera Anti-Flooding: Si es true, el Motor OLTP ejecutará la escritura y censurará cualquier tupla Outbox impidiendo detonar webhooks o EDA.
+  suppress_events: bool;
+}
+
+table TransactionResponse {
+  status: Status;
+  entity_id: string;
+  result: string;
+}
+
+table BulkRequest {
+  tenant_id: string;
+  entity_type: string;
+  action: OperationAction;
+  // Next-gen high-speed ingestion via columnar RowSet.
+  data: RowSet;
+}
+
+table BulkResponse {
+  status: Status;
+  ingested_count: int32;
+  outbox_count: int32;
+}
+
+// =============================================================================
+table MatchRoutingRulesRequest {
+  tenant_id: string;
+  entity_name: string;
+  // e.g. "work_order"
+  trigger_type: string;
+  // Transporta el $new y $delta transaccional estructurado puramente en JSON.
+  cdc_payload_json: [uint8];
+}
+
+table WebhookTarget {
+  // Absolute HTTPS URL of the target endpoint.
+  target_url: string;
+  // HTTP verb: "POST", "PUT", "PATCH" (default: "POST").
+  http_method: string;
+  // Auth strategy: NONE | BEARER_TOKEN | BASIC_AUTH | CUSTOM_HEADER
+  auth_type: string;
+  // Never sourced from client input — always resolved server-side.
+  resolved_auth_secret: string;
+  // Max delivery attempts before dead-lettering (0 = no retry, max: 10).
+  max_retries: int32;
+  // Timeout per delivery attempt in seconds (default: 10, max: 60).
+  timeout_seconds: int32;
+  // Common use: Authorization, X-Tenant-ID, Content-Type overrides.
+  headers: [WebhookTarget_HeadersEntry];  // map<string,string>
+}
+
+table MatchedRule {
+  // Unique rule identifier (maps to the Codex routing_rule entity).
+  rule_code: string;
+  // EventBridge / SQS detail-type for the outbound event envelope.
+  detail_type_output: string;
+  // Dynamic 1:N fan-out to webhook endpoints (adapted from webhook_endpoint.json).
+  webhooks: [WebhookTarget];
+  // Rules with the same priority are evaluated in lexicographic rule_code order.
+  priority: int32;
+  // Human-readable name for observability dashboards and audit logs.
+  name: string;
+  // When null, the rule matches ALL events of the registered trigger_type.
+  condition: FilterNode;
+}
+
+table MatchRoutingRulesResponse {
+  status: Status;
+  // Devuelve la metafísica de la regla victoriosa, jamás el Payload (Golang ya lo tiene en memoria).
+  matched_rules: [MatchedRule];
+}
+
+table MatchRoutingRulesBatchRequest {
+  // Enviar 10 eventos en paralelo
+  requests: [MatchRoutingRulesRequest];
+}
+
+table MatchRoutingRulesBatchResponse {
+  status: Status;
+  // Devuelve una lista de respuestas que se alinean por índice con los requests
+  responses: [MatchRoutingRulesResponse];
+}
+
+// ── Root type: punto de entrada del contrato Janus AST IR ──────────────────
+root_type AnalyticsRequest;

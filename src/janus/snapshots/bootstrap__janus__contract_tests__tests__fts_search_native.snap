@@ -1,0 +1,8 @@
+---
+source: src/janus/contract_tests.rs
+expression: native_plan
+---
+FtsSearch {
+    tenant_id: "tenant_999",
+    term: "bomba hidraulica",
+}

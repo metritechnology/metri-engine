@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/eventbridge.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.infrastructure.eventbridge
   "Implementación del IEventBus para AWS EventBridge.
    Desacoplado de la lógica de dominio (SOLID).

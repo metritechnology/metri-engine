@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/glue.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.infrastructure.glue
   "AWS Glue Infrastructure Client — Dynamic Schema Management for OLAP.
    Sincroniza el Catálogo de Glue con los modelos del Códice.

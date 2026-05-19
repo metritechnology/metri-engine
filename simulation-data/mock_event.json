@@ -1,1 +1,0 @@
-{"version": "2.0", "routeKey": "", "rawPath": "/", "rawQueryString": "", "headers": {"content-type": "application/grpc-web+proto"}, "requestContext": {"http": {"method": "POST", "path": "/"}}, "isBase64Encoded": true, "body": "AAAAAFAKDXRlc3QtdGVuYW50LTESBHVzZXIgASo3CiQKBWVtYWlsEhsaGXplcm8udHJ1c3QuZ3JwY0BtZXRyaS5vbmUKDwoEcm9sZRIHGgVhZG1pbg=="}

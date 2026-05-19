@@ -1,54 +1,104 @@
-.PHONY: repl build build-uberjar test-all check-cedar clean build-MetriEngineFunction sync-iceberg sync-firehose
+.PHONY: help infra infra-down engine dev watch build build-release test check \
+        seed smoke deploy clean fmt lint
 
-# ── SAM Build target ─────────────────────────────────────────────────────────
-# Invocado por: sam build (Metadata.BuildMethod: makefile)
-# SAM pasa ARTIFACTS_DIR como destino; copiamos el uberjar pre-compilado.
-# El uberjar DEBE estar en target/ antes de ejecutar sam build.
-build-MetriEngineFunction:
-	mkdir -p $(ARTIFACTS_DIR)/lib
-	cp target/metri-engine.jar $(ARTIFACTS_DIR)/lib/
-	cp -r resources/models $(ARTIFACTS_DIR)/models
+# ══════════════════════════════════════════════════════════════════════════════
+#  Metri Engine — Makefile (Rust Native)
+# ══════════════════════════════════════════════════════════════════════════════
 
+help: ## Muestra esta ayuda
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-repl:
-	@echo "Starting Clojure REPL with metri-dev profile..."
-	AWS_PROFILE=metri-dev clj -M:dev
+# ── Infraestructura local (sin engine) ───────────────────────────────────────
 
-build:
-	@echo "Enforcing AOT constraints & building GraalVM native artifact..."
-	clj -T:build native
+infra: ## Levanta DynamoDB Local + MinIO + ElasticMQ
+	@echo "▶ Levantando infraestructura AWS local..."
+	docker compose up -d dynamodb-local dynamodb-init minio minio-init elasticmq
+	@./scripts/local/wait-infra.sh
 
-build-uberjar:
-	@echo "Building generic uberjar (AWS SnapStart approach)..."
-	docker run --rm --network host --entrypoint bash -v $$(pwd):/app -w /app -v ~/.m2:/root/.m2 clojure:tools-deps -c "apt-get update && apt-get install -y protobuf-compiler wget && wget -qO /usr/local/bin/protoc-gen-grpc-java https://repo1.maven.org/maven2/io/grpc/protoc-gen-grpc-java/1.62.2/protoc-gen-grpc-java-1.62.2-linux-aarch_64.exe && chmod +x /usr/local/bin/protoc-gen-grpc-java && PROTOC_BIN=protoc PROTOC_INC=/usr/include PROTOC_PLUGIN=/usr/local/bin/protoc-gen-grpc-java clj -T:build uber"
+infra-down: ## Detiene y limpia la infraestructura
+	docker compose down -v
+	@echo "✅ Stack detenido."
 
-test-all:
-	@echo "Running all tests..."
-	AWS_PROFILE=metri-dev clj -M:test
+# ── Servidor gRPC Rust ───────────────────────────────────────────────────────
 
-check-cedar:
-	@echo "Validating AVP policies syntax..."
-	@if command -v cedar-policy-cli > /dev/null; then \
-		cedar-policy-cli validate -p policies.cedar -s schema.cedar; \
-	else \
-		echo "Warning: cedar-policy-cli not installed locally, skipping local syntax check."; \
-	fi
+engine: infra ## Levanta infra + servidor gRPC Rust compilado
+	@echo "▶ Levantando Metri Engine Rust (profile=engine)..."
+	docker compose --profile engine up -d
+	@echo "✅ gRPC escuchando en localhost:9090"
+	@echo "   grpcurl -plaintext localhost:9090 list"
 
-sync-iceberg:
-	@echo "Sincronizando modelos OLAP de Códice con tablas Apache Iceberg en AWS Athena..."
-	docker run --rm -v $$(pwd):/app -w /app -v ~/.aws:/root/.aws -v ~/.m2:/root/.m2 -e AWS_PROFILE=metri-dev clojure:tools-deps clj -X metri.codice.iceberg-seeder/sync-tables!
+dev: infra ## Levanta infra + hot-reload (cargo-watch, profile=dev)
+	@echo "▶ Modo dev con cargo-watch (hot-reload en src/)..."
+	docker compose --profile dev up
 
-sync-firehose:
-	@echo "Sincronizando modelos OLAP de Códice con streams Kinesis Firehose (upsert idempotente)..."
-	docker run --rm -v $$(pwd):/app -w /app -v ~/.aws:/root/.aws -v ~/.m2:/root/.m2 -e AWS_PROFILE=metri-dev clojure:tools-deps clj -X metri.codice.firehose-seeder/sync-streams!
+watch: ## Solo hot-reload (sin levantar infra de nuevo)
+	docker compose --profile dev up engine-watch
 
-deploy:
-	@echo "Desplegando Infraestructura Serverless..."
+# ── Compilación Rust local ───────────────────────────────────────────────────
+
+build: ## Compila el binario en modo debug
+	cargo build
+
+build-release: ## Compila el binario en modo release (idéntico a Lambda)
+	cargo build --release
+
+fmt: ## Formatea el código con rustfmt
+	cargo fmt
+
+lint: ## Ejecuta clippy
+	cargo clippy -- -D warnings
+
+check: ## cargo check rápido
+	cargo check
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+
+test: ## Ejecuta todos los tests unitarios
+	cargo test
+
+test-integration: infra ## Tests de integración contra DynamoDB Local
+	DYNAMODB_ENDPOINT=http://localhost:8000 \
+	EAV_TABLE=metri-eav-local \
+	SCHEMAS_TABLE=metri-schemas-local \
+	AWS_ACCESS_KEY_ID=test \
+	AWS_SECRET_ACCESS_KEY=test \
+	AWS_DEFAULT_REGION=us-east-1 \
+	cargo test --test '*' -- --ignored
+
+# ── Seed ─────────────────────────────────────────────────────────────────────
+
+seed: ## Inserta datos de prueba (tenant demo + work_orders)
+	@./scripts/local/seed.sh
+
+smoke: ## Smoke test gRPC contra el engine local
+	@./scripts/local/grpcurl-test.sh
+
+# ── Docker image ──────────────────────────────────────────────────────────────
+
+docker-build: ## Compila la imagen Docker del engine (release)
+	docker compose build engine
+
+# ── Deploy AWS ───────────────────────────────────────────────────────────────
+
+deploy: build-release ## Build + deploy SAM a AWS
+	@echo "▶ Desplegando a AWS..."
 	sam build
 	sam deploy --no-confirm-changeset --profile metri-dev
-	$(MAKE) sync-iceberg
-	$(MAKE) sync-firehose
 
-clean:
-	@echo "Cleaning target directory..."
-	rm -rf target/
+# ── SAM Build target (invocado por sam build) ────────────────────────────────
+build-lambda:
+	cargo lambda build --release --arm64
+
+build-MetriEngineFunction: build-lambda
+	mkdir -p $(ARTIFACTS_DIR)/lib
+	cp target/lambda/bootstrap/bootstrap $(ARTIFACTS_DIR)/
+	cp -r config/models $(ARTIFACTS_DIR)/models
+	cp -r config/errors $(ARTIFACTS_DIR)/errors
+
+# ── Limpieza ──────────────────────────────────────────────────────────────────
+
+clean: ## Limpia binarios compilados
+	cargo clean
+	@echo "✅ target/ limpiado."
+
+clean-all: clean infra-down ## Limpia binarios + Docker volumes

@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/iop/core.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.iop.core
   "IOP -- Ingestion Orchestration Pipeline.
    Orquestador raiz del Metri Engine. No conoce dominios de negocio.

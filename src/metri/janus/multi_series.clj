@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/janus/multi_series.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.janus.multi-series
   "Motor de fusión MultiSeriesGroup — Full Outer Join asintótico.
    SRP: realiza y fusiona resultados de sub-queries agrupados bajo un group-id.

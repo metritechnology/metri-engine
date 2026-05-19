@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/janus/ast_compiler.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.janus.ast-compiler
   "JanusASTCompiler — ensamblador del AST IR.
    SRP: combina los sub-pasos 4a–4f en un AST IR inmutable completo.

@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/domain/pipeline/result.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.domain.pipeline.result
   "Railway Pattern — helpers puros para operar sobre resultados [:ok …] | [:error …].
    Sin I/O, sin estado. Usable por cualquier capa sin introducir dependencias.")

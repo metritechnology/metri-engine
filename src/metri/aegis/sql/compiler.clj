@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/aegis/sql/compiler.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.aegis.sql.compiler
   "Compilador principal: AST IR → SQL string para Athena via HoneySQL.
    SRP: orquestar los sub-compiladores y aplicar el security gate ZT.

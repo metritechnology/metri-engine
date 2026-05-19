@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/main.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.main
   "Entry point de la JVM — orquesta el ciclo de vida completo.
 

@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/dynamodb.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.infrastructure.dynamodb
   "Cliente DynamoDB directo para QuotaGuard y operaciones de baja latencia.
    Independiente de Datahike — SDK Cognitect puro.

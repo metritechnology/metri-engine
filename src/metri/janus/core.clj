@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/janus/router.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.janus.core
   "JanusCerebro -- Orquestador del Read Path (Query RPC).
    SRP: gestiona el pipeline Zero-Trust -> Cedar -> compile -> transmutar -> normalizar.

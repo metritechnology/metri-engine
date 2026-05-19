@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/eda/outbox.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.eda.stub
   "Stub provisional para EDA Rule Matcher (FASE 03)."
   (:require [integrant.core :as ig]))

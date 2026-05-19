@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/grpc/translator.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.grpc.translator
   "Traduccion pura Protobuf <-> Clojure. Sin side-effects.
    Unica capa del sistema que importa clases de metri.data.grpc.*

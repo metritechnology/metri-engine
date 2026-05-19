@@ -1,0 +1,135 @@
+// [PORTED_FROM: src/metri/aegis/label_template.clj]
+// aegis/label_template.rs — Interpolación de label templates Mustache-style.
+// SRP: resolución pura de templates — sin I/O, sin estado.
+
+use lazy_static::lazy_static;
+use regex::Regex;
+use serde_json::Value;
+
+lazy_static! {
+    /// Regex que captura {{campo}} en cualquier posición del template.
+    static ref PLACEHOLDER_PATTERN: Regex = Regex::new(r"\{\{([^}]+)\}\}").unwrap();
+}
+
+/// Busca un campo en el row tolerando diferencias de tipos (string/keyword) o estructura.
+/// [PORTED_FROM: (coerce-key row field-str)]
+fn coerce_key<'a>(row: &'a Value, field_str: &str) -> Option<&'a Value> {
+    if let Some(obj) = row.as_object() {
+        if let Some(v) = obj.get(field_str) {
+            return Some(v);
+        }
+        // Intentar sin namespace si lo hubiera, ej. `entity/asset_name` -> `asset_name`
+        let base_field = field_str.split('/').last().unwrap_or(field_str);
+        if let Some(v) = obj.get(base_field) {
+            return Some(v);
+        }
+        for (k, v) in obj {
+            if k == field_str || k.ends_with(&format!("/{field_str}")) {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// Formatea un valor para display en un label.
+/// - null      -> ""
+/// - entero    -> "42"
+/// - decimal   -> "45.23" (2 decimales max)
+/// - string    -> valor directo
+/// [PORTED_FROM: (format-value v)]
+fn format_value(v: Option<&Value>) -> String {
+    match v {
+        Some(Value::Null) | None => "".to_string(),
+        Some(Value::Number(n)) => {
+            if let Some(f) = n.as_f64() {
+                if f.fract() == 0.0 {
+                    format!("{f}")
+                } else {
+                    format!("{f:.2}")
+                }
+            } else {
+                n.to_string()
+            }
+        }
+        Some(Value::String(s)) => s.clone(),
+        Some(val) => val.to_string(),
+    }
+}
+
+/// Interpola un template string contra un data row.
+/// Template: '{{asset_name}} - {{area_value}} KW'
+/// Row:      {"asset_name": "Pump A", "area_value": 45.2}
+/// Retorna:  'Pump A - 45.2 KW'
+/// [PORTED_FROM: (interpolate template row)]
+pub fn interpolate(template: &str, row: &Value) -> Option<String> {
+    if template.trim().is_empty() { return None; }
+
+    let result = PLACEHOLDER_PATTERN.replace_all(template, |caps: &regex::Captures| {
+        let field_str = caps[1].trim();
+        let val = coerce_key(row, field_str);
+        format_value(val)
+    });
+
+    Some(result.into_owned())
+}
+
+/// Aplica `interpolate` a todos los rows de un vector de JSON values.
+/// Añade la key `_label` a cada row con el label resuelto.
+/// [PORTED_FROM: (interpolate-rows rows template)]
+pub fn interpolate_rows(rows: &mut [Value], template: &str) {
+    if template.trim().is_empty() { return; }
+
+    for row in rows.iter_mut() {
+        if let Some(lbl) = interpolate(template, row) {
+            if let Some(obj) = row.as_object_mut() {
+                obj.insert("_label".to_string(), Value::String(lbl));
+            }
+        }
+    }
+}
+
+/// Extrae los nombres de campo referenciados en un template.
+/// [PORTED_FROM: (extract-fields template)]
+pub fn extract_fields(template: &str) -> Vec<String> {
+    if template.trim().is_empty() { return vec![]; }
+    
+    PLACEHOLDER_PATTERN.captures_iter(template)
+        .map(|caps| caps[1].trim().to_string())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_format_value() {
+        assert_eq!(format_value(None), "");
+        assert_eq!(format_value(Some(&json!(null))), "");
+        assert_eq!(format_value(Some(&json!(42))), "42");
+        assert_eq!(format_value(Some(&json!(45.234))), "45.23");
+        assert_eq!(format_value(Some(&json!(45.0))), "45");
+        assert_eq!(format_value(Some(&json!("Pump A"))), "Pump A");
+    }
+
+    #[test]
+    fn test_interpolate() {
+        let row = json!({
+            "asset_name": "Pump A",
+            "area_value": 45.2
+        });
+        let res = interpolate("{{asset_name}} - {{area_value}} KW", &row);
+        assert_eq!(res.unwrap(), "Pump A - 45.20 KW");
+
+        let res2 = interpolate("missing {{foo}}", &row);
+        assert_eq!(res2.unwrap(), "missing ");
+    }
+
+    #[test]
+    fn test_extract_fields() {
+        let fields = extract_fields("{{asset_name}} - {{area_value}} KW");
+        assert_eq!(fields, vec!["asset_name", "area_value"]);
+    }
+}

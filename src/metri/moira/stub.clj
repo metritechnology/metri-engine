@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/eda/moira.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.moira.stub
   "MoiraEventEmitter stub — fire-and-forget sin SQS.
    Reemplazado por la implementación real en FASE 04."

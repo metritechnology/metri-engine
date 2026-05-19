@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/iop/error_response.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.iop.error-response
   "Construye el DTO forense (Módulo IV) para escalar errores del dominio hacia la capa gRPC.
    Asegura la correlación OTel y sanitiza la PII basada en el Códice schema."

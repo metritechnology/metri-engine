@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/codice/registry.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.codice.registry
   "FASE 02 — MÓDULO I: Bootstrapper — Registry Guard.
    Escanea el filesystem de modelos JSON, hashea, compila y valida cada schema.

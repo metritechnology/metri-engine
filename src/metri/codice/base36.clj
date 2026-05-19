@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/codice/base36.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.codice.base36
   "FASE 02 — MÓDULO IV: Generador estocástico Base36.
    Genera códigos alfanuméricos únicos con SecureRandom.

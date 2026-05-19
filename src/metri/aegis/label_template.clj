@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/aegis/label_template.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.aegis.label-template
   "Interpolación de label templates Mustache-style para viz line, area, pie.
    SRP: resolución pura de templates — sin I/O, sin estado.

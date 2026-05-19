@@ -1,0 +1,536 @@
+# Metri Engine — Error Catalog v2.0.0
+# Única fuente de verdad para todos los códigos de error del motor.
+# Formato: TOML (nativo Rust — leído en bootstrap por ErrorRegistry).
+# PROHIBIDO definir códigos fuera de este archivo.
+# El motor NO acepta requests hasta que todos los entries pasen validación.
+
+version      = "2.0.0"
+generated_at = "2026-05-13"
+description  = "Catálogo canónico de errores de Metri Engine — Rust Native"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA JNS — Janus Router (Write Path)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "JNS_001"
+family           = "jns"
+stage            = "janus"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "No channel registered for the given engine type"
+context_required = ["entity_type", "engine"]
+retryable        = false
+
+[[errors]]
+code             = "JNS_REF_001"
+family           = "jns"
+stage            = "janus"
+severity         = "warning"
+http_status      = 422
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Referenced entity UUID does not exist in the EAV store"
+context_required = ["field", "uuid", "entity_type"]
+retryable        = false
+
+[[errors]]
+code             = "JNS_REF_002"
+family           = "jns"
+stage            = "janus"
+severity         = "warning"
+http_status      = 422
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Referenced entity UUID exists but has wrong entity type (type confusion attack blocked)"
+context_required = ["field", "expected_type", "actual_type"]
+retryable        = false
+
+[[errors]]
+code             = "JNS_TX_001"
+family           = "jns"
+stage            = "janus"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "EAV transact failed — full transaction rolled back (entity + all index projections)"
+context_required = ["tx_data_size", "eav_error"]
+retryable        = true
+
+[[errors]]
+code             = "JNS_CONFLICT_001"
+family           = "jns"
+stage            = "janus"
+severity         = "warning"
+http_status      = 409
+grpc_status      = "ABORTED"
+description      = "unique:value constraint violated — value already exists in EAV AVET index"
+context_required = ["field", "value"]
+retryable        = false
+
+[[errors]]
+code             = "JNS_SCOPE_001"
+family           = "jns"
+stage            = "janus"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "scope_resolution found no valid sequence registry entry for the given scope_tag"
+context_required = ["sequence_code", "scope_tag"]
+retryable        = true
+
+[[errors]]
+code             = "JNS_OLAP_003"
+family           = "jns"
+stage            = "janus"
+severity         = "warning"
+http_status      = 403
+grpc_status      = "PERMISSION_DENIED"
+description      = "BulkIngest attempted on entity without engine:olap or write_path_locked:true"
+context_required = ["entity_type"]
+retryable        = false
+
+[[errors]]
+code             = "JNS_LOCK_001"
+family           = "jns"
+stage            = "janus"
+severity         = "warning"
+http_status      = 423
+grpc_status      = "PERMISSION_DENIED"
+description      = "write_path_locked: the entity is read-only — mutations are blocked"
+context_required = ["entity_type"]
+retryable        = false
+
+[[errors]]
+code             = "JNS_SEED_001"
+family           = "jns"
+stage            = "janus"
+severity         = "warning"
+http_status      = 403
+grpc_status      = "PERMISSION_DENIED"
+description      = "is_system_seeded: entity is bootstrapped by the system and cannot be mutated by clients"
+context_required = ["entity_type"]
+retryable        = false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA EAV — Metri EAV Engine (DynamoDB Read/Write)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "EAV_001"
+family           = "eav"
+stage            = "eav-writer"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "EAV transact build_write_items failed — Put builder error constructing DynamoDB items"
+context_required = ["entity_id", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "EAV_002"
+family           = "eav"
+stage            = "eav-reader"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "EAV query execution failed — DynamoDB GSI query returned error (AVET/AEVT/VAET)"
+context_required = ["index", "tenant_id", "cause"]
+retryable        = true
+
+[[errors]]
+code             = "EAV_003"
+family           = "eav"
+stage            = "eav-cursor"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Cursor stale or invalid — query fingerprint changed between pages or cursor is malformed"
+context_required = ["cursor_token"]
+retryable        = false
+
+[[errors]]
+code             = "EAV_004"
+family           = "eav"
+stage            = "eav-registry"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "entity_type or attribute not found in AttributeRegistry — schema validation failed"
+context_required = ["entity_type", "attribute"]
+retryable        = false
+
+[[errors]]
+code             = "EAV_TX_001"
+family           = "eav"
+stage            = "eav-writer"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "DynamoDB TransactWriteItems returned TransactionCanceledException"
+context_required = ["cancellation_reasons", "entity_id"]
+retryable        = true
+
+[[errors]]
+code             = "EAV_TX_002"
+family           = "eav"
+stage            = "eav-writer"
+severity         = "warning"
+http_status      = 507
+grpc_status      = "RESOURCE_EXHAUSTED"
+description      = "EAV transaction exceeded 100-item DynamoDB limit after chunking — degraded consistency mode activated"
+context_required = ["total_items", "entity_id"]
+retryable        = false
+
+[[errors]]
+code             = "EAV_TX_003"
+family           = "eav"
+stage            = "eav-writer"
+severity         = "warning"
+http_status      = 409
+grpc_status      = "ABORTED"
+description      = "Optimistic locking failed — entity version changed between read and write (ConcurrentModification)"
+context_required = ["entity_id", "expected_version", "tenant_id"]
+retryable        = true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA JANUS — Read Path (AST Compiler / Cerebro)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "JANUS_400"
+family           = "janus"
+stage            = "janus-cerebro"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Janus rejected request — tenant_id empty, cedar_ctx invalid, AST missing tenant, enum sentinel=0, or scope=NONE"
+context_required = ["reason", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "JANUS_VAL_001"
+family           = "janus"
+stage            = "janus-validator"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Janus Validator rejected request — schema validation failed against AST IR contract"
+context_required = ["tenant_id", "schema_key", "errors"]
+retryable        = false
+
+[[errors]]
+code             = "JANUS_403"
+family           = "janus"
+stage            = "janus-cerebro"
+severity         = "warning"
+http_status      = 403
+grpc_status      = "PERMISSION_DENIED"
+description      = "Janus rejected request — Cedar DENY (cross-tenant or insufficient grant)"
+context_required = ["tenant_id", "user_id"]
+retryable        = false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA AEG — Aegis (Motor Analítico OLTP/OLAP)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "AEG_001"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Aegis received AST IR with unknown engine type — must be oltp or olap"
+context_required = ["engine", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_002"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Aegis OLTP: EAV query execution failed"
+context_required = ["detail", "tenant_id"]
+retryable        = true
+
+[[errors]]
+code             = "AEG_003"
+family           = "aeg"
+stage            = "aegis"
+severity         = "warning"
+http_status      = 404
+grpc_status      = "NOT_FOUND"
+description      = "Aegis OLTP pull: entity_id not found or belongs to a different tenant"
+context_required = ["entity_id", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_004"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Aegis OLAP: IQueryEngine.start_query failed — Athena could not initiate execution"
+context_required = ["detail", "tenant_id"]
+retryable        = true
+
+[[errors]]
+code             = "AEG_005"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Aegis OLAP: IQueryEngine.get_query_results failed — Athena execution error or timeout"
+context_required = ["execution_id", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_COMPILE_001"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Aegis OLTP: failed to compile AST IR to EAV QueryPlan — unsupported operator or malformed node"
+context_required = ["detail", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_COMPILE_002"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Aegis OLAP: failed to compile AST IR to SQL — unsupported operator or malformed node"
+context_required = ["detail", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_TENANT_MISSING"
+family           = "aeg"
+stage            = "aegis"
+severity         = "fatal"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Aegis received an AST IR without tenant isolation in :where — data exfiltration risk blocked"
+context_required = ["tenant_id"]
+retryable        = false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA GRPC — gRPC Transport Layer (Tonic)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "GRPC_AUTH_001"
+family           = "grpc"
+stage            = "grpc-interceptor"
+severity         = "warning"
+http_status      = 401
+grpc_status      = "UNAUTHENTICATED"
+description      = "HMAC-SHA256 signature verification failed — token invalid, expired, or tampered"
+context_required = ["tenant_id", "token_prefix"]
+retryable        = false
+
+[[errors]]
+code             = "GRPC_AUTH_002"
+family           = "grpc"
+stage            = "grpc-interceptor"
+severity         = "warning"
+http_status      = 401
+grpc_status      = "UNAUTHENTICATED"
+description      = "Authorization header missing or malformed — Bearer token not found"
+context_required = ["method"]
+retryable        = false
+
+[[errors]]
+code             = "GRPC_TENANT_001"
+family           = "grpc"
+stage            = "grpc-interceptor"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "tenant_id missing or empty in request metadata — request rejected before processing"
+context_required = ["method"]
+retryable        = false
+
+[[errors]]
+code             = "GRPC_500"
+family           = "grpc"
+stage            = "grpc-service"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Unhandled internal server error in gRPC handler — see tracing span for details"
+context_required = ["method", "trace_id"]
+retryable        = false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA INFRA — Infrastructure (DynamoDB, Athena, S3, SQS, Kinesis)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "INFRA_DDB_001"
+family           = "infra"
+stage            = "dynamodb"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "DynamoDB SDK error — unexpected failure on GetItem/PutItem/Query/TransactWriteItems"
+context_required = ["operation", "table", "cause"]
+retryable        = true
+
+[[errors]]
+code             = "INFRA_DDB_002"
+family           = "infra"
+stage            = "dynamodb"
+severity         = "error"
+http_status      = 429
+grpc_status      = "RESOURCE_EXHAUSTED"
+description      = "DynamoDB ProvisionedThroughputExceededException — read/write capacity exhausted on partition"
+context_required = ["table", "index", "tenant_id"]
+retryable        = true
+
+[[errors]]
+code             = "INFRA_DDB_003"
+family           = "infra"
+stage            = "dynamodb"
+severity         = "warning"
+http_status      = 404
+grpc_status      = "NOT_FOUND"
+description      = "DynamoDB item not found — entity may not exist or tenant isolation filtered it out"
+context_required = ["pk", "sk", "table"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_ATHENA_001"
+family           = "infra"
+stage            = "athena"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Athena StartQueryExecution failed — SDK error or quota exceeded"
+context_required = ["workgroup", "query_prefix", "cause"]
+retryable        = true
+
+[[errors]]
+code             = "INFRA_ATHENA_002"
+family           = "infra"
+stage            = "athena"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Athena query FAILED state — query execution error returned by Athena engine"
+context_required = ["execution_id", "state_change_reason"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_ATHENA_003"
+family           = "infra"
+stage            = "athena"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Athena GetQueryResults failed — cannot retrieve results after successful execution"
+context_required = ["execution_id", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_ATHENA_004"
+family           = "infra"
+stage            = "athena"
+severity         = "warning"
+http_status      = 504
+grpc_status      = "DEADLINE_EXCEEDED"
+description      = "Athena query exceeded polling timeout — execution_id preserved for async reconciliation"
+context_required = ["execution_id", "timeout_ms"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_ATHENA_005"
+family           = "infra"
+stage            = "athena"
+severity         = "warning"
+http_status      = 403
+grpc_status      = "PERMISSION_DENIED"
+description      = "Athena AccessDeniedException — Lambda IAM role lacks athena:StartQueryExecution or s3:PutObject on output bucket"
+context_required = ["workgroup", "iam_arn"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_CEDAR_001"
+family           = "infra"
+stage            = "cedar"
+severity         = "error"
+http_status      = 503
+grpc_status      = "UNAVAILABLE"
+description      = "Cedar Policy Engine unavailable or policy parsing error — authorization cannot be evaluated"
+context_required = ["action", "resource", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_CEDAR_002"
+family           = "infra"
+stage            = "cedar"
+severity         = "fatal"
+http_status      = 503
+grpc_status      = "UNAVAILABLE"
+description      = "Cedar policy store could not be loaded from DynamoDB during bootstrap — ABAC is non-functional"
+context_required = ["table", "cause"]
+retryable        = false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA CDX — Códice (Schema Registry / Attribute Registry)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "CDX_001"
+family           = "cdx"
+stage            = "codice"
+severity         = "fatal"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Códice bootstrap failed — cannot load entity models from config/models/. Engine halted."
+context_required = ["path", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "CDX_002"
+family           = "cdx"
+stage            = "codice"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Model validation failed — entity JSON schema does not conform to Códice contract"
+context_required = ["entity_type", "validation_errors"]
+retryable        = false
+
+[[errors]]
+code             = "CDX_003"
+family           = "cdx"
+stage            = "codice"
+severity         = "error"
+http_status      = 404
+grpc_status      = "NOT_FOUND"
+description      = "Entity type not found in Códice registry — unknown entity_type in request"
+context_required = ["entity_type"]
+retryable        = false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA MCP — LLM / AI Integrations
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "MCP_503"
+family           = "mcp"
+stage            = "mcp"
+severity         = "error"
+http_status      = 503
+grpc_status      = "UNAVAILABLE"
+description      = "LLM service unavailable — Anthropic or Ollama timeout or capacity exceeded"
+context_required = ["model", "timeout_ms"]
+retryable        = true

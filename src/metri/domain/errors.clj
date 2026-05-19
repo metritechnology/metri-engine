@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/domain/errors.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.domain.errors
   "Constructor centralizado de mónadas de error Railway-Oriented.
    Valida y empaqueta DTOs usando el error_catalog.edn como Única Fuente de Verdad."

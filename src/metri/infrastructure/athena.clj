@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/infrastructure/athena.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.infrastructure.athena
   "Cliente AWS Athena para queries OLAP en producción.
    Implementa IQueryEngine. Ciclo de vida gestionado por Integrant.

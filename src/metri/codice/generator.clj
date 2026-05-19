@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/codice/generator.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.codice.generator
   (:require [taoensso.timbre :as log]
             [integrant.core  :as ig]

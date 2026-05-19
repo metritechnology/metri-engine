@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/codice/sequence.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.codice.sequence
   "FASE 02 — MÓDULO IV: Generador secuencial ACID.
    Genera el siguiente código con scope resolution y WRITE ACID en sequence_registry.

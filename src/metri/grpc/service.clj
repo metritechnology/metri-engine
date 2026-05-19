@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/grpc/service.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.grpc.service
   "MetriServiceImpl — adaptador gRPC → pipelines de dominio.
    Única responsabilidad: traducir Protobuf ↔ Clojure y despachar al pipeline.

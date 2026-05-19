@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/janus/validator.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.janus.validator
   "Registry y Validador de Malli para los esquemas FASE 10 de Janus.
    Carga dinámicamente los contratos desde resources/schema/janus-ast-ir.edn"

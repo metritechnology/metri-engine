@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/main.rs]
+;; NO MODIFICAR ESTE ARCHIVO — la fuente de verdad ahora reside en Rust.
 (ns metri.lambda.handler
   "Adaptador Lambda → pipelines del Metri Engine (Emulación gRPC-Web).
    Recibe el JSON de API Gateway, extrae el Base64 (grpc-web+proto),

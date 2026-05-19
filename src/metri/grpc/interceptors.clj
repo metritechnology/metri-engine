@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/grpc/server.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.grpc.interceptors
   "Interceptores del servidor gRPC Netty.
    Orden de ejecución (más externo → más interno):

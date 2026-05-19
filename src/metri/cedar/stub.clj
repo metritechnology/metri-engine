@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/cedar/authorizer.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.cedar.stub
   "CedarAuthorizer stub — AlwaysAllow.
    Reemplazado por la implementación real en FASE 06.

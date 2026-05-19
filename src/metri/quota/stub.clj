@@ -1,3 +1,6 @@
+;; [PORTED_TO_RUST: src/cedar/quota_guard.rs]
+;; NO MODIFICAR ESTE ARCHIVO.
+;; La fuente de verdad para esta lógica ahora reside en Rust.
 (ns metri.quota.stub
   "QuotaGuard stub — pass-through sin verificación de cuotas.
    Reemplazado por la implementación real en FASE 07."

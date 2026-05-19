@@ -1,3 +1,5 @@
+;; [PORTED_TO_RUST: src/iop/pipeline.rs]
+;; NO MODIFICAR — fuente de verdad en Rust
 (ns metri.iop.pipeline
   "Motor Railway del IOP — composición pura de pasos.
    chain/run: vector de fns [ctx → [:ok ctx'] | [:error body]]
