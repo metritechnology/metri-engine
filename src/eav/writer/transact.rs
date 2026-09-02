@@ -363,7 +363,7 @@ impl EavWriter {
                 let ctx = crate::eav::writer::constraints::ConstraintContext {
                     tenant_id: &payload.tenant_id,
                     entity_id: &entity_id,
-                    model: model,
+                    model,
                     attrs: &payload.attrs,
                     op: payload.op.clone(),
                     table: &self.table,
