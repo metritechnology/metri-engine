@@ -32,7 +32,7 @@ impl CedarAuthorizerStep {
     ) -> Self {
         info!("[CedarStep] Inicializando con motor real Cedar ABAC (Zero-Trust)");
 
-        let policies_src = include_str!("../../docs/architecture/cedar/metri.cedar");
+        let policies_src = include_str!("../../config/policies/metri.cedar");
         let policies = PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
 
         let mut policy_cache = HashMap::new();

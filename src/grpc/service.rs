@@ -75,7 +75,7 @@ impl MetriGrpcService {
 
         // Compilar políticas de Cedar para el path de consultas analíticas
         use std::str::FromStr;
-        let policies_src = include_str!("../../docs/architecture/cedar/metri.cedar");
+        let policies_src = include_str!("../../config/policies/metri.cedar");
         let policies =
             cedar_policy::PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
 
@@ -505,7 +505,6 @@ pub(crate) fn validate_list_filters(
     model: &crate::codice::registry::EntityModel,
     filter_names: &[&str],
 ) -> Result<(), String> {
-    use crate::codice::registry::AttrType;
     for name in filter_names {
         match model.attributes.iter().find(|a| a.name == *name) {
             None => {
@@ -515,7 +514,8 @@ pub(crate) fn validate_list_filters(
                 ));
             }
             Some(a) => {
-                if matches!(a.attr_type, AttrType::Bytes | AttrType::Array) {
+                // La regla vive en el escritor: la validación consulta, no reimplementa.
+                if !crate::eav::types::value_type::attr_type_is_avet_indexable(&a.attr_type) {
                     return Err(format!(
                         "'{}' es de tipo no indexable en AVET: no se puede filtrar por el",
                         name

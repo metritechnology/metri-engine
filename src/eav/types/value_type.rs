@@ -49,3 +49,42 @@ impl ValueType {
         !matches!(self, ValueType::Bytes | ValueType::Array | ValueType::Null)
     }
 }
+
+/// Regla canónica de indexabilidad AVET a nivel de ATRIBUTO (códice).
+///
+/// Único lugar donde se decide qué tipos de atributo puede filtrar el índice
+/// AVET. `validate_list_filters` (grpc) consulta aquí en vez de reimplementar
+/// la regla; el escritor aplica el mismo criterio a nivel de datom vía
+/// [`ValueType::is_avet_indexable`]. La divergencia histórica en `Null` muere
+/// por construcción: `Null` no existe como `AttrType` y a nivel de datom ya lo
+/// excluye `is_avet_indexable`.
+pub fn attr_type_is_avet_indexable(
+    attr_type: &crate::codice::registry::AttrType,
+) -> bool {
+    use crate::codice::registry::AttrType;
+    !matches!(attr_type, AttrType::Bytes | AttrType::Array)
+}
+
+#[cfg(test)]
+mod attr_rule_tests {
+    use super::attr_type_is_avet_indexable;
+    use crate::codice::registry::AttrType;
+
+    #[test]
+    fn los_tipos_que_el_avet_no_indexa_estan_prohibidos_como_filtro() {
+        assert!(!attr_type_is_avet_indexable(&AttrType::Bytes));
+        assert!(!attr_type_is_avet_indexable(&AttrType::Array));
+    }
+
+    #[test]
+    fn los_tipos_indexables_se_aceptan_como_filtro() {
+        assert!(attr_type_is_avet_indexable(&AttrType::String));
+        assert!(attr_type_is_avet_indexable(&AttrType::Number));
+        assert!(attr_type_is_avet_indexable(&AttrType::Epoch));
+        assert!(attr_type_is_avet_indexable(&AttrType::Reference));
+        assert!(attr_type_is_avet_indexable(&AttrType::Uuid));
+        assert!(attr_type_is_avet_indexable(&AttrType::Enum));
+        assert!(attr_type_is_avet_indexable(&AttrType::Json));
+        assert!(attr_type_is_avet_indexable(&AttrType::Boolean));
+    }
+}

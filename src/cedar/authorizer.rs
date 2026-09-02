@@ -759,7 +759,7 @@ static CEDAR_SCHEMA: std::sync::OnceLock<Schema> = std::sync::OnceLock::new();
 
 fn get_cedar_schema() -> &'static Schema {
     CEDAR_SCHEMA.get_or_init(|| {
-        let schema_src = include_str!("../../docs/architecture/cedar/cedar-schema.json");
+        let schema_src = include_str!("../../config/policies/cedar-schema.json");
         Schema::from_str(schema_src).expect("Failed to parse cedar-schema.json")
     })
 }
@@ -1736,11 +1736,11 @@ mod tests {
     #[test]
     fn test_cedar_contractor_isolation() {
         // 1. Load policies
-        let policies_src = include_str!("../../docs/architecture/cedar/metri.cedar");
+        let policies_src = include_str!("../../config/policies/metri.cedar");
         let policies = PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
 
         // 2. Load schema
-        let schema_src = include_str!("../../docs/architecture/cedar/cedar-schema.json");
+        let schema_src = include_str!("../../config/policies/cedar-schema.json");
         let schema = Schema::from_str(schema_src).expect("Failed to parse cedar-schema.json");
 
         // 3. Define entities JSON
@@ -2346,7 +2346,7 @@ mod tests {
 
     #[test]
     fn test_cedar_native_action_validation() {
-        let policies_src = include_str!("../../docs/architecture/cedar/metri.cedar");
+        let policies_src = include_str!("../../config/policies/metri.cedar");
         let policies = PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
 
         let mut policy_cache = HashMap::new();
@@ -2411,7 +2411,7 @@ mod tests {
 
     #[test]
     fn test_mutational_abac_hydration() {
-        let policies_src = include_str!("../../docs/architecture/cedar/metri.cedar");
+        let policies_src = include_str!("../../config/policies/metri.cedar");
         let policies = PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
 
         let mut policy_cache = HashMap::new();
