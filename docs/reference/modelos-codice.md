@@ -22,7 +22,7 @@ Total de modelos: **60**
 | `dashboardBI` | oltp | `name`, `description`, `widgets`, `created_at`, `updated_at` |
 | `document_chunk` | oltp | `id`, `parent_file`, `chunk_index`, `chunk_content`, `semantic_embedding`, `metadata_tags`, `owner_entity_type`, `owner_entity_id`, `page_range`, `created_at` |
 | `domain_fault` | olap | `trace_id`, `tenant_id`, `user_id`, `error_code`, `severity`, `stage`, `component`, `entity_type`, `retryable`, `occurred_at`, `context` |
-| `domain_plugin` | oltp | `target_domain`, `hook_type`, `clojure_fn`, `active`, `config` |
+| `domain_plugin` | oltp | `target_domain`, `hook_type`, `handler_fn`, `active`, `config` |
 | `domain_quota` | oltp | `tenant_id`, `resource_domain`, `limit_type`, `reset_strategy`, `period_key`, `max_limit`, `current_usage` |
 | `downtime_log` | oltp | `asset_id`, `work_order_id`, `start_time`, `end_time`, `duration_minutes`, `reason` |
 | `electronic_signature` | oltp | `signer_user_id`, `signature_intent`, `timestamp`, `ip_address`, `device_fingerprint`, `snapshot_hash`, `graphical_file_id`, `requires_mfa_token`, `signed_entity`, `signed_entity_id` |

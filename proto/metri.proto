@@ -116,7 +116,7 @@ message DiscoveryRequest {
 
 message AttributeSchema {
   // ── Core Identity ─────────────────────────────────────────────────────────
-  // Codex attribute name (Clojure namespace key: :entity/name)
+  // Codex attribute name (el motor nativo namespace key: :entity/name)
   string name = 1;
 
   // Primitive type: "string", "number", "boolean", "date", "uuid", "json"
@@ -174,7 +174,7 @@ message AttributeSchema {
 
 message EntitySchema {
   // ── Core Identity ─────────────────────────────────────────────────────────
-  // Codex entity name (Clojure namespace: :work_order, :asset, :location).
+  // Codex entity name (el motor nativo namespace: :work_order, :asset, :location).
   string entity = 1;
 
   // Full hydrated attribute list. Omitted when DiscoveryRequest.include_attributes=false.
@@ -252,9 +252,9 @@ message ListEntitiesResponse {
 
 // Agnostic Statistical & Machine Learning Aggregations
 // Instructs the backend to perform mathematical reductions.
-// The Clojure backend is agnostic and will compile these directives to:
+// The el motor nativo backend is agnostic and will compile these directives to:
 // - Trino/Athena: Pushdown columnar functions (e.g., `CORR()`, `REGR_SLOPE()`)
-// - Datomic/Clojure: In-memory JVM math reductions via Transducers.
+// - el motor nativo/el motor nativo: In-memory JVM math reductions via Transducers.
 enum AggregationFunction {
   // Safe default — Janus rechaza MetricDefinition con este valor via :JANUS_400.
   // proto3 best-practice: el valor 0 SIEMPRE debe ser un sentinel no-op.
@@ -304,7 +304,7 @@ message MetricDefinition {
 // If the `interval` field is provided (e.g. "hour", "day", "week", "month"), the engine 
 // will trigger true Time-Series analytics. 
 // - In OLAP, it compiles to DATE_TRUNC push-down predicates.
-// - In OLTP, it compiles to Transducer-based epoch bucketing in Clojure.
+// - In OLTP, it compiles to Transducer-based epoch bucketing in el motor nativo.
 // The orchestrator automatically applies "Gap-Filling" to ensure continuous UI renderings.
 // CRITICAL MATH CONSTRAINT: It does NOT blindly inject 0s. 
 // It injects `0` for additive aggregations (SUM, COUNT).
@@ -352,7 +352,7 @@ message FilterValue {
     int64 timestamp_val = 4;
     StringList list_val = 5;
     // Strongly typed range values for BETWEEN/IN operators.
-    // Minimizes string casting overhead in the Java/Clojure backend for scale.
+    // Minimizes string casting overhead in the Java/el motor nativo backend for scale.
     FilterValueList range_values = 6;
   }
 }
@@ -588,7 +588,7 @@ message AnalyticsRequest {
   // Global search query (Omnisearch / FTS).
   // When an AttributeSchema has `fts: true`, Janus routes this string to:
   // - OLAP: Levenshtein distance & Trigram matching on Presto/Athena.
-  // - OLTP: Native Apache Lucene `d/fulltext` index on Datomic.
+  // - OLTP: Native Apache Lucene `d/fulltext` index on el motor nativo.
   string search = 13;
 
   // Strategy for Lazy-Loading UI visual Trees usando pseudo-queries (has_children).
@@ -623,7 +623,7 @@ message DashboardCrossFilterContext {
 message QueryMetadata {
   int64 execution_time_ms = 1;
   int64 total_count = 2;
-  string engine = 3; // e.g. "datomic", "duckdb"
+  string engine = 3; // e.g. "el motor nativo", "duckdb"
   bool is_semantic = 4;
   int32 total_queries = 5;
   double parallelism_factor = 6;
@@ -958,7 +958,7 @@ message WebhookTarget {
   // Auth strategy: NONE | BEARER_TOKEN | BASIC_AUTH | CUSTOM_HEADER
   string auth_type = 3;
 
-  // The resolved secret injected by Clojure after looking up the corporate vault.
+  // The resolved secret injected by el motor nativo after looking up the corporate vault.
   // Never sourced from client input — always resolved server-side.
   string resolved_auth_secret = 4;
 
