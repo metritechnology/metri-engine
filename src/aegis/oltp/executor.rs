@@ -241,10 +241,10 @@ impl OltpExecutor {
             .get("entity")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let master_tenant_id =
-            std::env::var("METRI_MASTER_TENANT_ID").unwrap_or_else(|_| "system".to_string());
+        let master_tenant_id: &str =
+            &crate::domain::config::engine_config().master_tenant_id;
         let target_tenant = if entity_type == "tenant" {
-            &master_tenant_id
+            master_tenant_id
         } else {
             tenant_id
         };
@@ -438,10 +438,10 @@ impl OltpExecutor {
         ast_ir: &crate::janus::fbs::AnalyticsRequestT,
     ) -> Result<Value, DomainError> {
         let entity_type = ast_ir.entity.as_deref().unwrap_or("unknown");
-        let master_tenant_id =
-            std::env::var("METRI_MASTER_TENANT_ID").unwrap_or_else(|_| "system".to_string());
+        // Config leída una vez en el arranque (EngineConfig), no env::var por consulta.
+        let master_tenant_id: &str = &crate::domain::config::engine_config().master_tenant_id;
         let target_tenant = if entity_type == "tenant" {
-            &master_tenant_id
+            master_tenant_id
         } else {
             tenant_id
         };

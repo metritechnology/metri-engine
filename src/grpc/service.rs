@@ -1333,7 +1333,7 @@ impl MetriService for MetriGrpcService {
 
         // El limite es obligatorio mientras no exista paginacion (fase L4): sin el, un
         // tenant grande devolveria decenas de miles de ids en una sola respuesta.
-        const MAX_LIMIT: i32 = 5_000;
+        let MAX_LIMIT: i32 = crate::domain::config::engine_config().max_list_limit;
         if req.limit <= 0 {
             return Err(Status::invalid_argument(
                 "limit es obligatorio y debe ser > 0 mientras no exista paginacion",

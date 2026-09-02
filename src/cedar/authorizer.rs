@@ -307,9 +307,7 @@ pub fn verify_hmac_token_local_in_step(raw_token: &str) -> Option<Session> {
 }
 
 pub fn is_master_tenant(tenant_id: &str) -> bool {
-    let env_master = std::env::var("METRI_MASTER_TENANT_ID")
-        .or_else(|_| std::env::var("MASTER_TENANT_ID"))
-        .unwrap_or_else(|_| "system".to_string());
+    let env_master: &str = &crate::domain::config::engine_config().master_tenant_id;
     tenant_id == "system" || tenant_id == "tnt_master" || tenant_id == env_master
 }
 

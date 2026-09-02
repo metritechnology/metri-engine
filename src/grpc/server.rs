@@ -139,29 +139,21 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
     ));
 
     // Zero-Trust Session Store and Principal Cache initialization
-    let env_str = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
-    let is_prod = env_str == "production" || env_str == "prod" || env_str == "staging";
-
-    let hmac_secret_str = if is_prod {
-        let secret = match std::env::var("HMAC_SECRET") {
+    // Guard fail-closed (Fase 4): solo los entornos no productivos CONOCIDOS
+    // usan el secreto por defecto; un ENVIRONMENT ausente, desconocido o
+    // productivo exige un secreto fuerte. La decisión vive como función pura
+    // en domain::config y está testeada.
+    let hmac_secret_str =
+        match crate::domain::config::resolve_hmac_secret(
+            std::env::var("ENVIRONMENT").ok().as_deref(),
+            std::env::var("HMAC_SECRET").ok().as_deref(),
+        ) {
             Ok(s) => s,
-            Err(_) => {
-                tracing::error!("FATAL SECURITY ERROR: HMAC_SECRET environment variable is missing in production environment!");
+            Err(e) => {
+                tracing::error!("FATAL SECURITY ERROR: {e} — Aborting server startup.");
                 std::process::exit(1);
             }
         };
-        if secret == "secret-key-development-metri-256-bits!!!"
-            || secret == "local-dev-secret-do-not-use-in-prod"
-            || secret.len() < 32
-        {
-            tracing::error!("FATAL SECURITY ERROR: Weak or default HMAC_SECRET detected in production environment! Aborting server startup.");
-            std::process::exit(1);
-        }
-        secret
-    } else {
-        std::env::var("HMAC_SECRET")
-            .unwrap_or_else(|_| "secret-key-development-metri-256-bits!!!".to_string())
-    };
 
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
         hmac_secret_str.into_bytes(),

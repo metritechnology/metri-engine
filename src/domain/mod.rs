@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod config;
 pub mod error_catalog;
 pub mod errors;
 pub mod pipeline;
