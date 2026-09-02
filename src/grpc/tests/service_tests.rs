@@ -113,8 +113,6 @@ async fn test_group_cycle_prevention() {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    std::env::set_var("METRI_TEST_MODE", "1");
-
     // 1. Prepare EAV records maps for groups to create a path: A -> B -> C
     let mut group_a = HashMap::new();
     group_a.insert(
@@ -194,19 +192,20 @@ async fn test_group_cycle_prevention() {
     ));
     let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
 
-    let service = MetriGrpcService::new(
-        oltp_exec,
+    let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
+        oltp_executor: oltp_exec,
         eav_writer,
         janus_router,
         audit_interceptor,
-        None,
-        None,
+        athena_engine: None,
+        moira_emitter: None,
         valkey_store,
         principal_cache,
-        Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        Arc::clone(&oltp_channel),
-        None,
-    );
+        fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
+        olap_channel: Arc::clone(&oltp_channel),
+        export_storage: None,
+        dev_auth_bypass: true,
+    });
 
     // Scenario 1: A group cannot be its own parent
     {
@@ -323,8 +322,6 @@ async fn test_cache_invalidation_pubsub() {
 async fn test_batch_transaction_granular_security() {
     use std::sync::Arc;
 
-    std::env::set_var("METRI_TEST_MODE", "1");
-
     // Instantiate MetriGrpcService
     let ddb_client =
         Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
@@ -362,19 +359,20 @@ async fn test_batch_transaction_granular_security() {
     ));
     let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
 
-    let service = MetriGrpcService::new(
-        oltp_exec,
+    let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
+        oltp_executor: oltp_exec,
         eav_writer,
         janus_router,
         audit_interceptor,
-        None,
-        None,
+        athena_engine: None,
+        moira_emitter: None,
         valkey_store,
         principal_cache,
-        Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        Arc::clone(&oltp_channel),
-        None,
-    );
+        fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
+        olap_channel: Arc::clone(&oltp_channel),
+        export_storage: None,
+        dev_auth_bypass: true,
+    });
 
     // Scenario: A transaction containing mixed valid (matching tenant) and invalid (mismatched tenant) operations
     // We set test-tenant = "tnt_01".
@@ -424,8 +422,6 @@ async fn test_batch_transaction_granular_security() {
 async fn test_invalid_role_grant_format() {
     use std::sync::Arc;
 
-    std::env::set_var("METRI_TEST_MODE", "1");
-
     let ddb_client =
         Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
     let query_exec = crate::eav::reader::query::EavQueryExecutor::new(
@@ -460,19 +456,20 @@ async fn test_invalid_role_grant_format() {
     ));
     let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
 
-    let service = MetriGrpcService::new(
-        oltp_exec,
+    let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
+        oltp_executor: oltp_exec,
         eav_writer,
         janus_router,
         audit_interceptor,
-        None,
-        None,
+        athena_engine: None,
+        moira_emitter: None,
         valkey_store,
         principal_cache,
-        Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        Arc::clone(&oltp_channel),
-        None,
-    );
+        fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
+        olap_channel: Arc::clone(&oltp_channel),
+        export_storage: None,
+        dev_auth_bypass: true,
+    });
 
     // Test invalid formats for grants in role payload
     let test_cases = vec![
@@ -549,7 +546,6 @@ async fn test_tenant_and_quota_master_crud_gates() {
     use crate::cedar::authorizer::PrincipalCache;
     use std::sync::Arc;
 
-    std::env::set_var("METRI_TEST_MODE", "1");
     std::env::set_var("HMAC_SECRET", "secret-key-development-metri-256-bits!!!");
 
     // Instantiate MetriGrpcService
@@ -645,19 +641,20 @@ async fn test_tenant_and_quota_master_crud_gates() {
         format!("Bearer mk_{}.{}", payload_b64, sig_b64)
     }
 
-    let service = MetriGrpcService::new(
-        oltp_exec,
+    let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
+        oltp_executor: oltp_exec,
         eav_writer,
         janus_router,
         audit_interceptor,
-        None,
-        None,
+        athena_engine: None,
+        moira_emitter: None,
         valkey_store,
         principal_cache,
-        Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        Arc::clone(&oltp_channel),
-        None,
-    );
+        fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
+        olap_channel: Arc::clone(&oltp_channel),
+        export_storage: None,
+        dev_auth_bypass: true,
+    });
 
     // 1. Mutate 'tenant' as non-master user -> Expect PermissionDenied (Auth403)
     let payload = serde_json::json!({

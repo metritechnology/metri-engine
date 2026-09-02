@@ -31,8 +31,6 @@ static INIT: std::sync::Once = std::sync::Once::new();
 const HMAC_SECRET: &[u8] = b"secret-key-development-metri-256-bits!!!";
 
 async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
-    std::env::set_var("METRI_TEST_MODE", "1");
-
     if std::env::var("AWS_PROFILE").is_err() {
         if std::env::var("AWS_ACCESS_KEY_ID").is_err() {
             std::env::set_var("AWS_ACCESS_KEY_ID", "test");
@@ -91,19 +89,22 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
     ));
     let principal_cache = Arc::new(InMemoryPrincipalCache::new());
 
-    let service = MetriGrpcService::new(
-        oltp_exec,
+    let service = MetriGrpcService::new(metri_engine::grpc::service::ServiceDeps {
+        oltp_executor: oltp_exec,
         eav_writer,
         janus_router,
         audit_interceptor,
-        None,
-        None,
+        athena_engine: None,
+        moira_emitter: None,
         valkey_store,
         principal_cache,
-        Arc::new(metri_engine::iop::sherlog::NoopFaultNotifier),
-        Arc::clone(&olap_channel),
-        None,
-    );
+        fault_notifier: Arc::new(metri_engine::iop::sherlog::NoopFaultNotifier),
+        olap_channel: Arc::clone(&olap_channel),
+        export_storage: None,
+        // El e2e construye el servicio por inyección: el bypass de desarrollo
+        // se pide aquí de forma explícita, no con variables de entorno.
+        dev_auth_bypass: true,
+    });
 
     // Generate a valid HMAC session token for the bypass credentials
     let token = issue_token(HMAC_SECRET, "system", "usr_system_bff", 3600, None);

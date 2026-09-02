@@ -514,6 +514,7 @@ pub async fn step3_consolidate(
     eav_reader: &EavReader,
     tenant_id: &str,
     user_data: PrincipalData,
+    expand_children: bool,
 ) -> Result<PrincipalData, DomainError> {
     if user_data.roles.is_empty() {
         return Err(
@@ -521,25 +522,37 @@ pub async fn step3_consolidate(
         );
     }
 
+    // `expand_children = false` es la costura de prueba: las jerarquías de los
+    // tests unitarios se expresan con punteros al padre dentro de los mapas en
+    // caché, así que la expansión por índice AVET se omite y el conjunto
+    // expandido es exactamente las raíces. En producción siempre es `true`.
     // 1. Expand group-level allowed locations and assets (in parallel)
     let eav_reader_g1 = eav_reader.clone();
     let tenant_g1 = tenant_id.to_string();
     let group_locations_roots = user_data.group_allowed_locations.clone();
     let group_locs_handle = tokio::spawn(async move {
-        expand_hierarchy(
-            &eav_reader_g1,
-            &tenant_g1,
-            "location",
-            group_locations_roots,
-        )
-        .await
+        if expand_children {
+            expand_hierarchy(
+                &eav_reader_g1,
+                &tenant_g1,
+                "location",
+                group_locations_roots,
+            )
+            .await
+        } else {
+            Ok(group_locations_roots)
+        }
     });
 
     let eav_reader_g2 = eav_reader.clone();
     let tenant_g2 = tenant_id.to_string();
     let group_assets_roots = user_data.group_allowed_assets.clone();
     let group_assets_handle = tokio::spawn(async move {
-        expand_hierarchy(&eav_reader_g2, &tenant_g2, "asset", group_assets_roots).await
+        if expand_children {
+            expand_hierarchy(&eav_reader_g2, &tenant_g2, "asset", group_assets_roots).await
+        } else {
+            Ok(group_assets_roots)
+        }
     });
 
     let (g_locs_res, g_assets_res) = tokio::join!(group_locs_handle, group_assets_handle);
@@ -561,13 +574,17 @@ pub async fn step3_consolidate(
         let roots_locations = boundary.permitted_locations.clone();
 
         let locs_handle = tokio::spawn(async move {
-            expand_hierarchy(
-                &eav_reader_clone,
-                &tenant_clone,
-                "location",
-                roots_locations,
-            )
-            .await
+            if expand_children {
+                expand_hierarchy(
+                    &eav_reader_clone,
+                    &tenant_clone,
+                    "location",
+                    roots_locations,
+                )
+                .await
+            } else {
+                Ok(roots_locations)
+            }
         });
 
         let eav_reader_clone2 = eav_reader.clone();
@@ -575,7 +592,11 @@ pub async fn step3_consolidate(
         let roots_assets = boundary.permitted_assets.clone();
 
         let assets_handle = tokio::spawn(async move {
-            expand_hierarchy(&eav_reader_clone2, &tenant_clone2, "asset", roots_assets).await
+            if expand_children {
+                expand_hierarchy(&eav_reader_clone2, &tenant_clone2, "asset", roots_assets).await
+            } else {
+                Ok(roots_assets)
+            }
         });
 
         let (locs_res, assets_res) = tokio::join!(locs_handle, assets_handle);
@@ -671,9 +692,6 @@ async fn fetch_children_eav(
     _entity_type: &str,
     parent_id: &str,
 ) -> Result<Vec<String>, DomainError> {
-    if std::env::var("METRI_TEST_MODE").unwrap_or_default() == "1" {
-        return Ok(vec![]);
-    }
     let query_executor = EavQueryExecutor::new(eav_reader.ddb.clone(), eav_reader.table.clone());
     let plan = NativeQueryPlan::AvetSingle {
         tenant_id: tenant_id.to_string(),
@@ -1316,7 +1334,7 @@ pub async fn intercept<T>(
     let session = step1_extract_token(req, valkey_store).await?;
     let raw_principal =
         step2_query_oltp(eav_reader, &session.tenant_id, &session.user_id, cache).await?;
-    let principal = step3_consolidate(eav_reader, &session.tenant_id, raw_principal).await?;
+    let principal = step3_consolidate(eav_reader, &session.tenant_id, raw_principal, true).await?;
     step3b_validate_time_window(&principal, Utc::now())?;
 
     let action = extract_cedar_action(req)?;
@@ -1668,8 +1686,12 @@ pub async fn get_principal_data<T>(
     valkey_store: &dyn ISessionStore,
     eav_reader: &EavReader,
     cache: &dyn PrincipalCache,
+    dev_auth_bypass: bool,
 ) -> Result<PrincipalData, DomainError> {
-    if std::env::var("METRI_TEST_MODE").unwrap_or_default() == "1" {
+    // Costura explícita de desarrollo: `dev_auth_bypass` lo decide la raíz de
+    // composición vía `resolve_dev_auth_bypass` (fail-closed) — nunca el
+    // entorno por petición. En producción es siempre `false`.
+    if dev_auth_bypass {
         let test_tenant = req
             .metadata()
             .get("test-tenant")
@@ -1706,7 +1728,7 @@ pub async fn get_principal_data<T>(
     let session = step1_extract_token(req, valkey_store).await?;
     let raw_principal =
         step2_query_oltp(eav_reader, &session.tenant_id, &session.user_id, cache).await?;
-    let principal = step3_consolidate(eav_reader, &session.tenant_id, raw_principal).await?;
+    let principal = step3_consolidate(eav_reader, &session.tenant_id, raw_principal, true).await?;
     step3b_validate_time_window(&principal, Utc::now())?;
     Ok(principal)
 }
@@ -2078,8 +2100,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_group_hierarchy_and_refinement() {
-        std::env::set_var("METRI_TEST_MODE", "1");
-
         // 1. Prepare EAV records maps
         let mut user_map = HashMap::new();
         user_map.insert(
@@ -2218,8 +2238,10 @@ mod tests {
             vec![1, 2, 3, 4, 5]
         );
 
-        // 3. Consolidate (performs expansion and intersection)
-        let consolidated = step3_consolidate(&eav_reader, "tnt_01", principal)
+        // 3. Consolidate (performs expansion and intersection).
+        // La jerarquía del test vive en los mapas en caché (punteros al
+        // padre); no se necesita la expansión por índice AVET.
+        let consolidated = step3_consolidate(&eav_reader, "tnt_01", principal, false)
             .await
             .unwrap();
 

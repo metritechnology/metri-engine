@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_cedar_step_instantiation() {
-    std::env::set_var("METRI_TEST_MODE", "1");
     let ddb_client =
         Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
     let pull_read =

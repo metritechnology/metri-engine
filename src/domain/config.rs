@@ -109,6 +109,27 @@ pub fn resolve_hmac_secret(
     Ok(hmac_secret.unwrap_or(DEV_HMAC_SECRET).to_string())
 }
 
+/// Bypass de autorización para desarrollo y pruebas (`METRI_DEV_AUTH_BYPASS=1`).
+///
+/// Sustituye al antiguo `METRI_TEST_MODE`: el principal se sintetiza desde
+/// cabeceras `test-*`, se omite la evaluación Cedar del camino de mutación y
+/// no se expanden hijos de jerarquía vía índice. **Falla cerrado**: solo es
+/// válido en entornos no productivos conocidos — el mismo criterio de
+/// `resolve_hmac_secret` — y el arranque aborta si se pide fuera de ellos.
+/// La decisión se toma UNA vez en la raíz de composición; nada la consulta
+/// por petición.
+pub fn resolve_dev_auth_bypass(environment: Option<&str>, requested: bool) -> Result<bool, String> {
+    let known_non_prod = matches!(environment, Some("development" | "dev" | "local" | "test"));
+    if requested && !known_non_prod {
+        return Err(
+            "METRI_DEV_AUTH_BYPASS solo es válido en entornos no productivos conocidos \
+             (development/dev/local/test)"
+                .to_string(),
+        );
+    }
+    Ok(requested)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,5 +187,20 @@ mod tests {
                 .unwrap(),
             "local-dev-secret-do-not-use-in-prod"
         );
+    }
+
+    #[test]
+    fn bypass_dev_solo_en_entornos_conocidos() {
+        // Pedido en no-prod conocido: permitido.
+        assert!(resolve_dev_auth_bypass(Some("development"), true).unwrap());
+        assert!(resolve_dev_auth_bypass(Some("local"), true).unwrap());
+        // No pedido: permitido en cualquier entorno, siempre es false.
+        assert!(!resolve_dev_auth_bypass(Some("production"), false).unwrap());
+        assert!(!resolve_dev_auth_bypass(None, false).unwrap());
+        // Pedido en producción, staging o entorno desconocido: falla cerrado.
+        assert!(resolve_dev_auth_bypass(Some("production"), true).is_err());
+        assert!(resolve_dev_auth_bypass(Some("staging"), true).is_err());
+        assert!(resolve_dev_auth_bypass(Some("qa"), true).is_err());
+        assert!(resolve_dev_auth_bypass(None, true).is_err());
     }
 }

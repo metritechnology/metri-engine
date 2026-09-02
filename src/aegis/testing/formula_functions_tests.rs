@@ -14,8 +14,6 @@ fn test_standard_functions() {
 
     // 2. ROUND
     let round_fn = reg.get("ROUND").unwrap();
-    // 2. ROUND
-    let round_fn = reg.get("ROUND").unwrap();
     assert_eq!(round_fn.evaluate(&[std::f64::consts::PI, 2.0]), Some(3.14));
     assert_eq!(round_fn.evaluate(&[std::f64::consts::PI, 0.0]), Some(3.0));
 

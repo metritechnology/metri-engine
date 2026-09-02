@@ -170,15 +170,21 @@ fn shard_rotation() -> impl Iterator<Item = u8> {
     (0..SWEEP_SHARDS).map(move |i| (start + i) % SWEEP_SHARDS)
 }
 
+/// Período de barrido en producción. Los tests que necesiten otro ritmo
+/// usan `spawn_with_period`; nada consulta el entorno en caliente.
+pub const SWEEP_PERIOD: Duration = Duration::from_secs(15);
+
 /// Lanza el barrido periódico. Una tarea por réplica; todas hacen lo mismo y
 /// ninguna necesita saber de las otras.
 pub fn spawn(store: Arc<dyn ReservationStore>, counter: Arc<dyn QuotaCounter>) {
-    let period = if std::env::var("METRI_TEST_MODE").is_ok() {
-        Duration::from_millis(50)
-    } else {
-        Duration::from_secs(15)
-    };
+    spawn_with_period(store, counter, SWEEP_PERIOD);
+}
 
+pub fn spawn_with_period(
+    store: Arc<dyn ReservationStore>,
+    counter: Arc<dyn QuotaCounter>,
+    period: Duration,
+) {
     tokio::spawn(async move {
         info!(
             cada_ms = period.as_millis(),

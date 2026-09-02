@@ -197,19 +197,39 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         Some(Arc::new(storage) as Arc<dyn crate::domain::protocols::IExportStorage>)
     };
 
-    let grpc_service = MetriGrpcService::new(
-        oltp_exec.clone(),
-        eav_writer.clone(),
+    // Bypass dev de autorización: fail-closed junto al guard de HMAC.
+    // Solo development/dev/local/test pueden pedirlo; en producción,
+    // staging o un entorno desconocido el arranque aborta.
+    let dev_auth_bypass = match crate::domain::config::resolve_dev_auth_bypass(
+        std::env::var("ENVIRONMENT").ok().as_deref(),
+        std::env::var("METRI_DEV_AUTH_BYPASS")
+            .map(|v| v == "1")
+            .unwrap_or(false),
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("FATAL SECURITY ERROR: {e} — Aborting server startup.");
+            std::process::exit(1);
+        }
+    };
+    if dev_auth_bypass {
+        tracing::warn!("[Server] METRI_DEV_AUTH_BYPASS activo: autorización en modo desarrollo. NUNCA en producción.");
+    }
+
+    let grpc_service = MetriGrpcService::new(super::service::ServiceDeps {
+        oltp_executor: oltp_exec.clone(),
+        eav_writer: eav_writer.clone(),
         janus_router,
         audit_interceptor,
         athena_engine,
-        Some(Arc::clone(&moira_emitter) as Arc<dyn crate::iop::core::MoiraEmitter>),
+        moira_emitter: Some(Arc::clone(&moira_emitter) as Arc<dyn crate::iop::core::MoiraEmitter>),
         valkey_store,
         principal_cache,
         fault_notifier,
-        Arc::clone(&olap_channel),
+        olap_channel: Arc::clone(&olap_channel),
         export_storage,
-    );
+        dev_auth_bypass,
+    });
     let auth_interceptor = super::interceptors::auth_waf_interceptor;
     let service = MetriServiceServer::with_interceptor(grpc_service, auth_interceptor);
     let web_service = tonic_web::enable(service);

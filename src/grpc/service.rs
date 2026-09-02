@@ -17,6 +17,31 @@ use crate::janus::router::CedarCtx;
 use crate::janus_router::oltp_channel::extract_entity_id;
 
 use crate::grpc::translator;
+
+/// Dependencias del servicio, resueltas una sola vez en la raíz de
+/// composición (`grpc/server.rs` en producción). Sustituye al constructor de
+/// once parámetros posicionales: cada campo tiene nombre y los `Option`
+/// quedan a la vista.
+pub struct ServiceDeps {
+    pub oltp_executor: crate::aegis::oltp::executor::OltpExecutor,
+    /// Solo para fabricar el contador de cuota; el motor escribe por Janus.
+    pub eav_writer: crate::eav::writer::EavWriter,
+    pub janus_router: std::sync::Arc<crate::janus_router::router::JanusRouter>,
+    pub audit_interceptor:
+        std::sync::Arc<crate::infrastructure::audit::interceptor::AuditInterceptorImpl>,
+    pub athena_engine: Option<std::sync::Arc<dyn crate::domain::protocols::IQueryEngine>>,
+    pub moira_emitter: Option<std::sync::Arc<dyn crate::iop::core::MoiraEmitter>>,
+    pub valkey_store: std::sync::Arc<dyn crate::domain::protocols::ISessionStore>,
+    pub principal_cache: std::sync::Arc<dyn crate::cedar::authorizer::PrincipalCache>,
+    pub fault_notifier: std::sync::Arc<dyn crate::iop::sherlog::IFaultNotifier>,
+    pub olap_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
+    pub export_storage: Option<std::sync::Arc<dyn crate::domain::protocols::IExportStorage>>,
+    /// Bypass de autorización para desarrollo y pruebas. Lo decide
+    /// `domain::config::resolve_dev_auth_bypass` (fail-closed) en producción;
+    /// los tests lo fijan explícitamente. Nunca llega activo a producción.
+    pub dev_auth_bypass: bool,
+}
+
 pub struct MetriGrpcService {
     oltp_executor: crate::aegis::oltp::executor::OltpExecutor,
     iop_orchestrator: std::sync::Arc<dyn crate::iop::core::IIopOrchestrator>,
@@ -28,25 +53,26 @@ pub struct MetriGrpcService {
     fault_notifier: std::sync::Arc<dyn crate::iop::sherlog::IFaultNotifier>,
     olap_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
     export_storage: Option<std::sync::Arc<dyn crate::domain::protocols::IExportStorage>>,
+    dev_auth_bypass: bool,
 }
 
 impl MetriGrpcService {
-    pub fn new(
-        oltp_executor: crate::aegis::oltp::executor::OltpExecutor,
-        // Solo para fabricar el contador de cuota; el motor escribe por Janus.
-        eav_writer: crate::eav::writer::EavWriter,
-        janus_router: std::sync::Arc<crate::janus_router::router::JanusRouter>,
-        audit_interceptor: std::sync::Arc<
-            crate::infrastructure::audit::interceptor::AuditInterceptorImpl,
-        >,
-        athena_engine: Option<std::sync::Arc<dyn crate::domain::protocols::IQueryEngine>>,
-        moira_emitter: Option<std::sync::Arc<dyn crate::iop::core::MoiraEmitter>>,
-        valkey_store: std::sync::Arc<dyn crate::domain::protocols::ISessionStore>,
-        principal_cache: std::sync::Arc<dyn crate::cedar::authorizer::PrincipalCache>,
-        fault_notifier: std::sync::Arc<dyn crate::iop::sherlog::IFaultNotifier>,
-        olap_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
-        export_storage: Option<std::sync::Arc<dyn crate::domain::protocols::IExportStorage>>,
-    ) -> Self {
+    pub fn new(deps: ServiceDeps) -> Self {
+        let ServiceDeps {
+            oltp_executor,
+            eav_writer,
+            janus_router,
+            audit_interceptor,
+            athena_engine,
+            moira_emitter,
+            valkey_store,
+            principal_cache,
+            fault_notifier,
+            olap_channel,
+            export_storage,
+            dev_auth_bypass,
+        } = deps;
+
         // Inicializar pasos del IOP con dependencias reales de Cedar Zero-Trust
         let cedar_step = std::sync::Arc::new(crate::iop::cedar_step::CedarAuthorizerStep::new(
             valkey_store.clone(),
@@ -99,6 +125,7 @@ impl MetriGrpcService {
             fault_notifier,
             olap_channel,
             export_storage,
+            dev_auth_bypass,
         }
     }
 
@@ -485,7 +512,7 @@ impl MetriGrpcService {
             }
         }
 
-        if std::env::var("METRI_TEST_MODE").unwrap_or_default() == "1" {
+        if self.dev_auth_bypass {
             return Ok(());
         }
 
@@ -1452,6 +1479,7 @@ impl MetriService for MetriGrpcService {
             self.valkey_store.as_ref(),
             self.oltp_executor.pull_reader(),
             self.principal_cache.as_ref(),
+            self.dev_auth_bypass,
         )
         .await
         .map_err(|err| Status::unauthenticated(format!("Authentication failed: {}", err.detail)))?;
@@ -1697,6 +1725,7 @@ impl MetriService for MetriGrpcService {
             self.valkey_store.as_ref(),
             self.oltp_executor.pull_reader(),
             self.principal_cache.as_ref(),
+            self.dev_auth_bypass,
         )
         .await
         .map_err(|err| Status::unauthenticated(format!("Authentication failed: {}", err.detail)))?;

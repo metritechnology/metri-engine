@@ -16,20 +16,16 @@ pub async fn check_and_bootstrap_master(
         "limit": 1
     });
 
-    let has_users = if std::env::var("METRI_TEST_MODE").unwrap_or_default() == "1" {
-        false
-    } else {
-        match oltp_exec.run_oltp_query("system", &query_users).await {
-            Ok(val) => val.as_array().map(|arr| !arr.is_empty()).unwrap_or(false),
-            Err(e) => {
-                error!(
-                    "[Bootstrap] Error consultando usuarios existentes en la base de datos: {:?}",
-                    e
-                );
-                // Si hay un error de conexión inicial con la BD o la tabla no está creada, omitimos
-                // el bootstrap para evitar panics cíclicos de encendido.
-                return Ok(());
-            }
+    let has_users = match oltp_exec.run_oltp_query("system", &query_users).await {
+        Ok(val) => val.as_array().map(|arr| !arr.is_empty()).unwrap_or(false),
+        Err(e) => {
+            error!(
+                "[Bootstrap] Error consultando usuarios existentes en la base de datos: {:?}",
+                e
+            );
+            // Si hay un error de conexión inicial con la BD o la tabla no está creada, omitimos
+            // el bootstrap para evitar panics cíclicos de encendido.
+            return Ok(());
         }
     };
 
@@ -65,9 +61,22 @@ pub async fn check_and_bootstrap_master(
         }
     };
 
+    seed_master(oltp_channel, &email, &username, &password).await
+}
+
+/// Mecánica de la semilla: hashea la contraseña, crea el tenant, los roles y
+/// los usuarios maestros, y limpia los secretos del entorno. La DECISIÓN de
+/// sembrar vive en `check_and_bootstrap_master`; esta función no consulta la
+/// base de datos, así que se prueba con un canal simulado.
+async fn seed_master(
+    oltp_channel: &Arc<dyn IWriteChannel>,
+    email: &str,
+    username: &str,
+    password: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!("[Bootstrap] Iniciando creación de semilla para el Administrador Master...");
 
-    // 3. Hashear la contraseña con bcrypt (cost = 12)
+    // 1. Hashear la contraseña con bcrypt (cost = 12)
     let password_hash = bcrypt::hash(password, 12)?;
 
     // 4. Crear el Tenant Semilla ("system")
@@ -282,36 +291,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_and_bootstrap_master_successful_flow() {
-        // Prepare environment variables
-        std::env::set_var("METRI_TEST_MODE", "1");
-        std::env::set_var("METRI_BOOTSTRAP_MASTER_EMAIL", "master@metri.one");
-        std::env::set_var("METRI_BOOTSTRAP_MASTER_USERNAME", "master");
-        std::env::set_var("METRI_BOOTSTRAP_MASTER_PASSWORD", "securepwd123");
-
-        // Mock writer and reader
+    async fn test_seed_master_successful_flow() {
+        // La mecánica de la semilla se prueba aislada: `seed_master` no
+        // consulta la base de datos, así que basta un canal simulado. Sin
+        // variables de entorno que manipular (nada las lee en caliente).
         let mock_channel: Arc<dyn IWriteChannel> = Arc::new(MockWriteChannel {
             tenant_created: std::sync::Mutex::new(false),
             role_created: std::sync::Mutex::new(false),
             user_created: std::sync::Mutex::new(false),
         });
 
-        // EavQueryExecutor stub
-        let ddb_client =
-            Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-test").await);
-        let query_exec = crate::eav::reader::query::EavQueryExecutor::new(
-            Arc::clone(&ddb_client),
-            "metri-eav-test",
-        );
-        let pull_read =
-            crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-test");
-        let oltp_exec = OltpExecutor::new(query_exec, pull_read);
-
-        // We run bootstrap (mocking empty database check by catching Err from run_oltp_query which returns Ok(()) gracefully)
-        let res = check_and_bootstrap_master(&oltp_exec, &mock_channel).await;
+        let res = seed_master(&mock_channel, "master@metri.one", "master", "securepwd123").await;
         assert!(res.is_ok());
 
-        // Verify environmental variables were wiped successfully
+        // Los secretos de la semilla se limpian del entorno tras crearla.
         assert!(std::env::var("METRI_BOOTSTRAP_MASTER_EMAIL").is_err());
         assert!(std::env::var("METRI_BOOTSTRAP_MASTER_USERNAME").is_err());
         assert!(std::env::var("METRI_BOOTSTRAP_MASTER_PASSWORD").is_err());
