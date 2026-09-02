@@ -1,0 +1,56 @@
+{
+  "entity": "work_order_template_stop",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "work_order_template_id",
+      "type": "reference",
+      "entityRef": "work_order_template",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "stop_order",
+      "type": "decimal",
+      "required": true,
+      "description": "Orden del recorrido físico. Decimal como el section_order que ya funciona: permite intercalar una parada sin renumerar las cuarenta (P4)."
+    },
+    {
+      "name": "asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "El equipo de esta parada."
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "El sitio de esta parada, cuando no hay equipo — un pasillo, una sala. Exactamente uno de los dos (RUT-R2)."
+    },
+    {
+      "name": "task_template_id",
+      "type": "reference",
+      "entityRef": "task_template",
+      "cardinality": "one",
+      "description": "Protocolo específico de esta parada. Vacío: se aplican los task_template_ids de la plantilla (D-07)."
+    },
+    {
+      "name": "estimated_effort_minutes",
+      "type": "decimal",
+      "description": "Esfuerzo en persona-minuto de esta parada, cuando difiere del que declara su protocolo. Misma magnitud que CAP-D1: no es duración de reloj."
+    },
+    {
+      "name": "access_note",
+      "type": "string",
+      "fts": true,
+      "description": "Lo que hay que saber para llegar: 'requiere escalera', 'pedir permiso a producción'. Es del recorrido, no del protocolo, y por eso no vive en task_template."
+    }
+  ]
+}

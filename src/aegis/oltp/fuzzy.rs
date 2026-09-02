@@ -24,10 +24,24 @@ pub fn fuzzy_threshold(term: &str) -> usize {
     }
 }
 
-/// Tokeniza un valor en palabras (lowercase) separadas por espacios, guiones, puntos, guiones bajos.
+/// Remueve los acentos diacríticos del español para búsquedas insensibles a acentos.
+pub fn remove_accents(s: &str) -> String {
+    s.chars().map(|c| match c {
+        'á' | 'Á' => 'a',
+        'é' | 'É' => 'e',
+        'í' | 'Í' => 'i',
+        'ó' | 'Ó' => 'o',
+        'ú' | 'Ú' => 'u',
+        'ü' | 'Ü' => 'u',
+        'ñ' | 'Ñ' => 'n',
+        other => other,
+    }).collect()
+}
+
+/// Tokeniza un valor en palabras (lowercase y sin acentos) separadas por espacios, guiones, puntos, guiones bajos.
 /// "Chiller A-01" → ["chiller", "a", "01"]
 fn tokenize(s: &str) -> Vec<String> {
-    s.to_lowercase()
+    remove_accents(&s.to_lowercase())
         .split(|c: char| c.is_whitespace() || c == '-' || c == '_' || c == '.')
         .filter(|t| !t.is_empty())
         .map(str::to_string)
@@ -38,14 +52,14 @@ fn tokenize(s: &str) -> Vec<String> {
 ///
 /// Pipeline (short-circuit):
 ///   1. Guard: vacío → false
-///   2. Fast path: substring case-insensitive
+///   2. Fast path: substring case-insensitive y sin acentos
 ///   3. Fast Fuzzy path: Trigram intersection score (>= 0.75 de coincidencia)
 ///   4. Deep Fuzzy path: Damerau-Levenshtein distance <= threshold por token
 pub fn fuzzy_match(value: &str, term: &str) -> bool {
     if value.is_empty() || term.is_empty() { return false; }
 
-    let v_lower = value.to_lowercase();
-    let t_lower = term.to_lowercase();
+    let v_lower = remove_accents(&value.to_lowercase());
+    let t_lower = remove_accents(&term.to_lowercase());
 
     // Fast path
     if v_lower.contains(&t_lower) { return true; }
@@ -72,31 +86,4 @@ pub fn fuzzy_match(value: &str, term: &str) -> bool {
         .any(|token| damerau_levenshtein(token, &t_lower) <= thresh)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn substring_match() {
-        assert!(fuzzy_match("Chiller A-01", "Chiller"));
-        assert!(fuzzy_match("Chiller A-01", "chiller"));
-    }
-
-    #[test]
-    fn fuzzy_one_error() {
-        assert!(fuzzy_match("Chiller A-01", "Chiler")); // dl=1
-        assert!(fuzzy_match("Rack Server", "Rak"));     // dl=1 token 'rack'
-    }
-    
-    #[test]
-    fn fuzzy_transposition() {
-        // Damerau-Levenshtein soporta transposiciones (dl=1)
-        assert!(fuzzy_match("Bomba", "Bobma")); 
-    }
-
-    #[test]
-    fn no_match_short_term() {
-        // threshold=0 para ≤2 chars, and it should NOT match fast-path.
-        assert!(!fuzzy_match("UPS B-12", "xy"));
-    }
-}

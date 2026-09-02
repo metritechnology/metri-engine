@@ -21,6 +21,7 @@ pub fn enrich_datoms(
     tenant_id:   &str,
     tx_id:       u64,
     is_create:   bool,
+    active_attrs: &std::collections::HashMap<String, (u16, DatomValue)>,
 ) {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -29,9 +30,25 @@ pub fn enrich_datoms(
 
     // entity/ulid — identidad de la entidad
     datoms.push(Datom::assert(tenant_id, entity_id, "entity/ulid", 0x0000, DatomValue::Str(entity_id.to_string()), tx_id));
+
     // entity/type — tipo de la entidad
+    if !is_create {
+        if let Some((_, DatomValue::Str(old_type))) = active_attrs.get("entity/type") {
+            if old_type != entity_type {
+                datoms.push(Datom::retract(tenant_id, entity_id, "entity/type", 0x0001, DatomValue::Str(old_type.clone()), tx_id));
+            }
+        }
+    }
     datoms.push(Datom::assert(tenant_id, entity_id, "entity/type", 0x0001, DatomValue::Str(entity_type.to_string()), tx_id));
+
     // tenant/id — aislamiento multitenant (SIEMPRE sobreescrito por el servidor)
+    if !is_create {
+        if let Some((_, DatomValue::Str(old_tenant))) = active_attrs.get("tenant/id") {
+            if old_tenant != tenant_id {
+                datoms.push(Datom::retract(tenant_id, entity_id, "tenant/id", 0x0002, DatomValue::Str(old_tenant.clone()), tx_id));
+            }
+        }
+    }
     datoms.push(Datom::assert(tenant_id, entity_id, "tenant/id", 0x0002, DatomValue::Str(tenant_id.to_string()), tx_id));
 
     if is_create {
@@ -40,6 +57,11 @@ pub fn enrich_datoms(
     }
 
     // meta/updated_at — siempre actualizado
+    if !is_create {
+        if let Some((_, DatomValue::Instant(old_updated))) = active_attrs.get("meta/updated_at") {
+            datoms.push(Datom::retract(tenant_id, entity_id, "meta/updated_at", 0x0004, DatomValue::Instant(*old_updated), tx_id));
+        }
+    }
     datoms.push(Datom::assert(tenant_id, entity_id, "meta/updated_at", 0x0004, DatomValue::Instant(now_ms), tx_id));
 }
 

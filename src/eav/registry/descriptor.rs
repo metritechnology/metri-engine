@@ -14,7 +14,8 @@ pub enum ValueType {
 pub enum Cardinality { One, Many }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum UniqueStrategy { Identity, Value }
+#[serde(rename_all = "lowercase")]
+pub enum UniqueStrategy { Identity, Value, Tenant }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AttrStatus { Active, BackfillPending, Deprecated }

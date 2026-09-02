@@ -11,7 +11,15 @@
     "write_path_locked": true,
     "ingestion_engine": "aws_kinesis_firehose",
     "storage_engine": "amazon_s3_iceberg",
-    "description": "CQRS H\u00edbrido: Este modelo muta usando dos v\u00edas exclusivas. 1) En tiempo real por AWS Firehose. 2) V\u00eda 'rpc BulkIngest' (gRPC masivo). Metri Engine tiene estrictamente censurado procesar telemetr\u00eda por la v\u00eda 1 a 1 transaccional humana ('rpc Transact' y FTS)."
+    "description": "CQRS Híbrido: Este modelo muta usando dos vías exclusivas. 1) En tiempo real por AWS Firehose directo a S3 Iceberg. 2) Vía 'rpc BulkIngest' (gRPC masivo). Metri Engine tiene strictly censurado procesar telemetría por la vía 1 a 1 transaccional humana ('rpc Transact' y FTS).",
+    "analytical_routing": {
+      "strategy": "CQRS_ROUTING_WINDOW",
+      "raw_table": "metri_olap.meter_reading_raw",
+      "rollup_table": "metri_olap.meter_reading_rollup",
+      "window_threshold_hours": 24,
+      "max_range_years": 3,
+      "description": "Ruteo Inteligente en Janus Router: Consultas analíticas (viz) con rangos <= 24 horas se ejecutan sobre la tabla RAW para máxima resolución. Rangos > 24 horas se redirigen automáticamente a la tabla ROLLUP para optimizar costos de escaneo de disco y acelerar la respuesta a sub-segundo. Protegido por un límite estricto de 3 años."
+    }
   },
   "attributes": [
     {
@@ -20,13 +28,64 @@
       "entityRef": "asset",
       "cardinality": "one",
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "El activo o equipo físico al que pertenece esta lectura de telemetría."
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "required": false,
+      "is_dimension": true,
+      "description": "La ubicación física o área donde se encuentra el activo. Esencial para la Estrategia 1 de enrutamiento in-RAM en Kinesis y para el particionamiento analítico del Data Lake."
+    },
+    {
+      "name": "iot_subscription_id",
+      "type": "reference",
+      "entityRef": "iot_subscription",
+      "cardinality": "one",
+      "required": false,
+      "is_dimension": true,
+      "description": "Referencia directa a la suscripción IoT (iot_subscription) que canalizó y capturó la lectura desde AWS IoT Core / MQTT."
+    },
+    {
+      "name": "device_profile_id",
+      "type": "reference",
+      "entityRef": "iot_device_profile",
+      "cardinality": "one",
+      "required": false,
+      "is_dimension": true,
+      "description": "Perfil de decodificación cuantitativa de dispositivo (iot_device_profile) utilizado para la traducción gramatical."
+    },
+    {
+      "name": "aws_thing_name",
+      "type": "string",
+      "required": false,
+      "is_dimension": true,
+      "description": "Nombre exacto del AWS IoT Thing origen registrado en la iot_subscription."
+    },
+    {
+      "name": "metric_code",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:metri:variables",
+      "required": true,
+      "is_dimension": true,
+      "description": "Código estandarizado del tipo de variable o métrica física (ej: 'TEMPERATURE', 'VIBRATION', 'ACTIVE_POWER'). Valida contra el sistema terminológico."
     },
     {
       "name": "reading_value",
       "type": "decimal",
       "is_measure": true,
-      "required": true
+      "required": false,
+      "description": "Valor numérico normalizado y escalado de la lectura. Opcional si la lectura es de texto/categoría."
+    },
+    {
+      "name": "raw_value",
+      "type": "string",
+      "required": false,
+      "description": "Valor en bruto tal como se leyó del dispositivo o registro PLC (soporta booleanos, strings de estado 'ON/OFF', códigos hexadecimales o códigos de error)."
     },
     {
       "name": "unit_of_measure",
@@ -35,19 +94,68 @@
       "subtype": "terminology",
       "terminologyUri": "urn:api:system:uncefact",
       "is_dimension": true,
-      "description": "Unidad de medida regulada mundialmente bajo el c\u00f3digo UN/CEFACT (ej. 'CEL', 'KWH'). Protege al ecosistema anal\u00edtico de poluci\u00f3n sem\u00e1ntica."
+      "description": "Unidad de medida regulada mundialmente bajo el código UN/CEFACT (ej. 'CEL', 'KWH', 'HUR'). Protege al ecosistema analítico de polución semántica."
+    },
+    {
+      "name": "terminology_system",
+      "type": "string",
+      "required": false,
+      "is_dimension": true,
+      "description": "El sistema terminológico utilizado para la unidad de medida o clasificación (ej: 'UN_CEFACT', 'OMNICLASS')."
+    },
+    {
+      "name": "data_quality",
+      "type": "enum",
+      "options": [
+        "GOOD",
+        "BAD",
+        "UNCERTAIN",
+        "COMM_FAILURE"
+      ],
+      "default_value": "GOOD",
+      "required": true,
+      "is_dimension": true,
+      "description": "Estado de calidad del dato según la transmisión industrial (Modbus/OPC UA). Previene análisis erróneos por caídas de enlace."
+    },
+    {
+      "name": "protocol",
+      "type": "enum",
+      "options": [
+        "MQTT",
+        "MODBUS_TCP",
+        "MODBUS_RTU",
+        "OPC_UA",
+        "HTTP_POLL"
+      ],
+      "required": true,
+      "is_dimension": true,
+      "description": "Protocolo industrial origen de la ingesta."
+    },
+    {
+      "name": "source_address",
+      "type": "string",
+      "required": false,
+      "description": "Dirección física de origen. Ej: registro holding '40001' para Modbus, o el topic MQTT exacto de origen."
     },
     {
       "name": "timestamp",
       "type": "epoch",
       "index": true,
-      "required": true
+      "required": true,
+      "description": "Timestamp de captura física en la fuente/dispositivo (Source Timestamp)."
+    },
+    {
+      "name": "ingested_at",
+      "type": "epoch",
+      "required": true,
+      "description": "Timestamp de recepción en la nube por Metri IoT (Ingestion Timestamp). Vital para auditoría de latencia de red."
     },
     {
       "name": "metadata",
       "type": "json",
+      "subtype": "flat_map",
       "is_dimension": true,
-      "description": "Diccionario clave-valor sem\u00e1ntico din\u00e1mico. Transpilado obligatoriamente como MAP<VARCHAR, VARCHAR> en Data Lakes para evadir el letal Schema Bloat y mantener lecturas O(1)."
+      "description": "Diccionario clave-valor semántico dinámico. Restringido estrictamente a un mapa plano (flat key-value) unidimensional para ser transpilado como MAP<VARCHAR, VARCHAR> en el Data Lake S3."
     }
   ]
 }

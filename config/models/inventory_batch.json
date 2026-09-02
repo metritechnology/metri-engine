@@ -1,0 +1,69 @@
+{
+  "entity": "inventory_batch",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "part_id",
+      "type": "reference",
+      "entityRef": "part",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true,
+      "description": "Referencia al repuesto o parte (part.json) del inventario."
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true,
+      "description": "Referencia al almacén o ubicación física (location.json) donde se almacena el lote."
+    },
+    {
+      "name": "received_quantity",
+      "type": "decimal",
+      "required": true,
+      "description": "Cantidad original recibida del repuesto en este lote."
+    },
+    {
+      "name": "remaining_quantity",
+      "type": "decimal",
+      "required": true,
+      "description": "Cantidad remanente disponible en el lote para consumo (se decrementa bajo FIFO/LIFO)."
+    },
+    {
+      "name": "unit_cost_cents",
+      "type": "number",
+      "required": true,
+      "is_measure": true,
+      "description": "Costo unitario del repuesto en este lote expresado en céntimos (evita pérdidas de precisión)."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "default_value": "USD",
+      "required": true,
+      "is_dimension": true,
+      "description": "Divisa asociada al costo unitario del lote bajo estándar ISO 4217."
+    },
+    {
+      "name": "received_at",
+      "type": "epoch",
+      "index": true,
+      "required": true,
+      "description": "Timestamp epoch ms del ingreso físico del lote (permite ordenamiento cronológico para FIFO/LIFO)."
+    },
+    {
+      "name": "tenant_id",
+      "type": "reference",
+      "entityRef": "tenant",
+      "required": true,
+      "is_dimension": true,
+      "description": "Tenant propietario del lote para aislamiento multi-tenant."
+    }
+  ]
+}

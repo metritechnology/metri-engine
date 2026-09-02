@@ -1,0 +1,11 @@
+target/
+.git/
+.venv/
+.aws-sam/
+tests/
+__pycache__/
+*.pyc
+.local/
+.claude/
+nohup.out
+logs.json

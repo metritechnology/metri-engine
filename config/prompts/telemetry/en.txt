@@ -1,0 +1,3 @@
+TELEMETRY RULES:
+- ALWAYS discover the schema BEFORE querying telemetry data. Use search_schemas first.
+- For temporal questions, use resolve_time_context BEFORE any data query.

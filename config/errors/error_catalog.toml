@@ -534,3 +534,177 @@ grpc_status      = "UNAVAILABLE"
 description      = "LLM service unavailable — Anthropic or Ollama timeout or capacity exceeded"
 context_required = ["model", "timeout_ms"]
 retryable        = true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA AUD — Auditoría del Motor Analítico
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "AUD_001"
+family           = "aud"
+stage            = "audit-interceptor"
+severity         = "warning"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "AuditInterceptor.audit failed to write to OLAPChannel — audit record lost"
+context_required = ["tenant_id", "user_id", "action_type", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "AUD_002"
+family           = "aud"
+stage            = "audit-interceptor"
+severity         = "warning"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "audit/derive_action_type returned unknown — fallback to WRITE applied"
+context_required = ["tenant_id", "operation", "result_stage"]
+retryable        = false
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA FML — Motor de Fórmulas (aegis::formula)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "FML_001"
+family           = "fml"
+stage            = "aegis::formula::lexer"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Unexpected token in formula expression"
+context_required = ["position", "found"]
+retryable        = false
+
+[[errors]]
+code             = "FML_002"
+family           = "fml"
+stage            = "aegis::formula::parser"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Unbalanced parentheses in formula"
+context_required = ["position"]
+retryable        = false
+
+[[errors]]
+code             = "FML_003"
+family           = "fml"
+stage            = "aegis::formula::parser"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Unknown function invoked in formula"
+context_required = ["function_name"]
+retryable        = false
+
+[[errors]]
+code             = "FML_004"
+family           = "fml"
+stage            = "aegis::formula::parser"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Function arity mismatch — wrong number of arguments"
+context_required = ["function_name", "expected", "got"]
+retryable        = false
+
+[[errors]]
+code             = "FML_005"
+family           = "fml"
+stage            = "aegis::formula::evaluator"
+severity         = "info"
+http_status      = 200
+grpc_status      = "OK"
+description      = "Division by zero in formula evaluation (row skipped)"
+context_required = []
+retryable        = false
+
+[[errors]]
+code             = "FML_006"
+family           = "fml"
+stage            = "aegis::formula::evaluator"
+severity         = "info"
+http_status      = 200
+grpc_status      = "OK"
+description      = "Math domain error in formula (e.g., SQRT(-1), LOG(0))"
+context_required = ["function_name", "detail"]
+retryable        = false
+
+[[errors]]
+code             = "FML_007"
+family           = "fml"
+stage            = "aegis::formula::security"
+severity         = "error"
+http_status      = 403
+grpc_status      = "PERMISSION_DENIED"
+description      = "SQL injection pattern detected in formula (word-boundary match)"
+context_required = ["fragment"]
+retryable        = false
+
+[[errors]]
+code             = "FML_008"
+family           = "fml"
+stage            = "aegis::formula::lexer"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Formula exceeds maximum length"
+context_required = ["length", "max"]
+retryable        = false
+
+[[errors]]
+code             = "FML_009"
+family           = "fml"
+stage            = "aegis::formula::parser"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Parenthesis nesting depth exceeds limit"
+context_required = ["depth", "max"]
+retryable        = false
+
+[[errors]]
+code             = "FML_010"
+family           = "fml"
+stage            = "aegis::formula::lexer"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Formula token count exceeds limit"
+context_required = ["count", "max"]
+retryable        = false
+
+[[errors]]
+code             = "FML_011"
+family           = "fml"
+stage            = "aegis::formula::parser"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Function nesting depth exceeds limit"
+context_required = ["depth", "max"]
+retryable        = false
+
+[[errors]]
+code             = "FML_012"
+family           = "fml"
+stage            = "aegis::formula::evaluator"
+severity         = "info"
+http_status      = 200
+grpc_status      = "OK"
+description      = "Variable not found in row context during evaluation"
+context_required = ["variable_name"]
+retryable        = false
+
+[[errors]]
+code             = "FML_013"
+family           = "fml"
+stage            = "aegis::formula::lexer"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Empty formula string received"
+context_required = []
+retryable        = false
+

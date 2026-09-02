@@ -9,25 +9,28 @@
       "name": "name",
       "type": "string",
       "fts": true,
-      "required": true
-    },
-    {
-      "name": "serial_number",
-      "type": "string",
-      "unique": "identity",
-      "fts": true
+      "required": true,
+      "description": "Nombre descriptivo del activo (ej: 'Bomba Centrífuga de Alta Presión #02')."
     },
     {
       "name": "tag",
       "type": "string",
-      "unique": "identity",
-      "pattern": "^A-[A-Z0-9]{7}$",
+      "unique": "tenant",
+      "pattern": "^A-[A-Z0-9-]{3,15}$",
       "fts": true,
       "auto_generate": {
         "strategy": "stochastic_base36",
         "prefix": "A-",
         "length": 7
-      }
+      },
+      "description": "Tag único de activo autogenerado por inquilino."
+    },
+    {
+      "name": "serial_number",
+      "type": "string",
+      "unique": "tenant",
+      "fts": true,
+      "description": "Número de serie asignado por el fabricante del equipo (único por tenant)."
     },
     {
       "name": "status",
@@ -35,76 +38,163 @@
       "options": [
         "ACTIVE",
         "INACTIVE",
-        "IN_MAINTENANCE"
+        "IN_MAINTENANCE",
+        "DOWN",
+        "STANDBY",
+        "DECOMMISSIONED",
+        "SCRAPPED"
       ],
       "default_value": "ACTIVE",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Estado operativo del activo. 'DOWN' activa métricas de parada no planificada."
+    },
+    {
+      "name": "criticality",
+      "type": "enum",
+      "options": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "default_value": "MEDIUM",
+      "is_dimension": true,
+      "description": "Clasificación de criticidad del activo para priorización de órdenes de trabajo."
     },
     {
       "name": "location_id",
       "type": "reference",
       "entityRef": "location",
       "cardinality": "one",
-      "is_dimension": true
+      "required": true,
+      "is_dimension": true,
+      "description": "Ubicación funcional actual del activo."
     },
     {
-      "name": "omniclass_category",
-      "type": "string",
-      "subtype": "terminology",
-      "terminologyUri": "urn:api:system:omniclass"
-    },
-    {
-      "name": "type",
-      "type": "string",
-      "is_dimension": true
+      "name": "parent_asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Activo padre en la jerarquía de equipos / sub-ensambles."
     },
     {
       "name": "category",
       "type": "string",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Categoría funcional del activo (ej: 'Rotativos', 'Eléctricos', 'HVAC')."
     },
     {
-      "name": "criticality",
+      "name": "type",
       "type": "string",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Subtipo específico del equipo (ej: 'Bomba Centrífuga', 'Motor Trifásico')."
     },
     {
       "name": "manufacturer",
       "type": "string",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Marca o fabricante del equipo (ej: 'Siemens', 'Grundfos', 'ABB')."
     },
     {
-      "name": "model",
-      "type": "string"
+      "name": "model_number",
+      "type": "string",
+      "fts": true,
+      "description": "Modelo del equipo según catálogo del fabricante."
+    },
+    {
+      "name": "vendor_provider_id",
+      "type": "reference",
+      "entityRef": "company",
+      "cardinality": "one",
+      "description": "Empresa proveedora o fabricante registrada que suministró o atiende el activo."
     },
     {
       "name": "omniclass_code",
-      "type": "string"
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "vcb_omniclass_t23",
+      "description": "Código de clasificación estandarizado OmniClass Table 23 (Products / Equipos y Activos)."
     },
     {
       "name": "omniclass_name",
-      "type": "string"
+      "type": "string",
+      "fts": true,
+      "description": "Nombre o descripción verbal correspondiente al código de clasificación OmniClass."
     },
     {
-      "name": "uniclass_code",
-      "type": "string"
+      "name": "purchase_date",
+      "type": "epoch",
+      "description": "Fecha de adquisición del activo."
+    },
+    {
+      "name": "installation_date",
+      "type": "epoch",
+      "description": "Fecha de puesta en marcha / instalación oficial."
+    },
+    {
+      "name": "warranty_expiration_date",
+      "type": "epoch",
+      "description": "Fecha de vencimiento de la garantía de fábrica."
+    },
+    {
+      "name": "purchase_cost_cents",
+      "type": "number",
+      "is_measure": true,
+      "description": "Costo original de compra expresado en la unidad menor de la divisa (céntimos)."
+    },
+    {
+      "name": "salvage_value_cents",
+      "type": "number",
+      "is_measure": true,
+      "description": "Valor residual / de rescate estimado al final de su vida útil."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:currency",
+      "pattern": "^[A-Z]{3}$",
+      "default_value": "USD",
+      "is_dimension": true,
+      "description": "Código de divisa ISO 4217, validado contra el sistema terminológico."
+    },
+    {
+      "name": "expected_lifespan_months",
+      "type": "integer",
+      "description": "Vida útil proyectada en meses según fabricante."
     },
     {
       "name": "health_score",
-      "type": "number"
+      "type": "number",
+      "is_measure": true,
+      "description": "Score de salud calculado (0.0 a 100.0) derivado de modelos predictivos / Metri Q Assistant."
     },
     {
       "name": "current_meter_reading",
-      "type": "number"
+      "type": "number",
+      "is_measure": true,
+      "description": "Valor actual del horómetro o contador acumulado principal."
     },
     {
-      "name": "telemetry_config",
-      "type": "string"
+      "name": "specifications",
+      "type": "json",
+      "subtype": "flat_map",
+      "description": "Placa de datos / especificaciones técnicas (ej: {'power_kw': '45', 'voltage_v': '480', 'rpm': '1750'})."
     },
     {
-      "name": "timestamp",
-      "type": "epoch",
-      "index": true
+      "name": "custom_attributes",
+      "type": "json",
+      "subtype": "flat_map",
+      "is_dimension": true,
+      "description": "Campos personalizados extensibles definidos por el cliente."
+    },
+    {
+      "name": "photo_ids",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "many",
+      "description": "Fotos o imágenes adjuntas del activo."
     }
   ],
   "event_rules": [
@@ -113,7 +203,7 @@
       "event_trigger_type": "on_create",
       "filter_conditions": [],
       "detail_type_output": "system.asset.created",
-      "description": "Notificaci\u00f3n sist\u00e9mica global al crear cualquier activo nuevo."
+      "description": "Notificación sistémica global al crear cualquier activo nuevo."
     },
     {
       "rule_code": "ASSET_STATUS_CHANGED",
@@ -126,7 +216,20 @@
         }
       ],
       "detail_type_output": "system.asset.status_changed",
-      "description": "Auditor\u00eda global de cambios de estado en activos."
+      "description": "Auditoría global de cambios de estado en activos."
+    },
+    {
+      "rule_code": "ASSET_DOWN_ALERT",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [
+        {
+          "field_name": "status",
+          "operator": "eq",
+          "target_value": "DOWN"
+        }
+      ],
+      "detail_type_output": "system.alerts.asset_down",
+      "description": "Alerta crítica cuando un activo pasa a estado DOWN (Parada No Planificada)."
     }
   ]
 }

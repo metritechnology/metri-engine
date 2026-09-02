@@ -1,0 +1,32 @@
+syntax = "proto3";
+package metri.eda.v1;
+
+service MoiraRoutingService {
+  // Invocado por SQSHandler — evalúa routing rules del batch
+  rpc MatchRoutingRulesBatch (MatchRoutingRulesBatchRequest)
+      returns (MatchRoutingRulesBatchResponse);
+
+  // Invocado por WatchdogHandler — resetea eventos PROCESSING huérfanos
+  rpc ResetOrphanedEvents (ResetOrphanedEventsRequest)
+      returns (ResetOrphanedEventsResponse);
+}
+
+message MatchRoutingRulesBatchRequest {
+  // Batch de outbox_events empaquetados en MessagePack
+  bytes messagepack_encoded_batch = 1;
+}
+
+message MatchRoutingRulesBatchResponse {
+  // [{outbox_id, detail_type_output, destinations:[{webhook_url, token}]}]
+  bytes json_routing_results = 1;
+}
+
+message ResetOrphanedEventsRequest {
+  // TTL en ms — eventos PROCESSING más viejos son huérfanos
+  int64 ttl_ms = 1;
+}
+
+message ResetOrphanedEventsResponse {
+  int32            reset_count     = 1;
+  repeated string  reset_event_ids = 2;
+}

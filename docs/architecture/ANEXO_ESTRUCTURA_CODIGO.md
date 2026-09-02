@@ -261,7 +261,8 @@ metri-engine/
 │       ├── 05_FASE_MOTOR_ANALITICO_CORE.md
 │       ├── 06_FASE_CEDAR_AUTHORIZER.md             ← Cedar v3.1 (multi-admin, MFA, audit, SIGHUP)
 │       ├── 07_FASE_QUOTA_GUARD.md
-│       ├── 08_FASE_INTELIGENCIA_ARTIFICIAL_MCP.md
+│       ├── 08_FASE_METRI_Q_ASSITANT.md
+│       ├── METRI_Q.md
 │       ├── 09_FASE_AUDITORIA.md
 │       ├── 10_FASE_GESTION_ERRORES_EDA.md
 │       ├── COMPONENTE_EXTERNO_01_EVENT_ROUTER.md
@@ -511,7 +512,7 @@ graph TD
     ER["Componente Ext. 01<br/>Event Router (Golang)"]
     EC["Componente Ext. 02<br/>Echo — Retry Engine (Golang)"]
     BC["Componente Ext. 02b<br/>Bulk Compactor"]
-    MC["Componente Ext. 06<br/>MCP Proxy (TypeScript)"]
+    MC["Componente Ext. 06<br/>Agent IA (Go)"]
 
     EB["AWS EventBridge<br/>DOMAIN_FAULT_DETECTED"]
     SQS_OUT["AWS SQS FIFO<br/>Outbox Events"]

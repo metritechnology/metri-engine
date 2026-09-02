@@ -3,12 +3,11 @@
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
-  "partition_strategy": "YYYY-MM-DD",
   "attributes": [
     {
       "name": "work_order_number",
       "type": "string",
-      "unique": "identity",
+      "unique": "tenant",
       "pattern": "^WO(-[A-Z0-9-]+)?-\\d{4,6}$",
       "fts": true,
       "doc": "Código de negocio autogenerado. Sin scope: 'WO-0042'. Con scope location: 'WO-L-K92MXA-0043'. El contador se hereda del ancestro más cercano que ya tiene actividad (nearest_registered).",
@@ -41,9 +40,10 @@
     {
       "name": "client_id",
       "type": "reference",
-      "entityRef": "client",
+      "entityRef": "company",
       "cardinality": "one",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Empresa cliente destinataria del servicio (company con company_type=CLIENT). Corrige la referencia previa a la entidad inexistente 'client'."
     },
     {
       "name": "asset_id",
@@ -70,10 +70,27 @@
       "cardinality": "many"
     },
     {
-      "name": "assigned_group_id",
+      "name": "assigned_group_ids",
       "type": "reference",
       "entityRef": "user_group",
-      "cardinality": "one"
+      "cardinality": "many",
+      "description": "Grupos o cuadrillas de trabajo asignadas a la orden de trabajo."
+    },
+    {
+      "name": "category",
+      "type": "enum",
+      "options": [
+        "CORRECTIVE",
+        "PREVENTIVE",
+        "PREDICTIVE",
+        "CALIBRATION",
+        "SAFETY",
+        "IMPROVEMENT"
+      ],
+      "default_value": "CORRECTIVE",
+      "required": true,
+      "is_dimension": true,
+      "description": "Categoría o tipo de mantenimiento a ejecutar."
     },
     {
       "name": "status",
@@ -108,10 +125,21 @@
       "index": true
     },
     {
-      "name": "total_cost",
-      "type": "decimal",
+      "name": "total_cost_cents",
+      "type": "number",
       "is_measure": true,
-      "default_rollup": "sum"
+      "default_rollup": "sum",
+      "description": "Costo total de la orden de trabajo en la unidad menor de la divisa (céntimos)."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:currency",
+      "pattern": "^[A-Z]{3}$",
+      "default_value": "USD",
+      "is_dimension": true,
+      "description": "Código de divisa ISO 4217 de tres letras validado contra el sistema terminológico (ej: USD, EUR, MXN)."
     },
     {
       "name": "completion_percentage",
@@ -120,10 +148,87 @@
       "description": "0 to 100 percentage representing progress across tasks and checklists"
     },
     {
+      "name": "checkin_latitude",
+      "type": "decimal",
+      "description": "Latitud GPS de origen registrada por el dispositivo móvil al iniciar la orden de trabajo."
+    },
+    {
+      "name": "checkin_longitude",
+      "type": "decimal",
+      "description": "Longitud GPS de origen registrada por el dispositivo móvil al iniciar la orden de trabajo."
+    },
+    {
+      "name": "checkin_at",
+      "type": "epoch",
+      "description": "Timestamp epoch ms del check-in presencial del técnico."
+    },
+    {
+      "name": "checkout_latitude",
+      "type": "decimal",
+      "description": "Latitud GPS de destino registrada por el dispositivo móvil al cerrar la orden de trabajo."
+    },
+    {
+      "name": "checkout_longitude",
+      "type": "decimal",
+      "description": "Longitud GPS de destino registrada por el dispositivo móvil al cerrar la orden de trabajo."
+    },
+    {
+      "name": "checkout_at",
+      "type": "epoch",
+      "description": "Timestamp epoch ms del check-out final del técnico."
+    },
+    {
+      "name": "is_geofence_verified",
+      "type": "boolean",
+      "default_value": "false",
+      "is_dimension": true,
+      "description": "Flag de auditoría que confirma si el check-in ocurrió dentro del radio de geocerca del activo asignado."
+    },
+    {
+      "name": "sla_response_due_date",
+      "type": "epoch",
+      "index": true,
+      "description": "Fecha límite pactada para que el técnico responda o inicie el trabajo en campo."
+    },
+    {
+      "name": "sla_resolution_due_date",
+      "type": "epoch",
+      "index": true,
+      "description": "Fecha límite pactada para la resolución y cierre completo de la orden de trabajo."
+    },
+    {
+      "name": "sla_response_breached",
+      "type": "boolean",
+      "default_value": "false",
+      "is_dimension": true,
+      "description": "Indica si se incumplió el tiempo límite de respuesta del SLA."
+    },
+    {
+      "name": "sla_resolution_breached",
+      "type": "boolean",
+      "default_value": "false",
+      "is_dimension": true,
+      "description": "Indica si se incumplió el tiempo límite de resolución del SLA."
+    },
+    {
       "name": "internal_audit_hash",
       "type": "string",
       "is_system": true,
       "fts": false
+    },
+    {
+      "name": "scheduled_start",
+      "type": "epoch",
+      "index": true,
+      "is_system": true,
+      "description": "Mínimo de los scheduled_start de sus tareas. Lo calcula el motor."
+    },
+    {
+      "name": "scheduled_end",
+      "type": "epoch",
+      "index": true,
+      "is_system": true,
+      "description": "Máximo de los scheduled_end de sus tareas. Lo calcula el motor."
     }
   ],
   "event_rules": [
@@ -152,13 +257,13 @@
       "event_trigger_type": "on_update",
       "filter_conditions": [
         {
-          "field_name": "total_cost",
+          "field_name": "total_cost_cents",
           "operator": "gt",
-          "target_value": "50000"
+          "target_value": "5000000"
         }
       ],
       "detail_type_output": "system.alerts.high_cost_work_order",
-      "description": "Alerta sist\u00e9mica autom\u00e1tica para \u00f3rdenes de trabajo que superan los 50k en costo."
+      "description": "Alerta sistémica automática para órdenes de trabajo que superan los 50k en costo (5,000,000 céntimos)."
     }
   ]
 }

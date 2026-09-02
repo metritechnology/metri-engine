@@ -78,9 +78,13 @@ pub fn select_plan(ast_ir: &Value) -> EavQueryPlan {
             EavQueryPlan::AevtScan { entity_type, shard_total: None }
         }
         1 => {
-            let (attr, val) = indexed_filters.into_iter().next().unwrap();
-            debug!("[PlanSelector] → AvetSingleFilter attr={attr}");
-            EavQueryPlan::AvetSingleFilter { attr_name: attr, value: val }
+            if let Some((attr, val)) = indexed_filters.into_iter().next() {
+                debug!("[PlanSelector] → AvetSingleFilter attr={attr}");
+                EavQueryPlan::AvetSingleFilter { attr_name: attr, value: val }
+            } else {
+                debug!("[PlanSelector] → AevtScan entity_type={entity_type}");
+                EavQueryPlan::AevtScan { entity_type, shard_total: None }
+            }
         }
         _ => {
             debug!("[PlanSelector] → AvetIntersection filters={}", indexed_filters.len());
@@ -168,49 +172,6 @@ fn json_to_datum_value(val: &Value) -> DatomValue {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn selects_point_lookup_when_ulid_present() {
-        let ast = json!({
-            "entity": "asset",
-            "where": ["=", "entity/ulid", "01JXYZ"]
-        });
-        match select_plan(&ast) {
-            EavQueryPlan::PointLookup { entity_id } => assert_eq!(entity_id, "01JXYZ"),
-            other => panic!("Expected PointLookup, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn selects_aevt_scan_when_no_filters() {
-        let ast = json!({
-            "entity": "asset",
-            "where": ["=", "tenant/id", "tnt_01"]
-        });
-        match select_plan(&ast) {
-            EavQueryPlan::AevtScan { entity_type, .. } => assert_eq!(entity_type, "asset"),
-            other => panic!("Expected AevtScan, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn selects_avet_single_for_indexed_filter() {
-        let ast = json!({
-            "entity": "work_order",
-            "where": ["and", ["=", "tenant/id", "tnt_01"], ["=", "work_order/status", "OPEN"]]
-        });
-        match select_plan(&ast) {
-            EavQueryPlan::AvetSingleFilter { attr_name, .. } => {
-                assert_eq!(attr_name, "work_order/status");
-            }
-            other => panic!("Expected AvetSingleFilter, got {:?}", other),
-        }
-    }
-}
 
 use crate::janus::fbs;
 
@@ -227,24 +188,22 @@ pub fn select_plan_fbs(ast_ir: &fbs::AnalyticsRequestT) -> EavQueryPlan {
     // ── P2: ¿Hay time-travel as_of_tx > 0? (Mapeado desde end_ts si existe)
     if let Some(time_frame) = &ast_ir.time_frame {
         if time_frame.end_ts > 0 && time_frame.type_ == fbs::TimeFrameContext_TimeFilterType::CUSTOM_RANGE {
-            let entity_id = extract_ulid_fbs(ast_ir).unwrap_or_default();
-            let as_of = time_frame.end_ts as u64;
-            debug!("[PlanSelector] → AsOfSnapshot entity_id={entity_id} as_of_tx={as_of}");
-            return EavQueryPlan::AsOfSnapshot { entity_id, as_of_tx: as_of };
+            if let Some(entity_id) = extract_ulid_fbs(ast_ir) {
+                let as_of = time_frame.end_ts as u64;
+                debug!("[PlanSelector] → AsOfSnapshot entity_id={entity_id} as_of_tx={as_of}");
+                return EavQueryPlan::AsOfSnapshot { entity_id, as_of_tx: as_of };
+            }
         }
     }
 
     // ── P3: ¿Hay búsqueda FTS?
-    // FTS Index está en desarrollo asíncrono. Por ahora, hacemos fallback a AevtScan
-    // y aplicamos `fuzzy_match` (Trigrams + DL) in-memory en el executor.
-    /*
+    // FTS Index: usamos la capacidad máxima técnica del eav con Trigrams persistidos
     if let Some(term) = &ast_ir.search {
         if !term.is_empty() {
             debug!("[PlanSelector] → FtsSearch term={term}");
             return EavQueryPlan::FtsSearch { term: term.to_string() };
         }
     }
-    */
 
     // ── P4: ¿Hay filtros indexables (AVET)?
     let indexed_filters = extract_indexed_filters_fbs(ast_ir);
@@ -254,9 +213,13 @@ pub fn select_plan_fbs(ast_ir: &fbs::AnalyticsRequestT) -> EavQueryPlan {
             EavQueryPlan::AevtScan { entity_type, shard_total: None }
         }
         1 => {
-            let (attr, val) = indexed_filters.into_iter().next().unwrap();
-            debug!("[PlanSelector] → AvetSingleFilter attr={attr}");
-            EavQueryPlan::AvetSingleFilter { attr_name: attr, value: val }
+            if let Some((attr, val)) = indexed_filters.into_iter().next() {
+                debug!("[PlanSelector] → AvetSingleFilter attr={attr}");
+                EavQueryPlan::AvetSingleFilter { attr_name: attr, value: val }
+            } else {
+                debug!("[PlanSelector] → AevtScan entity_type={entity_type}");
+                EavQueryPlan::AevtScan { entity_type, shard_total: None }
+            }
         }
         _ => {
             debug!("[PlanSelector] → AvetIntersection filters={}", indexed_filters.len());
@@ -302,16 +265,13 @@ fn extract_indexed_filters_fbs(ast_ir: &fbs::AnalyticsRequestT) -> Vec<(String, 
             if let Some(crit) = &f.criteria {
                 if crit.op_ref.0 == fbs::FilterOperator::EQ.0 {
                     let raw_attr = crit.field.clone().unwrap_or_default();
-                    if raw_attr.starts_with("entity/") || raw_attr == "tenant_id" || raw_attr == "entity_type" {
-                        continue; // Skip intrinsic fields for AVET indexing
+                    if raw_attr.starts_with("entity/") || raw_attr == "tenant_id" || raw_attr == "entity_type" || raw_attr.contains('.') {
+                        continue; // Skip intrinsic and dot-path fields for AVET indexing
                     }
-                    // Construir el attr_name con namespace para que matchee el AVET_PK
-                    // AVET_PK = T#tenant#AV#entity/attr_name
-                    let attr = if raw_attr.contains('/') {
-                        raw_attr
-                    } else {
-                        format!("{}/{}", entity_type, raw_attr)
-                    };
+                    // FIX CRÍTICO: el AVET_PK en DynamoDB almacena el attr_name SIN namespace (bare name)
+                    // tal como viene en el write path de transact.rs, por lo que usamos el bare name.
+                    let attr = raw_attr.split('/').last().unwrap_or(&raw_attr).to_string();
+
 
                     let val = if let Some(v) = &crit.value {
                         if let Some(s) = &v.string_val {

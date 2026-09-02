@@ -37,7 +37,30 @@ impl IopStep for JanusRouterStep {
     ///   6. Despachar al canal
     ///
     /// [PORTED_FROM: (.route channel safe-ctx) en janus_router/core.clj]
-    async fn execute(&self, mut ctx: IopContext) -> Result<IopContext, DomainError> {
+    #[tracing::instrument(
+        name = "iop.step3.janus.start",
+        skip(self, ctx),
+        fields(
+            tenant_id = %ctx.tenant_id,
+            error.code = tracing::field::Empty,
+            otel.status_code = tracing::field::Empty
+        )
+    )]
+    async fn execute(&self, ctx: IopContext) -> Result<IopContext, DomainError> {
+        match self.execute_inner(ctx).await {
+            Ok(c) => Ok(c),
+            Err(e) => {
+                let span = tracing::Span::current();
+                span.record("error.code", e.code.canonical_code());
+                span.record("otel.status_code", "ERROR");
+                Err(e)
+            }
+        }
+    }
+}
+
+impl JanusRouterStep {
+    async fn execute_inner(&self, mut ctx: IopContext) -> Result<IopContext, DomainError> {
         let result = self.router.route(ctx.clone()).await?;
 
         // El resultado del canal (entity_id, tx_id, ingested_count, etc.)
@@ -57,3 +80,8 @@ impl IopStep for JanusRouterStep {
         Ok(ctx)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/janus_step_tests.rs"]
+mod tests;
+

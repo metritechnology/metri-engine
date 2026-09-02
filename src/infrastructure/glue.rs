@@ -17,6 +17,7 @@ fn codice_to_glue_type(attr_type: &AttrType) -> &'static str {
         AttrType::Decimal              => "double",
         AttrType::Epoch | AttrType::Number => "bigint",
         AttrType::Boolean              => "boolean",
+        AttrType::Json                 => "string",
         _                              => "string",
     }
 }

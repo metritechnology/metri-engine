@@ -12,6 +12,16 @@
       "description": "El ID camale\u00f3nico de quien engendr\u00f3 este Job. Puede ser un Mantenimiento Preventivo, un Recordatorio, o un User UUID para env\u00edos de facturas."
     },
     {
+      "name": "created_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_system": true,
+      "description": "Principal que engendr\u00f3 el Job. Cedar lo reeval\u00faa en T=0: la trampa puede disparar meses despu\u00e9s de su creaci\u00f3n, cuando el creador pudo ser desactivado o perder permisos. Sin este campo la autorizaci\u00f3n quedar\u00eda congelada en el instante de la creaci\u00f3n."
+    },
+    {
       "name": "trigger_type",
       "type": "enum",
       "options": [
@@ -26,7 +36,7 @@
       "name": "trigger_expression",
       "type": "string",
       "required": true,
-      "description": "El motor universal. Si es CRON expone '0 8 * * *'. Si es EXACT_TIME expone Epoch '1702812932'. Si es TELEMETRY expone 'reading_value > 5000'."
+      "description": "El motor universal. CRON: expresi\u00f3n cron de 5 campos (ej. '0 8 1 */6 *'). EXACT_TIME: Epoch Unix en UTC. TELEMETRY: gram\u00e1tica '<METRIC_CODE> <OPERADOR> <VALOR>' (ej. 'VIBRATION > 5000'); la unidad se resuelve del iot_device_profile del asset."
     },
     {
       "name": "iana_timezone",
@@ -67,6 +77,14 @@
       "description": "Resoluci\u00f3n de notificaciones encoladas basada netamente en el rol org\u00e1nico de planta."
     },
     {
+      "name": "target_webhook_id",
+      "type": "reference",
+      "entityRef": "webhook_endpoint",
+      "cardinality": "one",
+      "required": false,
+      "description": "Destino cuando action_type = WEBHOOK; obligatorio en ese caso. La URL nunca viaja en el action_payload: referenciar la entidad da allowlist por construcci\u00f3n, credenciales cifradas, interruptor is_active y pol\u00edtica max_retries. Una URL libre ser\u00eda un vector SSRF."
+    },
+    {
       "name": "action_payload",
       "type": "json",
       "required": true,
@@ -76,7 +94,7 @@
       "name": "idempotency_hash",
       "type": "string",
       "is_system": true,
-      "description": "Huella dactilar est\u00e1tica. Garantiza matem\u00e1ticamente que Metri Engine (Clojure) descarte reintentos par\u00e1sitos o latenciados provenientes de Schedulers."
+      "description": "Huella dactilar EST\u00c1TICA por Job. NO se usa directamente como llave de deduplicaci\u00f3n: un hash constante deduplicar\u00eda entre s\u00ed todos los disparos de un CRON. El ejecutor deduplica por idempotency_key = sha256(idempotency_hash + instante de la ocurrencia)."
     },
     {
       "name": "status",
@@ -90,6 +108,27 @@
       ],
       "default_value": "ACTIVE",
       "is_dimension": true
+    },
+    {
+      "name": "last_run_at",
+      "type": "epoch",
+      "required": false,
+      "is_system": true,
+      "description": "Instante del \u00faltimo disparo ejecutado. Campo de bit\u00e1cora: su mutaci\u00f3n NO debe reprovisionar la trampa en AWS."
+    },
+    {
+      "name": "run_count",
+      "type": "long",
+      "default_value": 0,
+      "is_system": true,
+      "description": "N\u00famero de disparos ejecutados. Campo de bit\u00e1cora: su mutaci\u00f3n NO debe reprovisionar la trampa en AWS."
+    },
+    {
+      "name": "last_error",
+      "type": "string",
+      "required": false,
+      "is_system": true,
+      "description": "Causa del \u00faltimo fallo cuando status = FAILED (epoch vencido, action_payload sobre 256KB, ConflictException no resuelto). Campo de bit\u00e1cora."
     }
   ],
   "events": {

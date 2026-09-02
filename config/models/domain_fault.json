@@ -56,7 +56,15 @@
       "index": true,
       "is_dimension": true,
       "required": true,
-      "description": "Componente del sistema donde ocurri\u00f3 el error. Ej: janus, codice, auth, abac, kinesis."
+      "description": "Etapa interna del pipeline donde ocurri\u00f3 el error. Ej: janus, codice, auth, abac, kinesis."
+    },
+    {
+      "name": "component",
+      "type": "string",
+      "index": true,
+      "is_dimension": true,
+      "required": true,
+      "description": "Componente o microservicio donde se origin\u00f3 el error. Ej: metri-auth, metri-engine, metri-event-router, metri-notifications."
     },
     {
       "name": "entity_type",
@@ -79,8 +87,8 @@
     },
     {
       "name": "context",
-      "type": "json",
-      "description": "Contexto forense completo del error. Campos marcados como sensitive:true en el schema son sustituidos por [REDACTED] antes de persistir."
+      "type": "string",
+      "description": "Contexto forense completo del error — serializado como JSON string. Campos sensitive:true sustituidos por [REDACTED] antes de persistir."
     }
   ],
   "events": {

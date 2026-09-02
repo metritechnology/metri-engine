@@ -1,0 +1,7 @@
+---
+source: src/janus/testing/contract_tests.rs
+expression: native_plan
+---
+PointLookup {
+    entity_id: "01JTESTULID",
+}

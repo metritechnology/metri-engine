@@ -11,11 +11,9 @@
 //
 // 29 tipos soportados (28 relativos + CUSTOM_RANGE).
 
-use chrono::{Datelike, Duration, Timelike, Weekday};
-
 use crate::temporal::core::{
     self as t, CalUnit, TimeRange,
-    day0, epoch_to_zdt, parse_tz, shift_by_calendar, ms_to_s,
+    shift_by_calendar, ms_to_s,
 };
 
 /// Representa un TimeFrameContext del proto (campos renombrados a snake_case Rust).
@@ -103,44 +101,6 @@ impl TimeFrameType {
     }
 }
 
-// ── Helpers de inicio de período ──────────────────────────────────────────────
-
-fn today_start(now_s: i64, tz: &str) -> i64 {
-    let tz_parsed = parse_tz(tz);
-    let dt = epoch_to_zdt(now_s, tz_parsed);
-    day0(dt).timestamp()
-}
-
-fn week_start(now_s: i64, tz: &str) -> i64 {
-    let tz_parsed = parse_tz(tz);
-    let dt = epoch_to_zdt(now_s, tz_parsed);
-    let days_from_monday = dt.weekday().num_days_from_monday() as i64;
-    let monday = dt - Duration::days(days_from_monday);
-    day0(monday).timestamp()
-}
-
-fn month_start(now_s: i64, tz: &str) -> i64 {
-    let tz_parsed = parse_tz(tz);
-    let dt = epoch_to_zdt(now_s, tz_parsed);
-    let first = dt.with_day(1).unwrap_or(dt);
-    day0(first).timestamp()
-}
-
-fn quarter_start(now_s: i64, tz: &str) -> i64 {
-    let tz_parsed = parse_tz(tz);
-    let dt = epoch_to_zdt(now_s, tz_parsed);
-    let qm = ((dt.month() - 1) / 3) * 3 + 1;
-    let first = dt.with_month(qm).and_then(|d| d.with_day(1)).unwrap_or(dt);
-    day0(first).timestamp()
-}
-
-fn year_start(now_s: i64, tz: &str) -> i64 {
-    let tz_parsed = parse_tz(tz);
-    let dt = epoch_to_zdt(now_s, tz_parsed);
-    let first = dt.with_ordinal(1).unwrap_or(dt);
-    day0(first).timestamp()
-}
-
 // ── API pública ───────────────────────────────────────────────────────────────
 
 /// Resuelve un TimeFrameCtx → TimeRange {start_ts, end_ts} en epoch-segundos.
@@ -155,11 +115,11 @@ pub fn resolve_time_frame(tf: &TimeFrameCtx) -> Option<TimeRange> {
     let now = chrono::Utc::now().timestamp();
     let n   = tf.n_value.max(1);
 
-    let td = || today_start(now, tz);
-    let wk = || week_start(now, tz);
-    let mo = || month_start(now, tz);
-    let qt = || quarter_start(now, tz);
-    let yr = || year_start(now, tz);
+    let td = || t::truncate_to_unit(now, CalUnit::Day, tz);
+    let wk = || t::truncate_to_unit(now, CalUnit::Week, tz);
+    let mo = || t::truncate_to_unit(now, CalUnit::Month, tz);
+    let qt = || t::truncate_to_unit(now, CalUnit::Quarter, tz);
+    let yr = || t::truncate_to_unit(now, CalUnit::Year, tz);
 
     // Helpers de shift nombrados (igual que el Clojure)
     let d = |base: i64, delta: i64| shift_by_calendar(base, delta, CalUnit::Day, tz);

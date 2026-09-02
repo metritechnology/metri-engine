@@ -1,0 +1,70 @@
+{
+  "entity": "agent_metric",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": false,
+  "attributes": [
+    {
+      "name": "tenant_id",
+      "type": "reference",
+      "entityRef": "tenant",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "model",
+      "type": "string",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "request_latency_ms",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "router_latency_ms",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "avg_llm_latency_ms",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "avg_tool_latency_ms",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "iterations",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "input_tokens",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "output_tokens",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "total_tools_called",
+      "type": "long",
+      "is_measure": true
+    },
+    {
+      "name": "fallback_used",
+      "type": "boolean",
+      "is_dimension": true
+    },
+    {
+      "name": "modules_selected",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+DELETION:
+- Before deleting: MANDATORY to search for the resource first (get_asset_by_id, get_location_by_id, or list_tenants by prefix).
+- NEVER delete directly. Flow is 100% supervised.
+- After verifying existence, emit block <data>{"type":"action-approval","actionType":"delete-resource","metadata":{"entity":"type","id":"id","name":"name"}}</data>
+- Do NOT generate <data> in the same iteration as the search. First search, then emit.
+- Accompany with short explanation asking for confirmation.

@@ -1,0 +1,3 @@
+TELEMETRÍA:
+- Descubrir esquema con search_schemas ANTES de consultar datos.
+- Para preguntas temporales: resolve_time_context ANTES de consultar.

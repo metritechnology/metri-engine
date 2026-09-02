@@ -25,12 +25,26 @@
         "SET_STATE"
       ],
       "required": true,
-      "description": "El tipo de instrucci\u00f3n enviada a la maquinaria f\u00edsica."
+      "description": "El tipo de instrucción enviada a la maquinaria física."
+    },
+    {
+      "name": "protocol",
+      "type": "enum",
+      "options": [
+        "MQTT",
+        "MODBUS_TCP",
+        "MODBUS_RTU",
+        "HTTP_POST"
+      ],
+      "default": "MQTT",
+      "required": true,
+      "is_dimension": true,
+      "description": "El canal/protocolo utilizado para despachar la instrucción física."
     },
     {
       "name": "payload",
       "type": "json",
-      "description": "Par\u00e1metros t\u00e9cnicos estrictos de la orden. Ej: {'target_rpm': 1000} o {'state': 'CLOSED'}"
+      "description": "Parámetros técnicos estrictos de la orden. Ej: {'target_rpm': 1000} o {'state': 'CLOSED'}"
     },
     {
       "name": "status",
@@ -43,12 +57,18 @@
       ],
       "default": "PENDING",
       "required": true,
-      "description": "Rastreo del ciclo de vida del comando. Metri IoT en Golang actualiza esto usando las confirmaciones Acks de MQTT."
+      "description": "Rastreo del ciclo de vida del comando. Lambda Command Dispatcher actualiza esto usando las confirmaciones Acks de MQTT (Device Shadow) o respuestas directas."
+    },
+    {
+      "name": "response_payload",
+      "type": "json",
+      "required": false,
+      "description": "Confirmación ACK detallada o payload del error devuelto por la máquina física."
     },
     {
       "name": "expires_at",
-      "type": "instant",
-      "description": "Temporalidad m\u00e1xima para la instrucci\u00f3n. Si el dispositivo no se conecta antes, el comando CADUCA."
+      "type": "epoch",
+      "description": "Temporalidad máxima para la instrucción. Si el dispositivo no se conecta antes, el comando CADUCA."
     }
   ],
   "events": {
@@ -61,14 +81,14 @@
       "event_trigger_type": "on_create",
       "filter_conditions": [],
       "detail_type_output": "system.iot.command.issued",
-      "description": "Gatilla el cl\u00faster de Golang para inyectar el mandato puramente en el 'Desired State' de la AWS Device Shadow."
+      "description": "Gatilla la Lambda Command Dispatcher para inyectar el mandato en el 'Desired State' de la AWS Device Shadow o canal de control."
     },
     {
       "rule_code": "IOT_COMMAND_UPDATED",
       "event_trigger_type": "on_update",
       "filter_conditions": [],
       "detail_type_output": "system.iot.command.updated",
-      "description": "Mapea los ACKs f\u00edsicos retornados al Orquestador cuando la Device Shadow reporta estado 'Reported'."
+      "description": "Mapea los ACKs físicos retornados al dispatcher cuando la Device Shadow reporta estado 'Reported' o canal responde."
     }
   ]
 }

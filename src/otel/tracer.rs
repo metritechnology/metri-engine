@@ -4,6 +4,8 @@
 // FASE 2: integrar opentelemetry-otlp completo con exportador a X-Ray/Grafana.
 
 use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use opentelemetry::trace::TraceContextExt;
 
 /// Inicializa el tracer con JSON structured logging (CloudWatch compatible).
 /// [PORTED_FROM: (init!) + ig/init-key :otel/tracer]
@@ -16,9 +18,28 @@ pub fn init(_service_name: &str, _otlp_endpoint: Option<&str>) {
 /// Extrae el trace-id del span activo como string hex.
 /// [PORTED_FROM: (trace-id _span)]
 pub fn current_trace_id() -> String {
-    // FASE 2 TODO: extraer trace-id real del contexto OTel
-    // Por ahora retornamos un placeholder que identifica el span de tracing
-    format!("{:016x}", 0u64)
+    let span = Span::current();
+    let context = span.context();
+    let span_ref = context.span();
+    let span_context = span_ref.span_context();
+    if span_context.is_valid() {
+        span_context.trace_id().to_string()
+    } else {
+        format!("{:032x}", 0u128)
+    }
+}
+
+/// Extrae el span-id del span activo como string hex.
+pub fn current_span_id() -> String {
+    let span = Span::current();
+    let context = span.context();
+    let span_ref = context.span();
+    let span_context = span_ref.span_context();
+    if span_context.is_valid() {
+        span_context.span_id().to_string()
+    } else {
+        format!("{:016x}", 0u64)
+    }
 }
 
 /// Añade atributos al span activo.

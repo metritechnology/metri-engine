@@ -1,0 +1,7 @@
+AUTOFILL:
+- Active form → autofill_active_form immediately. Don't navigate or reply with text.
+- No form → navigate to /new first, then autofill next iteration.
+- Exact keys (e.g. "billing_admin_email"). Don't invent.
+- Respect current values on screen.
+- If required fields are missing, ask only for missing ones.
+- Before creating: search for duplicates with list_*.

@@ -20,11 +20,12 @@ DLQ cuando los intentos se agotan.
 > independiente. No comparten código de runtime ni estado. La única interfaz entre ellos
 > es el contrato del evento `DOMAIN_FAULT_DETECTED` en EventBridge.
 >
-> **¿Por qué Golang y no Clojure?**
-> Las mismas razones que justifican Golang para el Event Router: absorber latencias de
-> red externas (reintentos HTTP, llamadas gRPC a `metri-engine`), Goroutines para
-> concurrencia sin overhead de JVM, y binarios ARM64 con arranque en milisegundos
-> — crítico para un componente que puede ser invocado frecuentemente en incidentes.
+> **¿Por qué Golang para Echo?**
+> Al igual que el Event Router, Echo utiliza Golang para actuar como un micro-componente
+> ultraligero y nativo de integración. Go ofrece Goroutines para manejar la concurrencia
+> al absorber latencias de red externas (reintentos HTTP, llamadas gRPC a `metri-engine`)
+> y binarios ARM64 con tiempos de cold start en milisegundos — crítico para un componente
+> de recuperación ante incidentes.
 
 ---
 
@@ -66,10 +67,10 @@ Objetivos específicos:
 | :----------------------- | :--------------------------------------------------- | :----------------------------------------------------------- |
 | **Detección**            | Detecta el error vía Railway Pattern                 | No detecta — solo consume                                    |
 | **Publicación**          | Publica `DOMAIN_FAULT_DETECTED` a EventBridge        | No publica el evento inicial                                 |
-| **Orquestación Sherlog** | `sherlog/handle-fault!` garantiza emit + record      | Nunca llama funciones internas de Sherlog                    |
+| **Orquestación Sherlog** | `sherlog::process_fault` garantiza emit + record     | Nunca llama funciones internas de Sherlog                    |
 | **Consumo**              | No consume su propio error                           | Consume el evento vía SQS                                    |
-| **Retry**                | No reintenta — devuelve `[:error]` al cliente        | Reintenta con backoff exponencial                            |
-| **Catálogo EDN**         | Lee `retryable?` del catálogo. Lo empaca en el DTO   | No accede al catálogo — lee `retryable` del DTO              |
+| **Retry**                | No reintenta — devuelve `DomainError` al cliente     | Reintenta con backoff exponencial                            |
+| **Catálogo TOML**        | Lee `retryable` del catálogo. Lo empaca en el DTO    | No accede al catálogo — lee `retryable` del DTO              |
 | **DLQ**                  | No escribe en DLQ                                    | Escala al DLQ cuando `MAX_ATTEMPTS` se agota                 |
 | **Escalación**           | No cambia severidad                                  | Promueve a `FATAL` + `DOMAIN_FAULT_ESCALATED` al bus         |
 | **`circuit_breaker`**    | Publica `circuit_breaker: true` si severity `:fatal` | **Descarta el retry** si `circuit_breaker=true` en el evento |
@@ -77,10 +78,10 @@ Objetivos específicos:
 ### Presupuesto de tiempo
 
 ```
-metri-engine (Lambda Clojure — tiempo estricto ~18ms)
-  └─► Detecta error → build-error-dto → sherlog/handle-fault!
-         ├─ emit-fault-event!  → EventBridge PutEvents
-         └─ record-fault!      → Janus OLAPChannel (in-process)
+metri-engine (Rust Native — tiempo estricto ~5ms)
+  └─► Detecta error → build_error_dto → sherlog::process_fault (spawned thread)
+         ├─ EventBridgeNotifier::notify  → EventBridge PutEvents
+         └─ olap_channel.route           → Janus OLAPChannel (domain_fault)
   └─► Responde al cliente gRPC
   └─► Responsabilidad TERMINA aquí
 
@@ -368,7 +369,7 @@ func (d *EchoDispatcher) Dispatch(ctx context.Context, event DomainFaultEvent) e
 
     switch key {
 
-    // ── Janus: transacción Datahike fallida ──────────────────────────────────
+    // ── Janus: transacción EAV (DynamoDB) fallida ────────────────────────────
     case "janus/JNS_TX_001":
         // Re-invoca metri-engine gRPC con la operación original.
         // El context contiene entity_ulid + operation + entity_type.
@@ -387,9 +388,8 @@ func (d *EchoDispatcher) Dispatch(ctx context.Context, event DomainFaultEvent) e
     case "codice/COD_KMS_001":
         return d.KMSClient.RetryEncrypt(ctx, event.Detail.DTO.Error.Context)
 
-    // ── Infraestructura genérica (SYS_000: stage=:infra, timeout de Datahike) ────
-    // NOTA: stage correcto es "infra" (catálogo: SYS_000 → :stage :infra)
-    case "infra/SYS_000":
+    // ── Infraestructura genérica (INFRA_DDB_001 o similar) ───────────────────
+    case "infra/INFRA_DDB_001":
         return d.metriEngineClient.RetryOperation(ctx, RetryRequest{
             TenantID:  event.Detail.TenantID,
             TraceID:   event.Detail.TraceID,
@@ -539,7 +539,7 @@ Globals:
   Function:
     Runtime: provided.al2023    # Go binary compilado con GOARCH=arm64
     Architectures: [arm64]
-    MemorySize: 128             # Go es liviano — no necesita 512MB de JVM
+    MemorySize: 128             # Go es liviano — bajo consumo de memoria
     Timeout: 120                # los reintentos con backoff pueden tomar hasta 2 min
     Environment:
       Variables:
@@ -874,7 +874,7 @@ func TestECH13_CircuitBreakerDoesNotEscalateToFatal(t *testing.T) {
 ## Topología de Recursos AWS
 
 ```
-metri-engine (Lambda Clojure)
+metri-engine (Rust Native gRPC Service)
       │
       │  PutEvents → EventBridge "metri-domain-faults"
       │
@@ -882,25 +882,25 @@ metri-engine (Lambda Clojure)
       │
       ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  AWS Account — metri-echo                                      │
+│  AWS Account — metri-echo                                       │
 │                                                                 │
-│  EventBridge EchoRule (retryable=true)                         │
+│  EventBridge EchoRule (retryable=true)                          │
 │          │                                                      │
 │          ▼                                                      │
-│  SQS: metri-echo-queue (maxReceiveCount=1)                     │
+│  SQS: metri-echo-queue (maxReceiveCount=1)                      │
 │          │                                                      │
 │          ▼                                                      │
-│  Lambda: EchoFunction (arm64, Go, 128MB, timeout 120s)         │
-│    ├─ RetryHandler.Handle (backoff exponencial)                │
-│    ├─ EchoDispatcher.Dispatch (switch por error_code)          │
-│    └─ metriEngineGRPCClient.RetryOperation → metri-engine     │
+│  Lambda: EchoFunction (arm64, Go, 128MB, timeout 120s)          │
+│    ├─ RetryHandler.Handle (backoff exponencial)                 │
+│    ├─ EchoDispatcher.Dispatch (switch por error_code)           │
+│    └─ metriEngineGRPCClient.RetryOperation → metri-engine       │
 │          │                                                      │
-│    Si MAX_ATTEMPTS agotados:                                   │
-│    ├─ EBPublisher.PutEvent → DOMAIN_FAULT_ESCALATED (FATAL)   │
-│    └─ DLQClient.Send → metri-echo-dlq                         │
+│    Si MAX_ATTEMPTS agotados:                                    │
+│    ├─ EBPublisher.PutEvent → DOMAIN_FAULT_ESCALATED (FATAL)     │
+│    └─ DLQClient.Send → metri-echo-dlq                           │
 │                                                                 │
-│  SQS DLQ: metri-echo-dlq (retención 14 días)                  │
-│    → PagerDuty via EventBridge PagerDutyRule + análisis forense│
+│  SQS DLQ: metri-echo-dlq (retención 14 días)                    │
+│    → PagerDuty via EventBridge PagerDutyRule + análisis forense │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -910,5 +910,5 @@ metri-engine (Lambda Clojure)
 
 - **Contrato de entrada**: `DOMAIN_FAULT_DETECTED` — publicado por [`10_FASE_GESTION_ERRORES_EDA.md`](10_FASE_GESTION_ERRORES_EDA.md)
 - **Schema de errores persistidos**: [`models/domain_fault.json`](models/domain_fault.json)
-- **Catálogo de errores retryables**: `metri-engine/resources/error_catalog.edn` campo `:retryable?`
+- **Catálogo de errores retryables**: `metri-engine/config/errors/error_catalog.toml` campo `retryable`
 - **Patrón**: [`COMPONENTE_EXTERNO_01_EVENT_ROUTER.md`](COMPONENTE_EXTERNO_01_EVENT_ROUTER.md) — mismo stack Golang/SAM

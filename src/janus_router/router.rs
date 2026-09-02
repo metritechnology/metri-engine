@@ -74,30 +74,10 @@ impl JanusRouter {
         })?;
 
         let schema_json = serde_json::to_value(model).unwrap_or(json!({}));
-
-        // 2. Validar payload (solo si no es Bulk)
-        // [PORTED_FROM: (codice/validate-payload schema payload entity-type {})]
         let is_bulk = ctx.request.contains_key("data");
-        if !is_bulk {
-            validator::validate_entity_type(&entity_type)?;
-        }
 
-        // 3. Pre-checks del Códice
-        // [PORTED_FROM: (cond (true? (get schema :write_path_locked)) ...)]
-        if schema_json.get("write_path_locked").and_then(|v| v.as_bool()).unwrap_or(false) {
-            warn!("[JanusRouter] write_path_locked=true | entity: {entity_type}");
-            return Err(DomainError::janus(
-                ErrorCode::JnsLock001,
-                format!("write_path_locked: '{entity_type}' no acepta mutaciones"),
-            ));
-        }
-        if schema_json.get("is_system_seeded").and_then(|v| v.as_bool()).unwrap_or(false) {
-            warn!("[JanusRouter] is_system_seeded=true | entity: {entity_type}");
-            return Err(DomainError::janus(
-                ErrorCode::JnsSeed001,
-                format!("is_system_seeded: '{entity_type}' es de solo-lectura"),
-            ));
-        }
+        // 2 & 3. Validar payload y verificar locks/reglas de esquema (SRP)
+        self.validate_and_check_locks(&entity_type, &schema_json, is_bulk)?;
 
         // 4. Resolver engine desde el Códice
         let engine = registry.get_engine(&entity_type).ok_or_else(|| {
@@ -112,21 +92,9 @@ impl JanusRouter {
             )
         })?;
 
-        // 5. Enriquecer ctx — tenant_id inyectado (NUNCA del cliente)
+        // 5. Enriquecer ctx — tenant_id inyectado (NUNCA del cliente) (SRP)
         // [PORTED_FROM: (assoc :schema schema :entity-type entity-type ...)]
-        ctx.schema = Some(schema_json);
-        if let Some(obj) = ctx.request.get_mut("payload").and_then(|v| v.as_object_mut()) {
-            obj.insert("tenant_id".to_string(), Value::String(ctx.tenant_id.clone()));
-        }
-        // Bulk: inyectar tenant_id en cada row del array :data
-        // [PORTED_FROM: (update-in [:request :data] #(mapv (fn [row] (assoc row :tenant_id ...)) %))]
-        if let Some(Value::Array(rows)) = ctx.request.get_mut("data") {
-            for row in rows.iter_mut() {
-                if let Some(obj) = row.as_object_mut() {
-                    obj.insert("tenant_id".to_string(), Value::String(ctx.tenant_id.clone()));
-                }
-            }
-        }
+        self.enrich_context_metadata(&mut ctx, schema_json);
 
         info!(
             engine = ?engine,
@@ -138,5 +106,55 @@ impl JanusRouter {
         // 6. Despachar al canal
         // [PORTED_FROM: (.route channel safe-ctx)]
         channel.route(ctx).await
+    }
+
+    /// Valida que la entidad exista en el catálogo y comprueba bloqueos o estados de solo lectura de forma unificada.
+    fn validate_and_check_locks(
+        &self,
+        entity_type: &str,
+        schema_json: &Value,
+        is_bulk: bool,
+    ) -> Result<(), DomainError> {
+        if !is_bulk {
+            validator::validate_entity_type(entity_type)?;
+        }
+
+        if !is_bulk && schema_json.get("write_path_locked").and_then(|v| v.as_bool()).unwrap_or(false) {
+            warn!("[JanusRouter] write_path_locked=true | entity: {entity_type}");
+            return Err(DomainError::janus(
+                ErrorCode::JnsLock001,
+                format!("write_path_locked: '{entity_type}' no acepta mutaciones"),
+            ));
+        }
+
+        if schema_json.get("is_system_seeded").and_then(|v| v.as_bool()).unwrap_or(false) {
+            warn!("[JanusRouter] is_system_seeded=true | entity: {entity_type}");
+            return Err(DomainError::janus(
+                ErrorCode::JnsSeed001,
+                format!("is_system_seeded: '{entity_type}' es de solo-lectura"),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Enriquece de forma atómica el contexto inyectando metadatos de esquema y forzando el ID del Tenant del sistema en el payload.
+    fn enrich_context_metadata(&self, ctx: &mut IopContext, schema_json: Value) {
+        ctx.schema = Some(schema_json);
+        let tenant_id = ctx.tenant_id.clone();
+
+        if let Some(obj) = ctx.request.get_mut("payload").and_then(|v| v.as_object_mut()) {
+            obj.insert("tenant_id".to_string(), Value::String(tenant_id.clone()));
+        }
+
+        // Bulk: inyectar tenant_id en cada row del array :data
+        // [PORTED_FROM: (update-in [:request :data] #(mapv (fn [row] (assoc row :tenant_id ...)) %))]
+        if let Some(Value::Array(rows)) = ctx.request.get_mut("data") {
+            for row in rows.iter_mut() {
+                if let Some(obj) = row.as_object_mut() {
+                    obj.insert("tenant_id".to_string(), Value::String(tenant_id.clone()));
+                }
+            }
+        }
     }
 }

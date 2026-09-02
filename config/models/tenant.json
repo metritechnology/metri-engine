@@ -3,13 +3,28 @@
   "engine": "oltp",
   "is_system": true,
   "track_history": true,
-  "doc": "Represents a platform tenant. The Tenant Master is identified by its UUID matching METRI_MASTER_TENANT_ID (env var) \u2014 NOT by any mutable database flag. All other tenants are strictly isolated from each other.",
+  "is_sequence_scope_provider": true,
+  "doc": "Represents a platform tenant. The Tenant Master is identified by its UUID matching METRI_MASTER_TENANT_ID (env var). All other tenants are strictly isolated from each other.",
   "attributes": [
     {
       "name": "name",
       "type": "string",
       "fts": true,
-      "required": true
+      "required": true,
+      "description": "Nombre de la organización o empresa arrendataria (Tenant)."
+    },
+    {
+      "name": "tag",
+      "type": "string",
+      "unique": "identity",
+      "pattern": "^TNT-[A-Z0-9-]{3,15}$",
+      "fts": true,
+      "auto_generate": {
+        "strategy": "stochastic_base36",
+        "prefix": "TNT-",
+        "length": 6
+      },
+      "description": "Código autogenerado de negocio único para el tenant."
     },
     {
       "name": "status",
@@ -17,10 +32,13 @@
       "options": [
         "ACTIVE",
         "SUSPENDED",
+        "PENDING_PROVISIONING",
         "DELETED"
       ],
+      "default_value": "ACTIVE",
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Estado de licenciamiento y operativo del tenant."
     },
     {
       "name": "tier",
@@ -28,36 +46,112 @@
       "options": [
         "STARTER",
         "PROFESSIONAL",
-        "ENTERPRISE"
+        "ENTERPRISE",
+        "CUSTOM"
       ],
+      "default_value": "STARTER",
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Nivel de suscripción comercial de la plataforma."
     },
     {
-      "name": "storage_region",
-      "type": "string",
-      "required": true
+      "name": "require_mfa_for_new_users",
+      "type": "boolean",
+      "default_value": "false",
+      "is_dimension": true,
+      "description": "Política de seguridad: Exige la configuración obligatoria de autenticación de doble factor (MFA/2FA) a todos los usuarios nuevos que se registren o inviten en la organización."
+    },
+    {
+      "name": "mfa_policy",
+      "type": "enum",
+      "options": [
+        "DISABLED",
+        "OPTIONAL",
+        "REQUIRED_FOR_NEW_USERS",
+        "REQUIRED_FOR_ALL_USERS",
+        "ENFORCED_FOR_ADMINS"
+      ],
+      "default_value": "OPTIONAL",
+      "is_dimension": true,
+      "description": "Política global de autenticación multifactor (MFA) aplicable al tenant."
+    },
+    {
+      "name": "mfa_allowed_methods",
+      "type": "array",
+      "of": "string",
+      "description": "Métodos de MFA permitidos por el tenant (ej: ['TOTP', 'WEBAUTHN_PASSKEY', 'SECURITY_KEYS', 'SMS'])."
+    },
+    {
+      "name": "session_max_idle_minutes",
+      "type": "integer",
+      "default_value": 30,
+      "description": "Tiempo máximo en minutos de inactividad de sesión antes de exigir re-autenticación."
     },
     {
       "name": "industry",
       "type": "string",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Sector industrial o vertical de la organización (ej: 'Manufactura', 'Alimentos', 'Energía')."
+    },
+    {
+      "name": "timezone",
+      "type": "string",
+      "default_value": "America/Mexico_City",
+      "is_dimension": true,
+      "description": "Zona horaria por defecto del tenant para notificaciones y agendamiento de mantenimiento."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:currency",
+      "pattern": "^[A-Z]{3}$",
+      "default_value": "USD",
+      "is_dimension": true,
+      "description": "Moneda principal de operación bajo ISO 4217, validada contra el sistema terminológico."
+    },
+    {
+      "name": "language",
+      "type": "string",
+      "default_value": "es",
+      "is_dimension": true,
+      "description": "Idioma preferido por defecto para notificaciones y plantillas."
     },
     {
       "name": "billing_admin_email",
       "type": "string",
       "required": true,
-      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "description": "Correo del administrador de facturación y contacto principal."
     },
     {
-      "name": "logo_url",
-      "type": "string",
-      "pattern": "^https?:\\/\\/.*"
+      "name": "logo",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "one",
+      "description": "Referencia al archivo de imagen guardado del logotipo corporativo (File entity)."
+    }
+  ],
+  "event_rules": [
+    {
+      "rule_code": "TENANT_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.tenant.created",
+      "description": "Notificación sistémica al aprovisionar un nuevo tenant."
     },
     {
-      "name": "sequence_counters",
-      "type": "json",
-      "is_system": true
+      "rule_code": "TENANT_STATUS_CHANGED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [
+        {
+          "field_name": "status",
+          "operator": "neq",
+          "target_value": ""
+        }
+      ],
+      "detail_type_output": "system.tenant.status_changed",
+      "description": "Evento de auditoría al suspender, reactivar o cambiar el estado del tenant."
     }
   ]
 }

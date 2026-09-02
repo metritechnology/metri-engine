@@ -1,0 +1,104 @@
+{
+  "entity": "shift_pattern",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "Nombre descriptivo del patrón de turno (ej: 'Turno Matutino 5x2', 'Guardia 24x48')."
+    },
+    {
+      "name": "user_id",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Técnico al que rige. Vacío si el patrón es de cuadrilla."
+    },
+    {
+      "name": "user_group_id",
+      "type": "reference",
+      "entityRef": "user_group",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Cuadrilla a la que rige. El patrón individual gana sobre el de cuadrilla (CAP-R4)."
+    },
+    {
+      "name": "grammar",
+      "type": "enum",
+      "options": [
+        "cronPosix"
+      ],
+      "default_value": "cronPosix",
+      "description": "Gramática de la recurrencia. Hoy solo la del contrato del calendario; ver §3.6."
+    },
+    {
+      "name": "cron_expression",
+      "type": "string",
+      "required": true,
+      "description": "Inicio de cada turno. La misma gramática que expande el calendario declarativo."
+    },
+    {
+      "name": "iana_timezone",
+      "type": "string",
+      "required": true,
+      "description": "Zona en la que se expande. Obligatoria por el mismo motivo que en preventive_maintenance: sin ella el cron se expande en UTC y el turno de noche se desplaza."
+    },
+    {
+      "name": "span_minutes",
+      "type": "decimal",
+      "required": true,
+      "description": "Duración del turno desde cada ocurrencia. Un turno que cruza medianoche es span > los minutos que quedan del día, no dos filas."
+    },
+    {
+      "name": "productive_factor",
+      "type": "decimal",
+      "default_value": 1.0,
+      "description": "Fracción del turno realmente asignable (traslados, reuniones, pausas). 1.0 declara la jornada 100 % productiva: es falso en toda planta, pero es una mentira visible y no un descuento inventado por el sistema."
+    },
+    {
+      "name": "reactive_reserve_pct",
+      "type": "decimal",
+      "default_value": 0.0,
+      "description": "Fracción de la capacidad productiva reservada para trabajo no planificable. Ver §3.5."
+    },
+    {
+      "name": "effective_from",
+      "type": "epoch",
+      "required": true,
+      "index": true,
+      "description": "Fecha y hora desde la cual rige este patrón de turno."
+    },
+    {
+      "name": "effective_to",
+      "type": "epoch",
+      "index": true,
+      "description": "Vacío = vigente. Un cambio de rol de turnos cierra el patrón viejo y abre uno nuevo; no se edita en sitio (CAP-R3)."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "ACTIVE",
+        "DRAFT",
+        "RETIRED"
+      ],
+      "default_value": "ACTIVE",
+      "is_dimension": true,
+      "description": "Estado del ciclo de vida del patrón de turno."
+    }
+  ],
+  "event_rules": [
+    {
+      "rule_code": "SHIFT_PATTERN_CHANGED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [],
+      "detail_type_output": "system.shift_pattern.changed",
+      "description": "La capacidad proyectada cambió: obliga a reproyectar el capacity_ledger (§5.3)."
+    }
+  ]
+}

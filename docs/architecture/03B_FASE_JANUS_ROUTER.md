@@ -235,6 +235,23 @@ Antes de definir `OLTPChannel`, se establece el protocolo que hace extensibles l
 
 ### III.2 — `SagaBuilder` — Proyección de Mantenimiento Programado
 
+El `scheduled_job` proyectado aquí es **consumido por un componente externo** (Metri Schedulers, Componente Externo 05), así que debe validar contra `models/scheduled_job.json` sin excepciones: `trigger_type`, `trigger_expression`, `action_type` y `action_payload` son `required: true`, y el vínculo con la entidad madre es `parent_entity_ref`.
+
+#### Contrato de `shadow_sagas_mapping`
+
+No es un vector de definiciones de saga: es un **mapa de proyección de atributos**, donde la llave es la ruta destino dentro del `scheduled_job` (admite anidamiento con `.` para entrar al `action_payload`) y el valor es la ruta origen dentro del payload de la entidad madre.
+
+```json
+"shadow_sagas_mapping": {
+  "target_group_id":                     ["template_id", "assigned_group_id"],
+  "action_payload.content.template_id":  ["template_id", "notification_template_code"]
+}
+```
+
+#### Fan-out por pre-notificación
+
+Las entidades madre declaran una matriz de avisos previos (`prenotify_before_minutes` en `preventive_maintenance`, `prenotify_minutes_array` en `reminder`). El builder emite **un `scheduled_job` por cada offset, más el job principal en `T=0`**: `[1440, 30]` produce tres jobs.
+
 ```clojure
 ;; ns: metri.janus.channels.projections.saga
 (defrecord SagaBuilder []
@@ -242,16 +259,59 @@ Antes de definir `OLTPChannel`, se establece el protocolo que hace extensibles l
   (applicable? [_ schema]
     ;; Aplica solo si el modelo declara shadow_sagas_mapping
     (some? (:shadow_sagas_mapping schema)))
-  (build [_ schema payload parent-ulid]
-    ;; Genera todos los scheduled_job(s) declarados en shadow_sagas_mapping
-    (mapv (fn [saga-def]
-            {:db/id                (d/tempid :db.part/user)
-             :scheduled_job/ulid   (ulid/generate)
-             :scheduled_job/owner  parent-ulid
-             :scheduled_job/type   (keyword (:job_type saga-def))
-             :scheduled_job/due_at (resolve-due-at saga-def payload)})
-          (:shadow_sagas_mapping schema))))
+
+  (build [_ schema payload parent-id]
+    (let [mapping   (:shadow_sagas_mapping schema)
+          ;; 1. Trigger derivado de la entidad madre — nunca hardcodeado
+          [trg-type trg-expr] (resolve-trigger schema payload)
+          tz        (:iana_timezone payload)
+          ;; 2. Matriz de pre-notificación + el disparo principal (offset 0)
+          offsets   (conj (vec (prenotify-offsets schema payload)) 0)]
+      (mapv
+        (fn [offset-min]
+          (let [expr (shift-expression trg-type trg-expr offset-min tz)]
+            (-> {:db/id                          (d/tempid :db.part/user)
+                 :scheduled_job/id               (uuid/generate)
+                 :scheduled_job/parent_entity_ref parent-id
+                 :scheduled_job/trigger_type     trg-type
+                 :scheduled_job/trigger_expression expr
+                 :scheduled_job/iana_timezone    tz
+                 :scheduled_job/action_type      :DISPATCH_NOTIFICATION
+                 :scheduled_job/action_payload   {:content {} :offset_minutes offset-min}
+                 :scheduled_job/status           :ACTIVE
+                 ;; Incluye el offset: dos jobs del mismo padre no colisionan
+                 :scheduled_job/idempotency_hash (sha256 parent-id expr offset-min)}
+                ;; 3. Proyección declarativa del mapping sobre el resultado
+                (apply-saga-mapping mapping payload))))
+        offsets))))
+
+(defn- resolve-trigger
+  "Deriva [trigger_type trigger_expression] de la entidad madre.
+   Ninguna de las tres ramas inventa valores: todas leen atributos declarados."
+  [schema payload]
+  (cond
+    (:cron_expression payload)     [:CRON        (:cron_expression payload)]
+    (:meter_based_trigger payload) [:TELEMETRY   (telemetry-expr (:meter_based_trigger payload))]
+    (:reminder_datetime payload)   [:EXACT_TIME  (iso->epoch (:reminder_datetime payload))]
+    (:next_due_date payload)       [:EXACT_TIME  (str (:next_due_date payload))]
+    :else (throw (ex-info "Entidad con shadow_sagas_mapping sin fuente de trigger"
+                          {:entity (:entity schema) :code :JNS_SAGA_002}))))
+
+(defn- apply-saga-mapping
+  "Escribe cada ruta destino del mapping con el valor leído de la ruta origen.
+   Las llaves con '.' descienden dentro del action_payload."
+  [mapping payload job]
+  (reduce-kv (fn [acc dest-path src-path]
+               (let [v (get-in payload (mapv keyword src-path))]
+                 (if (some? v)
+                   (assoc-in acc (mapv keyword (str/split (name dest-path) #"\.")) v)
+                   acc)))
+             job mapping))
 ```
+
+> **`telemetry-expr`** traduce `meter_based_trigger` a la gramática canónica `<METRIC_CODE> <OPERADOR> <VALOR>` que exige Metri Schedulers (Componente Externo 05 §3.2), aplicando `advance_notice_meter_value` como holgura mecánica anticipada.
+>
+> **Nota de identidad:** el `scheduled_job` se proyecta con `:scheduled_job/id` (`uuid`, según el modelo), no con `ulid`. Un ULID aquí rompería la construcción del nombre de Schedule `metri-job-{id}` del lado de Chronos.
 
 ### III.3 — `CalendarBuilder` — Proyección de Eventos de Calendario
 
@@ -683,7 +743,7 @@ NO → omitido (labor_log, IoT, sequence_registry)
 | `unique: value`             | 6.1  | Rechaza si el valor ya existe en Datahike              | `:JNS_CONFLICT_001`   |
 | `track_history: false`      | 6.1  | Muta in-place — sin delta histórico en Datahike        | (nunca falla)         |
 | `disable_eda: true`         | 7.1  | Omite completamente el Outbox — sin evento SQS         | (nunca falla)         |
-| `shadow_sagas_mapping`      | 6.1  | Proyecta `scheduled_job` en la misma TX ACID           | `:JNS_SAGA_001`       |
+| `shadow_sagas_mapping`      | 6.1  | Proyecta N `scheduled_job` en la misma TX ACID (fan-out por pre-notificación) | `:JNS_SAGA_001` / `:JNS_SAGA_002` |
 | `calendar_mapping`          | 6.1  | Proyecta `calendar_event` en la misma TX ACID          | `:JNS_CAL_001`        |
 
 ---
@@ -950,6 +1010,7 @@ sequenceDiagram
 | `:JNS_TX_001`       | 6.1  | Error de `d/transact` en Datahike                          | `INTERNAL`          |
 | `:JNS_CONFLICT_001` | 6.1  | Conflicto `unique: value` — valor duplicado en Datahike    | `ABORTED`           |
 | `:JNS_SAGA_001`     | 6.1  | Error al proyectar `shadow_sagas_mapping` en la TX ACID    | `INTERNAL`          |
+| `:JNS_SAGA_002`     | 6.1  | Entidad con `shadow_sagas_mapping` sin fuente de trigger (`cron_expression`, `reminder_datetime`, `next_due_date` ni `meter_based_trigger`) | `FAILED_PRECONDITION` |
 | `:JNS_CAL_001`      | 6.1  | Error al proyectar `calendar_mapping` en la TX ACID        | `INTERNAL`          |
 | `:JNS_OLTP_001`     | 6.1  | Error general de escritura en `OLTPChannel`                | `INTERNAL`          |
 | `:JNS_OLAP_001`     | —    | `rpc Transact` enviado a canal OLAP (`write_path_locked`)  | `PERMISSION_DENIED` |
@@ -1105,7 +1166,12 @@ test/metri/janus/
 | `outbox-not-applicable-when-eda-disabled` | `outbox_test.clj`   | `disable_eda: true`                          | `applicable?` = false                      |
 | `outbox-build-returns-pending-fact`       | `outbox_test.clj`   | schema + payload                             | Mapa con `:outbox/status :PENDING`         |
 | `saga-applicable-only-with-mapping`       | `saga_test.clj`     | `shadow_sagas_mapping` presente              | `applicable?` = true                       |
-| `saga-build-one-job-per-mapping-entry`    | `saga_test.clj`     | 3 sagas en mapping                           | Retorna vector de 3 mapas `scheduled_job`  |
+| `saga-fanout-por-prenotify`               | `saga_test.clj`     | `prenotify_before_minutes: [1440, 30]`       | Retorna 3 `scheduled_job`: dos avisos previos + el disparo en T=0 |
+| `saga-mapping-proyecta-rutas-anidadas`    | `saga_test.clj`     | mapping con `action_payload.content.template_id` | El valor de la madre aterriza dentro del `action_payload` |
+| `saga-trigger-desde-cron-expression`      | `saga_test.clj`     | `preventive_maintenance` con `cron_expression` | `trigger_type: CRON` y `trigger_expression` copiado |
+| `saga-trigger-desde-reminder-datetime`    | `saga_test.clj`     | `reminder` con `reminder_datetime` ISO 8601  | `trigger_type: EXACT_TIME` y epoch UTC     |
+| `saga-sin-fuente-de-trigger-falla`        | `saga_test.clj`     | mapping presente, sin cron/datetime/meter    | Lanza `:JNS_SAGA_002`                      |
+| `saga-valida-contra-modelo`               | `saga_test.clj`     | cualquier proyección                         | Malli valida el mapa contra `scheduled_job.json` sin campos ausentes |
 | `calendar-applicable-only-with-mapping`   | `calendar_test.clj` | `calendar_mapping` presente                  | `applicable?` = true                       |
 | `calendar-build-events`                   | `calendar_test.clj` | calendar_mapping con 2 entries               | Retorna vector de 2 mapas `calendar_event` |
 | `registry-filters-applicable`             | `registry_test.clj` | `[OutboxBuilder, NoOpBuilder]`               | Solo OutboxBuilder produce hechos          |

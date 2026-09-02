@@ -1,0 +1,78 @@
+{
+  "entity": "approval_instance",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "policy_id",
+      "type": "reference",
+      "entityRef": "approval_policy",
+      "cardinality": "one",
+      "required": true
+    },
+    {
+      "name": "target_entity_name",
+      "type": "string",
+      "required": true,
+      "is_dimension": true,
+      "description": "Nombre del modelo objetivo (ej: 'work_order')."
+    },
+    {
+      "name": "target_entity_id",
+      "type": "uuid",
+      "required": true,
+      "index": true,
+      "description": "ID primario de la entidad que está siendo evaluada."
+    },
+    {
+      "name": "canonical_state",
+      "type": "enum",
+      "options": [
+        "SIN_APROBACION",
+        "APROBADO",
+        "RECHAZADO"
+      ],
+      "default_value": "SIN_APROBACION",
+      "required": true,
+      "is_dimension": true,
+      "description": "Estado canónico tripartito del sistema."
+    },
+    {
+      "name": "sub_state",
+      "type": "enum",
+      "options": [
+        "DRAFT",
+        "PENDING_APPROVAL_TIER_1",
+        "PENDING_APPROVAL_TIER_2",
+        "PENDING_APPROVAL_TIER_3",
+        "APPROVED",
+        "REJECTED",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "default_value": "DRAFT",
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "current_tier_level",
+      "type": "integer",
+      "default_value": "1",
+      "required": true
+    },
+    {
+      "name": "idempotency_hash",
+      "type": "string",
+      "unique": "identity",
+      "required": true,
+      "description": "Hash único SHA-256 para prevenir concurrencia y procesamientos duplicados."
+    },
+    {
+      "name": "sla_due_date",
+      "type": "epoch",
+      "index": true,
+      "description": "Timestamp límite de vencimiento del SLA de la aprobación."
+    }
+  ]
+}

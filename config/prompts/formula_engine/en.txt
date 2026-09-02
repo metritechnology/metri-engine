@@ -1,0 +1,68 @@
+METRI FORMULA ENGINE — CONTEXT & RULES
+
+The Metri Formula Engine is a row-by-row scalar mathematical expression evaluator in Rust.
+
+METRI GOLDEN RULE (CRITICAL):
+- Formulas are row-by-row scalar calculations.
+- Aggregations reduce multiple rows to a single value (AVG, SUM, COUNT, MIN, MAX, MEDIAN, STD_DEV, VARIANCE, PERCENTILE_90/95/99, CORRELATION, LINEAR_REGRESSION).
+- NEVER use aggregation functions like AVG, SUM, COUNT, MIN, MAX, MEDIAN, etc. INSIDE a formula string.
+- If the user asks for the average or sum of a derived calculation, use the two-phase pipeline:
+  1. Define the scalar formula in "measures" with an alias name (e.g. "efficiency").
+  2. Apply the aggregation in "metrics" referencing that alias name as the attribute (e.g. attribute: "efficiency", aggregation: "AVG").
+
+FORMULA SYNTAX:
+- Arithmetic operators: + (add), - (subtract/unary negation), * (multiply), / (divide), % (modulo), ^ (exponentiation).
+- Parentheses: () to group and enforce precedence.
+- Variables/Attributes: Bare (e.g. `health_score`) or Namespace (e.g. `asset/health_score`).
+- Numeric literals: Integers (`100`) or decimals (`3.14`). Scientific notation or commas are not supported.
+
+VALID FUNCTIONS CATALOG:
+- ABS(x): Absolute value.
+- ROUND(x) or ROUND(x, d): Round to 'd' decimal places.
+- CEIL(x): Round up.
+- FLOOR(x): Round down.
+- POWER(x, n): Raise x to power n (equivalent to x ^ n).
+- SQRT(x): Square root (x must be >= 0).
+- LOG(x): Natural logarithm.
+- LOG10(x): Log base 10.
+- MOD(x, y): Remainder of x / y.
+- SIGN(x): Returns -1.0, 0.0, or 1.0.
+- NULLIF(x, y): Returns NULL if x == y, else returns x.
+- COALESCE(x, y, ...): Returns the first non-null argument.
+- IF(cond, then, else): If cond != 0 returns then, else else.
+- GREATEST(x, y, ...): Maximum value of the set.
+- LEAST(x, y, ...): Minimum value of the set.
+- CLAMP(x, lo, hi): Restricts x to the range [lo, hi].
+
+SAFE DIVISION (NULLIF PATTERN):
+- To prevent division by zero errors, always protect denominators: `numerator / NULLIF(denominator, 0)`.
+- To return 0 when the denominator is 0: `COALESCE(numerator / NULLIF(denominator, 0), 0)`.
+
+COMMON RECIPES:
+1. Operating Efficiency:
+   - Formula: `(asset/uptime_hours / NULLIF(asset/total_hours, 0)) * 100`
+   - Metric: AVG of efficiency.
+2. Maintenance ROI:
+   - Formula: `(asset/revenue - work_order/total_cost) / NULLIF(work_order/total_cost, 0) * 100`
+3. Normalized & Clamped Score:
+   - Formula: `CLAMP((health_score * 0.5 + COALESCE(reliability, 50) * 0.5), 0, 100)`
+
+QUERYREQUEST STRUCTURE:
+```json
+{
+  "measures": [
+    {
+      "name": "alias_name",
+      "formula": "scalar_expression"
+    }
+  ],
+  "metrics": [
+    {
+      "entity": "primary_entity",
+      "attribute": "alias_name",
+      "aggregation": "AVG | SUM | COUNT | etc",
+      "name": "result_name"
+    }
+  ]
+}
+```

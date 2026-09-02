@@ -1,0 +1,51 @@
+[
+  {
+    "name": "telemetry",
+    "description": "Si el usuario pregunta por consumos de energía/agua, histórico de datos, lecturas, sensores, gráficos analíticos, fórmulas físicas (eficiencia, carga térmica) o reportes de sostenibilidad/ESG. / If the user asks about energy/water consumption, data history, readings, sensors, analytical charts, physical formulas, or ESG/sustainability reports.",
+    "keywords": ["consumo", "energia", "energía", "agua", "esquema", "esquemas", "sensor", "sensores", "medición", "medicion", "mediciones", "historial", "gráfico", "grafico", "gráficos", "graficos", "esg", "co2", "temperatura", "caudal", "eficiencia", "fórmula", "formula", "fórmulas", "formulas", "analítica", "analitica", "consumption", "energy", "water", "schema", "schemas", "measurement", "measurements", "history", "chart", "charts", "graph", "graphs", "flow", "formulas", "analytics"],
+    "file": "telemetry.txt",
+    "tools": ["resolve_time_context", "search_schemas", "get_location_by_id"]
+  },
+  {
+    "name": "locations",
+    "description": "Si el usuario pregunta por plantas, activos, celdas, áreas, líneas, jerarquías de ubicaciones físicas, estados operativos, o listados de la estructura física. / If the user asks about plants, assets, cells, areas, lines, hierarchies, or physical structure lists.",
+    "keywords": ["planta", "plantas", "ubicación", "ubicacion", "ubicaciones", "celda", "celdas", "línea", "linea", "líneas", "lineas", "área", "area", "áreas", "areas", "activo", "activos", "estación", "estacion", "estaciones", "torno", "tornos", "maquina", "máquina", "maquinaria", "tag", "tags", "plant", "plants", "location", "locations", "cell", "cells", "line", "lines", "area", "areas", "asset", "assets", "station", "stations"],
+    "file": "locations.txt",
+    "tools": ["list_locations", "get_location_by_id", "navigate_to_view"]
+  },
+  {
+    "name": "navigation",
+    "description": "Si el usuario solicita ir a una pantalla, navegar, abrir una pestaña, cambiar de página o ver una vista del dashboard/analytics. / If the user requests to go to a screen, navigate, open a tab, change page, or view dashboard/analytics.",
+    "keywords": ["ve a", "ir a", "navega", "navegación", "navegacion", "pantalla", "vista", "ruta", "abrir", "abre", "dirige", "redirecciona", "formulario", "/dashboard", "/analytics", "/assets", "/locations", "/tenants", "/meter-readings", "/audit", "/metri-q", "go to", "navigate", "screen", "view", "route", "open", "redirect", "form", "muestra", "mostrar", "lista", "listar", "busca", "buscar", "filtra", "filtrar", "show", "list", "filter"],
+    "file": "navigation.txt",
+    "tools": ["navigate_to_view"]
+  },
+  {
+    "name": "form_autofill",
+    "description": "Si el usuario solicita crear, editar, modificar, completar o rellenar un formulario o una entidad (como un tenant, activo, ubicación). / If the user requests to create, edit, modify, complete, or fill a form or an entity.",
+    "keywords": ["crea", "crear", "nuevo", "nueva", "edita", "editar", "rellena", "rellenar", "completa", "completar", "autofill", "formulario", "tenant", "tenants", "activo", "activos", "ubicación", "ubicacion", "create", "new", "edit", "modify", "fill", "autofill", "form", "asset", "assets", "location", "locations"],
+    "file": "form_autofill.txt",
+    "tools": ["autofill_active_form", "navigate_to_view", "list_tenants", "list_locations", "list_assets"]
+  },
+  {
+    "name": "tenants",
+    "description": "Si el usuario pregunta por cuentas corporativas, inquilinos, tenants, tiers de suscripción (starter, professional, enterprise), estados de cuentas o detalles de facturación/región de almacenamiento. / If the user asks about corporate accounts, tenants, subscription tiers, account statuses, or billing/storage details.",
+    "keywords": ["tenant", "tenants", "cuenta", "cuentas", "cuenta corporativa", "cuentas corporativas", "suscripción", "suscripcion", "suscripciones", "starter", "professional", "enterprise", "facturación", "facturacion", "correo de facturación", "region de almacenamiento", "región de almacenamiento", "account", "accounts", "corporate account", "corporate accounts", "subscription", "subscriptions", "billing", "billing email", "storage region"],
+    "file": "tenants.txt",
+    "tools": ["list_tenants", "get_tenant_by_id", "navigate_to_view"]
+  },
+  {
+    "name": "deletions",
+    "description": "Si el usuario solicita eliminar, borrar, remover o dar de baja un recurso o entidad. / If the user requests to delete, remove, or decommission a resource or entity.",
+    "keywords": ["elimina", "eliminar", "borra", "borrar", "remueve", "remover", "delete", "remove", "decommission", "dará de baja", "dar de baja"],
+    "file": "deletions.txt",
+    "tools": ["list_assets", "list_locations", "list_tenants", "get_location_by_id", "get_asset_by_id"]
+  },
+  {
+    "name": "formula_engine",
+    "description": "Si el usuario pregunta por fórmulas matemáticas, cálculos personalizados, medidas derivadas, indicadores ponderados o aplicar funciones como CLAMP, ROUND, NULLIF en las consultas. / If the user asks about mathematical formulas, custom calculations, derived measures, weighted indicators, or applying functions like CLAMP, ROUND, NULLIF in queries.",
+    "keywords": ["fórmula", "formula", "fórmulas", "formulas", "cálculo", "calculo", "cálculos", "calculos", "medida", "medidas", "calcular", "ponderado", "clamp", "round", "nullif", "coalesce", "mathematical", "custom calculations", "derived measures", "weighted indicator", "calculate"],
+    "file": "formula_engine.txt",
+    "tools": ["search_schemas"]
+  }
+]

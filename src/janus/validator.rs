@@ -51,7 +51,7 @@ pub fn validate_query_request(payload: &Value) -> Result<(), DomainError> {
 
     // queries: mapa no vacío
     let queries = obj.get("queries");
-    if queries.map(|q| q.is_null() || (q.is_object() && q.as_object().unwrap().is_empty())).unwrap_or(true) {
+    if queries.map(|q| q.is_null() || (q.is_object() && q.as_object().map(|obj| obj.is_empty()).unwrap_or(true))).unwrap_or(true) {
         return Err(DomainError::janus(
             ErrorCode::JanusVal001,
             "queries vacío — la request no tiene sub-queries definidas",
@@ -143,30 +143,4 @@ pub fn validate_transaction_request(payload: &Value) -> Result<(), DomainError> 
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn validate_tenant_rejects_empty() {
-        assert!(validate_tenant("").is_err());
-        assert!(validate_tenant("unknown-tenant").is_err());
-    }
-
-    #[test]
-    fn validate_tenant_accepts_valid() {
-        assert!(validate_tenant("tenant-abc-123").is_ok());
-    }
-
-    #[test]
-    fn validate_query_request_requires_queries() {
-        let payload = json!({"tenant_id": "t1", "queries": {}});
-        assert!(validate_query_request(&payload).is_err());
-
-        let payload = json!({"tenant_id": "t1", "queries": {"q1": {"entity": "WorkOrder"}}});
-        assert!(validate_query_request(&payload).is_ok());
-    }
 }

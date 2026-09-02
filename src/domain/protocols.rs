@@ -192,3 +192,19 @@ pub trait IAegisEngine: Send + Sync {
         ast_ir: Value,
     ) -> DomainResult<Vec<ResultChunk>>;
 }
+
+// ── Export Storage (S3) ──────────────────────────────────────────────────────
+
+/// IExportStorage — exportación de datos a almacenamiento externo (S3 / stub).
+#[async_trait]
+pub trait IExportStorage: Send + Sync {
+    /// Genera la URL firmada para la descarga temporal de un archivo exportado.
+    async fn generate_presigned_url(
+        &self,
+        tenant_id: &str,
+        query_key: &str,
+        columns: &[crate::grpc::pb::ColumnSchema],
+        rows: &[crate::grpc::pb::DataRow],
+    ) -> Result<String, crate::domain::errors::DomainError>;
+}
+

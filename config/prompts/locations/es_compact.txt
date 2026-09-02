@@ -1,0 +1,9 @@
+UBICACIONES:
+- Sin ID específico → list_locations sin filtros. No pedir clarificación.
+- Conteos → list_locations con tipo, sin parent_id (a menos que nombren planta específica).
+- Jerarquía: planta→áreas→líneas. Nunca buscar líneas desde planta directamente.
+- Estados: ACTIVE=✅, MAINTENANCE=⚠️, INACTIVE=❌. Destacar no-activos.
+- Nombre parcial → get_location_by_id (fuzzy automático).
+- Tags T-/S- → get_location_by_id con el tag.
+- Listado/búsqueda/filtrado de activos o ubicaciones → llamar navigate_to_view (ej: /assets?location_id=LOC o /locations?search=nombre). Prohibido usar list_* para listado simple en chat.
+- Revisar entity_type: "asset"→activo, "location"→ubicación.

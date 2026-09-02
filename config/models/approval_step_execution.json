@@ -1,0 +1,66 @@
+{
+  "entity": "approval_step_execution",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "approval_instance_id",
+      "type": "reference",
+      "entityRef": "approval_instance",
+      "cardinality": "one",
+      "required": true,
+      "index": true
+    },
+    {
+      "name": "tier_level",
+      "type": "integer",
+      "required": true,
+      "description": "Nivel de aprobación evaluado en este paso (1, 2 o 3)."
+    },
+    {
+      "name": "actor_user_id",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "required": true,
+      "is_dimension": true,
+      "description": "Usuario que depositó el voto o decisión."
+    },
+    {
+      "name": "decision",
+      "type": "enum",
+      "options": [
+        "APPROVE",
+        "REJECT",
+        "DELEGATE"
+      ],
+      "required": true,
+      "is_dimension": true
+    },
+    {
+      "name": "rejection_reason_code",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Código normativo de motivo de rechazo (obligatorio si decision == REJECT)."
+    },
+    {
+      "name": "rejection_comment",
+      "type": "string",
+      "description": "Comentario libre explicativo ingresado por el usuario al rechazar."
+    },
+    {
+      "name": "electronic_signature_id",
+      "type": "reference",
+      "entityRef": "electronic_signature",
+      "cardinality": "one",
+      "description": "Vínculo con la firma electrónica y evidencia criptográfica SHA-256."
+    },
+    {
+      "name": "evaluated_at",
+      "type": "epoch",
+      "required": true,
+      "index": true
+    }
+  ]
+}

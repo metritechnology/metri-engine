@@ -33,6 +33,7 @@ pub enum AttrType {
     Uuid,
     Bytes,
     Enum, // <--- added
+    Json,
     Unknown(String),
 }
 
@@ -41,6 +42,9 @@ impl From<&str> for AttrType {
         match s {
             "string"    => AttrType::String,
             "number"    => AttrType::Number,
+            "integer"   => AttrType::Number,
+            "int"       => AttrType::Number,
+            "long"      => AttrType::Number,
             "epoch"     => AttrType::Epoch,
             "decimal"   => AttrType::Decimal,
             "boolean"   => AttrType::Boolean,
@@ -49,6 +53,7 @@ impl From<&str> for AttrType {
             "uuid"      => AttrType::Uuid,
             "bytes"     => AttrType::Bytes,
             "enum"      => AttrType::Enum,
+            "json"      => AttrType::Json,
             "double"    => AttrType::Decimal,
             "float"     => AttrType::Decimal,
             other       => AttrType::Unknown(other.to_string()),
@@ -82,7 +87,7 @@ pub struct AttributeDescriptor {
     pub attr_type:               AttrType,
     pub label:                   Option<String>,
     pub required:                bool,
-    pub unique:                  Option<String>, // "identity" | "value" | null
+    pub unique:                  Option<String>, // "tenant" | "identity" | "value" | null
     pub indexed:                 bool,           // genera item AVET
     pub fts:                     bool,           // Full-text search index
     pub is_dimension:            bool,           // dimension para OLAP
@@ -92,8 +97,58 @@ pub struct AttributeDescriptor {
     pub is_sequence_scope:       bool,
     pub is_sequence_scope_via:   bool,
     /// Marca PII — sanitizado en error_response (Clojure: :sensitive true).
-    /// [PORTED_FROM: (filter :sensitive (:attributes schema))]
     pub sensitive:               bool,
+    pub auto_generate:           Option<serde_json::Value>,
+    pub validation_regex:        Option<String>,
+    pub default_value:           Option<String>,
+}
+
+/// Ámbito de una restricción de unicidad.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConstraintScope {
+    /// Único dentro del tenant. Es el caso normal.
+    Tenant,
+    /// Único en toda la plataforma (identidades globales).
+    Global,
+}
+
+impl From<&str> for ConstraintScope {
+    fn from(s: &str) -> Self {
+        match s {
+            "global" | "identity" => ConstraintScope::Global,
+            _ => ConstraintScope::Tenant,
+        }
+    }
+}
+
+/// Restricción declarada a nivel de entidad.
+///
+/// Existe porque `unique` es por atributo y no puede expresar
+/// `(tenant_id, plugin_id)`. Esa carencia es la razón física de que dos
+/// entidades `tenant_plugin` pudieran coexistir para el mismo módulo, que fue
+/// el disparador del incidente de `cmms`.
+///
+/// Se declara así:
+///
+/// ```json
+/// "constraints": [
+///   { "type": "unique", "scope": "tenant", "attributes": ["tenant_id", "plugin_id"] }
+/// ]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Constraint {
+    pub kind: ConstraintKind,
+    pub scope: ConstraintScope,
+    /// Atributos que forman la clave, EN EL ORDEN DECLARADO.
+    ///
+    /// El orden importa: forma parte de la clave física, así que reordenarlos
+    /// en el JSON cambia el hash y deja huérfanos los items ya escritos.
+    pub attributes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConstraintKind {
+    Unique,
 }
 
 /// Modelo completo de una entidad del Códice.
@@ -108,6 +163,26 @@ pub struct EntityModel {
     pub attributes:  Vec<AttributeDescriptor>,
     pub event_rules: Vec<serde_json::Value>,
     pub is_sequence_scope_provider: bool,
+    #[serde(default)]
+    pub write_path_locked: bool,
+    #[serde(default)]
+    pub is_system: bool,
+    #[serde(default)]
+    pub disable_eda: bool,
+    /// Mapa de proyección declarativa hacia `scheduled_job`.
+    /// Clave: ruta destino en el scheduled_job (los puntos descienden al action_payload).
+    /// Valor: ruta origen — `[campo]` lee del payload padre;
+    ///        `[campo_ref, attr]` sigue la referencia y lee `attr` de la entidad referenciada.
+    #[serde(default)]
+    pub shadow_sagas_mapping: Option<serde_json::Value>,
+    /// Restricciones a nivel de entidad, declaradas en el JSON del modelo.
+    ///
+    /// Vacío en todos los modelos actuales: el planificador existe y está
+    /// probado, pero no planifica nada hasta que un modelo lo declare (F4).
+    /// Deliberado — activar la restricción con duplicados vivos en la base
+    /// haría fallar la siguiente escritura de esos tenants.
+    #[serde(default)]
+    pub constraints: Vec<Constraint>,
 }
 
 /// Entrada del registry para una entidad.
@@ -125,6 +200,10 @@ pub struct CodeRegistry {
     by_entity:   HashMap<String, RegistryEntry>,
     /// Lookup por fingerprint → entity_name (para COD_003)
     by_hash:     HashMap<String, String>,
+    /// Lookup inverso: DJB2 hash de atributo → nombre de atributo
+    by_attr_id:  HashMap<u16, String>,
+    /// Diccionarios de localización: locale -> JSON
+    locales:     HashMap<String, serde_json::Value>,
 }
 
 impl CodeRegistry {
@@ -145,7 +224,65 @@ impl CodeRegistry {
 
         let mut by_entity:        HashMap<String, RegistryEntry> = HashMap::new();
         let mut by_hash:          HashMap<String, String>        = HashMap::new();
+        let mut by_attr_id:       HashMap<u16, String>           = HashMap::new();
         let mut event_rules_seed: Vec<serde_json::Value>         = Vec::new();
+
+        // Cargar archivos de diccionarios localizados recursivamente
+        let mut locales = HashMap::new();
+        let locales_dir = models_dir.parent().map(|p| p.join("locales")).unwrap_or_else(|| Path::new("config/locales").to_path_buf());
+        if locales_dir.is_dir() {
+            fn merge_json(a: &mut serde_json::Value, b: serde_json::Value) {
+                match (a, b) {
+                    (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+                        for (k, v) in b {
+                            merge_json(a.entry(k).or_insert(serde_json::Value::Null), v);
+                        }
+                    }
+                    (a, b) => *a = b,
+                }
+            }
+
+            fn load_locales_recursive(dir: &Path, base_dir: &Path, locales: &mut HashMap<String, serde_json::Value>) {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries {
+                        if let Ok(entry) = entry {
+                            let path = entry.path();
+                            if path.is_dir() {
+                                load_locales_recursive(&path, base_dir, locales);
+                            } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                                if let Ok(rel) = path.strip_prefix(base_dir) {
+                                    if let Some(first_comp) = rel.components().next() {
+                                        if let Some(locale_name) = first_comp.as_os_str().to_str() {
+                                            let clean_locale = if locale_name.ends_with(".json") {
+                                                locale_name.trim_end_matches(".json")
+                                            } else {
+                                                locale_name
+                                            };
+                                            if let Ok(content) = std::fs::read_to_string(&path) {
+                                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                                    let locale_entry = locales.entry(clean_locale.to_string()).or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                                                    merge_json(locale_entry, json);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            load_locales_recursive(&locales_dir, &locales_dir, &mut locales);
+        }
+
+        // Registrar atributos de sistema reservados
+        by_attr_id.insert(0x0000, "entity/ulid".to_string());
+        by_attr_id.insert(0x0001, "entity/type".to_string());
+        by_attr_id.insert(0x0002, "tenant/id".to_string());
+        by_attr_id.insert(0x0003, "meta/created_at".to_string());
+        by_attr_id.insert(0x0004, "meta/updated_at".to_string());
+        by_attr_id.insert(crate::eav::types::datom::Datom::hash_attr_name("entity_type"), "entity_type".to_string());
 
         for file in &files {
             let raw = std::fs::read_to_string(file).map_err(|e| {
@@ -204,11 +341,17 @@ impl CodeRegistry {
                 }
             }
 
+            for attr in &model.attributes {
+                // Generar DJB2 hash in-line o usar Datom hash logic
+                let id = crate::eav::types::datom::Datom::hash_attr_name(&attr.name);
+                by_attr_id.insert(id, attr.name.clone());
+            }
+
             by_hash.insert(fingerprint.clone(), entity_name.clone());
             by_entity.insert(entity_name, RegistryEntry { model, fingerprint });
         }
 
-        let registry = CodeRegistry { by_entity, by_hash };
+        let registry = CodeRegistry { by_entity, by_hash, by_attr_id, locales };
 
         // Post-build: validar scope providers
         // [PORTED_FROM: (validate-scope-providers! registry)]
@@ -245,10 +388,14 @@ impl CodeRegistry {
             .map(|e| e.model.attributes.as_slice())
     }
 
-    /// Obtiene un atributo específico por nombre.
     pub fn get_attribute(&self, entity_type: &str, attr_name: &str) -> Option<&AttributeDescriptor> {
         self.get_attributes(entity_type)
             .and_then(|attrs| attrs.iter().find(|a| a.name == attr_name))
+    }
+
+    /// Obtiene el nombre del atributo a partir de su ID DJB2 (O(1))
+    pub fn get_attr_name(&self, attr_id: u16) -> Option<&str> {
+        self.by_attr_id.get(&attr_id).map(|s| s.as_str())
     }
 
     /// Obtiene el fingerprint SHA-256.
@@ -265,6 +412,40 @@ impl CodeRegistry {
     /// Total de entidades registradas.
     pub fn entity_count(&self) -> usize {
         self.by_entity.len()
+    }
+
+    /// Obtiene una etiqueta localizada para una entidad o atributo.
+    /// Soporta códigos locales compuestos (ej: "es-CO" -> "es").
+    pub fn get_localized_label(&self, locale: &str, entity: &str, attr: Option<&str>) -> Option<String> {
+        let clean_locale = locale.split('-').next().unwrap_or(locale);
+        let doc = self.locales.get(clean_locale)?;
+        
+        if let Some(attr_name) = attr {
+            doc.pointer(&format!("/entities/{}/attributes/{}", entity, attr_name))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        } else {
+            doc.pointer(&format!("/entities/{}/label", entity))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        }
+    }
+
+    /// Obtiene las traducciones de enum localizadas para un atributo específico.
+    /// Retorna un `HashMap<String, String>` con todas las traducciones.
+    pub fn get_localized_enum_labels(&self, locale: &str, entity: &str, attr: &str) -> std::collections::HashMap<String, String> {
+        let clean_locale = locale.split('-').next().unwrap_or(locale);
+        let mut labels = std::collections::HashMap::new();
+        if let Some(doc) = self.locales.get(clean_locale) {
+            if let Some(enum_map) = doc.pointer(&format!("/enums/{}/{}", entity, attr)).and_then(|v| v.as_object()) {
+                for (k, v) in enum_map {
+                    if let Some(val_str) = v.as_str() {
+                        labels.insert(k.clone(), val_str.to_string());
+                    }
+                }
+            }
+        }
+        labels
     }
 
     // ── Validación post-build ────────────────────────────────────────────────
@@ -312,6 +493,10 @@ pub fn init_global(registry: CodeRegistry) {
     info!("Códice: registry global activo");
 }
 
+pub fn global_opt() -> Option<&'static CodeRegistry> {
+    REGISTRY.get()
+}
+
 /// Accede al registry global. Panics si no fue inicializado.
 pub fn global() -> &'static CodeRegistry {
     REGISTRY.get().expect("CodeRegistry no inicializado — llamar init_global primero")
@@ -347,9 +532,10 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
 
     let engine = EngineChannel::from(json["engine"].as_str().unwrap_or("oltp"));
 
-    let attributes = json["attributes"]
+    let attributes: Vec<AttributeDescriptor> = json["attributes"]
         .as_array()
-        .unwrap_or(&vec![])
+        .cloned()
+        .unwrap_or_default()
         .iter()
         .map(|a| AttributeDescriptor {
             name:                    a["name"].as_str().unwrap_or("").to_string(),
@@ -372,20 +558,33 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
                                         .unwrap_or_default(),
             is_sequence_scope:       a["is_sequence_scope"].as_bool().unwrap_or(false),
             is_sequence_scope_via:   a["is_sequence_scope_via"].as_bool().unwrap_or(false),
-            // [PORTED_FROM: (filter :sensitive (:attributes schema))]
             sensitive:               a["sensitive"].as_bool().unwrap_or(false),
+            auto_generate:           a.get("auto_generate").cloned(),
+            validation_regex:        a["pattern"].as_str().map(str::to_string),
+            default_value:           a["default_value"].as_str().map(str::to_string),
         })
         .collect();
 
-    let fts_fields = json["fts_fields"]
+    let mut fts_fields: Vec<String> = json["fts_fields"]
         .as_array()
         .map(|f| f.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
         .unwrap_or_default();
+
+    if fts_fields.is_empty() {
+        for attr in &attributes {
+            if attr.fts {
+                fts_fields.push(attr.name.clone());
+            }
+        }
+    }
 
     let event_rules = json["event_rules"]
         .as_array()
         .cloned()
         .unwrap_or_default();
+
+    let write_path_locked = json["routing"]["write_path_locked"].as_bool().unwrap_or(false);
+    let is_system = json["is_system"].as_bool().unwrap_or(false);
 
     Ok(EntityModel {
         entity,
@@ -397,7 +596,54 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
         attributes,
         event_rules,
         is_sequence_scope_provider: json["is_sequence_scope_provider"].as_bool().unwrap_or(false),
+        write_path_locked,
+        is_system,
+        disable_eda: json["disable_eda"].as_bool().unwrap_or(false),
+        shadow_sagas_mapping: json.get("shadow_sagas_mapping")
+            .filter(|v| v.is_object())
+            .cloned(),
+        constraints: parse_constraints(json),
     })
+}
+
+/// Lee `constraints` del JSON del modelo.
+///
+/// Una restricción malformada se descarta con un aviso en lugar de impedir el
+/// arranque: un modelo mal escrito no debe tumbar el motor entero, y el aviso
+/// dice exactamente qué se ignoró.
+fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
+    let Some(items) = json["constraints"].as_array() else {
+        return Vec::new();
+    };
+
+    items
+        .iter()
+        .filter_map(|c| {
+            let kind = match c["type"].as_str().unwrap_or("unique") {
+                "unique" => ConstraintKind::Unique,
+                other => {
+                    tracing::warn!("[Codice] restricción de tipo desconocido '{other}'; se ignora");
+                    return None;
+                }
+            };
+
+            let attributes: Vec<String> = c["attributes"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+
+            if attributes.is_empty() {
+                tracing::warn!("[Codice] restricción sin atributos; se ignora");
+                return None;
+            }
+
+            Some(Constraint {
+                kind,
+                scope: ConstraintScope::from(c["scope"].as_str().unwrap_or("tenant")),
+                attributes,
+            })
+        })
+        .collect()
 }
 
 /// Recolecta todos los archivos .json de un directorio.
@@ -427,3 +673,8 @@ fn collect_json_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, DomainError
     files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
     Ok(files)
 }
+
+#[cfg(test)]
+#[path = "tests/registry_tests.rs"]
+mod tests;
+

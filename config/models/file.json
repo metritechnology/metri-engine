@@ -8,30 +8,141 @@
       "name": "file_name",
       "type": "string",
       "required": true,
-      "fts": true
+      "fts": true,
+      "description": "Nombre original del archivo tal como fue subido por el usuario."
     },
     {
       "name": "mime_type",
       "type": "string",
+      "required": true,
       "is_dimension": true,
-      "description": "e.g. image/jpeg, application/pdf"
+      "description": "MIME type real detectado por magic bytes (no por extensión). Ej: image/jpeg, application/pdf."
+    },
+    {
+      "name": "file_extension",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Extensión del archivo original sin punto. Ej: 'pdf', 'jpg', 'docx'."
     },
     {
       "name": "file_size_bytes",
-      "type": "decimal",
-      "is_measure": true
+      "type": "number",
+      "required": true,
+      "is_measure": true,
+      "description": "Tamaño del archivo original en bytes (i64 por precisión)."
+    },
+    {
+      "name": "checksum_sha256",
+      "type": "string",
+      "index": true,
+      "description": "Hash SHA-256 del contenido original. Usado para deduplicación CAS (Content-Addressable Storage)."
+    },
+    {
+      "name": "owner_entity_type",
+      "type": "string",
+      "required": true,
+      "index": true,
+      "is_dimension": true,
+      "description": "Tipo de la entidad propietaria. Ej: 'asset', 'work_order', 'location', 'preventive_maintenance', 'inspection'. Polimórfico: acepta cualquier entity registrada en Códice."
+    },
+    {
+      "name": "owner_entity_id",
+      "type": "string",
+      "required": true,
+      "index": true,
+      "description": "ID (ULID) de la entidad propietaria. Combinado con owner_entity_type, forma la clave de asociación polimórfica."
     },
     {
       "name": "url",
       "type": "string",
       "required": true,
-      "description": "Storage provider URL (e.g., S3 or Blob Storage)"
+      "description": "URL del archivo en S3 Raw bucket. Formato: s3://{bucket}/{tenant_id}/{file_id}/{filename}"
+    },
+    {
+      "name": "optimized_url",
+      "type": "string",
+      "description": "URL del archivo optimizado servido via CloudFront CDN. Se llena después del procesamiento por Metri Store."
+    },
+    {
+      "name": "thumbnail_url",
+      "type": "string",
+      "description": "URL del thumbnail WebP (400x400) generado para imágenes. Servido via CloudFront."
+    },
+    {
+      "name": "optimized_size_bytes",
+      "type": "number",
+      "is_measure": true,
+      "description": "Tamaño del archivo después de optimización por Metri Store. Null si aún no se procesó."
+    },
+    {
+      "name": "optimized_mime_type",
+      "type": "string",
+      "is_dimension": true,
+      "description": "MIME type del archivo optimizado. Puede diferir del original (ej: image/jpeg → image/avif)."
+    },
+    {
+      "name": "size_reduction_percent",
+      "type": "decimal",
+      "is_measure": true,
+      "default_rollup": "avg",
+      "description": "Porcentaje de reducción de tamaño logrado (0.0 a 100.0). Útil para analytics de eficiencia del storage."
+    },
+    {
+      "name": "processing_status",
+      "type": "enum",
+      "options": [
+        "PENDING",
+        "OPTIMIZING",
+        "EXTRACTING",
+        "EMBEDDING",
+        "COMPLETED",
+        "FAILED",
+        "SKIPPED"
+      ],
+      "default_value": "PENDING",
+      "is_dimension": true,
+      "description": "Estado actual del pipeline de Metri Store. PENDING=recién subido, OPTIMIZING=comprimiendo, EXTRACTING=extrayendo texto, EMBEDDING=generando vectores, COMPLETED=todo ok, FAILED=error, SKIPPED=tipo no procesable."
+    },
+    {
+      "name": "processing_error",
+      "type": "string",
+      "description": "Mensaje de error si processing_status=FAILED. Para diagnóstico y retry."
+    },
+    {
+      "name": "embed_requested",
+      "type": "boolean",
+      "default_value": false,
+      "is_dimension": true,
+      "description": "Si es true, el pipeline de Metri Store generará embeddings para búsqueda semántica RAG. Se establece en el momento del upload o retroactivamente."
+    },
+    {
+      "name": "embed_status",
+      "type": "enum",
+      "options": [
+        "NONE",
+        "PENDING",
+        "PROCESSING",
+        "COMPLETED",
+        "FAILED",
+        "NOT_EMBEDDABLE"
+      ],
+      "default_value": "NONE",
+      "is_dimension": true,
+      "description": "Estado del pipeline de embedding. NONE=no solicitado, NOT_EMBEDDABLE=tipo no soportado para texto (ej: imagen sin OCR)."
+    },
+    {
+      "name": "chunks_count",
+      "type": "number",
+      "is_measure": true,
+      "description": "Cantidad de document_chunks generados para este archivo. 0 si no se embeddeó."
     },
     {
       "name": "uploaded_by",
       "type": "reference",
       "entityRef": "user",
-      "cardinality": "one"
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Usuario que subió el archivo."
     },
     {
       "name": "created_at",
@@ -40,11 +151,16 @@
       "is_dimension": true
     },
     {
+      "name": "processed_at",
+      "type": "epoch",
+      "description": "Timestamp de cuando Metri Store completó el procesamiento (optimización + embedding)."
+    },
+    {
       "name": "direct_access_only",
       "type": "boolean",
       "default_value": false,
       "index": true,
-      "description": "Si es 'true' (ej: Firmas o Biometr\u00edas), el Engine le aplica invisibilidad fantasma contra cualquier rpc Query. Solo el Point-Read directo por UUID lograr\u00e1 materializarlo previniendo Data Leaks en paginaciones masivas."
+      "description": "Si es 'true' (ej: Firmas o Biometrías), el Engine le aplica invisibilidad fantasma contra cualquier rpc Query. Solo el Point-Read directo por UUID logrará materializarlo previniendo Data Leaks en paginaciones masivas."
     }
   ]
 }

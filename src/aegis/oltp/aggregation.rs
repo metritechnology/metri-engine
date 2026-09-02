@@ -20,133 +20,7 @@ use crate::janus::fbs::{
     AggregationFunction, FilterNodeT, FilterOperator,
 };
 
-// ── Evaluador de FilterNode in-memory ─────────────────────────────────────────
-//
-// [PORTED_FROM: (node->pred node) en aggregation.clj]
-// Evalúa un FilterNodeT sobre un row JSON. Retorna true si el row pasa.
-
-pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
-    // Hoja: criteria
-    if let Some(crit) = &node.criteria {
-        let field = crit.field.as_deref().unwrap_or("");
-        let bare_field = field.split('/').last().unwrap_or(field);
-        // Intentar con key completo y sin namespace
-        let row_val = row.get(field).or_else(|| row.get(bare_field));
-
-        let op = crit.op_ref;
-        let fv = crit.value.as_deref();
-
-        match op {
-            FilterOperator::EQ => {
-                match (row_val, fv) {
-                    (Some(Value::String(s)), Some(fv)) if fv.string_val.is_some() =>
-                        s == fv.string_val.as_deref().unwrap_or(""),
-                    (Some(Value::Number(n)), Some(fv)) =>
-                        n.as_f64().unwrap_or(0.0) == fv.number_val,
-                    (Some(Value::Bool(b)), Some(fv)) =>
-                        *b == fv.bool_val,
-                    _ => false,
-                }
-            }
-            FilterOperator::NEQ => !eval_filter_node(row, &FilterNodeT {
-                criteria: Some(Box::new(crate::janus::fbs::FilterCriteriaT {
-                    field: crit.field.clone(),
-                    value: crit.value.clone(),
-                    op_ref: FilterOperator::EQ,
-                })),
-                group: None,
-            }),
-            FilterOperator::GT => {
-                let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::NEG_INFINITY);
-                let fval = fv.map(|v| v.number_val).unwrap_or(0.0);
-                rv > fval
-            }
-            FilterOperator::GTE => {
-                let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::NEG_INFINITY);
-                let fval = fv.map(|v| v.number_val).unwrap_or(0.0);
-                rv >= fval
-            }
-            FilterOperator::LT => {
-                let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::INFINITY);
-                let fval = fv.map(|v| v.number_val).unwrap_or(0.0);
-                rv < fval
-            }
-            FilterOperator::LTE => {
-                let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::INFINITY);
-                let fval = fv.map(|v| v.number_val).unwrap_or(0.0);
-                rv <= fval
-            }
-            FilterOperator::IS_NULL => row_val.map(|v| v.is_null()).unwrap_or(true),
-            FilterOperator::IS_NOT_NULL => row_val.map(|v| !v.is_null()).unwrap_or(false),
-            FilterOperator::CONTAINS => {
-                let rv = row_val.and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-                let pattern = fv.and_then(|v| v.string_val.as_deref()).unwrap_or("").to_lowercase();
-                rv.contains(&pattern)
-            }
-            FilterOperator::LIKE => {
-                let rv = row_val.and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-                let pattern = fv.and_then(|v| v.string_val.as_deref()).unwrap_or("").to_lowercase();
-                // Convertir % a wildcard básico
-                let regex_pat = pattern.replace('%', ".*").replace('_', ".");
-                regex::Regex::new(&format!("^{regex_pat}$"))
-                    .map(|re| re.is_match(&rv))
-                    .unwrap_or(false)
-            }
-            FilterOperator::IN => {
-                // values field en el FilterCriteria para IN
-                // Para simplificar, usamos string_val como lista separada por coma
-                if let Some(fval) = fv {
-                    if let Some(list_str) = &fval.string_val {
-                        let items: Vec<&str> = list_str.split(',').collect();
-                        let rv_str = row_val.and_then(|v| v.as_str()).unwrap_or("");
-                        return items.iter().any(|item| item.trim() == rv_str);
-                    }
-                }
-                false
-            }
-            FilterOperator::NOT_IN => {
-                // Inverso de IN
-                if let Some(fval) = fv {
-                    if let Some(list_str) = &fval.string_val {
-                        let items: Vec<&str> = list_str.split(',').collect();
-                        let rv_str = row_val.and_then(|v| v.as_str()).unwrap_or("");
-                        return !items.iter().any(|item| item.trim() == rv_str);
-                    }
-                }
-                true
-            }
-            FilterOperator::MATCHES => {
-                // Fuzzy matching con Levenshtein-Wagner-Fischer.
-                // [PORTED_FROM: (fuzzy-match? value term) en fuzzy.clj]
-                //
-                // Pipeline (short-circuit):
-                //   1. Fast path: substring case-insensitive
-                //   2. Fuzzy path: word-level tokenización + distancia ≤ threshold adaptativo
-                let rv = row_val.and_then(|v| v.as_str()).unwrap_or("");
-                let term = fv.and_then(|v| v.string_val.as_deref()).unwrap_or("");
-                crate::aegis::oltp::fuzzy::fuzzy_match(rv, term)
-            }
-            _ => {
-                warn!("[Aegis Agg] Operador de filtro no soportado in-memory: {:?}", op);
-                true // pass-through defensivo
-            }
-        }
-    } else if let Some(group) = &node.group {
-        // Grupo: AND / OR
-        let conjunction = group.conjunction.0;
-        let nodes = group.nodes.as_deref().unwrap_or(&[]);
-
-        if nodes.is_empty() { return true; }
-
-        match conjunction {
-            1 => nodes.iter().all(|n| eval_filter_node(row, n)),  // AND
-            2 => nodes.iter().any(|n| eval_filter_node(row, n)),  // OR
-            _ => true,
-        }
-    } else {
-        true // nodo vacío → pass-through
-    }
-}
+pub use crate::aegis::oltp::filter::eval_filter_node;
 
 // ── Funciones estadísticas auxiliares ─────────────────────────────────────────
 
@@ -190,36 +64,126 @@ fn regr_slope(xs: &[f64], ys: &[f64]) -> Option<f64> {
     Some(ss_xy / ss_xx)
 }
 
+// ── Estrategias de Agregación (OCP) ───────────────────────────────────────────
+
+pub trait AggregationStrategy: Send + Sync {
+    fn compute(&self, vals: &[f64], sec_vals: &[f64]) -> f64;
+}
+
+pub struct CountStrategy;
+impl AggregationStrategy for CountStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        vals.len() as f64
+    }
+}
+
+pub struct SumStrategy;
+impl AggregationStrategy for SumStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        vals.iter().sum()
+    }
+}
+
+pub struct AvgStrategy;
+impl AggregationStrategy for AvgStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        safe_mean(vals).unwrap_or(0.0)
+    }
+}
+
+pub struct MinStrategy;
+impl AggregationStrategy for MinStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        let mut sorted = vals.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.first().copied().unwrap_or(0.0)
+    }
+}
+
+pub struct MaxStrategy;
+impl AggregationStrategy for MaxStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        let mut sorted = vals.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.last().copied().unwrap_or(0.0)
+    }
+}
+
+pub struct PercentileStrategy {
+    pub p: f64,
+}
+impl AggregationStrategy for PercentileStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        let mut sorted = vals.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        percentile_nearest_rank(&sorted, self.p).unwrap_or(0.0)
+    }
+}
+
+pub struct StdDevStrategy;
+impl AggregationStrategy for StdDevStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        variance_sample(vals).map(f64::sqrt).unwrap_or(0.0)
+    }
+}
+
+pub struct VarianceStrategy;
+impl AggregationStrategy for VarianceStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        variance_sample(vals).unwrap_or(0.0)
+    }
+}
+
+pub struct CorrelationStrategy;
+impl AggregationStrategy for CorrelationStrategy {
+    fn compute(&self, vals: &[f64], sec_vals: &[f64]) -> f64 {
+        pearson_r(vals, sec_vals).unwrap_or(0.0)
+    }
+}
+
+pub struct LinearRegressionStrategy;
+impl AggregationStrategy for LinearRegressionStrategy {
+    fn compute(&self, vals: &[f64], sec_vals: &[f64]) -> f64 {
+        regr_slope(sec_vals, vals).unwrap_or(0.0)
+    }
+}
+
+pub struct LogisticRegressionStrategy;
+impl AggregationStrategy for LogisticRegressionStrategy {
+    fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
+        warn!("[Aegis Agg] LOGISTIC_REGRESSION no nativo — COUNT fallback");
+        vals.len() as f64
+    }
+}
+
+fn get_strategy(agg_fn: AggregationFunction) -> Box<dyn AggregationStrategy> {
+    match agg_fn {
+        AggregationFunction::COUNT => Box::new(CountStrategy),
+        AggregationFunction::SUM => Box::new(SumStrategy),
+        AggregationFunction::AVG => Box::new(AvgStrategy),
+        AggregationFunction::MIN => Box::new(MinStrategy),
+        AggregationFunction::MAX => Box::new(MaxStrategy),
+        AggregationFunction::MEDIAN => Box::new(PercentileStrategy { p: 0.5 }),
+        AggregationFunction::PERCENTILE_90 => Box::new(PercentileStrategy { p: 0.9 }),
+        AggregationFunction::PERCENTILE_95 => Box::new(PercentileStrategy { p: 0.95 }),
+        AggregationFunction::PERCENTILE_99 => Box::new(PercentileStrategy { p: 0.99 }),
+        AggregationFunction::STD_DEV => Box::new(StdDevStrategy),
+        AggregationFunction::VARIANCE => Box::new(VarianceStrategy),
+        AggregationFunction::CORRELATION => Box::new(CorrelationStrategy),
+        AggregationFunction::LINEAR_REGRESSION => Box::new(LinearRegressionStrategy),
+        AggregationFunction::LOGISTIC_REGRESSION => Box::new(LogisticRegressionStrategy),
+        _ => {
+            warn!("[Aegis Agg] AggregationFunction desconocida {:?} — SUM fallback", agg_fn);
+            Box::new(SumStrategy)
+        }
+    }
+}
+
 // ── Dispatcher de agregación ──────────────────────────────────────────────────
 // [PORTED_FROM: (compute-agg fn-kw vals sec-vals)]
 
 fn compute_agg(agg_fn: AggregationFunction, vals: &[f64], sec_vals: &[f64]) -> f64 {
-    let mut sorted = vals.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-    match agg_fn {
-        AggregationFunction::COUNT    => vals.len() as f64,
-        AggregationFunction::SUM      => vals.iter().sum(),
-        AggregationFunction::AVG      => safe_mean(vals).unwrap_or(0.0),
-        AggregationFunction::MIN      => sorted.first().copied().unwrap_or(0.0),
-        AggregationFunction::MAX      => sorted.last().copied().unwrap_or(0.0),
-        AggregationFunction::MEDIAN   => percentile_nearest_rank(&sorted, 0.5).unwrap_or(0.0),
-        AggregationFunction::PERCENTILE_90 => percentile_nearest_rank(&sorted, 0.9).unwrap_or(0.0),
-        AggregationFunction::PERCENTILE_95 => percentile_nearest_rank(&sorted, 0.95).unwrap_or(0.0),
-        AggregationFunction::PERCENTILE_99 => percentile_nearest_rank(&sorted, 0.99).unwrap_or(0.0),
-        AggregationFunction::STD_DEV  => variance_sample(vals).map(f64::sqrt).unwrap_or(0.0),
-        AggregationFunction::VARIANCE => variance_sample(vals).unwrap_or(0.0),
-        AggregationFunction::CORRELATION => pearson_r(vals, sec_vals).unwrap_or(0.0),
-        AggregationFunction::LINEAR_REGRESSION => regr_slope(sec_vals, vals).unwrap_or(0.0),
-        AggregationFunction::LOGISTIC_REGRESSION => {
-            warn!("[Aegis Agg] LOGISTIC_REGRESSION no nativo — COUNT fallback");
-            vals.len() as f64
-        }
-        _ => {
-            warn!("[Aegis Agg] AggregationFunction desconocida {:?} — SUM fallback", agg_fn);
-            vals.iter().sum()
-        }
-    }
+    get_strategy(agg_fn).compute(vals, sec_vals)
 }
 
 // ── API pública ───────────────────────────────────────────────────────────────
@@ -373,68 +337,4 @@ fn infer_col_type(key: &str, sample: Option<&Value>) -> &'static str {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
 
-    #[test]
-    fn count_star_with_no_attribute() {
-        use crate::janus::fbs::{MetricDefinitionT, AggregationFunction};
-        let rows = vec![json!({"status": "ACTIVE"}), json!({"status": "ACTIVE"}), json!({"status": "INACTIVE"})];
-        let metrics = vec![MetricDefinitionT {
-            aggregation: AggregationFunction::COUNT,
-            name: Some("total".to_string()),
-            ..Default::default()
-        }];
-        let result = apply_metrics_fbs(&rows, &metrics);
-        assert_eq!(result["total"], json!(3.0));
-    }
-
-    #[test]
-    fn sum_with_attribute() {
-        use crate::janus::fbs::{MetricDefinitionT, AggregationFunction};
-        let rows = vec![json!({"area": 100.0}), json!({"area": 200.0}), json!({"area": 300.0})];
-        let metrics = vec![MetricDefinitionT {
-            aggregation: AggregationFunction::SUM,
-            attribute: Some("area".to_string()),
-            name: Some("total_area".to_string()),
-            ..Default::default()
-        }];
-        let result = apply_metrics_fbs(&rows, &metrics);
-        assert_eq!(result["total_area"], json!(600.0));
-    }
-
-    #[test]
-    fn filtered_count() {
-        use crate::janus::fbs::{MetricDefinitionT, AggregationFunction, FilterNodeT, FilterCriteriaT, FilterOperator, FilterValueT};
-        let rows = vec![
-            json!({"status": "ACTIVE",   "area": 100.0}),
-            json!({"status": "ACTIVE",   "area": 200.0}),
-            json!({"status": "INACTIVE", "area": 300.0}),
-        ];
-        let filter = FilterNodeT {
-            criteria: Some(Box::new(FilterCriteriaT {
-                field: Some("status".to_string()),
-                op_ref: FilterOperator::EQ,
-                value: Some(Box::new(FilterValueT {
-                    string_val: Some("ACTIVE".to_string()),
-                    number_val: 0.0,
-                    bool_val: false,
-                    list_val: None,
-                    range_values: None,
-                    timestamp_val: 0,
-                })),
-            })),
-            group: None,
-        };
-        let metrics = vec![MetricDefinitionT {
-            aggregation: AggregationFunction::COUNT,
-            name: Some("active_count".to_string()),
-            filter: Some(Box::new(filter)),
-            ..Default::default()
-        }];
-        let result = apply_metrics_fbs(&rows, &metrics);
-        assert_eq!(result["active_count"], json!(2.0));
-    }
-}

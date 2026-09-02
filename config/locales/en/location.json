@@ -1,0 +1,34 @@
+{
+  "entities": {
+    "location": {
+      "label": "Locations",
+      "attributes": {
+        "name": "Name",
+        "tag": "Tag",
+        "type": "Type",
+        "parent_location_id": "Parent Location",
+        "coordinates_geojson": "Coordinates",
+        "area_value": "Area Value",
+        "area_unit": "Area Unit",
+        "omniclass_code": "OmniClass Code",
+        "omniclass_name": "OmniClass Name"
+      }
+    }
+  },
+  "enums": {
+    "location": {
+      "type": {
+        "SITE": "Site",
+        "BUILDING": "Building",
+        "FLOOR": "Floor",
+        "ROOM": "Room",
+        "ZONE": "Zone"
+      },
+      "area_unit": {
+        "m2": "m²",
+        "ft2": "ft²",
+        "sq_yd": "yd²"
+      }
+    }
+  }
+}

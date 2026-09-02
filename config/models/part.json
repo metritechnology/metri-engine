@@ -32,10 +32,11 @@
       "is_dimension": true
     },
     {
-      "name": "default_unit_cost",
-      "type": "decimal",
+      "name": "default_unit_cost_cents",
+      "type": "number",
       "is_measure": true,
-      "default_rollup": "avg"
+      "default_rollup": "avg",
+      "description": "Costo unitario por defecto expresado en la unidad menor de la divisa (céntimos)."
     },
     {
       "name": "min_quantity",

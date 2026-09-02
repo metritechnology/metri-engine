@@ -21,14 +21,13 @@ use crate::janus_router::ulid;
 /// Implementación del AuditInterceptor.
 /// [PORTED_FROM: (defrecord AuditInterceptorImpl [olap-channel fault-notifier])]
 pub struct AuditInterceptorImpl {
-    /// Usamos el mismo OlapChannel que Janus para escribir en Firehose
     olap_channel: Arc<dyn IWriteChannel>,
-    // FASE 10: fault_notifier para emitir AUD_001 si falla Kinesis
+    // FASE 10: fault_notifier para emitir AUD_001 si falla la base transaccional
 }
 
 impl AuditInterceptorImpl {
     pub fn new(olap_channel: Arc<dyn IWriteChannel>) -> Self {
-        info!("[AuditInterceptor] Activado (Fire-and-Forget)");
+        info!("[AuditInterceptor] Activado (Fire-and-Forget, OLAP-Mode)");
         Self { olap_channel }
     }
 
@@ -45,8 +44,8 @@ impl AuditInterceptorImpl {
 impl IAuditInterceptor for AuditInterceptorImpl {
     /// Ejecuta la auditoría de forma asíncrona (fire-and-forget).
     /// [PORTED_FROM: (audit! [this request result+])]
-    async fn audit(&self, request: &Value, succeeded: bool) {
-        let action_type = derive_action_type(succeeded, None); // FASE 2: extraer stage del error
+    async fn audit(&self, request: &Value, succeeded: bool, error_stage: Option<&str>) {
+        let action_type = derive_action_type(succeeded, error_stage);
         
         let tenant_id = request.get("tenant_id")
             .and_then(|v| v.as_str())
@@ -76,7 +75,7 @@ impl IAuditInterceptor for AuditInterceptorImpl {
             action = %action_type.as_str(),
             tenant = %tenant_id,
             domain = %entity_type,
-            "[AuditInterceptor] Registrando evento"
+            "[AuditInterceptor] Registrando evento en canal OLAP (Kinesis)"
         );
 
         // Disparar escritura asíncrona hacia OLAP
@@ -95,7 +94,7 @@ impl IAuditInterceptor for AuditInterceptorImpl {
         let olap = Arc::clone(&self.olap_channel);
         tokio::spawn(async move {
             if let Err(e) = olap.route(ctx).await {
-                error!("[AuditInterceptor] Falla al escribir en Kinesis: {:?}", e);
+                error!("[AuditInterceptor] Falla al escribir en canal OLAP (Kinesis): {:?}", e);
                 // FASE 10: sherlog.emit_fault(AUD_001)
             }
         });

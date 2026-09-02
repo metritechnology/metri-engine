@@ -49,7 +49,7 @@ Toda interacción núcleo es procesada a través del gRPC `MetriService`, y para
 
 La orquestación abstracta de Clojure controla infraestructuras Cloud completamente administradas:
 
-- **AWS ECS Fargate / AWS Lambda:** Cómputo primario multitenant del Orquestador Clojure. Ver [01.01_FASE_RUNTIME_GRPC.md](01.01_FASE_RUNTIME_GRPC.md) para la topología completa del servidor gRPC, ciclo de vida Integrant y despliegue dual.
+- **AWS ECS Fargate / AWS Lambda:** Cómputo primario multitenant del Orquestador Clojure. Ver [01.03_FASE_RUNTIME_GRPC.md](01.03_FASE_RUNTIME_GRPC.md) para la topología completa del servidor gRPC, ciclo de vida Integrant y despliegue dual.
 - **Datomic Cloud (OLTP):** Almacenaje asertivo inmutable, aseguramiento de auditoría (time-travel API), soportado habitualmente en Amazon DynamoDB.
 - **Amazon S3 + AWS Kinesis Firehose:** Canal particionado e infinito para decantamiento volcado de archivos columnares `.parquet`.
 - **AWS Athena (OLAP / Trino):** Submotor masivo Serverless distribuido para procesamiento estadístico interanual pesado cruzando los _buckets_ Parquet.
@@ -91,6 +91,8 @@ Para la configuración del servidor gRPC, compilación Protobuf, ciclo de vida I
 | 01.01 | [01.01_FASE_MAIN_BOOTSTRAP.md](01.01_FASE_MAIN_BOOTSTRAP.md) | `-main`, Bootstrap fail-fast, Integrant, REPL |
 | 01.02 | [01.02_FASE_CLIENTES_INFRAESTRUCTURA.md](01.02_FASE_CLIENTES_INFRAESTRUCTURA.md) | 9 Clientes de Infraestructura (Infra CAPA 1) |
 | 01.03 | [01.03_FASE_RUNTIME_GRPC.md](01.03_FASE_RUNTIME_GRPC.md) | Runtime gRPC — Netty, Service Impl, OTel |
+| 01.04 | [01.04_FASE_LOCAL_ENV.md](01.04_FASE_LOCAL_ENV.md) | Entorno local — LocalStack, docker-compose |
+| 01.TDD | [01_FASE_ALISTAMIENTO_TDD_MATRIX.md](01_FASE_ALISTAMIENTO_TDD_MATRIX.md) | Matriz TDD del alistamiento |
 | 02 | [02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md](02_FASE_MOTOR_SCHEMA_DRIVEN_CORE.md) | Códice — JSON Schema SSOT |
 | 03 | [03_FASE_INGESTION.md](03_FASE_INGESTION.md) | Orquestación de Ingesta (IOP + Janus) |
 | 03A | [03A_FASE_IOP.md](03A_FASE_IOP.md) | Ingestion Orchestration Pipeline |
@@ -99,12 +101,35 @@ Para la configuración del servidor gRPC, compilación Protobuf, ciclo de vida I
 | 05 | [05_FASE_CONSULTA.md](05_FASE_CONSULTA.md) | Motor Analítico (Aegis) — Read Path |
 | 05.01 | [05.01-JANUS.md](05.01-JANUS.md) | Cerebro Janus (AST Compiler) |
 | 05.02 | [05.02_FASE_JANUS_AST_IR.md](05.02_FASE_JANUS_AST_IR.md) | Janus AST IR — Contrato Data-Driven |
+| 05.03 | [05.03-AEGIS.md](05.03-AEGIS.md) | Aegis — Ejecutor del Read Path |
+| 05.04 | [05.04-HERMES.md](05.04-HERMES.md) | **Hermes** — Unificador Analítico Multitipo (cross-domain OLTP↔OLAP) |
+| 05.05 | [05.05_FORMULA_ENGINE.md](05.05_FORMULA_ENGINE.md) | Formula Engine — métricas derivadas |
+| 05.core | [05_FASE_MOTOR_ANALITICO_CORE.md](05_FASE_MOTOR_ANALITICO_CORE.md) | Motor Analítico — núcleo |
+| 05.llm | [LLM_FORMULA_ENGINE_CONTEXT.md](LLM_FORMULA_ENGINE_CONTEXT.md) | Contexto LLM del Formula Engine |
 | 06 | [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md) | Cedar ABAC — Zero-Trust (5 pasos) |
 | 07 | [07_FASE_QUOTA_GUARD.md](07_FASE_QUOTA_GUARD.md) | QuotaGuard — Control de Recursos Por Tenant |
-| 08 | [08_FASE_INTELIGENCIA_ARTIFICIAL_MCP.md](08_FASE_INTELIGENCIA_ARTIFICIAL_MCP.md) | MCP — Integración AI (Proxy TypeScript/Lambda) |
+| 07.01 | [07.01_EXTENSION_QUOTAS_BEDROCK_NOVA.md](07.01_EXTENSION_QUOTAS_BEDROCK_NOVA.md) | Extensión de cuotas — Bedrock Nova |
+| 08 | [08_FASE_METRI_Q_ASSITANT.md](08_FASE_METRI_Q_ASSITANT.md) | Metri Q Assitant — Motor de Agentes Serverless y MCP |
+| 08.01-3 | [METRI_Q.md](METRI_Q.md) | Integración, Súper-Poderes y Agentic UI de Metri Q |
 | 09 | [09_FASE_AUDITORIA.md](09_FASE_AUDITORIA.md) | Auditoría OLTP/OLAP + IAuditInterceptor |
 | 10 | [10_FASE_GESTION_ERRORES_EDA.md](10_FASE_GESTION_ERRORES_EDA.md) | Errores, OTel, Sherlog, Railway Pattern |
+| 11 | [11_FASE_BASE_DE_DATOS_VECTORIAL_SERVERLESS.md](11_FASE_BASE_DE_DATOS_VECTORIAL_SERVERLESS.md) | Metri Serverless Vector Store (AWS Bedrock Nova) |
+| 11A | [11A_DISEÑO_ENTIDAD_DOCUMENT_CHUNK.md](11A_DISEÑO_ENTIDAD_DOCUMENT_CHUNK.md) | Entidad `document_chunk` |
+| 12 | [12_FASE_BULK_CSV_UPLOAD_INTEGRATION.md](12_FASE_BULK_CSV_UPLOAD_INTEGRATION.md) | Bulk CSV Upload |
+| 13 | [13_FASE_CSV_EXPORT_INTEGRATION.md](13_FASE_CSV_EXPORT_INTEGRATION.md) | CSV Export |
+| 14 | [14_FASE_AUTH_FLOWS.md](14_FASE_AUTH_FLOWS.md) | Flujos de autenticación |
+| 14.1 | [14.1_FASE_AUTH_ENGINE_INTEGRATION.md](14.1_FASE_AUTH_ENGINE_INTEGRATION.md) | Auth ↔ Engine |
+| 14.2 | [14.2_FASE_AUTH_APP_INTEGRATION.md](14.2_FASE_AUTH_APP_INTEGRATION.md) | Auth ↔ App |
+| 14.3 | [14.3_FASE_AUTH_NOTIFICATIONS_TEMPLATES.md](14.3_FASE_AUTH_NOTIFICATIONS_TEMPLATES.md) | Auth ↔ Notifications (plantillas) |
 | Ext-01 | [COMPONENTE_EXTERNO_01_EVENT_ROUTER.md](COMPONENTE_EXTERNO_01_EVENT_ROUTER.md) | Event Router — Golang, SQS→EventBridge |
 | Ext-02 | [COMPONENTE_EXTERNO_02_ECHO.md](COMPONENTE_EXTERNO_02_ECHO.md) | Echo — Retry Engine (Golang, backoff exp.) |
-| Ext-06 | [COMPONENTE_EXTERNO_06_METRI_MCP.md](COMPONENTE_EXTERNO_06_METRI_MCP.md) | MCP Proxy — TypeScript / AWS Lambda Streaming |
+| Ext-02b | [COMPONENTE_EXTERNO_02_BULK_COMPACTOR.md](COMPONENTE_EXTERNO_02_BULK_COMPACTOR.md) | Bulk Compactor — compactación de ingesta masiva |
+| Ext-03 | [COMPONENTE_EXTERNO_03_METRI_AUTH.md](COMPONENTE_EXTERNO_03_METRI_AUTH.md) | Metri Auth — identidad y sesiones |
+| Ext-04 | [COMPONENTE_EXTERNO_04_METRI_IOT.md](COMPONENTE_EXTERNO_04_METRI_IOT.md) | Metri IoT — Harvester MQTT, reglas de alerta, IA predictiva |
+| Ext-05 | [COMPONENTE_EXTERNO_05_METRI_SCHEDULERS.md](COMPONENTE_EXTERNO_05_METRI_SCHEDULERS.md) | Metri Schedulers Hub — Chronos / Kairos / Iris (Patrón Boomerang) |
+| Ext-05a | [COMPONENTE_EXTERNO_05_ANEXO_IAC.md](COMPONENTE_EXTERNO_05_ANEXO_IAC.md) | Anexo IaC del Schedulers Hub — `template.yaml` + Makefile |
+| Ext-05b | [COMPONENTE_EXTERNO_05_PLAN_IMPLEMENTACION.md](COMPONENTE_EXTERNO_05_PLAN_IMPLEMENTACION.md) | Plan de implementación del Schedulers Hub — fases, dependencias, riesgos |
+| Core-LE | [PLAN_IMPLEMENTACION_LIST_ENTITIES.md](PLAN_IMPLEMENTACION_LIST_ENTITIES.md) | Plan del RPC `ListEntities` — listado de entidades por atributo indexado |
+| Ext-06 | [COMPONENTE_EXTERNO_06_METRI_MCP.md](COMPONENTE_EXTERNO_06_METRI_MCP.md) | MCP Proxy — Go / AWS Lambda Streaming (AI Connector) |
+| Ext-07 | [COMPONENTE_EXTERNO_07_METRI_NOTIFICATIONS.md](COMPONENTE_EXTERNO_07_METRI_NOTIFICATIONS.md) | Metri Notifications — WebSocket, Push, Email, SMS |
 | **—** | **[ANEXO_ESTRUCTURA_CODIGO.md](ANEXO_ESTRUCTURA_CODIGO.md)** | **SSOT — Carpetas, ficheros y capas del proyecto** |

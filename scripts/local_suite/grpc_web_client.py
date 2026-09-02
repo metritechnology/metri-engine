@@ -15,13 +15,14 @@ sys.path.insert(0, PROTO_DIR)
 import metri_pb2 as pb
 
 ENGINE_HOST = os.environ.get("ENGINE_HOST", "engine.metri.one")
-HMAC_SECRET = os.environ.get("HMAC_SECRET", "local-dev-secret-do-not-use-in-prod")
+HMAC_SECRET = os.environ.get("HMAC_SECRET", "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2")
 BASE_URL    = f"https://{ENGINE_HOST}"
 
 class GrpcWebStub:
     def __init__(self, host=None):
         self.host = host or ENGINE_HOST
-        self.base = f"https://{self.host}"
+        scheme = "http" if "127.0.0.1" in self.host or "localhost" in self.host else "https"
+        self.base = f"{scheme}://{self.host}"
 
     def _make_token(self):
         ts  = str(int(time.time()))

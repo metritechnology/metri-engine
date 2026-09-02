@@ -627,6 +627,9 @@ table ChartDecoration {
   label_template: string;
   // Set by the engine for TIMESERIES output_cast when data is sparse.
   fill_gaps: bool;
+  x_axis_label_template: string;
+  y_axis_label_template: string;
+  horizontal: bool;
 }
 
 // Frontend translates this gracefully into ECharts `{ data: [{ name, value }] }` natively.

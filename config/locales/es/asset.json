@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "asset": {
+      "label": "Activos",
+      "attributes": {
+        "name": "Nombre",
+        "serial_number": "Número de Serie",
+        "tag": "Etiqueta",
+        "status": "Estado",
+        "location_id": "Ubicación",
+        "parent_asset_id": "Activo Padre",
+        "omniclass_category": "Categoría OmniClass",
+        "type": "Tipo",
+        "category": "Categoría",
+        "criticality": "Criticidad",
+        "manufacturer": "Fabricante",
+        "model": "Modelo",
+        "omniclass_code": "Código OmniClass",
+        "omniclass_name": "Nombre OmniClass",
+        "health_score": "Salud",
+        "current_meter_reading": "Lectura de Medidor",
+        "telemetry_config": "Configuración de Telemetría",
+        "timestamp": "Fecha y Hora"
+      }
+    }
+  },
+  "enums": {
+    "asset": {
+      "status": {
+        "ACTIVE": "Activo",
+        "INACTIVE": "Inactivo",
+        "IN_MAINTENANCE": "Mantenimiento",
+        "active": "Activo",
+        "inactive": "Inactivo",
+        "maintenance": "Mantenimiento",
+        "in_maintenance": "Mantenimiento",
+        "broken": "Averiado",
+        "decommissioned": "Descomisionado"
+      },
+      "criticality": {
+        "A": "Crítico",
+        "B": "Importante",
+        "C": "Estándar"
+      }
+    }
+  }
+}

@@ -53,8 +53,8 @@
     },
     {
       "name": "security_context",
-      "type": "json",
-      "doc": "Snapshot of the Cedar evaluation, opaque token claims, and groups."
+      "type": "string",
+      "doc": "Snapshot of the Cedar evaluation, opaque token claims, and groups — serialized as JSON string."
     },
     {
       "name": "execution_time_ms",
@@ -64,8 +64,8 @@
     },
     {
       "name": "plugin_telemetry",
-      "type": "json",
-      "doc": "If plugins were executed in the pipeline, array of execution times and results."
+      "type": "string",
+      "doc": "If plugins were executed in the pipeline, array of execution times and results — serialized as JSON string."
     }
   ]
 }

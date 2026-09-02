@@ -1,0 +1,58 @@
+{
+  "entity": "dashboardBI",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "name",
+      "type": "string",
+      "fts": true,
+      "required": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true
+    },
+    {
+      "name": "widgets",
+      "type": "json",
+      "required": false,
+      "description": "Configuración JSON serializada de los gráficos y diseño del tablero"
+    },
+    {
+      "name": "created_at",
+      "type": "epoch",
+      "index": true
+    },
+    {
+      "name": "updated_at",
+      "type": "epoch",
+      "index": true
+    }
+  ],
+  "event_rules": [
+    {
+      "rule_code": "DASHBOARD_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.dashboard.created",
+      "description": "Notificación global cuando se crea un tablero analítico."
+    },
+    {
+      "rule_code": "DASHBOARD_UPDATED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [],
+      "detail_type_output": "system.dashboard.updated",
+      "description": "Notificación global al modificar la configuración de un tablero."
+    },
+    {
+      "rule_code": "DASHBOARD_DELETED",
+      "event_trigger_type": "on_delete",
+      "filter_conditions": [],
+      "detail_type_output": "system.dashboard.deleted",
+      "description": "Notificación global al eliminar permanentemente un tablero."
+    }
+  ]
+}

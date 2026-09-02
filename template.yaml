@@ -131,7 +131,7 @@ Resources:
         Allow: {}
       VisibilityConfig:
         SampledRequestsEnabled: true
-        CloudWatchMetricsEnabled: true
+        CloudWatchMetricsEnabled: false  # no necesita métricas CW ($0.30/métrica/mes)
         MetricName: MetriWebACLMetrics
       Rules:
         # ── REGLA 1: Filtro Protocolar — solo POST y OPTIONS (Priority 5) ────────────
@@ -167,7 +167,7 @@ Resources:
                             Type: NONE # HTTP methods ya llegan en mayúsculas (RFC 7231)
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # Regla pasiva — no necesita métricas CW ($0.30/métrica/mes)
             MetricName: MetriBlockNonGrpcMethodsMetrics
 
         # ── REGLA 2: Rate Limiting por IP (Priority 10) ──────────────────────────────
@@ -183,7 +183,7 @@ Resources:
               AggregateKeyType: IP
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # no necesita métricas CW ($0.30/métrica/mes)
             MetricName: MetriRateLimitRuleMetrics
 
         # ── REGLA 3: IP Reputation List (Priority 20) ────────────────────────────────
@@ -198,7 +198,7 @@ Resources:
             None: {}
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # no necesita métricas CW ($0.30/métrica/mes)
             MetricName: AWSIpReputationMetrics
 
         # ── REGLA 4: Anonymous IP List (Priority 25) ─────────────────────────────────
@@ -217,7 +217,7 @@ Resources:
             None: {}
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # Regla pasiva — no necesita métricas CW ($0.30/métrica/mes)
             MetricName: AWSAnonymousIpMetrics
 
         # ── REGLA 5: Known Bad Inputs — Log4Shell / JNDI (Priority 30) ──────────────
@@ -232,7 +232,7 @@ Resources:
             None: {}
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # Regla pasiva — no necesita métricas CW ($0.30/métrica/mes)
             MetricName: AWSKnownBadInputsMetrics
 
         # ── REGLA 6: Common Rule Set — Protecciones Generales (Priority 40) ─────────
@@ -252,7 +252,7 @@ Resources:
             None: {}
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # Regla pasiva — no necesita métricas CW ($0.30/métrica/mes)
             MetricName: AWSCommonRuleSetMetrics
 
         # ── REGLA 7: SQL Injection — Protección Athena (Priority 45) ────────────────
@@ -270,7 +270,7 @@ Resources:
             None: {}
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # no necesita métricas CW ($0.30/métrica/mes)
             MetricName: AWSSQLiMetrics
 
         # ── REGLA 8: gRPC-Web Protocol Enforcement (Priority 50) ─────────────────────
@@ -308,7 +308,7 @@ Resources:
                             Type: LOWERCASE
           VisibilityConfig:
             SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
+            CloudWatchMetricsEnabled: false  # Regla pasiva — no necesita métricas CW ($0.30/métrica/mes)
             MetricName: MetriGrpcProtocolEnforcementMetrics
 
   MetriLambdaPublicPermission:
@@ -324,7 +324,23 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        HttpVersion: http2 # Soporte nativo gRPC stream
+        # HTTP/2 de cara al visor.
+        #
+        # **No da soporte a gRPC nativo**, pese a lo que decía el comentario
+        # anterior. Verificado contra el endpoint el 2026-08-14:
+        #
+        #   application/grpc          → HTTP 400
+        #   application/grpc-web+proto → HTTP 200 + grpc-status
+        #
+        # Ambas llegan al origen (cabeceras `x-amzn-*`), así que el límite no
+        # está aquí: **Lambda Web Adapter entrega HTTP/1.1 al proceso local**, y
+        # gRPC nativo exige HTTP/2 de extremo a extremo con trailers HTTP/2.
+        # gRPC-Web funciona porque lleva los trailers dentro del cuerpo.
+        #
+        # Consecuencia: activar `GrpcConfig` en el cache behavior no arregla
+        # nada mientras el engine se despliegue como Lambda + LWA. Servir gRPC
+        # nativo exigiría otra topología (ECS/Fargate tras un NLB).
+        HttpVersion: http2
         WebACLId: !GetAtt MetriWebACL.Arn
         Aliases:
           - !Ref CustomDomainName
@@ -356,28 +372,11 @@ Resources:
             - DELETE
           # ID Política administrada: CachingDisabled (Esencial para Streams/gRPC)
           CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-          # Usamos nuestra política personalizada para asegurar que gRPC-Web pase íntegro
-          OriginRequestPolicyId: !Ref MetriOriginRequestPolicy
+          # ID Política administrada: Managed-AllViewerExceptHostHeader (Pasa todos los headers incluyendo Origin y CORS preflight sin colisión TLS Host)
+          OriginRequestPolicyId: "b689b0a8-53d0-40ab-baf2-68738e2966ac"
         ViewerCertificate:
           AcmCertificateArn: !Ref AcmCertificateArn
           SslSupportMethod: sni-only
-
-  # Política de Origen para gRPC-Web (Pasa headers críticos sin colisionar con Host/TLS)
-  MetriOriginRequestPolicy:
-    Type: AWS::CloudFront::OriginRequestPolicy
-    Properties:
-      OriginRequestPolicyConfig:
-        Name: !Sub "metri-grpc-policy-${AWS::StackName}"
-        CookiesConfig:
-          CookieBehavior: all
-        HeadersConfig:
-          HeaderBehavior: whitelist
-          Headers:
-            - "Content-Type"
-            - "Accept"
-            - "X-GRPC-Web"
-        QueryStringsConfig:
-          QueryStringBehavior: all
 
   MetriDnsRecord:
     Type: AWS::Route53::RecordSet
@@ -530,17 +529,17 @@ Resources:
           AttributeType: S
         - AttributeName: SK
           AttributeType: B
-        - AttributeName: AEVT_PK
+        - AttributeName: ap
           AttributeType: S
-        - AttributeName: AEVT_SK
+        - AttributeName: as
           AttributeType: B
-        - AttributeName: AVET_PK
+        - AttributeName: vp
           AttributeType: S
-        - AttributeName: AVET_SK
+        - AttributeName: vs
           AttributeType: B
-        - AttributeName: VAET_PK
+        - AttributeName: rp
           AttributeType: S
-        - AttributeName: VAET_SK
+        - AttributeName: rs
           AttributeType: B
       KeySchema:
         - AttributeName: PK
@@ -551,27 +550,27 @@ Resources:
         # AEVT — (Attribute, Entity, Value, Tx): todos los valores de un atributo
         - IndexName: GSI-AEVT
           KeySchema:
-            - AttributeName: AEVT_PK
+            - AttributeName: ap
               KeyType: HASH
-            - AttributeName: AEVT_SK
+            - AttributeName: as
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
         # AVET — (Attribute, Value, Entity, Tx): lookup inverso por valor
         - IndexName: GSI-AVET
           KeySchema:
-            - AttributeName: AVET_PK
+            - AttributeName: vp
               KeyType: HASH
-            - AttributeName: AVET_SK
+            - AttributeName: vs
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
         # VAET — (Value, Attribute, Entity, Tx): navegación de referencias (grafo)
         - IndexName: GSI-VAET
           KeySchema:
-            - AttributeName: VAET_PK
+            - AttributeName: rp
               KeyType: HASH
-            - AttributeName: VAET_SK
+            - AttributeName: rs
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
@@ -646,11 +645,12 @@ Resources:
     Metadata:
       BuildMethod: makefile # usa Makefile target build-MetriEngineFunction
     Properties:
+      MemorySize: 2048
       CodeUri: .
-      Handler: bootstrap  # binario Rust compilado por cargo-lambda
+      Handler: bootstrap # binario Rust compilado por cargo-lambda
       Runtime: provided.al2023
       Architectures:
-        - arm64  # Graviton2: 20% más rápido, 20% más barato que x86_64
+        - arm64 # Graviton2: 20% más rápido, 20% más barato que x86_64
       Layers:
         # AWS Lambda Web Adapter (convierte Lambda API a HTTP/2 gRPC proxy local al port 9090)
         - "arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerArm64:24"
@@ -661,41 +661,7 @@ Resources:
 
       FunctionUrlConfig:
         AuthType: NONE
-        InvokeMode: RESPONSE_STREAM   # Requerido para gRPC (soporte de HTTP Trailers)
-        Cors:
-          # ── Origenes permitidos ─────────────────────────────────────────────────────────────
-          # Si HasDevCorsOrigin=false (produccion): solo https://engine.metri.one
-          # Si HasDevCorsOrigin=true  (dev):        + DevCorsOrigin (ej: localhost:3000)
-          AllowOrigins: !If
-            - HasDevCorsOrigin
-            - - !Sub "https://${CustomDomainName}"
-              - !Ref DevCorsOrigin
-            - - !Sub "https://${CustomDomainName}"
-
-          # ── Headers permitidos: whitelist estricta gRPC-Web ─────────────────────────────
-          # Excluye: X-Metri-Origin-Token (CloudFront→Lambda, nunca desde el browser)
-          AllowHeaders:
-            - "Content-Type" # application/grpc-web+proto | application/grpc-web-text
-            - "X-Grpc-Web" # requerido por el protocolo gRPC-Web
-            - "Grpc-Timeout" # propagación de deadlines
-            - "Authorization" # tokens HMAC del cliente
-            - "Accept" # negociación de contenido
-            - "X-Request-Id" # trazabilidad OTel / Sherlog
-
-          # ── Métodos permitidos: gRPC-Web usa POST exclusivamente ──────────────────
-          # OPTIONS omitido: Lambda Function URL maneja CORS preflight automáticamente.
-          AllowMethods:
-            - "POST" # único verbo gRPC-Web
-
-          # ── Headers expuestos al browser ────────────────────────────────────────
-          ExposeHeaders:
-            - "grpc-status" # código de estado gRPC
-            - "grpc-message" # mensaje de error legible
-            - "grpc-status-details-bin" # detalles serializados (google.rpc.Status)
-            - "Content-Type" # tipo de respuesta gRPC-Web
-
-          # ── Cache de preflight: reduce round-trips del browser ─────────────────
-          MaxAge: 3600 # 1 hora — el browser no repite OPTIONS en cada llamada
+        InvokeMode: RESPONSE_STREAM # Requerido para gRPC (soporte de HTTP Trailers)
 
       # Sin VpcConfig: Lambda accede a servicios AWS via API publica + IAM (sin costo de red)
 
@@ -767,11 +733,21 @@ Resources:
                 - firehose:PutRecordBatch
               Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/metri-olap-*"
 
-            # ── EDA: EventBridge (fault events) ──
+            # ── OLAP: Kinesis Data Stream ──
+            - Effect: Allow
+              Action:
+                - kinesis:PutRecord
+                - kinesis:PutRecords
+                - kinesis:DescribeStream
+              Resource: !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/metri-olap-stream-*"
+
+            # ── EDA: EventBridge (domain & fault events) ──
             - Effect: Allow
               Action:
                 - events:PutEvents
-              Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-faults"
+              Resource:
+                - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-faults"
+                - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-events"
 
             # ── HMAC Secret: cargado una vez en cold start ──
             - Effect: Allow
@@ -783,13 +759,14 @@ Resources:
         Variables:
           ENVIRONMENT: production
           # ── Lambda Web Adapter ──
-          PORT: "9090"                            # LWA routea aquí el tráfico HTTP/2
-          AWS_LWA_INVOKE_MODE: "response_stream"  # Soporte gRPC trailers y streaming
+          PORT: "9090" # LWA routea aquí el tráfico HTTP/2
+          AWS_LWA_INVOKE_MODE: "response_stream" # Soporte gRPC trailers y streaming
           AWS_LAMBDA_EXEC_WRAPPER: "/opt/bootstrap" # REQUERIDO para provided.al2023
           # ── Rust Engine — variables de arranque ──
           RUST_LOG: "info" # Cambiar a "debug" solo para troubleshooting
           GRPC_PORT: "9090" # Puerto interno Lambda (Function URL redirige aquí)
           CODICE_MODELS_DIR: "models" # <-- Directorio donde el Makefile empaquetó los modelos # Path relativo al binario; S3 sync en FASE 4
+          ERROR_CATALOG_PATH: "errors/error_catalog.toml" # Path relativo al binario (Makefile copia config/errors → errors/)
           # ── Storage ──
           EAV_TABLE_NAME: !Ref EavTableName # Tabla EAV principal (4 GSIs)
           CEDAR_POLICIES_TABLE: !Ref MetriSchemasTable
@@ -803,6 +780,10 @@ Resources:
           FAULT_BUS_NAME: "metri-faults"
           # ── Seguridad ──
           HMAC_SECRET_ARN: !Ref MetriHMACSecret
+          HMAC_SECRET: !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}"
+          METRI_BOOTSTRAP_MASTER_EMAIL: "admin@metri.one"
+          METRI_BOOTSTRAP_MASTER_USERNAME: "admin"
+          METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
           # Incrementar para forzar re-deploy limpio (invalida cache de modelos en cold start)
           FORCE_DEPLOY: "1"
 

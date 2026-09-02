@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "asset": {
+      "label": "Assets",
+      "attributes": {
+        "name": "Name",
+        "serial_number": "Serial Number",
+        "tag": "Tag",
+        "status": "Status",
+        "location_id": "Location",
+        "parent_asset_id": "Parent Asset",
+        "omniclass_category": "OmniClass Category",
+        "type": "Type",
+        "category": "Category",
+        "criticality": "Criticality",
+        "manufacturer": "Manufacturer",
+        "model": "Model",
+        "omniclass_code": "OmniClass Code",
+        "omniclass_name": "OmniClass Name",
+        "health_score": "Health Score",
+        "current_meter_reading": "Current Meter Reading",
+        "telemetry_config": "Telemetry Config",
+        "timestamp": "Timestamp"
+      }
+    }
+  },
+  "enums": {
+    "asset": {
+      "status": {
+        "ACTIVE": "Active",
+        "INACTIVE": "Inactive",
+        "IN_MAINTENANCE": "In Maintenance",
+        "active": "Active",
+        "inactive": "Inactive",
+        "maintenance": "In Maintenance",
+        "in_maintenance": "In Maintenance",
+        "broken": "Broken",
+        "decommissioned": "Decommissioned"
+      },
+      "criticality": {
+        "A": "Critical",
+        "B": "Important",
+        "C": "Standard"
+      }
+    }
+  }
+}

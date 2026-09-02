@@ -12,7 +12,10 @@ pub fn query_request_to_queries_map(req: &QueryRequest) -> Result<HashMap<String
     let mut queries = HashMap::new();
     
     for (key, query) in &req.queries {
-        let fbs_req = translate_analytics_request(query)?;
+        let mut fbs_req = translate_analytics_request(query)?;
+        if fbs_req.tenant_id.is_none() || fbs_req.tenant_id.as_deref().unwrap_or("").is_empty() {
+            fbs_req.tenant_id = Some(req.tenant_id.clone());
+        }
         queries.insert(key.clone(), fbs_req);
     }
 
@@ -47,6 +50,32 @@ fn translate_analytics_request(query: &crate::grpc::pb::AnalyticsRequest) -> Res
         .filter_map(translate_filter_node)
         .collect();
 
+    // Traducir FormulaEntry measures (fórmulas ad-hoc, e.g. "income - tax")
+    // BUG FIX: anteriormente hardcodeado como None, perdiendo el campo completo del contrato.
+    let measures: Vec<fbs::FormulaEntryT> = query.measures.iter().map(|m| fbs::FormulaEntryT {
+        name:    if m.name.is_empty()    { None } else { Some(m.name.clone()) },
+        formula: if m.formula.is_empty() { None } else { Some(m.formula.clone()) },
+    }).collect();
+
+    // Traducir AnalyticalComparison comparisons (WoW, YoY, vs Benchmark, SMART anomaly)
+    // BUG FIX: anteriormente hardcodeado como None, imposibilitando cualquier ventana temporal comparativa.
+    let comparisons: Vec<fbs::AnalyticalComparisonT> = query.comparisons.iter().map(|c| fbs::AnalyticalComparisonT {
+        type_:                fbs::AnalyticalComparison_ComparisonType(c.r#type),
+        label:                if c.label.is_empty()                { None } else { Some(c.label.clone()) },
+        relative_granularity: if c.relative_granularity.is_empty() { None } else { Some(c.relative_granularity.clone()) },
+        relative_amount:      c.relative_amount,
+        shortcut:             fbs::AnalyticalComparison_ShiftShortcut(c.shortcut),
+        absolute_start_ts:    c.absolute_start_ts,
+        absolute_end_ts:      c.absolute_end_ts,
+        benchmark_value:      c.benchmark_value,
+    }).collect();
+
+    // Traducir SemanticMetricRef semantic_measures (override Capa Semántica LookML desde el Schema Registry)
+    // BUG FIX: anteriormente hardcodeado como None, impidiendo la resolución de métricas semánticas globales.
+    let semantic_measures: Vec<fbs::SemanticMetricRefT> = query.semantic_measures.iter().map(|s| fbs::SemanticMetricRefT {
+        metric_key: if s.metric_key.is_empty() { None } else { Some(s.metric_key.clone()) },
+    }).collect();
+
     Ok(fbs::AnalyticsRequestT {
         tenant_id: if query.tenant_id.is_empty() { None } else { Some(query.tenant_id.clone()) },
         entity: if query.entity.is_empty() { None } else { Some(query.entity.clone()) },
@@ -65,41 +94,63 @@ fn translate_analytics_request(query: &crate::grpc::pb::AnalyticsRequest) -> Res
         sort: if sort.is_empty() { None } else { Some(sort) },
         viz: if query.viz.is_empty() { None } else { Some(query.viz.clone()) },
         output_cast: fbs::OutputCastType(query.output_cast),
-        measures: None,
-        comparisons: None,
+        measures:     if measures.is_empty()     { None } else { Some(measures) },
+        comparisons:  if comparisons.is_empty()  { None } else { Some(comparisons) },
         search: if query.search.is_empty() { None } else { Some(query.search.clone()) },
         hierarchy: query.hierarchy.as_ref().map(|h| Box::new(fbs::HierarchyContextT {
             parent_field: if h.parent_field.is_empty() { None } else { Some(h.parent_field.clone()) },
             current_node_id: if h.current_node_id.is_empty() { None } else { Some(h.current_node_id.clone()) },
             inject_has_children: h.inject_has_children,
         })),
-        semantic_measures: None,
-        select_tree: None,
+        semantic_measures: if semantic_measures.is_empty() { None } else { Some(semantic_measures) },
+        select_tree: query.select_tree.as_ref().map(|s| {
+            serde_json::to_string(&struct_to_value(s.clone())).unwrap_or_default()
+        }),
     })
+}
+
+fn translate_filter_value(val: &crate::grpc::pb::FilterValue) -> fbs::FilterValueT {
+    use crate::grpc::pb::filter_value::Kind;
+    match &val.kind {
+        Some(Kind::StringVal(s)) => fbs::FilterValueT {
+            string_val: Some(s.clone()),
+            ..Default::default()
+        },
+        Some(Kind::NumberVal(n)) => fbs::FilterValueT {
+            number_val: *n,
+            ..Default::default()
+        },
+        Some(Kind::BoolVal(b)) => fbs::FilterValueT {
+            bool_val: *b,
+            ..Default::default()
+        },
+        Some(Kind::TimestampVal(t)) => fbs::FilterValueT {
+            timestamp_val: *t,
+            ..Default::default()
+        },
+        Some(Kind::ListVal(lst)) => fbs::FilterValueT {
+            list_val: Some(Box::new(fbs::StringListT {
+                values: Some(lst.values.clone()),
+            })),
+            ..Default::default()
+        },
+        Some(Kind::RangeValues(range)) => fbs::FilterValueT {
+            range_values: Some(Box::new(fbs::FilterValueListT {
+                values: Some(range.values.iter().map(translate_filter_value).collect()),
+            })),
+            ..Default::default()
+        },
+        None => fbs::FilterValueT::default(),
+    }
 }
 
 /// Traduce un proto FilterNode a FBS FilterNodeT recursivamente.
 fn translate_filter_node(node: &crate::grpc::pb::FilterNode) -> Option<fbs::FilterNodeT> {
     use crate::grpc::pb::filter_node::Node;
-    use crate::grpc::pb::filter_value::Kind;
 
     match &node.node {
         Some(Node::Criteria(crit)) => {
-            let fbs_value = crit.value.as_ref().map(|v| Box::new(match &v.kind {
-                Some(Kind::StringVal(s)) => fbs::FilterValueT {
-                    string_val: Some(s.clone()),
-                    ..Default::default()
-                },
-                Some(Kind::NumberVal(n)) => fbs::FilterValueT {
-                    number_val: *n,
-                    ..Default::default()
-                },
-                Some(Kind::BoolVal(b)) => fbs::FilterValueT {
-                    bool_val: *b,
-                    ..Default::default()
-                },
-                _ => fbs::FilterValueT::default(),
-            }));
+            let fbs_value = crit.value.as_ref().map(|v| Box::new(translate_filter_value(v)));
 
             Some(fbs::FilterNodeT {
                 criteria: Some(Box::new(fbs::FilterCriteriaT {
@@ -137,7 +188,7 @@ pub fn struct_to_value(s: prost_types::Struct) -> Value {
     Value::Object(map)
 }
 
-fn value_to_json(v: prost_types::Value) -> Value {
+pub fn value_to_json(v: prost_types::Value) -> Value {
     use prost_types::value::Kind;
     match v.kind {
         Some(Kind::NullValue(_)) => Value::Null,
@@ -183,3 +234,8 @@ pub fn json_to_value(v: &Value) -> prost_types::Value {
         },
     }
 }
+
+#[cfg(test)]
+#[path = "tests/translator_tests.rs"]
+mod tests;
+

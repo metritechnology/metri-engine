@@ -42,7 +42,12 @@ pub enum ErrorCode {
     // ── EAV Engine ──────────────────────────────────────────────────────────
     Eav001,  // TransactWriteItems failed
     Eav002,  // Entity not found
-    Eav003,  // Optimistic lock conflict
+    // Cursor obsoleto: el AST cambió entre páginas (eav/cursor/composite.rs).
+    // El código canónico dice `EAV_TX_003` y el catálogo lo describe como un
+    // conflicto de bloqueo optimista, que es lo que se pensaba usar cuando se
+    // reservó. Nada implementa ese bloqueo; cambiar la cadena tocaría el
+    // contrato con los clientes, así que se deja y se documenta.
+    Eav003,
     Eav004,  // Attribute not in registry
     Eav005,  // Sort key overflow (> 1024 bytes)
     EavFts001, // FTS index write failed
@@ -73,22 +78,209 @@ pub enum ErrorCode {
     Auth401, // Token inválido o expirado
     Auth403, // Tenant mismatch — acceso denegado
     AuthRevoked, // Token revocado (blacklist)
+
+    // ── Auditoria ────────────────────────────────────────────────────────────
+    Aud001,
+    Aud002,
+
+    // ── Missing error catalog codes ──────────────────────────────────────────
+    JnsRef002,
+    JnsConflict001,
+    EavTx001,
+    GrpcTenant001,
+    InfraAthena005,
+    InfraCedar002,
+    Mcp503,
+
+    // ── Formula Engine ───────────────────────────────────────────────────────
+    Fml001,
+    Fml002,
+    Fml003,
+    Fml004,
+    Fml005,
+    Fml006,
+    Fml007,
+    Fml008,
+    Fml009,
+    Fml010,
+    Fml011,
+    Fml012,
+    Fml013,
 }
 
 impl ErrorCode {
+    pub const ALL: &'static [ErrorCode] = &[
+        ErrorCode::Janus400,
+        ErrorCode::Janus401,
+        ErrorCode::Janus403,
+        ErrorCode::Janus404,
+        ErrorCode::Janus422,
+        ErrorCode::Janus500,
+        ErrorCode::JanusAstCompileError,
+        ErrorCode::JanusFilterCompileError,
+        ErrorCode::JanusSchemaNotFound,
+        ErrorCode::JanusTenantMismatch,
+        ErrorCode::JanusVal001,
+        ErrorCode::Jns001,
+        ErrorCode::JnsLock001,
+        ErrorCode::JnsSeed001,
+        ErrorCode::JnsOlap001,
+        ErrorCode::JnsTx001,
+        ErrorCode::Aeg001,
+        ErrorCode::Aeg002,
+        ErrorCode::Aeg003,
+        ErrorCode::Aeg004,
+        ErrorCode::Aeg005,
+        ErrorCode::Eav001,
+        ErrorCode::Eav002,
+        ErrorCode::Eav003,
+        ErrorCode::Eav004,
+        ErrorCode::Eav005,
+        ErrorCode::EavFts001,
+        ErrorCode::Cod001,
+        ErrorCode::Cod002,
+        ErrorCode::Cod003,
+        ErrorCode::CodScope001,
+        ErrorCode::Iop001,
+        ErrorCode::Iop002,
+        ErrorCode::Iop003,
+        ErrorCode::Iop004,
+        ErrorCode::Quota001,
+        ErrorCode::Infra001,
+        ErrorCode::Infra002,
+        ErrorCode::Infra003,
+        ErrorCode::Infra004,
+        ErrorCode::Infra005,
+        ErrorCode::Auth401,
+        ErrorCode::Auth403,
+        ErrorCode::AuthRevoked,
+        ErrorCode::Aud001,
+        ErrorCode::Aud002,
+        ErrorCode::JnsRef002,
+        ErrorCode::JnsConflict001,
+        ErrorCode::EavTx001,
+        ErrorCode::GrpcTenant001,
+        ErrorCode::InfraAthena005,
+        ErrorCode::InfraCedar002,
+        ErrorCode::Mcp503,
+        ErrorCode::Fml001,
+        ErrorCode::Fml002,
+        ErrorCode::Fml003,
+        ErrorCode::Fml004,
+        ErrorCode::Fml005,
+        ErrorCode::Fml006,
+        ErrorCode::Fml007,
+        ErrorCode::Fml008,
+        ErrorCode::Fml009,
+        ErrorCode::Fml010,
+        ErrorCode::Fml011,
+        ErrorCode::Fml012,
+        ErrorCode::Fml013,
+    ];
+
+    /// Obtiene el código canónico correspondiente en el catálogo de errores (TOML).
+    pub fn canonical_code(&self) -> &'static str {
+        match self {
+            ErrorCode::Janus400 => "JANUS_400",
+            ErrorCode::Janus401 => "GRPC_AUTH_001",
+            ErrorCode::Janus403 => "JANUS_403",
+            ErrorCode::Janus404 => "INFRA_DDB_003",
+            ErrorCode::Janus422 => "JNS_REF_001",
+            ErrorCode::Janus500 => "GRPC_500",
+            ErrorCode::JanusAstCompileError => "AEG_COMPILE_001",
+            ErrorCode::JanusFilterCompileError => "AEG_COMPILE_002",
+            ErrorCode::JanusSchemaNotFound => "CDX_003",
+            ErrorCode::JanusTenantMismatch => "AEG_TENANT_MISSING",
+            ErrorCode::JanusVal001 => "JANUS_VAL_001",
+            ErrorCode::Jns001 => "JNS_001",
+            ErrorCode::JnsLock001 => "JNS_LOCK_001",
+            ErrorCode::JnsSeed001 => "JNS_SEED_001",
+            ErrorCode::JnsOlap001 => "JNS_OLAP_003",
+            ErrorCode::JnsTx001 => "JNS_TX_001",
+
+            ErrorCode::Aeg001 => "AEG_001",
+            ErrorCode::Aeg002 => "AEG_002",
+            ErrorCode::Aeg003 => "AEG_003",
+            ErrorCode::Aeg004 => "AEG_004",
+            ErrorCode::Aeg005 => "AEG_005",
+
+            ErrorCode::Eav001 => "EAV_001",
+            ErrorCode::Eav002 => "EAV_002",
+            ErrorCode::Eav003 => "EAV_TX_003",
+            ErrorCode::Eav004 => "EAV_004",
+            ErrorCode::Eav005 => "EAV_TX_002",
+            ErrorCode::EavFts001 => "EAV_001",
+
+            ErrorCode::Cod001 => "CDX_001",
+            ErrorCode::Cod002 => "CDX_002",
+            ErrorCode::Cod003 => "CDX_003",
+            ErrorCode::CodScope001 => "JNS_SCOPE_001",
+
+            ErrorCode::Iop001 => "JANUS_VAL_001",
+            ErrorCode::Iop002 => "JNS_001",
+            ErrorCode::Iop003 => "JNS_TX_001",
+            ErrorCode::Iop004 => "INFRA_CEDAR_001",
+
+            ErrorCode::Quota001 => "INFRA_DDB_002",
+
+            ErrorCode::Infra001 => "INFRA_DDB_001",
+            ErrorCode::Infra002 => "INFRA_ATHENA_003",
+            ErrorCode::Infra003 => "INFRA_ATHENA_001",
+            ErrorCode::Infra004 => "INFRA_ATHENA_002",
+            ErrorCode::Infra005 => "INFRA_ATHENA_004",
+
+            ErrorCode::Auth401 => "GRPC_AUTH_001",
+            ErrorCode::Auth403 => "GRPC_AUTH_002",
+            ErrorCode::AuthRevoked => "GRPC_AUTH_001",
+
+            ErrorCode::Aud001 => "AUD_001",
+            ErrorCode::Aud002 => "AUD_002",
+
+            ErrorCode::JnsRef002 => "JNS_REF_002",
+            ErrorCode::JnsConflict001 => "JNS_CONFLICT_001",
+            ErrorCode::EavTx001 => "EAV_TX_001",
+            ErrorCode::GrpcTenant001 => "GRPC_TENANT_001",
+            ErrorCode::InfraAthena005 => "INFRA_ATHENA_005",
+            ErrorCode::InfraCedar002 => "INFRA_CEDAR_002",
+            ErrorCode::Mcp503 => "MCP_503",
+
+            ErrorCode::Fml001 => "FML_001",
+            ErrorCode::Fml002 => "FML_002",
+            ErrorCode::Fml003 => "FML_003",
+            ErrorCode::Fml004 => "FML_004",
+            ErrorCode::Fml005 => "FML_005",
+            ErrorCode::Fml006 => "FML_006",
+            ErrorCode::Fml007 => "FML_007",
+            ErrorCode::Fml008 => "FML_008",
+            ErrorCode::Fml009 => "FML_009",
+            ErrorCode::Fml010 => "FML_010",
+            ErrorCode::Fml011 => "FML_011",
+            ErrorCode::Fml012 => "FML_012",
+            ErrorCode::Fml013 => "FML_013",
+        }
+    }
+
     /// Retorna true si el error admite reintento por el cliente.
     /// Mapea :retryable? del error_catalog.edn
     pub fn is_retryable(&self) -> bool {
-        matches!(
-            self,
-            ErrorCode::Aeg003
-                | ErrorCode::Eav001
-                | ErrorCode::Infra001
-                | ErrorCode::Infra002
-                | ErrorCode::Infra003
-                | ErrorCode::Infra004
-                | ErrorCode::Infra005
-        )
+        if let Some(catalog) = crate::domain::error_catalog::try_global() {
+            catalog.is_retryable(self.canonical_code())
+        } else {
+            // fallback a la lista estática sincronizada con error_catalog.toml
+            matches!(
+                self,
+                ErrorCode::JnsTx001
+                    | ErrorCode::JnsOlap001
+                    | ErrorCode::Eav002
+                    | ErrorCode::Eav003
+                    | ErrorCode::Eav005
+                    | ErrorCode::Aeg003
+                    | ErrorCode::Aeg005
+                    | ErrorCode::Infra001
+                    | ErrorCode::Quota001
+                    | ErrorCode::Infra003
+            )
+        }
     }
 
     /// Stage del pipeline donde ocurrió el error.
@@ -110,7 +302,9 @@ impl ErrorCode {
             | ErrorCode::JnsLock001
             | ErrorCode::JnsSeed001
             | ErrorCode::JnsOlap001
-            | ErrorCode::JnsTx001 => "janus",
+            | ErrorCode::JnsTx001
+            | ErrorCode::JnsRef002
+            | ErrorCode::JnsConflict001 => "janus",
             ErrorCode::Aeg001
             | ErrorCode::Aeg002
             | ErrorCode::Aeg003
@@ -121,7 +315,8 @@ impl ErrorCode {
             | ErrorCode::Eav003
             | ErrorCode::Eav004
             | ErrorCode::Eav005
-            | ErrorCode::EavFts001 => "eav",
+            | ErrorCode::EavFts001
+            | ErrorCode::EavTx001 => "eav",
             ErrorCode::Cod001
             | ErrorCode::Cod002
             | ErrorCode::Cod003
@@ -135,8 +330,26 @@ impl ErrorCode {
             | ErrorCode::Infra002
             | ErrorCode::Infra003
             | ErrorCode::Infra004
-            | ErrorCode::Infra005 => "infrastructure",
+            | ErrorCode::Infra005
+            | ErrorCode::InfraAthena005
+            | ErrorCode::InfraCedar002 => "infrastructure",
             ErrorCode::Auth401 | ErrorCode::Auth403 | ErrorCode::AuthRevoked => "auth",
+            ErrorCode::Aud001 | ErrorCode::Aud002 => "audit-interceptor",
+            ErrorCode::GrpcTenant001 => "grpc-interceptor",
+            ErrorCode::Mcp503 => "mcp",
+            ErrorCode::Fml001
+            | ErrorCode::Fml002
+            | ErrorCode::Fml003
+            | ErrorCode::Fml004
+            | ErrorCode::Fml005
+            | ErrorCode::Fml006
+            | ErrorCode::Fml007
+            | ErrorCode::Fml008
+            | ErrorCode::Fml009
+            | ErrorCode::Fml010
+            | ErrorCode::Fml011
+            | ErrorCode::Fml012
+            | ErrorCode::Fml013 => "aegis::formula",
         }
     }
 }
@@ -207,3 +420,8 @@ impl DomainError {
         Self::new(code, detail)
     }
 }
+
+#[cfg(test)]
+#[path = "tests/errors_tests.rs"]
+mod tests;
+

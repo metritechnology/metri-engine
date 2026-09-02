@@ -3,7 +3,35 @@
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
+  "is_sequence_scope_provider": true,
   "attributes": [
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "is_dimension": true,
+      "description": "Nombre comercial de la empresa u organización."
+    },
+    {
+      "name": "legal_name",
+      "type": "string",
+      "fts": true,
+      "description": "Razón social completa o nombre legal registrado."
+    },
+    {
+      "name": "tag",
+      "type": "string",
+      "unique": "tenant",
+      "pattern": "^C-[A-Z0-9-]{3,15}$",
+      "fts": true,
+      "auto_generate": {
+        "strategy": "stochastic_base36",
+        "prefix": "C-",
+        "length": 6
+      },
+      "description": "Código de negocio único autogenerado por inquilino para la empresa."
+    },
     {
       "name": "company_type",
       "type": "enum",
@@ -11,52 +39,148 @@
         "CLIENT",
         "PROVIDER",
         "MANUFACTURER",
-        "CONTRACTOR"
+        "CONTRACTOR",
+        "DISTRIBUTOR",
+        "UTILITY",
+        "INSURER"
       ],
       "required": true,
       "is_dimension": true,
-      "description": "Clasificador universal ERP. Permite almacenar Proveedores, Clientes y Contratistas en una \u00fanica tabla relacional."
+      "description": "Clasificador universal ERP (estilo SAP Business Partner / Salesforce Account)."
     },
     {
-      "name": "name",
-      "type": "string",
-      "required": true,
-      "fts": true,
-      "is_dimension": true
+      "name": "parent_company_id",
+      "type": "reference",
+      "entityRef": "company",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Empresa matriz o Holding corporativo para estructurar relaciones de grupo empresarial."
     },
     {
       "name": "tax_id",
       "type": "string",
+      "unique": "tenant",
       "fts": true,
-      "description": "Identificador fiscal (RUT, NIT, VAT, EIN)."
+      "description": "Identificador fiscal oficial (RFC, RUT, NIT, VAT, EIN) único por tenant."
     },
     {
-      "name": "contact_email",
+      "name": "tax_regime",
       "type": "string",
-      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
-    },
-    {
-      "name": "contact_phone",
-      "type": "string"
-    },
-    {
-      "name": "address",
-      "type": "string"
+      "is_dimension": true,
+      "description": "Régimen fiscal o clasificación tributaria oficial."
     },
     {
       "name": "status",
       "type": "enum",
       "options": [
         "ACTIVE",
-        "INACTIVE"
+        "INACTIVE",
+        "PENDING_APPROVAL",
+        "BLOCKED"
       ],
       "default_value": "ACTIVE",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Estado comercial y operativo de la empresa."
+    },
+    {
+      "name": "website",
+      "type": "string",
+      "description": "Sitio web o portal corporativo de la empresa."
+    },
+    {
+      "name": "primary_contact_name",
+      "type": "string",
+      "fts": true,
+      "description": "Nombre de la persona o enlace principal de contacto."
+    },
+    {
+      "name": "primary_contact_role",
+      "type": "string",
+      "description": "Cargo o función del contacto principal (ej: 'Gerente de Cuenta', 'Jefe de Soporte')."
+    },
+    {
+      "name": "contact_email",
+      "type": "string",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "description": "Correo electrónico principal de contacto comercial o corporativo."
+    },
+    {
+      "name": "contact_phone",
+      "type": "string",
+      "description": "Teléfono corporativo o directo de contacto."
+    },
+    {
+      "name": "address",
+      "type": "json",
+      "required": false,
+      "description": "Estructura de dirección fiscal y física estandarizada."
+    },
+    {
+      "name": "hourly_rate_cents",
+      "type": "number",
+      "is_measure": true,
+      "description": "Tarifa horaria acordada para contratistas/proveedores de servicio en céntimos."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "default_value": "USD",
+      "is_dimension": true,
+      "description": "Código de divisa ISO 4217 para transacciones comerciales."
+    },
+    {
+      "name": "payment_terms",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Términos de pago comerciales (ej: 'NET_30', 'NET_60', 'DUE_ON_RECEIPT')."
+    },
+    {
+      "name": "insurance_expiration_date",
+      "type": "epoch",
+      "description": "Fecha de vencimiento de la póliza de seguro de responsabilidad para contratistas."
+    },
+    {
+      "name": "sla_rating",
+      "type": "number",
+      "is_measure": true,
+      "description": "Calificación o score de desempeño de proveedor / SLA (0.0 a 5.0)."
+    },
+    {
+      "name": "erp_external_id",
+      "type": "string",
+      "unique": "tenant",
+      "fts": true,
+      "description": "ID externo en el ERP empresarial (SAP LIFNR/KUNNR, NetSuite ID, Odoo Partner ID) único por tenant."
+    },
+    {
+      "name": "custom_attributes",
+      "type": "json",
+      "subtype": "flat_map",
+      "is_dimension": true,
+      "description": "Diccionario clave-valor extensible para atributos específicos del cliente."
     }
   ],
-  "events": {
-    "create": "COMPANY_CREATED",
-    "update": "COMPANY_UPDATED",
-    "delete": "COMPANY_DELETED"
-  }
+  "event_rules": [
+    {
+      "rule_code": "COMPANY_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.company.created",
+      "description": "Notificación sistémica global al registrar una nueva empresa."
+    },
+    {
+      "rule_code": "COMPANY_STATUS_CHANGED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [
+        {
+          "field_name": "status",
+          "operator": "neq",
+          "target_value": ""
+        }
+      ],
+      "detail_type_output": "system.company.status_changed",
+      "description": "Evento de auditoría al cambiar el estado comercial de una empresa."
+    }
+  ]
 }

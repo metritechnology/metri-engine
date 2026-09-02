@@ -649,7 +649,7 @@ El `cm/build-malli-schema` transforma el modelo JSON en un schema Malli validabl
 | Directiva                     | Descripción                                                         |
 | :---------------------------- | :------------------------------------------------------------------ |
 | `events.create/update/delete` | Nombre canónico del evento EDA — Moira usa este string, no hardcode |
-| `shadow_sagas_mapping`        | Mapeo automático → `scheduled_job` sin lógica en código             |
+| `shadow_sagas_mapping`        | Mapa de proyección `ruta_destino_en_scheduled_job → ruta_origen_en_la_madre`. El `SagaBuilder` deriva `trigger_type`/`trigger_expression` de la entidad madre y hace fan-out por la matriz de pre-notificación. El resultado valida contra `models/scheduled_job.json` — ver 03B §III.2 |
 | `calendar_mapping`            | Inyección automática → `calendar_event` al crear la entidad madre   |
 | `routing.write_path_locked`   | Bloquea `rpc Transact` — solo permite `rpc BulkIngest`              |
 | `routing.ingestion_engine`    | `aws_kinesis_firehose` → bypass Janus/Datahike para OLAP masivo     |

@@ -92,17 +92,6 @@ fn now_s() -> i64 {
     chrono::Utc::now().timestamp()
 }
 
-fn gran_to_unit(gran: &str) -> CalUnit {
-    match gran {
-        "minute"  => CalUnit::Minute,
-        "hour"    => CalUnit::Hour,
-        "week"    => CalUnit::Week,
-        "month"   => CalUnit::Month,
-        "quarter" => CalUnit::Quarter,
-        "year"    => CalUnit::Year,
-        _         => CalUnit::Day,
-    }
-}
 
 // ── Shortcut resolver ─────────────────────────────────────────────────────────
 
@@ -185,7 +174,7 @@ pub fn resolve_comparison_period(
 
     match comp.comp_type {
         ComparisonType::TimeShiftRelative => {
-            let unit   = gran_to_unit(&comp.relative_granularity);
+            let unit   = comp.relative_granularity.parse::<CalUnit>().unwrap();
             let amount = comp.relative_amount.max(1);
             Some(ComparisonPeriod {
                 prev_start: shift_by_calendar(time_range.start_ts.unwrap_or(0), -amount, unit, tz),

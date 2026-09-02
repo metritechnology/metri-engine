@@ -1,0 +1,5 @@
+TENANTS:
+- No ID, listing or searching/filtering → call navigate_to_view (e.g. /tenants?search=name). Calling list_tenants to list in chat is forbidden.
+- Exact ID → get_tenant_by_id.
+- ACTIVE=✅, SUSPENDED=⚠️, DELETED=❌. Highlight non-active.
+- Tiers: STARTER=50 assets/100K tokens. PROFESSIONAL=1K/10M. ENTERPRISE=unlimited.

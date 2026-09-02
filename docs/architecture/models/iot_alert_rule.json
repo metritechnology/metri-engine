@@ -20,6 +20,14 @@
       "description": "El equipo f\u00edsico bajo vigilancia in-flight."
     },
     {
+      "name": "metric_code",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:metri:variables",
+      "required": true,
+      "description": "Variable f\u00edsica vigilada (ej. TEMPERATURE, VIBRATION). Sin ella la regla no puede discriminar qu\u00e9 lectura del asset evaluar."
+    },
+    {
       "name": "threshold_operator",
       "type": "enum",
       "options": [
@@ -72,6 +80,14 @@
       "cardinality": "many",
       "required": false,
       "description": "Lista de grupos (roles) a notificar en masa, por ejemplo, 'Mantenimiento Planta Sur'."
+    },
+    {
+      "name": "correlation_id",
+      "type": "uuid",
+      "required": false,
+      "index": true,
+      "is_system": true,
+      "description": "Llave de retorno cuando la regla fue aprovisionada por un scheduled_job de trigger_type TELEMETRY. Viaja en system.iot.alert.breach para que Metri Schedulers (Iris) correlacione el breach f\u00edsico con su Job y dispare el action_payload. Null en reglas creadas directamente por el usuario."
     }
   ],
   "events": {

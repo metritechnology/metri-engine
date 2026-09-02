@@ -135,3 +135,52 @@ impl ISqsBus for SqsFifoBus {
         Ok(())
     }
 }
+
+/// StubSqsBus — Simulación local en memoria del SQS FIFO.
+pub struct StubSqsBus {
+    pub messages: std::sync::Mutex<Vec<SqsMessage>>,
+}
+
+impl StubSqsBus {
+    pub fn new() -> Self {
+        StubSqsBus {
+            messages: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl ISqsBus for StubSqsBus {
+    async fn publish(
+        &self,
+        payload:  &str,
+        group_id: &str,
+        dedup_id: &str,
+    ) -> Result<String, DomainError> {
+        info!(
+            group_id = %group_id,
+            dedup_id = %dedup_id,
+            payload = %payload,
+            "[StubSqsBus] Mensaje publicado en local"
+        );
+        let msg_id = format!("stub-msg-{}", uuid::Uuid::new_v4());
+        self.messages.lock().unwrap().push(SqsMessage {
+            receipt_handle: format!("receipt-{}", msg_id),
+            body: payload.to_string(),
+            message_id: msg_id.clone(),
+        });
+        Ok(msg_id)
+    }
+
+    async fn receive_messages(&self, max_count: u32) -> Result<Vec<SqsMessage>, DomainError> {
+        let mut msgs = self.messages.lock().unwrap();
+        let count = (max_count as usize).min(msgs.len());
+        let drained = msgs.drain(..count).collect();
+        Ok(drained)
+    }
+
+    async fn delete_message(&self, _receipt_handle: &str) -> Result<(), DomainError> {
+        Ok(())
+    }
+}
+

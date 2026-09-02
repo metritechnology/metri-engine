@@ -1,47 +1,106 @@
 {
   "entity": "user",
   "engine": "oltp",
-  "is_system": false,
+  "is_system": true,
   "track_history": true,
-  "doc": "Platform user. The User Master is identified by UUID matching METRI_MASTER_USER_ID (env var) \u2014 NOT by any mutable database flag. Its credentials (password_hash) are seeded from environment variables at bootstrap.",
+  "doc": "Platform user. The User Master is identified by UUID matching METRI_MASTER_USER_ID (env var). Normal users authenticate via IdP or seeded credentials.",
   "attributes": [
     {
-      "name": "password_hash",
-      "type": "string",
-      "is_system": true,
-      "doc": "Bcrypt/Argon2 hash. Never stored in plaintext. Populated at bootstrap from METRI_MASTER_USER_PASSWORD_HASH (env var) for the User Master only. Normal users authenticate via external IdP \u2014 this field is null for them."
-    },
-    {
-      "name": "email",
+      "name": "username",
       "type": "string",
       "unique": "identity",
       "required": true,
       "fts": true,
       "is_dimension": true,
-      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+      "description": "Nombre de usuario único globalmente en toda la plataforma para inicio de sesión."
+    },
+    {
+      "name": "password_hash",
+      "type": "string",
+      "is_system": true,
+      "sensitive": true,
+      "description": "Hash Bcrypt/Argon2 de la contraseña. Nunca en texto plano y sanitizado en logs."
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "unique": "identity",
+      "required": false,
+      "fts": true,
+      "is_dimension": true,
+      "sensitive": true,
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "description": "Correo electrónico del usuario (PII sanitizado en logs). Único globalmente en todos los tenants."
+    },
+    {
+      "name": "primary_phone",
+      "type": "string",
+      "unique": "tenant",
+      "required": false,
+      "is_dimension": true,
+      "sensitive": true,
+      "description": "Teléfono principal para SMS/WhatsApp OTP y alertas (PII sanitizado en logs)."
     },
     {
       "name": "first_name",
       "type": "string",
       "required": true,
-      "fts": true
+      "fts": true,
+      "description": "Nombre(s) del usuario."
     },
     {
       "name": "last_name",
       "type": "string",
       "required": true,
-      "fts": true
+      "fts": true,
+      "description": "Apellido(s) del usuario."
+    },
+    {
+      "name": "job_title",
+      "type": "string",
+      "fts": true,
+      "is_dimension": true,
+      "description": "Cargo o función del usuario en la organización (ej: 'Técnico Mecánico Senior')."
+    },
+    {
+      "name": "avatar",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "one",
+      "description": "Referencia al archivo de imagen de perfil (File entity)."
+    },
+    {
+      "name": "badge_id",
+      "type": "string",
+      "unique": "tenant",
+      "fts": true,
+      "sensitive": true,
+      "description": "Código de tarjeta o gafete físico RFID/NFC para acceso e identificación en planta (sanitizado en logs)."
     },
     {
       "name": "status",
       "type": "enum",
       "options": [
+        "PENDING",
         "ACTIVE",
         "INACTIVE",
         "SUSPENDED"
       ],
-      "default_value": "ACTIVE",
-      "is_dimension": true
+      "default_value": "PENDING",
+      "is_dimension": true,
+      "description": "Estado del ciclo de vida del usuario."
+    },
+    {
+      "name": "user_type",
+      "type": "enum",
+      "options": [
+        "INTERNAL",
+        "CONTRACTOR"
+      ],
+      "default_value": "INTERNAL",
+      "required": true,
+      "is_dimension": true,
+      "description": "Tipo de usuario: empleado interno o contratista externo."
     },
     {
       "name": "role_ids",
@@ -50,14 +109,15 @@
       "cardinality": "many",
       "required": true,
       "is_dimension": true,
-      "doc": "Reference to the User's authorization roles (Matrix dimension)."
+      "description": "Matriz de roles de autorización asignados."
     },
     {
       "name": "group_ids",
       "type": "reference",
       "entityRef": "user_group",
       "cardinality": "many",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Grupos o cuadrillas de trabajo a las que pertenece el usuario."
     },
     {
       "name": "tenant_id",
@@ -65,7 +125,136 @@
       "entityRef": "tenant",
       "required": true,
       "is_dimension": true,
-      "doc": "Mandatory tenant isolation for identity management."
+      "description": "Referencia al tenant al que pertenece el usuario."
+    },
+    {
+      "name": "company_id",
+      "type": "reference",
+      "entityRef": "company",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Empresa proveedora/contratista a la que pertenece si user_type es CONTRACTOR."
+    },
+    {
+      "name": "primary_location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Planta o ubicación física principal asignada al usuario."
+    },
+    {
+      "name": "hourly_rate_cents",
+      "type": "number",
+      "is_measure": true,
+      "sensitive": true,
+      "description": "Costo por hora de mano de obra del técnico en céntimos (confidencial/sanitizado)."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:currency",
+      "pattern": "^[A-Z]{3}$",
+      "default_value": "USD",
+      "is_dimension": true,
+      "description": "Código de divisa ISO 4217 para la tarifa horaria, validado contra el sistema terminológico."
+    },
+    {
+      "name": "skills",
+      "type": "array",
+      "of": "string",
+      "description": "Lista de competencias o certificaciones técnicas del usuario."
+    },
+    {
+      "name": "timezone",
+      "type": "string",
+      "default_value": "America/Mexico_City",
+      "is_dimension": true,
+      "description": "Zona horaria preferida por el usuario."
+    },
+    {
+      "name": "locale",
+      "type": "string",
+      "default_value": "es",
+      "is_dimension": true,
+      "description": "Idioma/locale preferido por el usuario."
+    },
+    {
+      "name": "failed_attempts",
+      "type": "number",
+      "is_system": true,
+      "default_value": 0,
+      "description": "Contador de intentos fallidos de inicio de sesión."
+    },
+    {
+      "name": "locked_until",
+      "type": "string",
+      "is_system": true,
+      "description": "Timestamp RFC3339 de expiración de bloqueo de cuenta."
+    },
+    {
+      "name": "mfa_enabled",
+      "type": "boolean",
+      "is_system": true,
+      "default_value": false,
+      "description": "Indica si el segundo factor de autenticación está activo."
+    },
+    {
+      "name": "mfa_secret",
+      "type": "string",
+      "is_system": true,
+      "sensitive": true,
+      "description": "Secreto TOTP cifrado AES-256 (Base32). Sanitizado en logs."
+    },
+    {
+      "name": "registration_method",
+      "type": "enum",
+      "options": [
+        "MAGIC_LINK",
+        "QR_CODE",
+        "VERIFICATION_CODE",
+        "PHONE_OTP",
+        "DIRECT_API",
+        "BOOTSTRAP"
+      ],
+      "is_system": true,
+      "is_dimension": true,
+      "description": "Método utilizado para completar el registro inicial."
+    },
+    {
+      "name": "registered_at",
+      "type": "epoch",
+      "is_system": true,
+      "description": "Timestamp epoch ms de registro oficial."
+    },
+    {
+      "name": "last_login_at",
+      "type": "epoch",
+      "is_system": true,
+      "description": "Timestamp epoch ms del último inicio de sesión exitoso."
+    }
+  ],
+  "event_rules": [
+    {
+      "rule_code": "USER_CREATED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.user.created",
+      "description": "Notificación sistémica al crear un nuevo usuario."
+    },
+    {
+      "rule_code": "USER_STATUS_CHANGED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [
+        {
+          "field_name": "status",
+          "operator": "neq",
+          "target_value": ""
+        }
+      ],
+      "detail_type_output": "system.user.status_changed",
+      "description": "Evento de auditoría al cambiar el estado del usuario."
     }
   ]
 }

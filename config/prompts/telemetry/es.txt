@@ -1,0 +1,3 @@
+REGLAS DE TELEMETRÍA:
+- SIEMPRE descubre el esquema ANTES de consultar datos de telemetría. Usa search_schemas primero.
+- Para preguntas temporales, usa resolve_time_context ANTES de cualquier consulta de datos.

@@ -98,7 +98,7 @@ impl HmacTokenStore {
     /// [PORTED_FROM: (blacklisted? ddb-client table-name jti)]
     async fn is_blacklisted(&self, jti: &str) -> bool {
         let pk = format!("REVOKED#{jti}");
-        match self.ddb.get_item(&self.table_name, &pk, None).await {
+        match self.ddb.get_item(&self.table_name, &pk, Some(b"REVOKED")).await {
             Ok(Some(_)) => true,  // encontrado → revocado
             Ok(None)    => false, // no encontrado → válido
             Err(e) => {
@@ -141,6 +141,7 @@ impl ISessionStore for HmacTokenStore {
         use aws_sdk_dynamodb::types::AttributeValue;
         let mut item = std::collections::HashMap::new();
         item.insert("PK".to_string(), AttributeValue::S(pk));
+        item.insert("SK".to_string(), AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(b"REVOKED".to_vec())));
         item.insert("ttl".to_string(), AttributeValue::N(expires.to_string()));
 
         self.ddb
@@ -154,7 +155,7 @@ impl ISessionStore for HmacTokenStore {
     async fn unrevoke_session(&self, jti: &str) -> Result<(), DomainError> {
         let pk = format!("REVOKED#{jti}");
         self.ddb
-            .delete_item(&self.table_name, &pk, None)
+            .delete_item(&self.table_name, &pk, Some(b"REVOKED"))
             .await
     }
 }

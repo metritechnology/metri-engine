@@ -32,11 +32,18 @@ fn auto_generate_attrs(model: &EntityModel) -> Vec<(String, AutoGenStrategy)> {
         .attributes
         .iter()
         .filter_map(|attr| {
-            // Sólo procesamos atributos con nombre de campo que incluyan sufijo de estrategia
-            // En el JSON del Códice: { "auto_generate": { "strategy": "stochastic_base36", ... } }
-            // En Rust usamos convención: si attr.name contiene "_code" y el modelo lo define.
-            // FASE 2: leer el campo auto_generate del JSON directamente.
-            // Por ahora: marcamos atributos "is_sequence_scope_provider" como secuenciales.
+            if let Some(auto_gen) = &attr.auto_generate {
+                let strategy_str = auto_gen.get("strategy").and_then(|v| v.as_str()).unwrap_or("");
+                if strategy_str == "stochastic_base36" {
+                    let prefix = auto_gen.get("prefix").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let length = auto_gen.get("length").and_then(|v| v.as_u64()).unwrap_or(7) as usize;
+                    return Some((attr.name.clone(), AutoGenStrategy::StochasticBase36 { prefix, length }));
+                } else if strategy_str == "sequential" {
+                    // Si en un futuro agregamos validación secuencial explícita en JSON
+                }
+            }
+
+            // Fallback para secuencias:
             if attr.is_sequence_scope_via {
                 Some((
                     attr.name.clone(),
@@ -118,3 +125,8 @@ pub async fn inject(
 
     Ok(enriched)
 }
+
+#[cfg(test)]
+#[path = "tests/generator_tests.rs"]
+mod tests;
+

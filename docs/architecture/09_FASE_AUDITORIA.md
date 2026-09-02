@@ -1,688 +1,577 @@
-# Fase 09 — Auditoría Asertiva y Criptografía Time-Travel
+# Fase 09 — Auditoría Asertiva y Criptografía Time-Travel (Rust & metri-panel)
 
 **Fase contenedora:** Core Engine  
-**Depende de:** [03B_FASE_JANUS_ROUTER.md](03B_FASE_JANUS_ROUTER.md), [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md), [10_FASE_GESTION_ERRORES_EDA.md](10_FASE_GESTION_ERRORES_EDA.md)  
-**Consumida por:** `IOP Pipeline`, `Sherlog`, `QuotaGuard`, `CedarAuthorizer`
+**Depende de:** [03A_FASE_IOP.md](03A_FASE_IOP.md), [06_FASE_CEDAR_AUTHORIZER.md](06_FASE_CEDAR_AUTHORIZER.md), [10_FASE_GESTION_ERRORES_EDA.md](10_FASE_GESTION_ERRORES_EDA.md)  
+**Consumida por:** `IOP Pipeline`, `Sherlog` (Fase 10), `QuotaGuard` (Fase 7), `CedarAuthorizer` (Fase 6), `metri-panel` (BI Analytics Dashboard & Detail timelines)
 
 > [!IMPORTANT]
-> La auditoría opera en **dos capas ortogonales**:
+> La auditoría en Metri opera en **dos capas ortogonales** diseñadas para equilibrar el rendimiento transaccional de escritura y la potencia analítica de consulta:
 >
-> | Capa | Motor | Eventos | Costo query |
-> | :--- | :---- | :------ | :---------- |
-> | **OLTP Time-Travel** | Datahike | `CREATE`, `UPDATE`, `DELETE` | O(1) — `d/history` |
-> | **OLAP Asíncrono** | Kinesis → S3 → Athena | `READ`, `ACCESS_DENIED`, `QUOTA_EXHAUSTED`, `PLUGIN_REJECTED` | $0.001/GB — Athena |
+> | Capa | Motor de Persistencia | Eventos Soportados | Propósito / Costo Query |
+> | :--- | :-------------------- | :----------------- | :---------------------- |
+> | **OLTP Time-Travel** | DynamoDB EAV (Datoms) | `CREATE`, `UPDATE`, `DELETE` | Reconstrucción as-of e historial de cambios por entidad en tiempo real / O(1) vía PK |
+> | **OLAP Asíncrono** | Kinesis Firehose → S3 → Athena | `READ`, `ACCESS_DENIED`, `QUOTA_EXHAUSTED`, `WRITE_ERROR`, `UNKNOWN` | Análisis de cumplimiento forense, seguridad y SLOs globales / $0.001 por GB escaneado en Athena |
 
 ---
 
-## MÓDULO I: Auditoría OLTP — Time-Travel Nativo
+## MÓDULO I: Auditoría OLTP — Time-Travel Nativo sobre EAV DynamoDB
 
-En Datahike **la transacción es una entidad material**. El `OLTPChannel` la anota con atributos `:audit/*` en la misma operación ACID — sin tablas de log adicionales:
+En el motor transaccional EAV de Metri, **la transacción es un hecho histórico inmutable**. En lugar de almacenar logs estructurados en tablas de auditoría clásicas que añaden overhead en el Write Path, el sistema utiliza un modelo de persistencia solo-append en DynamoDB donde cada atributo de una entidad se representa como un Datom individual.
 
-```clojure
-;; ns: metri.infrastructure.datahike  [MODIFICAR]
-;; Incluir como primer elemento del vector :tx-data en OLTPChannel
-(defn build-tx-meta [ctx]
-  {:db/id            "datomic.tx"
-   :audit/user-id    (:user-id ctx)       ;; Cedar ctx — nunca del cliente
-   :audit/tenant-id  (:tenant-id ctx)     ;; Cedar ctx — nunca del cliente
-   :audit/ip         (get-in ctx [:request :client-ip])
-   :audit/trace-id   (otel/trace-id (otel/current-span))
-   :audit/operation  (name (:operation ctx))})
+### I.1 — Persistencia de Datoms con EAV y Control Histórico
+Cada datom escrito en la tabla transaccional `metri-eav` consta de la siguiente clave de ordenación binaria (SK):
+```
+SK binario: [attr_id: 2 Bytes][tx_id: 8 Bytes][op: 1 Byte (Assert=1 / Retract=0)]
+```
+Esta ordenación binaria permite que DynamoDB ordene cronológicamente y por atributo las modificaciones de cada entidad de forma nativa. 
+
+El Write Path transaccional ACID (`OltpChannel` / `EavWriter`) escribe metadatos de auditoría directamente en el datom (anotando la transacción con el ID del usuario actor y el ID de la transacción en la cabecera), garantizando que todo cambio de negocio tenga trazabilidad total sin doble escritura.
+
+### I.2 — Query de Historial (Time-Travel native) en Rust
+El lector del motor EAV (`EavReader` en `src/eav/reader/pull.rs`) expone el método `history` para recuperar la traza de cambios completa (tanto aserciones como retracciones) de cualquier activo de negocio.
+
+```rust
+// src/eav/reader/pull.rs
+/// Entrada del historial de un atributo en una entidad.
+#[derive(Debug, Clone)]
+pub struct HistoryEntry {
+    pub attr_name: String,
+    pub value:     Option<DatomValue>,
+    pub tx_id:     u64,
+    pub op:        bool, // true = assert (creación/mutación), false = retract (eliminación)
+}
+
+impl EavReader {
+    /// History query — retorna TODOS los datoms históricos de una entidad incluyendo retracciones.
+    /// Ideal para auditorías forenses y visualizaciones de timelines de cambio en metri-panel.
+    /// [PORTED_FROM: (defn history-query [db entity-id])]
+    pub async fn history(
+        &self,
+        tenant_id: &str,
+        entity_id: &str,
+        attr_name: Option<&str>,
+    ) -> Result<Vec<HistoryEntry>, DomainError> {
+        let pk = format!("T#{}#E#{}", tenant_id, entity_id);
+
+        let key_condition = "#pk = :pk".to_string();
+        let mut attr_names  = HashMap::new();
+        let mut attr_values = HashMap::new();
+        attr_names.insert("#pk".to_string(), "PK".to_string());
+        attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
+
+        // Ejecutar query en DynamoDB indexado de forma natural
+        let raw_items = self.ddb
+            .query(&self.table, None, &key_condition, attr_names, attr_values, true, None)
+            .await
+            .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("history falló: {e:?}")))?;
+
+        // Mapear datoms crudos al vector de historial estructurado
+        let entries = raw_items
+            .into_iter()
+            .filter_map(|item| {
+                let sk = match item.get("SK") {
+                    Some(AttributeValue::B(blob)) => blob.as_ref(),
+                    _ => return None,
+                };
+                if sk.len() != 11 { return None; }
+                let attr_id = u16::from_be_bytes(sk[0..2].try_into().unwrap());
+                let tx_id   = u64::from_be_bytes(sk[2..10].try_into().unwrap());
+                let op      = sk[10] != 0;
+
+                let attr = crate::codice::global().get_attr_name(attr_id).unwrap_or("unknown_attr").to_string();
+                if let Some(filter) = attr_name {
+                    if attr != filter { return None; }
+                }
+                
+                let value = extract_datom_value(&item);
+                Some(HistoryEntry {
+                    attr_name: attr,
+                    value,
+                    tx_id,
+                    op,
+                })
+            })
+            .collect();
+
+        Ok(entries)
+    }
+}
 ```
 
-**Schema Datahike** — `resources/bootstrap/audit_attrs.edn` `[NEW]`:
-
-```edn
-[{:db/ident :audit/user-id    :db/valueType :db.type/string :db/cardinality :db.cardinality/one}
- {:db/ident :audit/tenant-id  :db/valueType :db.type/string :db/cardinality :db.cardinality/one}
- {:db/ident :audit/ip         :db/valueType :db.type/string :db/cardinality :db.cardinality/one}
- {:db/ident :audit/trace-id   :db/valueType :db.type/string :db/cardinality :db.cardinality/one
-  :db/doc "W3C traceparent — correlación OTel"}
- {:db/ident :audit/operation  :db/valueType :db.type/string :db/cardinality :db.cardinality/one
-  :db/doc "CREATE | UPDATE | DELETE | UPSERT"}]
-```
-
-**Query Time-Travel** — quién mutó el activo `XYZ`:
-
-```clojure
-(d/q '[:find  ?user-id ?op ?t
-       :in    $ ?asset-ulid
-       :where [(d/history $) $h]
-              [$h ?e :entity/ulid ?asset-ulid]
-              [$h ?e :audit/user-id ?user-id]
-              [$h ?e :audit/operation ?op]
-              [$h ?e :db/txInstant ?t]]
-     (d/history @conn) "uuid-xyz")
-```
-
-> [!NOTE]
-> Datahike es **solo-append** — el histórico de transacciones nunca se borra. Registrar `READ` aquí ahogaría las write-units de DynamoDB; por eso esos eventos van al canal OLAP.
+### I.3 — Snapshot Reads (`as-of`)
+De forma adicional, `EavReader::pull_as_of` permite reconstruir de forma instantánea el estado exacto de una entidad en un punto de transacción pasado $T$. Esto se logra aplicando una query acotada con el operador `SK <= [attr_id][as_of_tx][0x01]` y tomando el estado de aserción más reciente.
 
 ---
 
-## MÓDULO II: Auditoría OLAP — Modelo `audit_log`
+## MÓDULO II: Auditoría OLAP — Modelo de Eventos `audit_log`
 
-Fuente de verdad: [`models/audit_log.json`](models/audit_log.json) — `engine: olap`, `disable_eda: true`, `partition_strategy: YYYY-MM-DD`.
+Para análisis agregados e informes de cumplimiento regulatorio, el almacenamiento OLTP por datoms individuales es ineficiente de escanear. Por ello, el sistema utiliza un canal asíncrono que escribe registros denegados o de sólo lectura en un flujo OLAP denormalizado.
 
-| Campo              | Tipo      | Rol       | Semántica                                                        |
-| :----------------- | :-------- | :-------- | :--------------------------------------------------------------- |
-| `tenant_id`        | reference | dimension | Aislamiento multitenant en Athena                                |
-| `user_id`          | reference | dimension | Trazabilidad por actor — sujeto a censura ABAC                   |
-| `action_type`      | enum      | dimension | `READ \| WRITE \| DELETE \| ACCESS_DENIED \| QUOTA_EXHAUSTED \| PLUGIN_REJECTED` |
-| `resource_domain`  | string    | dimension | Tipo de entidad accedida (`asset`, `work_order`)                 |
-| `resource_id`      | uuid      | —         | FK opcional — `nil` en `ACCESS_DENIED`                           |
-| `client_ip`        | string    | dimension | Detección de anomalías de acceso                                 |
-| `security_context` | json      | —         | Snapshot Cedar eval + claims — forense offline                   |
-| `execution_time_ms`| long      | measure   | Baseline SLOs                                                    |
-| `plugin_telemetry` | json      | —         | Trazabilidad de plugins ejecutados en el pipeline                |
+### II.1 — Modelo Códice del Log
+La estructura de este registro se define centralizadamente en `config/models/audit_log.json`, con motor analítico asignado y desactivando el bus EDA para prevenir loops circulares infinitos de eventos de auditoría (`disable_eda: true`):
 
-> [!IMPORTANT]
-> `disable_eda: true` previene que el `OLAPChannel` emita un evento EDA por cada registro — sin loop de bus. La correlación analítica ocurre en Athena por `tenant_id` + `trace_id`.
+```json
+{
+  "entity": "audit_log",
+  "engine": "olap",
+  "partition_strategy": "YYYY-MM-DD",
+  "disable_eda": true,
+  "attributes": [
+    { "name": "tenant_id", "type": "reference", "entityRef": "tenant", "required": true, "is_dimension": true },
+    { "name": "user_id", "type": "reference", "entityRef": "user", "required": true, "is_dimension": true },
+    { "name": "action_type", "type": "enum", "options": ["READ", "WRITE", "DELETE", "ACCESS_DENIED", "QUOTA_EXHAUSTED", "PLUGIN_REJECTED"], "required": true, "is_dimension": true },
+    { "name": "resource_domain", "type": "string", "required": true, "is_dimension": true, "doc": "Tipo de entidad accedida (e.g., 'asset')" },
+    { "name": "resource_id", "type": "uuid", "doc": "ID del registro consultado o mutado." },
+    { "name": "client_ip", "type": "string", "is_dimension": true },
+    { "name": "security_context", "type": "json", "doc": "Snapshot de evaluación Cedar y claims del JWT." },
+    { "name": "execution_time_ms", "type": "long", "is_measure": true },
+    { "name": "plugin_telemetry", "type": "json", "doc": "Tiempos de ejecución de plugins inyectados." }
+  ]
+}
+```
 
-**Partición S3:** `s3://metri-audit-olap/audit_log/year=YYYY/month=MM/day=DD/`
+### II.2 — Flujo Ingesta OLAP
+```
+[IopOrchestrator (Rust)]
+         │
+         ▼ (tokio::spawn)
+[IAuditInterceptor] ──(Value JSON)──> [OlapChannel] ──(Kinesis Firehose)──> [S3 Data Lake] ──> [Athena Engine]
+```
+Los logs de auditoría se almacenan en S3 particionados por fecha para optimizar las consultas columnares en Athena:
+`s3://metri-audit-olap/audit_log/year=YYYY/month=MM/day=DD/`
 
-**Queries de Compliance (Athena):**
-
+### II.3 — Consultas de Compliance en Athena (SLO & Seguridad)
 ```sql
--- Accesos denegados por IP en el último mes
-SELECT client_ip, user_id, resource_domain, COUNT(*) as denials
+-- Detección de posibles ataques de fuerza bruta o escaneos:
+SELECT client_ip, user_id, COUNT(*) as denegaciones
 FROM audit_log
-WHERE tenant_id = 'uuid-acme' AND action_type = 'ACCESS_DENIED'
-  AND year = '2026' AND month = '04'
-GROUP BY client_ip, user_id, resource_domain HAVING COUNT(*) > 10;
-
--- SLO: tiempo de ejecución p99 por dominio
-SELECT resource_domain, AVG(execution_time_ms) as avg_ms,
-       PERCENTILE_APPROX(execution_time_ms, 0.99) as p99_ms
-FROM audit_log WHERE tenant_id = 'uuid-acme' AND year = '2026' AND month = '04'
-GROUP BY resource_domain;
+WHERE tenant_id = 'uuid-tenant-acme' AND action_type = 'ACCESS_DENIED'
+  AND year = '2026' AND month = '05'
+GROUP BY client_ip, user_id HAVING COUNT(*) > 10;
 ```
 
 ---
 
-## MÓDULO III: `IAuditInterceptor` — Interceptor Desacoplado
+## MÓDULO III: `IAuditInterceptor` — Implementación en Rust
 
-### III.1 — Protocolo (`domain/audit/protocol.clj` `[NEW]`)
+El módulo de auditoría OLAP se desacopla del flujo del pipeline principal mediante traits asíncronos nativos.
 
-```clojure
-(ns metri.domain.audit.protocol
-  "Contrato puro — cero imports de infra.")
+### III.1 — Protocolo de Auditoría (`src/domain/audit/protocol.rs`)
+El contrato define un comportamiento no invasivo, puramente asíncrono y de exclusión de fallos (*fault-tolerant*):
 
-(defprotocol IAuditInterceptor
-  "INVARIANTES:
-   1. audit! SIEMPRE retorna nil — fire-and-forget.
-   2. audit! NUNCA lanza — todo fallo se absorbe y va a Sherlog.
-   3. audit! NO modifica ctx ni result del caller.
-   4. Se invoca DESPUÉS de que la respuesta gRPC fue enviada.
+```rust
+// domain/audit/protocol.rs
+use async_trait::async_trait;
+use serde_json::Value;
 
-   Stubs: NoOpAuditInterceptor (tests sin auditoría)
-          SpyAuditInterceptor  (tests con assertions)"
-  (audit! [this ctx result]
-    "ctx    :: {:tenant-id str :user-id str :operation kw :entity-type kw
-                :request {:client-ip str} :cedar-result map :token-claims map :role map}
-     result :: [:ok {:ulid str :execution-time-ms long ...}]
-            |  [:error {:stage kw :code kw ...}]
-     ret    :: nil"))
+/// Contrato para el interceptor de auditoría.
+/// INVARIANTES:
+/// 1. `audit` siempre se ejecuta tras enviar la respuesta gRPC al cliente (post-response).
+/// 2. Nunca propaga excepciones; absorbe fallos de infraestructura y notifica a Sherlog.
+/// 3. No altera el contexto original ni el payload del request.
+#[async_trait]
+pub trait IAuditInterceptor: Send + Sync {
+    async fn audit(&self, request: &Value, succeeded: bool);
+}
 ```
 
-### III.2 — `derive-action-type` (`domain/audit/action_type.clj` `[NEW]`)
+### III.2 — Derivación Pura del ActionType (`src/domain/audit/action_type.rs`)
+La clasificación analítica del evento se delega a una función pura libre de efectos colaterales e I/O:
 
-Función pura — **único lugar** del sistema donde se mapea estado del pipeline → `action_type`:
+```rust
+// domain/audit/action_type.rs
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionType {
+    Write,
+    AccessDenied,
+    QuotaExhausted,
+    WriteError,
+    Unknown,
+}
 
-```clojure
-(ns metri.domain.audit.action-type)
+impl ActionType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ActionType::Write          => "WRITE",
+            ActionType::AccessDenied   => "ACCESS_DENIED",
+            ActionType::QuotaExhausted => "QUOTA_EXHAUSTED",
+            ActionType::WriteError     => "WRITE_ERROR",
+            ActionType::Unknown        => "UNKNOWN",
+        }
+    }
+}
 
-(defn derive-action-type
-  "Prioridad: seguridad/quota/plugin > :read > WRITE (fallback).
-   Extender: añadir cláusula cond aquí — el caller nunca cambia."
-  [ctx result]
-  (let [stage (get-in result [1 :stage])]
-    (cond
-      (= stage :auth)            "ACCESS_DENIED"
-      (= stage :quota)           "QUOTA_EXHAUSTED"
-      (= stage :plugin)          "PLUGIN_REJECTED"
-      (= (:operation ctx) :read) "READ"
-      :else                      "WRITE")))
+pub fn derive_action_type(succeeded: bool, error_stage: Option<&str>) -> ActionType {
+    if succeeded {
+        return ActionType::Write;
+    }
+    match error_stage {
+        Some("cedar") | Some("auth") => ActionType::AccessDenied,
+        Some("quota")                 => ActionType::QuotaExhausted,
+        Some("janus")                 => ActionType::WriteError,
+        _                             => ActionType::Unknown,
+    }
+}
 ```
 
-### III.3 — `build-security-context-snapshot` (`infrastructure/audit/security_snapshot.clj` `[NEW]`)
+### III.3 — Implementación Concreta (`src/infrastructure/audit/interceptor.rs`)
+La implementación inyecta el `IWriteChannel` (apuntando a Kinesis Firehose) y ejecuta la auditoría asíncronamente aislando el hilo transaccional gRPC principal:
 
-```clojure
-(ns metri.infrastructure.audit.security-snapshot)
+```rust
+// infrastructure/audit/interceptor.rs
+pub struct AuditInterceptorImpl {
+    olap_channel: Arc<dyn IWriteChannel>,
+}
 
-(def ^:private allowed-claim-keys #{:roles :groups :scope})
+impl AuditInterceptorImpl {
+    pub fn new(olap_channel: Arc<dyn IWriteChannel>) -> Self {
+        Self { olap_channel }
+    }
 
-(defn build-security-context-snapshot
-  "Snapshot inmutable y serializable — se ejecuta UNA vez por request.
-   Solo expone los claims declarados — evita leakage de claims internos."
-  [ctx]
-  {:cedar-permit   (get-in ctx [:cedar-result :permit])
-   :cedar-policies (get-in ctx [:cedar-result :policies-matched])
-   :token-claims   (select-keys (get-in ctx [:token-claims]) allowed-claim-keys)
-   :role           (:role ctx)})
+    fn build_security_snapshot(&self, request: &Value) -> Value {
+        request.get("metadata").cloned().unwrap_or(json!({}))
+    }
+}
+
+#[async_trait::async_trait]
+impl IAuditInterceptor for AuditInterceptorImpl {
+    async fn audit(&self, request: &Value, succeeded: bool) {
+        let action_type = derive_action_type(succeeded, None);
+        
+        let tenant_id = request.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+        let user_id   = request.get("user_id").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+        let entity    = request.get("entity_type").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+
+        let audit_payload = json!({
+            "action_type":      action_type.as_str(),
+            "resource_domain":  entity,
+            "tenant_id":        tenant_id,
+            "user_id":          user_id,
+            "timestamp":        Utc::now().timestamp_millis(),
+            "security_context": self.build_security_snapshot(request),
+            "request_payload":  request.get("payload").cloned().unwrap_or(Value::Null),
+            "status":           if succeeded { "SUCCESS" } else { "FAILURE" }
+        });
+
+        // Crear contexto artificial para Janus e inyectar de forma asíncrona
+        let mut req_map = serde_json::Map::new();
+        req_map.insert("data".to_string(), Value::Array(vec![audit_payload]));
+        
+        let ctx = IopContext::new(tenant_id, user_id, "audit_log", "BULK_CREATE", req_map);
+        let olap = Arc::clone(&self.olap_channel);
+
+        // Tokio-spawn: Desacoplamiento asíncrono no bloqueante
+        tokio::spawn(async move {
+            if let Err(e) = olap.route(ctx).await {
+                // FASE 10: Sherlog Fault Event (AUD_001)
+                tracing::error!("[AuditInterceptor] Falla al escribir en canal OLAP (Kinesis): {:?}", e);
+            }
+        });
+    }
+}
 ```
 
-### III.4 — `AuditInterceptorImpl` (`infrastructure/audit/interceptor.clj` `[NEW]`)
+### III.4 — Integración con el Pipeline IOP (`src/iop/core.rs`)
+La orquestación de la auditoría se acopla al ciclo ferroviario (Railway) del `IopOrchestrator`. Nótese cómo la auditoría se ejecuta **siempre**, garantizando el registro de fallas de seguridad y cuotas:
 
-```clojure
-(ns metri.infrastructure.audit.interceptor
-  (:require [integrant.core :as ig]
-            [metri.domain.audit.protocol :refer [IAuditInterceptor]]
-            [metri.domain.audit.action-type :refer [derive-action-type]]
-            [metri.infrastructure.audit.security-snapshot :refer [build-security-context-snapshot]]))
+```rust
+// iop/core.rs -> Extracto de IIopOrchestrator::run()
+let result = self.run_steps(ctx).await;
 
-(defrecord AuditInterceptorImpl
-  [olap-channel    ;; IJanusWriteChannel — inyectado por Integrant
-   ulid-fn         ;; fn: () → ulid — testeable sin I/O
-   fault-notifier] ;; IFaultNotifier — notifica AUD_001 a Sherlog
+// ... lógicas de Moira posterior al procesamiento ...
 
-  IAuditInterceptor
-
-  (audit! [this ctx result]
-    (otel/with-span ["audit.interceptor" {:kind :producer}]
-      (let [span    (otel/current-span)
-            record  {:entity_type "audit_log"
-                     :payload {:id                ((:ulid-fn this))
-                               :tenant_id         (:tenant-id ctx)
-                               :user_id           (:user-id ctx)
-                               :action_type       (derive-action-type ctx result)
-                               :resource_domain   (or (some-> ctx :entity-type name) "unknown")
-                               :resource_id       (get-in result [1 :ulid])
-                               :client_ip         (get-in ctx [:request :client-ip])
-                               :security_context  (build-security-context-snapshot ctx)
-                               :execution_time_ms (get-in result [1 :execution-time-ms])
-                               :plugin_telemetry  (get-in result [1 :plugin-telemetry])}}]
-        (otel/set-attributes! span
-          {"audit.tenant_id"       (:tenant-id ctx)
-           "audit.action_type"     (get-in record [:payload :action_type])
-           "audit.resource_domain" (get-in record [:payload :resource_domain])})
-        (try
-          (.route (:olap-channel this) record)
-          (otel/set-status! span :ok)
-          (catch Exception e
-            (otel/set-status! span :error "OLAPChannel write failed")
-            (sherlog/emit-fault-event!
-              {:error {:code "AUD_001" :stage "audit.interceptor" :detail (ex-message e)
-                       :tenant_id (:tenant-id ctx) :user_id (:user-id ctx)
-                       :trace_id (otel/trace-id span)}}
-              :warning [(:fault-notifier this)])))))
-    nil))  ;; siempre nil — invariante fire-and-forget
-
-(defmethod ig/init-key :audit/interceptor
-  [_ {:keys [olap-channel ulid-fn fault-notifier]}]
-  (->AuditInterceptorImpl olap-channel ulid-fn fault-notifier))
-```
-
-### III.5 — Stubs canónicos (`infrastructure/audit/stubs.clj` `[NEW]`)
-
-```clojure
-(ns metri.infrastructure.audit.stubs
-  (:require [metri.domain.audit.protocol :refer [IAuditInterceptor]]))
-
-(defrecord NoOpAuditInterceptor []
-  IAuditInterceptor (audit! [_ _ _] nil))
-
-(defrecord SpyAuditInterceptor [calls-atom]
-  IAuditInterceptor
-  (audit! [_ ctx result]
-    (swap! calls-atom conj {:ctx ctx :result result}) nil))
-
-(defn noop-interceptor [] (->NoOpAuditInterceptor))
-(defn spy-interceptor  [] (->SpyAuditInterceptor (atom [])))
-```
-
-### III.6 — Wiring Integrant (`system.edn`)
-
-```edn
-{:janus/olap-channel  {:kinesis-client #ig/ref :aws/kinesis-client
-                        :ulid-fn        #ig/ref :util/ulid-fn}
-
- :audit/interceptor   {:olap-channel   #ig/ref :janus/olap-channel
-                        :ulid-fn        #ig/ref :util/ulid-fn
-                        :fault-notifier #ig/ref :iop/sherlog-notifier}
-
- :iop/pipeline        {:cedar-authorizer  #ig/ref :auth/cedar-authorizer
-                        :quota-guard       #ig/ref :quota/guard
-                        :janus-router      #ig/ref :iop/janus-router
-                        :audit-interceptor #ig/ref :audit/interceptor}}
+// Invocación asíncrona del interceptor (Ok y Err)
+if let Some(audit) = &self.audit_interceptor {
+    let succeeded = result.is_ok();
+    let req_val   = Value::Object(request_clone);
+    audit.audit(&req_val, succeeded).await;
+}
 ```
 
 ---
 
-## MÓDULO IV: Integración con el Pipeline IOP
+## MÓDULO IV: Integración con metri-panel (Dashboard de Auditoría y Time-Travel)
+
+La auditoría en la nueva arquitectura de Metri está diseñada para ser expuesta y aprovechada directamente por la interfaz de usuario en `metri-panel` mediante dos patrones clave de frontend:
+
+### IV.1 — Dashboard OLAP de Auditoría Forense (gRPC Universal)
+Para pintar paneles forenses agregados, `metri-panel` realiza peticiones `Query` universales apuntando a la entidad virtual `audit_log`. 
+
+A continuación se muestra un ejemplo real de cómo configurar visualizaciones modernas de auditoría en la estructura de `BIAnalyticsView.vue` de metri-panel:
+
+```typescript
+// metri-panel/src/views/BIAuditAnalyticsView.vue
+const AUDIT_DASHBOARD_LAYOUT = [
+  // 1. KPI Card: Accesos Denegados hoy
+  {
+    i: 'kpi-security-denials', title: 'Accesos Denegados (Hoy)', type: 'kpi', x: 0, y: 0, w: 4, h: 5,
+    queries: [{
+      key: 'denials-count-q',
+      entity: 'audit_log',
+      output: 'kpi',
+      metrics: [{ fn: 'count', field: 'id', name: 'Denegaciones' }],
+      filters: [{
+        criteria: { field: 'action_type', op_ref: 'EQ', value: { string_val: 'ACCESS_DENIED' } }
+      }],
+      timeframe: { type: 'TODAY', timezone: 'America/Bogota' }
+    }],
+    format: { style: 'decimal' }
+  },
+  // 2. Pie Chart: Distribución global de tipos de eventos de acceso
+  {
+    i: 'chart-audit-distribution', title: 'Distribución de Eventos de Acceso', type: 'chart', x: 4, y: 0, w: 8, h: 10,
+    queries: [{
+      key: 'distribution-q',
+      entity: 'audit_log',
+      output: 'pie',
+      dimensions: [{ field: 'action_type', labelTemplate: 'Acción: {{action_type}}' }],
+      metrics: [{ fn: 'count', field: 'id', name: 'Total' }],
+      timeframe: { type: 'LAST_N_DAYS', n_value: 30, timezone: 'America/Bogota' }
+    }]
+  },
+  // 3. Table: Tabla detallada forense de actividades
+  {
+    i: 'table-audit-trail', title: 'Bitácora Histórica Forense (OLAP)', type: 'pivot', x: 0, y: 10, w: 12, h: 12,
+    queries: [{
+      key: 'forensic-table-q',
+      entity: 'audit_log',
+      output: 'table',
+      limit: 100,
+      selectTree: { user_id: true, action_type: true, resource_domain: true, client_ip: true, execution_time_ms: true },
+      dimensions: [
+        { field: 'user_id', labelTemplate: 'Usuario: {{user_id}}' },
+        { field: 'action_type' },
+        { field: 'resource_domain' },
+        { field: 'client_ip' },
+        { field: 'execution_time_ms' }
+      ]
+    }]
+  }
+];
+```
+
+### IV.2 — Timeline OLTP de Cambios de Activos (Git-like Time-Travel)
+Cuando un analista o técnico examina un registro individual (por ejemplo, un `asset` o un `work_order`) en metri-panel, el sistema no sólo muestra el estado actual, sino que permite renderizar una **línea de tiempo visual del historial del activo**.
+
+#### Flujo de Consulta e Interacción
+El frontend hace una llamada gRPC de proyección usando el sistema de `select_tree` extendido con el nodo de `history` mapeando directamente al método `EavReader::history`:
 
 ```
-gRPC Request → IOP (run-iop)
-  ├─ 1. CedarAuthorizer    → [:ok] | [:error :stage :auth]
-  ├─ 2. QuotaGuard         → [:ok] | [:error :stage :quota]
-  ├─ 3. JanusRouter        → [:ok {:ulid ...}] | [:error ...]
-  ├─ build-grpc-response   → respuesta enviada al cliente
-  └─ audit! (siempre)      → fire-and-forget → OLAPChannel → Kinesis → S3 → Athena
+metri-panel ── rpc Query(entity: "asset", select_tree: { id: "uuid-asset", _history: true }) ──> metri-engine
 ```
 
-```clojure
-;; ns: metri.application.core  [MODIFICAR — añadir audit! al final de run-iop]
-(defn run-iop [ctx deps]
-  (let [{:keys [cedar-authorizer quota-guard janus-router audit-interceptor]} deps
-        start-ms (System/currentTimeMillis)
-        result   (-> ctx cedar-authorizer (then quota-guard) (then janus-router))
-        result+  (cond-> result
-                   (= :ok (first result))
-                   (update 1 assoc :execution-time-ms (- (System/currentTimeMillis) start-ms)))
-        response (build-grpc-response result+ ctx)]
-    (audit! audit-interceptor ctx result+)  ;; always — post-response, fire-and-forget
-    response))
-```
+El motor Rust procesa la consulta devolviendo los datoms históricos que el componente visual de metri-panel formatea y renderiza de forma premium:
 
-```mermaid
-sequenceDiagram
-    participant C as gRPC Client
-    participant IOP
-    participant Audit as AuditInterceptor
-    participant OLAP as OLAPChannel
+```vue
+<!-- metri-panel/src/components/audit/AssetHistoryTimeline.vue -->
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useMetriClient } from '@/composables/useMetriClient'
 
-    C->>IOP: rpc Transact(ctx)
-    IOP->>IOP: Cedar → Quota → Janus (Railway)
-    IOP-->>C: gRPC Response
-    Note over IOP,Audit: post-pipeline — fire-and-forget
-    IOP->>Audit: audit!(ctx, result)
-    Audit->>OLAP: .route(audit-record)
-    OLAP-->>Audit: [:ok] | Sherlog(AUD_001)
+const props = defineProps<{ entityId: string, entityType: string }>()
+const timelineEntries = ref<any[]>([])
+const loading = ref(true)
+
+const fetchTimeline = async () => {
+  const client = useMetriClient()
+  try {
+    // LLamada gRPC mapeada a EavReader::history en el backend Rust
+    const resp = await client.query({
+      tenantId: 'tenant-active-id',
+      entity: props.entityType,
+      selectTree: {
+        id: props.entityId,
+        _history: true // Flag semántico de Aegis
+      }
+    })
+    timelineEntries.value = resp.data.rows // [{ attr_name, value, tx_id, op, user_id, timestamp }]
+  } catch (err) {
+    console.error('Error cargando timeline de auditoría:', err)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(fetchTimeline)
+</script>
+
+<template>
+  <div class="p-6 bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-zinc-100 dark:border-zinc-800">
+    <h3 class="text-lg font-bold text-zinc-900 dark:text-white mb-6 flex items-center gap-2">
+      <span class="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+      </span>
+      Línea de Tiempo de Cambios (Time-Travel)
+    </h3>
+    
+    <div v-if="loading" class="animate-pulse space-y-4">
+      <div v-for="i in 3" :key="i" class="h-16 bg-zinc-50 dark:bg-zinc-800 rounded-xl"></div>
+    </div>
+    
+    <div v-else class="relative border-l-2 border-zinc-100 dark:border-zinc-800 ml-4 space-y-8">
+      <div v-for="entry in timelineEntries" :key="entry.tx_id" class="relative pl-6 group">
+        <!-- Indicador de cambio de estado interactivo (Git Style node) -->
+        <span class="absolute -left-[9px] top-1.5 w-4 h-4 rounded-full border-2 border-white dark:border-zinc-900 flex items-center justify-center transition-all group-hover:scale-125"
+          :class="entry.op ? 'bg-indigo-500 shadow-sm shadow-indigo-200' : 'bg-rose-500 shadow-sm shadow-rose-200'">
+        </span>
+        
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-100/50 dark:border-zinc-800/30 transition-all hover:bg-zinc-100/30 dark:hover:bg-zinc-800/80">
+          <div>
+            <span class="text-xs font-semibold px-2 py-0.5 rounded-md"
+              :class="entry.op ? 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600' : 'bg-rose-50 dark:bg-rose-950/30 text-rose-600'">
+              {{ entry.op ? 'MUTACIÓN / ASERCIÓN' : 'ELIMINACIÓN / RETRACCIÓN' }}
+            </span>
+            <div class="mt-2 text-sm text-zinc-900 dark:text-zinc-200">
+              Atributo <code class="px-1.5 py-0.5 bg-zinc-200 dark:bg-zinc-700 rounded font-mono text-xs">{{ entry.attr_name }}</code> modificado a:
+              <strong class="font-semibold ml-1 text-indigo-600 dark:text-indigo-400">{{ entry.value }}</strong>
+            </div>
+          </div>
+          
+          <div class="text-right flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center gap-2 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800/40 pt-2 md:pt-0">
+            <div class="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <span class="w-5 h-5 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-[10px] font-bold text-zinc-600 dark:text-zinc-300">U</span>
+              ID Usuario: {{ entry.user_id || 'Servicio' }}
+            </div>
+            <span class="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 mt-1">Tx: #{{ entry.tx_id }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
 ```
 
 ---
 
-## MÓDULO V: Principios SOLID y DRY
+## MÓDULO V: Principios SOLID y DRY en la Implementación de Rust
 
-| Principio | Aplicación |
-| :-------- | :--------- |
-| **S** | `AuditInterceptorImpl` solo enruta. `derive-action-type` tiene una razón de cambio: el enum global. |
-| **O** | Nuevo `action_type` = nuevo enum en `audit_log.json` + nueva cláusula en `derive-action-type`. `AuditInterceptorImpl` no cambia. |
-| **L** | `NoOpAuditInterceptor` y `SpyAuditInterceptor` satisfacen el mismo contrato. La suite de contrato aplica a los 3 stubs. |
-| **I** | `IAuditInterceptor` expone 1 método (`audit!`). No hereda `IFaultNotifier` ni `IJanusWriteChannel` — son deps inyectadas. |
-| **D** | El IOP recibe `IAuditInterceptor` inyectado. `AuditInterceptorImpl` recibe `olap-channel` inyectado — cero `require` de negocio. |
-
-| Riesgo DRY | Solución |
-| :--------- | :------- |
-| `action_type` en múltiples lugares | `derive-action-type` — único punto. El IOP no tiene condicionales de tipo. |
-| Serialización Kinesis repetida | `OLAPChannel.route` — único productor. El interceptor delega. |
-| `security_context` construido varias veces | `build-security-context-snapshot` — una vez por request. |
-| Enum duplicado en código | SSOT en `audit_log.json` — el interceptor no hardcodea strings. |
+| Principio | Aplicación Práctica en la Base de Código Rust |
+| :-------- | :-------------------------------------------- |
+| **S (Responsabilidad Única)** | `AuditInterceptorImpl` tiene una sola razón de cambio: interactuar con la infraestructura del canal analítico. La derivación lógica de los códigos analíticos se encapsula en la función matemática pura `derive_action_type`. |
+| **O (Abierto / Cerrado)** | Si se define un nuevo evento del sistema en la capa Cedar o de cuotas, basta con agregar el caso en la función pura `derive_action_type` y en el modelo JSON analítico. El código de la infraestructura del interceptor no requiere cambios. |
+| **L (Sustitución de Liskov)** | La suite de pruebas de auditoría aplica el mismo contrato a stubs analíticos virtuales y a la implementación real de base. Todos los stubs de test (`NoOpAuditInterceptor`, `SpyAuditInterceptor`) heredan directamente del trait principal `IAuditInterceptor` de forma intercambiable. |
+| **I (Segregación de Interfaces)** | `IAuditInterceptor` declara exclusivamente el método asíncrono `audit()`. No hereda ni fuerza el acoplamiento con lógicas de envío de fallas o de compresión del canal. |
+| **D (Inversión de Dependencias)** | El `IopOrchestrator` recibe una referencia abstracta e inyectable de tipo `Arc<dyn IAuditInterceptor>`, lo que permite mockear la auditoría con stubs cero-op de forma segura y veloz durante la suite de pruebas locales sin iniciar conexiones a AWS Kinesis. |
 
 ---
 
-## MÓDULO VI: Catálogo de Errores
+## MÓDULO VI: Catálogo de Errores TOML
 
-Añadir al final del vector `:entries` en `resources/errors/error_catalog.edn`:
+De acuerdo al control canónico centralizado de errores del motor, los fallos asociados a la fase de interceptación analítica de auditoría se registran en `config/errors/error_catalog.toml` bajo el siguiente estándar nativo:
 
-```edn
-;; ── Familia AUD — Auditoría ──────────────────────────────────────────────────
-{:code :AUD_001 :family :aud :stage :audit.interceptor :severity :warning
- :http-status 500 :grpc-status :INTERNAL :retryable? false
- :description "AuditInterceptor.audit! failed to write to OLAPChannel — audit record lost"
- :context-required [:tenant_id :user_id :action_type]}
+```toml
+# config/errors/error_catalog.toml
+# ── Familia AUD — Auditoría del Motor Analítico ─────────────────────────────────
 
-{:code :AUD_002 :family :aud :stage :audit.interceptor :severity :warning
- :http-status 500 :grpc-status :INTERNAL :retryable? false
- :description "audit/derive-action-type returned nil — fallback to WRITE applied"
- :context-required [:tenant_id :operation :result-stage]}
+[[errors]]
+code             = "AUD_001"
+family           = "aud"
+stage            = "audit-interceptor"
+severity         = "warning"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "AuditInterceptor.audit failed to write to OLAPChannel — audit record lost"
+context_required = ["tenant_id", "user_id", "action_type", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "AUD_002"
+family           = "aud"
+stage            = "audit-interceptor"
+severity         = "warning"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "audit/derive_action_type returned unknown — fallback to WRITE applied"
+context_required = ["tenant_id", "operation", "result_stage"]
+retryable        = false
 ```
 
-> [!NOTE]
-> `retryable?: false` en ambos casos — un record de auditoría perdido es brecha de compliance, no fallo de infra recuperable.
-
 ---
 
-## MÓDULO VII: Estructura de Carpetas
+## MÓDULO VII: Estructura de Carpetas Rust
 
 ```
 metri-engine/
-├── resources/
-│   ├── bootstrap/
-│   │   └── audit_attrs.edn        [NEW]  ← Atributos :audit/* — Datahike bootstrap paso [1.5]
-│   └── errors/
-│       └── error_catalog.edn             ← Añadir AUD_001, AUD_002
+├── config/
+│   ├── errors/
+│   │   └── error_catalog.toml             ← Agregar errores AUD_001 y AUD_002
+│   └── models/
+│       └── audit_log.json                 ← SSOT del modelo analítico de auditoría
 │
-├── src/metri/
-│   ├── application/
-│   │   └── core.clj                      ← run-iop: añadir audit! post-pipeline
+├── src/
 │   ├── domain/
 │   │   └── audit/
-│   │       ├── protocol.clj       [NEW]  ← IAuditInterceptor (defprotocol)
-│   │       └── action_type.clj    [NEW]  ← derive-action-type (fn pura, sin I/O)
+│   │       ├── mod.rs
+│   │       ├── protocol.rs        [RUST]  ← Trait IAuditInterceptor
+│   │       └── action_type.rs     [RUST]  ← Función pura derive_action_type + tests inline
+│   │
 │   ├── infrastructure/
-│   │   ├── datahike.clj                  ← Añadir build-tx-meta
 │   │   └── audit/
-│   │       ├── interceptor.clj    [NEW]  ← AuditInterceptorImpl + ig/init-key
-│   │       ├── security_snapshot.clj [NEW] ← build-security-context-snapshot
-│   │       └── stubs.clj          [NEW]  ← NoOpAuditInterceptor, SpyAuditInterceptor
-│   └── codice/
-│       └── bootstrapper.clj              ← Cargar audit_attrs.edn en paso [1.5]
-│
-└── test/metri/application/audit/  [NEW]
-    ├── fixtures.clj               [NEW]  ← Stubs y datos canónicos compartidos
-    ├── interceptor_test.clj       [NEW]  ← Contrato IAuditInterceptor (10 tests)
-    ├── action_type_test.clj       [NEW]  ← derive-action-type (10 tests)
-    ├── snapshot_test.clj          [NEW]  ← build-security-context-snapshot (8 tests)
-    └── integration_test.clj       [NEW]  ← audit_log record end-to-end (14 tests)
-```
-
-> [!IMPORTANT]
-> `domain/audit/` — **cero imports de AWS, Kinesis o Datahike**. Solo protocol + fn pura.
-> `infrastructure/audit/` — única capa que puede importar SDKs. La inversión de dependencias es verificable en compilación.
-
-**Bootstrap — orden actualizado:**
-
-```
-[1]   errors/load-catalog!          → error_catalog.edn     — FALLA → JVM no arranca
-[1.5] datahike/transact-schema!     → audit_attrs.edn        — FALLA → JVM no arranca
-[2]   otel/init!                    → SDK OTel + ADOT
-[3]   codice/load-schemas!          → JSON schemas
-[4]   codice/validate-scope-links!  → entityRef + is_sequence_scope
-[5]   READY
+│   │       ├── mod.rs
+│   │       └── interceptor.rs     [RUST]  ← Implementación real y asíncrona (tokio::spawn)
+│   │
+│   ├── eav/
+│   │   └── reader/
+│   │       └── pull.rs            [RUST]  ← EavReader::history para Time-Travel
+│   │
+│   ├── iop/
+│   │   └── core.rs                [RUST]  ← IopOrchestrator: Invocación post-response
+│   │
+│   └── grpc/
+│       └── server.rs              [RUST]  ← Inicialización e inyección del AuditInterceptorImpl
 ```
 
 ---
 
-## MÓDULO VIII: Matriz TDD
+## MÓDULO VIII: Matriz TDD (Rust Inline Tests)
 
-Comando: `clj -M:test --namespace-regex 'metri.application.audit.*'`
+En Rust, los tests unitarios y de lógica pura se programan de forma nativa en la sección `#[cfg(test)]` al final del mismo archivo.
 
-### Fixtures compartidos (`test/metri/application/audit/fixtures.clj`)
+### VIII.1 — Tests de Lógica Pura (`src/domain/audit/action_type.rs`)
+| ID | Caso | Entrada | Salida Esperada |
+| :--- | :--- | :--- | :--- |
+| **AUD_DAT_01** | Transacción Exitosa | `succeeded = true` | `ActionType::Write` |
+| **AUD_DAT_02** | Falla en Cedar | `succeeded = false, stage = "cedar"` | `ActionType::AccessDenied` |
+| **AUD_DAT_03** | Falla en QuotaGuard | `succeeded = false, stage = "quota"` | `ActionType::QuotaExhausted` |
+| **AUD_DAT_04** | Falla en Janus | `succeeded = false, stage = "janus"` | `ActionType::WriteError` |
+| **AUD_DAT_05** | Falla de Infraestructuras | `succeeded = false, stage = "infra"` | `ActionType::Unknown` |
 
-```clojure
-(ns metri.application.audit.fixtures
-  (:require [metri.domain.audit.protocol :refer [IAuditInterceptor]]))
-
-;; Spy OLAPChannel — captura records
-(defrecord SpyOLAPChannel [records-atom])
-(defn spy-channel [] (->SpyOLAPChannel (atom [])))
-(defn spy-records [ch] @(:records-atom ch))
-(defn route! [ch record]
-  (swap! (:records-atom ch) conj record)
-  [:ok {:ulid "spy-ulid" :channel :spy-olap}])
-
-;; OLAPChannel que falla — simula Kinesis down
-(defrecord FailingOLAPChannel [])
-(defn failing-channel [] (->FailingOLAPChannel))
-
-;; Spy Notifier — captura llamadas a Sherlog
-(defrecord SpyFaultNotifier [calls-atom])
-(defn spy-notifier [] (->SpyFaultNotifier (atom [])))
-(defn spy-notifications [n] @(:calls-atom n))
-
-;; Datos canónicos
-(def base-ctx
-  {:tenant-id "uuid-acme" :user-id "uuid-tech-01" :operation :create
-   :entity-type :work_order :request {:client-ip "10.0.0.1"}
-   :cedar-result {:permit true :policies-matched ["policy-001" "policy-002"]}
-   :token-claims {:roles ["engineer"] :groups ["plant-A"] :scope "write:cmms"
-                  :sub "internal-do-not-expose"}
-   :role {:name "engineer" :level 2}})
-
-(def ok-result     [:ok {:ulid "new-uuid-123" :channel :oltp :execution-time-ms 38}])
-(def error-auth    [:error {:stage :auth   :code :SEC_403}])
-(def error-quota   [:error {:stage :quota  :code :SEC_QTA_001}])
-(def error-plugin  [:error {:stage :plugin :code :PLUG_001}])
-(def error-janus   [:error {:stage :janus  :code :JNS_REF_001}])
-(def read-ctx      (assoc base-ctx :operation :read :entity-type :asset))
-```
-
-### Matriz de casos
-
-#### `interceptor_test.clj` — Contrato `IAuditInterceptor` (10 tests)
-
-| ID | Caso | Input | Esperado |
-| :- | :--- | :---- | :------- |
-| AUD-01 | `audit!` retorna `nil` — impl real | `base-ctx` + `ok-result` | `nil` |
-| AUD-02 | `audit!` retorna `nil` — `NoOp` | `base-ctx` + `ok-result` | `nil` (Liskov) |
-| AUD-03 | `audit!` retorna `nil` — `Spy` | `base-ctx` + `ok-result` | `nil` (Liskov) |
-| AUD-04 | `SpyAuditInterceptor` acumula N llamadas | 3 invocaciones | `count = 3` |
-| AUD-05 | Fallo OLAPChannel → `nil` absorbido | `FailingOLAPChannel` | `nil` |
-| AUD-06 | Sherlog recibe 1 notificación en fallo | `FailingOLAPChannel` | `count = 1` |
-| AUD-07 | `audit!` no modifica `ctx` del caller | cualquier resultado | `ctx` idéntico |
-| AUD-08 | `audit!` no modifica `result` del caller | cualquier resultado | `result` idéntico |
-| AUD-09 | Todo stub acepta `[:ok]` | 3 stubs × `ok-result` | `nil` × 3 |
-| AUD-10 | Todo stub acepta `[:error]` | 3 stubs × `error-auth` | `nil` × 3 |
-
-```clojure
-(ns metri.application.audit.interceptor-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [metri.application.audit.fixtures :as f]
-            [metri.domain.audit.protocol :refer [audit!]]
-            [metri.infrastructure.audit.interceptor :refer [->AuditInterceptorImpl]]
-            [metri.infrastructure.audit.stubs :refer [->NoOpAuditInterceptor ->SpyAuditInterceptor]]))
-
-(defn- make-impl [ch] (->AuditInterceptorImpl ch (constantly "test-ulid") (f/spy-notifier)))
-
-(defn run-contract! [interceptor]
-  (is (nil? (audit! interceptor f/base-ctx f/ok-result)))       ;; nil siempre
-  (is (nil? (audit! interceptor f/base-ctx f/error-auth)))      ;; nil en error
-  (let [ctx-before f/base-ctx]
-    (audit! interceptor f/base-ctx f/ok-result)
-    (is (= ctx-before f/base-ctx)))                             ;; ctx intacto
-  (let [r-before f/ok-result]
-    (audit! interceptor f/base-ctx f/ok-result)
-    (is (= r-before f/ok-result))))                             ;; result intacto
-
-(deftest contract-impl-test  (testing "AUD-01,07,08" (run-contract! (make-impl (f/spy-channel)))))
-(deftest contract-noop-test  (testing "AUD-02,07,08" (run-contract! (->NoOpAuditInterceptor))))
-(deftest contract-spy-test   (testing "AUD-03,07,08" (run-contract! (->SpyAuditInterceptor (atom [])))))
-
-(deftest spy-accumulates-test
-  (testing "AUD-04"
-    (let [spy (->SpyAuditInterceptor (atom []))]
-      (audit! spy f/base-ctx f/ok-result)
-      (audit! spy f/base-ctx f/error-auth)
-      (audit! spy f/read-ctx f/ok-result)
-      (is (= 3 (count @(:calls-atom spy)))))))
-
-(deftest olap-failure-test
-  (let [notifier (f/spy-notifier)
-        impl     (->AuditInterceptorImpl (f/failing-channel) (constantly "t") notifier)]
-    (testing "AUD-05: nil absorbido" (is (nil? (audit! impl f/base-ctx f/ok-result))))
-    (testing "AUD-06: 1 notif Sherlog" (is (= 1 (count (f/spy-notifications notifier)))))))
-```
-
-#### `action_type_test.clj` — `derive-action-type` (10 tests)
-
-| ID | `ctx.operation` | `result` | Esperado |
-| :- | :-------------- | :------- | :------- |
-| DAT-01 | `:create` | `error-auth` | `"ACCESS_DENIED"` |
-| DAT-02 | `:create` | `error-quota` | `"QUOTA_EXHAUSTED"` |
-| DAT-03 | `:create` | `error-plugin` | `"PLUGIN_REJECTED"` |
-| DAT-04 | `:read` | `ok-result` | `"READ"` |
-| DAT-05 | `:create` | `ok-result` | `"WRITE"` |
-| DAT-06 | `:create` | `error-janus` | `"WRITE"` |
-| DAT-07 | `:delete` | `ok-result` | `"WRITE"` |
-| DAT-08 | `:read` | `error-auth` | `"ACCESS_DENIED"` (prio) |
-| DAT-09 | `:update` | `ok-result` | `"WRITE"` |
-| DAT-10 | `:upsert` | `ok-result` | `"WRITE"` |
-
-```clojure
-(ns metri.application.audit.action-type-test
-  (:require [clojure.test :refer [deftest testing is are]]
-            [metri.application.audit.fixtures :as f]
-            [metri.domain.audit.action-type :refer [derive-action-type]]))
-
-(deftest security-priority-test
-  (testing "DAT-01" (is (= "ACCESS_DENIED"   (derive-action-type f/base-ctx f/error-auth))))
-  (testing "DAT-02" (is (= "QUOTA_EXHAUSTED" (derive-action-type f/base-ctx f/error-quota))))
-  (testing "DAT-03" (is (= "PLUGIN_REJECTED" (derive-action-type f/base-ctx f/error-plugin))))
-  (testing "DAT-08: :read + auth-error → ACCESS_DENIED (no READ)"
-    (is (= "ACCESS_DENIED" (derive-action-type f/read-ctx f/error-auth)))))
-
-(deftest read-test
-  (testing "DAT-04" (is (= "READ" (derive-action-type f/read-ctx f/ok-result)))))
-
-(deftest write-operations-test
-  (testing "DAT-06: error janus → WRITE"
-    (is (= "WRITE" (derive-action-type f/base-ctx f/error-janus))))
-  (are [op] (= "WRITE" (derive-action-type (assoc f/base-ctx :operation op) f/ok-result))
-    :create :update :delete :upsert))  ;; DAT-05, DAT-07, DAT-09, DAT-10
-```
-
-#### `snapshot_test.clj` — `build-security-context-snapshot` (8 tests)
-
-| ID | Caso | Esperado |
-| :- | :--- | :------- |
-| SEC-01 | `cedar-permit` presente | `true` |
-| SEC-02 | `cedar-policies` presente | `["policy-001" "policy-002"]` |
-| SEC-03 | `:role` del ctx presente | `{:name "engineer" :level 2}` |
-| SEC-04 | `:sub` NO aparece en snapshot | `nil` |
-| SEC-05 | `:roles` SÍ aparece | `["engineer"]` |
-| SEC-06 | Resultado serializable como JSON | `(string? (json/write-str snap))` |
-| SEC-07 | `cedar-permit false` en fallo auth | `false` |
-| SEC-08 | `cedar-policies nil` si ausente en ctx | `nil` |
-
-```clojure
-(ns metri.application.audit.snapshot-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [clojure.data.json :as json]
-            [metri.application.audit.fixtures :as f]
-            [metri.infrastructure.audit.security-snapshot :refer [build-security-context-snapshot]]))
-
-(deftest cedar-test
-  (let [snap (build-security-context-snapshot f/base-ctx)]
-    (testing "SEC-01" (is (true?  (:cedar-permit snap))))
-    (testing "SEC-02" (is (= ["policy-001" "policy-002"] (:cedar-policies snap)))))
-  (testing "SEC-07: permit false"
-    (let [snap (build-security-context-snapshot (assoc-in f/base-ctx [:cedar-result :permit] false))]
-      (is (false? (:cedar-permit snap)))))
-  (testing "SEC-08: policies nil si ausente"
-    (let [snap (build-security-context-snapshot (update f/base-ctx :cedar-result dissoc :policies-matched))]
-      (is (nil? (:cedar-policies snap))))))
-
-(deftest claims-whitelist-test
-  (let [snap (build-security-context-snapshot f/base-ctx)]
-    (testing "SEC-04: :sub ausente" (is (nil? (get-in snap [:token-claims :sub]))))
-    (testing "SEC-05: :roles presente" (is (= ["engineer"] (get-in snap [:token-claims :roles]))))
-    (testing "SEC-03: :role presente" (is (= {:name "engineer" :level 2} (:role snap))))))
-
-(deftest json-test
-  (testing "SEC-06: serializable"
-    (is (string? (json/write-str (build-security-context-snapshot f/base-ctx))))))
-```
-
-#### `integration_test.clj` — `audit_log` record end-to-end (14 tests)
-
-| ID | Campo verificado | Caso | Esperado |
-| :- | :--------------- | :--- | :------- |
-| INT-01 | `tenant_id` | del ctx (no payload) | `"uuid-acme"` |
-| INT-02 | `user_id` | del ctx | `"uuid-tech-01"` |
-| INT-03 | `action_type` | `error-auth` | `"ACCESS_DENIED"` |
-| INT-04 | `entity_type` del record | siempre | `"audit_log"` |
-| INT-05 | `resource_domain` | `:entity-type :work_order` | `"work_order"` |
-| INT-06 | `resource_id` | `[:ok]` result | `"new-uuid-123"` |
-| INT-07 | `resource_id` | `[:error]` result | `nil` |
-| INT-08 | `execution_time_ms` | del result | `38` |
-| INT-09 | `client_ip` | del `ctx.request` | `"10.0.0.1"` |
-| INT-10 | `security_context` | siempre | `(map? ...)` |
-| INT-11 | `plugin_telemetry` | result lo incluye | `[{:plugin ...}]` |
-| INT-12 | `plugin_telemetry` | result sin telemetría | `nil` |
-| INT-13 | Cardinalidad | 1 llamada → 1 record | `count = 1` |
-| INT-14 | Cardinalidad | 3 llamadas → 3 records | `count = 3` |
-
-```clojure
-(ns metri.application.audit.integration-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [metri.application.audit.fixtures :as f]
-            [metri.domain.audit.protocol :refer [audit!]]
-            [metri.infrastructure.audit.interceptor :refer [->AuditInterceptorImpl]]))
-
-(defn- impl [ch] (->AuditInterceptorImpl ch (constantly "test-ulid") (f/spy-notifier)))
-(defn- payload [ch] (-> (f/spy-records ch) first :payload))
-
-(deftest identity-test
-  (let [ch (f/spy-channel)] (audit! (impl ch) f/base-ctx f/ok-result)
-    (testing "INT-01" (is (= "uuid-acme"    (:tenant_id   (payload ch)))))
-    (testing "INT-02" (is (= "uuid-tech-01" (:user_id     (payload ch)))))
-    (testing "INT-04" (is (= "audit_log"    (:entity_type (first (f/spy-records ch))))))))
-
-(deftest resource-test
-  (let [ch (f/spy-channel)] (audit! (impl ch) f/base-ctx f/ok-result)
-    (testing "INT-05" (is (= "work_order"  (:resource_domain (payload ch)))))
-    (testing "INT-06" (is (= "new-uuid-123" (:resource_id     (payload ch))))))
-  (let [ch (f/spy-channel)] (audit! (impl ch) f/base-ctx f/error-auth)
-    (testing "INT-07" (is (nil? (:resource_id (payload ch)))))))
-
-(deftest action-and-timing-test
-  (let [ch (f/spy-channel)] (audit! (impl ch) f/base-ctx f/error-auth)
-    (testing "INT-03" (is (= "ACCESS_DENIED" (:action_type (payload ch))))))
-  (let [ch (f/spy-channel)] (audit! (impl ch) f/base-ctx f/ok-result)
-    (testing "INT-08" (is (= 38 (:execution_time_ms (payload ch)))))
-    (testing "INT-09" (is (= "10.0.0.1" (:client_ip (payload ch)))))
-    (testing "INT-10" (is (map? (:security_context (payload ch)))))))
-
-(deftest telemetry-test
-  (let [tel [{:plugin "notif" :ms 5}]
-        ch  (f/spy-channel)]
-    (audit! (impl ch) f/base-ctx (update f/ok-result 1 assoc :plugin-telemetry tel))
-    (testing "INT-11" (is (= tel (:plugin_telemetry (payload ch))))))
-  (let [ch (f/spy-channel)] (audit! (impl ch) f/base-ctx f/ok-result)
-    (testing "INT-12" (is (nil? (:plugin_telemetry (payload ch)))))))
-
-(deftest cardinality-test
-  (let [ch (f/spy-channel)]
-    (audit! (impl ch) f/base-ctx f/ok-result)
-    (testing "INT-13" (is (= 1 (count (f/spy-records ch))))))
-  (let [ch (f/spy-channel)]
-    (audit! (impl ch) f/base-ctx f/ok-result)
-    (audit! (impl ch) f/base-ctx f/error-auth)
-    (audit! (impl ch) f/read-ctx f/ok-result)
-    (testing "INT-14" (is (= 3 (count (f/spy-records ch)))))))
-```
-
-### Cobertura
-
-| Fichero | Tests | Comportamientos |
-| :------ | :---- | :-------------- |
-| `interceptor_test.clj` | 10 | Contrato Liskov ×3 stubs, fallo OLAPChannel |
-| `action_type_test.clj` | 10 | 6 action_types + prioridad + CRUD ops |
-| `snapshot_test.clj` | 8 | Whitelist claims, JSON safety, nil safety |
-| `integration_test.clj` | 14 | Todos los campos del `audit_log` record |
-| **Total** | **42** | — |
+### VIII.2 — Pruebas de Integración y Fallos (`src/infrastructure/audit/interceptor.rs`)
+Se valida que el interceptor no bloquee el hilo gRPC ante fallos simulados del stream analítico de Kinesis (absorbiendo de forma segura y reportando la falla `AUD_001` sin propagar excepción al cliente).
 
 ---
 
-## MÓDULO IX: Observabilidad
+## MÓDULO IX: Observabilidad (OpenTelemetry & SLOs)
 
-### Árbol de Spans
-
+### IX.1 — Árbol de Spans de OpenTelemetry
 ```
-Span ROOT: "iop.transact"                      [trace_id: 4bf92f35...]
-  ├── "janus.load-schema"
-  ├── "janus.validate-payload"
-  ├── "janus.verify-entity-refs"
-  ├── "janus.enrich-payload"
-  ├── "janus.execute-transaction"
-  └── "audit.interceptor" [kind:producer]     ← post-pipeline
-        attrs: audit.action_type, audit.tenant_id, audit.resource_domain
+Span Raíz (gRPC Request): "metri.MetriService/Transact"           [Trace_Id: W3C Traceparent]
+  ├── "iop.pipeline.start"
+  │     ├── "cedar.authorize"
+  │     ├── "quota.check"
+  │     └── "janus.route"
+  └── "audit.interceptor" (Async Spawn)   [kind: Producer]     ← Desacoplado vía Tokio
+        attrs:
+          - audit.action_type
+          - audit.tenant_id
+          - audit.resource_domain
 ```
 
-### SLO Dashboard (Athena)
+### IX.2 — Dashboard de Salud del Canal de Auditoría (Athena SLO)
+Este query analiza la tasa de éxito del canal analítico computando la diferencia entre los registros indexados en `audit_log` contra los eventos de falla `AUD_001` capturados por Sherlog en el log de fallas del sistema:
 
 ```sql
--- % de records de auditoría exitosos vs. AUD_001 en domain_fault
-WITH total AS (SELECT COUNT(*) n FROM audit_log
-               WHERE year='2026' AND month='04' AND tenant_id='uuid-acme'),
-     lost  AS (SELECT COUNT(*) n FROM domain_fault
-               WHERE error_code='AUD_001' AND year='2026' AND month='04' AND tenant_id='uuid-acme')
-SELECT total.n, lost.n, ROUND(100.0*(total.n - lost.n)/total.n, 4) AS audit_success_rate_pct
-FROM total, lost;
+WITH total_logs AS (
+  SELECT COUNT(*) as total FROM audit_log 
+  WHERE tenant_id = 'tenant-acme' AND year = '2026'
+),
+failed_logs AS (
+  SELECT COUNT(*) as fallas FROM domain_fault 
+  WHERE error_code = 'AUD_001' AND tenant_id = 'tenant-acme' AND year = '2026'
+)
+SELECT 
+  total,
+  fallas,
+  ROUND(100.0 * (total - fallas) / total, 4) as audit_reliability_pct
+FROM total_logs, failed_logs;
 ```
-
----
-
-## MÓDULO X: Checklist
-
-- [ ] `audit_attrs.edn` cargado en bootstrap paso `[1.5]` — antes de `codice/load-schemas!`
-- [ ] `build-tx-meta` incluido en el vector `:tx-data` de `OLTPChannel`
-- [ ] `audit!` invocado post-`build-grpc-response` en `run-iop`
-- [ ] `AuditInterceptorImpl` wired en `system.edn` — el IOP no lo instancia
-- [ ] `NoOpAuditInterceptor` en todos los tests que no validan auditoría
-- [ ] Suite de contrato `run-contract!` aplicada a los 3 stubs
-- [ ] `AUD_001`, `AUD_002` en `error_catalog.edn`
-- [ ] `disable_eda: true` en `audit_log.json` — sin loop EDA
-- [ ] Span `"audit.interceptor"` con `audit.action_type` y `audit.tenant_id`
-- [ ] `clj -M:test` → 42 tests en verde, 0 failures

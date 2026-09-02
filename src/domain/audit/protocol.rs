@@ -15,5 +15,5 @@ pub trait IAuditInterceptor: Send + Sync {
     ///
     /// CONTRATO: nunca lanza ni propaga errores — los absorbe y loguea.
     /// [PORTED_FROM: (audit! [this request result])]
-    async fn audit(&self, request: &Value, succeeded: bool);
+    async fn audit(&self, request: &Value, succeeded: bool, error_stage: Option<&str>);
 }

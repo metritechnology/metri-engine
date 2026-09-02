@@ -20,7 +20,7 @@ fn hash_value(val: &Value) -> u64 {
             keys.sort();
             for k in keys {
                 k.hash(&mut hasher);
-                hash_value(map.get(k).unwrap()).hash(&mut hasher);
+                hash_value(map.get(k).unwrap_or(&Value::Null)).hash(&mut hasher);
             }
         }
         Value::Array(arr) => {
@@ -40,7 +40,7 @@ fn hash_value(val: &Value) -> u64 {
 /// [PORTED_FROM: (outer-join-data rows-per-qk)]
 pub fn outer_join_data(rows_per_qk: HashMap<String, Vec<Value>>) -> Vec<Value> {
     if rows_per_qk.len() == 1 {
-        return rows_per_qk.into_values().next().unwrap();
+        return rows_per_qk.into_values().next().unwrap_or_default();
     }
 
     let mut idx: HashMap<u64, Map<String, Value>> = HashMap::new();

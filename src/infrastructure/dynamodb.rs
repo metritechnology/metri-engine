@@ -8,8 +8,10 @@
 
 use std::collections::HashMap;
 
+use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_dynamodb::{
     Client,
+    config::Builder as DdbConfigBuilder,
     types::AttributeValue,
     error::SdkError,
 };
@@ -28,10 +30,22 @@ pub struct DynamoClient {
 
 impl DynamoClient {
     /// Construye el cliente desde la configuración AWS del entorno.
+    /// Si DYNAMODB_ENDPOINT está definido, se usa como endpoint override (dev local).
     /// [PORTED_FROM: ig/init-key :infra/dynamodb]
     pub async fn new(table_eav: impl Into<String>) -> Self {
-        let config = aws_config::load_from_env().await;
-        let client = Client::new(&config);
+        let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
+        let config = aws_config::from_env().region(region_provider).load().await;
+
+        let client = if let Ok(endpoint_url) = std::env::var("DYNAMODB_ENDPOINT") {
+            info!("[DynamoDB] Usando endpoint override: {}", endpoint_url);
+            let ddb_config = DdbConfigBuilder::from(&config)
+                .endpoint_url(endpoint_url)
+                .build();
+            Client::from_conf(ddb_config)
+        } else {
+            Client::new(&config)
+        };
+
         info!("[DynamoDB] cliente activo");
         DynamoClient {
             client,
@@ -143,19 +157,39 @@ impl DynamoClient {
     pub async fn batch_write_item(
         &self,
         table_name: &str,
-        requests: Vec<aws_sdk_dynamodb::types::WriteRequest>,
+        mut requests: Vec<aws_sdk_dynamodb::types::WriteRequest>,
     ) -> Result<(), DomainError> {
         if requests.is_empty() { return Ok(()); }
         
-        let mut req_map = HashMap::new();
-        req_map.insert(table_name.to_string(), requests);
+        let mut retries = 0;
+        let initial_len = requests.len();
+        while !requests.is_empty() && retries < 5 {
+            let mut req_map = HashMap::new();
+            req_map.insert(table_name.to_string(), requests.clone());
+            
+            let resp = self.client
+                .batch_write_item()
+                .set_request_items(Some(req_map))
+                .send()
+                .await
+                .map_err(|e| map_sdk_error(e, ErrorCode::Infra001, table_name))?;
+                
+            if let Some(mut unprocessed) = resp.unprocessed_items {
+                if let Some(failed_reqs) = unprocessed.remove(table_name) {
+                    if failed_reqs.is_empty() {
+                        break;
+                    }
+                    tracing::warn!("BatchWriteItem UnprocessedItems: {}", failed_reqs.len());
+                    requests = failed_reqs;
+                    retries += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * (2_u64.pow(retries)))).await;
+                    continue;
+                }
+            }
+            break;
+        }
         
-        self.client
-            .batch_write_item()
-            .set_request_items(Some(req_map))
-            .send()
-            .await
-            .map_err(|e| map_sdk_error(e, ErrorCode::Infra001, table_name))?;
+        tracing::info!("BatchWriteItem successful for {} items in table {}", initial_len, table_name);
             
         Ok(())
     }
@@ -184,6 +218,8 @@ impl DynamoClient {
 
         if let Some(idx) = index_name {
             req = req.index_name(idx);
+        } else {
+            req = req.consistent_read(true);
         }
         if let Some(lim) = limit {
             req = req.limit(lim);

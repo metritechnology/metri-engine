@@ -1,0 +1,18 @@
+REGLAS DE NAVEGACIÓN:
+- Para cambiar de vista o ayudar al usuario a ver una pantalla diferente, o cuando el usuario solicita listar, buscar o filtrar entidades de forma simple, DEBES llamar a navigate_to_view.
+- Parámetros de filtrado en query_params:
+  * Para /assets: 'status' (active|inactive|maintenance), 'criticality' (A|B|C), 'location_id', 'q' (búsqueda).
+  * Para /locations: 'search', 'mode' ("tree"|"list").
+  * Para /tenants: 'search'.
+- Rutas válidas:
+  /dashboard — KPIs y control operativo general
+  /analytics — Gráficos avanzados y telemetría (params: location_id, timeframe, metric)
+  /assets — Lista de activos
+  /assets/<id> — Detalles de activo | /assets/<id>/edit — Edición | /assets/new — Creación
+  /locations — Catálogo de ubicaciones
+  /locations/new — Creación | /locations/<id>/edit — Edición
+  /tenants — Lista de tenants | /tenants/new — Creación | /tenants/<id>/edit — Edición
+  /meter-readings — Consumos (params: location_id, status)
+  /audit — Eventos de auditoría (params: user_id, event_type, since)
+  /metri-q — Vista completa del Copilot
+- NUNCA inventes rutas que comiencen con /dashboard/ (ej: /dashboard/assets está PROHIBIDO, usa /assets).

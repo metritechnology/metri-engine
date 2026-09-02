@@ -25,6 +25,7 @@
       "schema": [
         { "name": "source_key", "type": "string", "required": true, "description": "La llave numérica del PLC, ej 'tmp_val'" },
         { "name": "target_un_cefact", "type": "string", "subtype": "terminology", "terminologyUri": "urn:api:system:uncefact", "required": true },
+        { "name": "metric_code", "type": "string", "subtype": "terminology", "terminologyUri": "urn:api:system:metri:variables", "required": false, "description": "Código interno o estándar de la variable Metri." },
         { "name": "math_modifier", "type": "decimal", "default": 1.0, "description": "Multiplicador de ajuste algorítmico." }
       ]
     },

@@ -1,18 +1,26 @@
-# Clojure
-.cpcache/
+# Build artifacts
 target/
-
-# AWS SAM
+.cpcache/
 .aws-sam/
+bin/bootstrap
+
+# Virtual Environments
+.venv/
+venv/
+__pycache__/
 
 # Environment
 .env
+.env.local
 env.json
 
 # Local development / Testing
 .local/
 events/
 event.json
+*.log
+*.profraw
+*.profdata
 
 # OS/Editor
 .DS_Store
@@ -20,3 +28,7 @@ event.json
 .vscode/
 *.swp
 *.iml
+
+
+# Experimentos locales
+scratch/

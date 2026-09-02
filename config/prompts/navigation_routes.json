@@ -1,0 +1,62 @@
+[
+  {
+    "route": "/assets/new",
+    "label_es": "Crear Activo",
+    "label_en": "Create Asset",
+    "keywords": ["crear activo", "nuevo activo", "create asset", "new asset"]
+  },
+  {
+    "route": "/locations/new",
+    "label_es": "Crear Ubicación",
+    "label_en": "Create Location",
+    "keywords": ["crear ubicaci", "nueva ubicaci", "create location", "new location"]
+  },
+  {
+    "route": "/tenants/new",
+    "label_es": "Crear Cuenta Corporativa",
+    "label_en": "Create Corporate Account",
+    "keywords": ["crear cuenta", "nueva cuenta", "crear tenant", "create tenant", "new tenant"]
+  },
+  {
+    "route": "/assets",
+    "label_es": "Activos",
+    "label_en": "Assets",
+    "keywords": ["activo", "asset"]
+  },
+  {
+    "route": "/locations",
+    "label_es": "Ubicaciones",
+    "label_en": "Locations",
+    "keywords": ["ubicaci", "location"]
+  },
+  {
+    "route": "/tenants",
+    "label_es": "Cuentas Corporativas",
+    "label_en": "Corporate Accounts",
+    "keywords": ["cuenta", "tenant", "corporativa"]
+  },
+  {
+    "route": "/meter-readings",
+    "label_es": "Mediciones",
+    "label_en": "Meter Readings",
+    "keywords": ["medici", "lectura", "reading", "meter"]
+  },
+  {
+    "route": "/audit",
+    "label_es": "Auditoría de Cambios",
+    "label_en": "Audit Log",
+    "keywords": ["auditor", "audit"]
+  },
+  {
+    "route": "/analytics",
+    "label_es": "Analíticas",
+    "label_en": "Analytics",
+    "keywords": ["analitica", "analytics", "grafic", "dashboard"]
+  },
+  {
+    "route": "/quotas",
+    "label_es": "Configuración de Cuotas",
+    "label_en": "Quotas",
+    "keywords": ["cuota", "quota", "limite"]
+  }
+]

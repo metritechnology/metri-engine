@@ -106,6 +106,15 @@ pub struct Datom {
 }
 
 impl Datom {
+    /// Genera el hash DJB2 a 16 bits para un atributo (utilizado como attr_id inmutable).
+    pub fn hash_attr_name(name: &str) -> u16 {
+        let mut h = 5381u32;
+        for b in name.as_bytes() {
+            h = h.wrapping_mul(33).wrapping_add(*b as u32);
+        }
+        (h ^ (h >> 16)) as u16
+    }
+
     /// Constructor para un assert (nuevo valor).
     pub fn assert(
         tenant_id: impl Into<String>,
@@ -153,15 +162,22 @@ impl Datom {
     }
 
     /// Genera el Partition Key para el GSI-AEVT (por tipo de entidad/atributo).
-    /// Formato: "T#<tenant_id>#A#<attr_name>"
+    /// Formato: "T#<tenant_id>#A#<attr_name>" (o segmentado por tipo si es entity_type)
     pub fn aevt_pk(&self) -> String {
+        if self.attr_name == "entity_type" {
+            if let DatomValue::Str(val) = &self.value {
+                return format!("T#{}#A#entity_type#{}", self.tenant_id, val);
+            }
+        }
         format!("T#{}#A#{}", self.tenant_id, self.attr_name)
     }
 
     /// Genera el Partition Key para el GSI-AVET (por atributo + valor).
     /// Formato: "T#<tenant_id>#AV#<attr_name>"
     pub fn avet_pk(&self) -> String {
-        format!("T#{}#AV#{}", self.tenant_id, self.attr_name)
+        let is_global = self.attr_name == "username" || self.attr_name == "email" || self.attr_name == "primary_phone";
+        let tenant = if is_global { "GLOBAL" } else { &self.tenant_id };
+        format!("T#{}#AV#{}", tenant, self.attr_name)
     }
 
     /// Genera el Partition Key para el GSI-VAET (grafo inverso, solo para Ref).
@@ -171,6 +187,41 @@ impl Datom {
             Some(format!("T#{}#V#{}", self.tenant_id, ref_eid))
         } else {
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_global_attributes_avet_pk() {
+        // Test standard local attribute
+        let local_datom = Datom::assert(
+            "tenant-1",
+            "entity-123",
+            "first_name",
+            100,
+            DatomValue::Str("John".to_string()),
+            1000,
+        );
+        assert_eq!(local_datom.avet_pk(), "T#tenant-1#AV#first_name");
+
+        // Test global attributes
+        for global_attr in &["username", "email", "primary_phone"] {
+            let global_datom = Datom::assert(
+                "tenant-1",
+                "entity-123",
+                *global_attr,
+                200,
+                DatomValue::Str("value".to_string()),
+                1000,
+            );
+            assert_eq!(
+                global_datom.avet_pk(),
+                format!("T#GLOBAL#AV#{}", global_attr)
+            );
         }
     }
 }

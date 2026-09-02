@@ -55,73 +55,102 @@ pub fn build_abac_node(
     assignee_field: Option<&str>,
     user_id: &str,
 ) -> Result<Option<Value>, DomainError> {
-    let mut clauses = Vec::new();
+    use std::collections::HashSet;
+
+    let mut has_all = false;
+    let mut has_own = false;
+    let mut has_assigned = false;
+    let mut has_own_or_assigned = false;
+    let mut valid_scopes_count = 0;
+
+    let mut all_permitted_locations = HashSet::new();
+    let mut location_restricted = true;
 
     for boundary in boundaries {
-        // 4b: Fronteras geográficas (permitted-locations)
-        let mut loc_node = None;
-        if let Some(locs) = boundary.get("permitted-locations").and_then(|v| v.as_array()) {
-            if !locs.is_empty() {
-                loc_node = Some(json!(["in", format!("{entity}/location_id"), locs]));
-            }
-        }
-
-        // 4c: Predicado de scope
-        let mut scope_node = None;
-        if let Some(scope) = boundary.get("query-scope").and_then(|v| v.as_str()) {
+        let scope = boundary.get("query-scope").or_else(|| boundary.get("query_scope")).and_then(|v| v.as_str()).unwrap_or("NONE");
+        if scope != "NONE" {
+            valid_scopes_count += 1;
             match scope {
-                "ALL" => {}
-                "OWN" => {
-                    if let Some(own) = owner_field {
-                        scope_node = Some(json!(["=", own, user_id]));
-                    }
-                }
-                "ASSIGNED" => {
-                    if let Some(ass) = assignee_field {
-                        scope_node = Some(json!(["=", ass, user_id]));
-                    }
-                }
-                "OWN_OR_ASSIGNED" => {
-                    match (owner_field, assignee_field) {
-                        (Some(own), Some(ass)) => {
-                            scope_node = Some(json!(["or", ["=", own, user_id], ["=", ass, user_id]]));
-                        }
-                        (Some(own), None) => {
-                            scope_node = Some(json!(["=", own, user_id]));
-                        }
-                        (None, Some(ass)) => {
-                            scope_node = Some(json!(["=", ass, user_id]));
-                        }
-                        _ => {}
-                    }
-                }
-                "NONE" => {
-                    return Err(DomainError::janus(
-                        ErrorCode::Janus403,
-                        format!("Scope NONE — no grant for domain: {entity}")
-                    ));
-                }
-                _ => {
-                    warn!("[ABAC] Scope desconocido: {}", scope);
-                }
+                "ALL" => has_all = true,
+                "OWN" => has_own = true,
+                "ASSIGNED" => has_assigned = true,
+                "OWN_OR_ASSIGNED" => has_own_or_assigned = true,
+                _ => {}
             }
-        }
 
-        match (loc_node, scope_node) {
-            (Some(loc), Some(scope)) => clauses.push(json!(["and", loc, scope])),
-            (Some(loc), None) => clauses.push(loc),
-            (None, Some(scope)) => clauses.push(scope),
-            (None, None) => {}
+            if let Some(locs) = boundary.get("permitted-locations").or_else(|| boundary.get("permitted_locations")).and_then(|v| v.as_array()) {
+                if locs.is_empty() {
+                    location_restricted = false;
+                } else {
+                    for loc in locs {
+                        if let Some(s) = loc.as_str() {
+                            all_permitted_locations.insert(s.to_string());
+                        }
+                    }
+                }
+            } else {
+                location_restricted = false;
+            }
         }
     }
 
-    match clauses.len() {
-        0 => Ok(None),
-        1 => Ok(Some(clauses.remove(0))),
-        _ => {
-            let mut or_node = vec![json!("or")];
-            or_node.extend(clauses);
-            Ok(Some(Value::Array(or_node)))
+    if valid_scopes_count == 0 {
+        return Err(DomainError::janus(
+            ErrorCode::Janus403,
+            format!("Scope NONE — no grant for domain: {entity}")
+        ));
+    }
+
+    let consolidated_scope = if has_all {
+        "ALL"
+    } else if has_own_or_assigned || (has_own && has_assigned) {
+        "OWN_OR_ASSIGNED"
+    } else if has_own {
+        "OWN"
+    } else {
+        "ASSIGNED"
+    };
+
+    let mut loc_node = None;
+    if location_restricted && !all_permitted_locations.is_empty() {
+        let locs_val: Vec<Value> = all_permitted_locations.into_iter().map(Value::String).collect();
+        loc_node = Some(json!(["in", format!("{entity}/location_id"), locs_val]));
+    }
+
+    let mut scope_node = None;
+    match consolidated_scope {
+        "ALL" => {}
+        "OWN" => {
+            if let Some(own) = owner_field {
+                scope_node = Some(json!(["=", own, user_id]));
+            }
         }
+        "ASSIGNED" => {
+            if let Some(ass) = assignee_field {
+                scope_node = Some(json!(["=", ass, user_id]));
+            }
+        }
+        "OWN_OR_ASSIGNED" => {
+            match (owner_field, assignee_field) {
+                (Some(own), Some(ass)) => {
+                    scope_node = Some(json!(["or", ["=", own, user_id], ["=", ass, user_id]]));
+                }
+                (Some(own), None) => {
+                    scope_node = Some(json!(["=", own, user_id]));
+                }
+                (None, Some(ass)) => {
+                    scope_node = Some(json!(["=", ass, user_id]));
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+
+    match (loc_node, scope_node) {
+        (Some(loc), Some(scope)) => Ok(Some(json!(["and", loc, scope]))),
+        (Some(loc), None) => Ok(Some(loc)),
+        (None, Some(scope)) => Ok(Some(scope)),
+        (None, None) => Ok(None),
     }
 }

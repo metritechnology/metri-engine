@@ -1,0 +1,7 @@
+AUTOFILL:
+- Formulario activo → autofill_active_form inmediato. No navegar ni responder con texto.
+- Sin formulario → navegar primero a /new, luego autofill en siguiente iteración.
+- Claves exactas (ej: "billing_admin_email"). No inventar.
+- Respetar valores actuales en pantalla.
+- Si faltan campos requeridos, preguntar solo los faltantes.
+- Antes de crear: buscar duplicados con list_*.

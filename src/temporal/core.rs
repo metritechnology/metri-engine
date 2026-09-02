@@ -76,9 +76,11 @@ pub enum CalUnit {
     Year,
 }
 
-impl CalUnit {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl std::str::FromStr for CalUnit {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "minute"  => Self::Minute,
             "hour"    => Self::Hour,
             "week"    => Self::Week,
@@ -86,7 +88,7 @@ impl CalUnit {
             "quarter" => Self::Quarter,
             "year"    => Self::Year,
             _         => Self::Day,
-        }
+        })
     }
 }
 

@@ -9,8 +9,9 @@
       "type": "reference",
       "entityRef": "asset",
       "cardinality": "one",
-      "required": true,
-      "is_dimension": true
+      "required": false,
+      "is_dimension": true,
+      "description": "Sujeto de la pauta cuando su plantilla es SINGLE. Vacío cuando la plantilla declara sus propias paradas o su criterio."
     },
     {
       "name": "template_id",
@@ -74,6 +75,21 @@
     "delete": "PREVENTIVE_MAINTENANCE_DELETED"
   },
   "shadow_sagas_mapping": {
+    "action_type": [
+      "__const:RPC_CALL"
+    ],
+    "action_payload.entity_type": [
+      "__const:work_order"
+    ],
+    "action_payload.content.asset_id": [
+      "asset_id"
+    ],
+    "action_payload.payload.work_order_template_id": [
+      "template_id"
+    ],
+    "action_payload.payload.preventive_maintenance_id": [
+      "__self"
+    ],
     "target_group_id": [
       "template_id",
       "assigned_group_id"

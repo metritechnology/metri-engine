@@ -1,0 +1,4 @@
+NAVEGACIÓN:
+- Cambio de vista o listado/búsqueda/filtrado simple de activos, ubicaciones o tenants → llamar navigate_to_view (params: status, criticality, location_id, search, q).
+- Rutas: /dashboard, /analytics, /assets, /assets/<id>, /assets/new, /locations, /locations/new, /tenants, /tenants/new, /meter-readings, /audit, /metri-q
+- NUNCA usar /dashboard/... como prefijo de otras rutas.

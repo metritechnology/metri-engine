@@ -64,6 +64,15 @@ test-integration: infra ## Tests de integración contra DynamoDB Local
 	AWS_SECRET_ACCESS_KEY=test \
 	AWS_DEFAULT_REGION=us-east-1 \
 	cargo test --test '*' -- --ignored
+	@# Los tests `#[ignore]` que viven dentro de src/ (quota::*, eda::moira)
+	@# no los recoge `--test '*'`, que solo mira los targets de tests/.
+	DYNAMODB_ENDPOINT=http://localhost:8000 \
+	EAV_TABLE=metri-eav-local \
+	SCHEMAS_TABLE=metri-schemas-local \
+	AWS_ACCESS_KEY_ID=test \
+	AWS_SECRET_ACCESS_KEY=test \
+	AWS_DEFAULT_REGION=us-east-1 \
+	cargo test --lib quota:: -- --ignored
 
 # ── Seed ─────────────────────────────────────────────────────────────────────
 
@@ -82,6 +91,7 @@ docker-build: ## Compila la imagen Docker del engine (release)
 
 deploy: build-release ## Build + deploy SAM a AWS
 	@echo "▶ Desplegando a AWS..."
+	rm -rf target/debug
 	sam build
 	sam deploy --no-confirm-changeset --profile metri-dev
 
@@ -94,6 +104,7 @@ build-MetriEngineFunction: build-lambda
 	cp target/lambda/bootstrap/bootstrap $(ARTIFACTS_DIR)/
 	cp -r config/models $(ARTIFACTS_DIR)/models
 	cp -r config/errors $(ARTIFACTS_DIR)/errors
+	cp -r config/prompts $(ARTIFACTS_DIR)/prompts
 
 # ── Limpieza ──────────────────────────────────────────────────────────────────
 

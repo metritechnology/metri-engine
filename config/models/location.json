@@ -4,55 +4,163 @@
   "is_system": false,
   "track_history": true,
   "is_sequence_scope_provider": true,
-  "doc_scope": "Cuando is_sequence_scope_provider=true, el tag de esta entidad puede usarse como scope de contadores secuenciales en otras entidades (ej: work_order_number por location). El OLTPChannel detecta autom\u00e1ticamente los campos entityRef que apuntan a esta entidad y tienen is_sequence_scope=true.",
+  "doc_scope": "Cuando is_sequence_scope_provider=true, el tag de esta entidad puede usarse como scope de contadores secuenciales en otras entidades (ej: work_order_number por location). El OLTPChannel detecta automáticamente los campos entityRef que apuntan a esta entidad y tienen is_sequence_scope=true.",
   "attributes": [
     {
       "name": "name",
       "type": "string",
       "fts": true,
-      "required": true
+      "required": true,
+      "description": "Nombre representativo de la ubicación (ej: 'Planta Ensamblado Norte')."
     },
     {
       "name": "tag",
       "type": "string",
-      "unique": "identity",
-      "pattern": "^L-[A-Z0-9]{6}$",
+      "unique": "tenant",
+      "pattern": "^L-[A-Z0-9-]{3,15}$",
       "fts": true,
       "auto_generate": {
         "strategy": "stochastic_base36",
         "prefix": "L-",
         "length": 6
-      }
+      },
+      "description": "Código de negocio único autogenerado por inquilino para ámbito de secuencia."
+    },
+    {
+      "name": "floc_code",
+      "type": "string",
+      "unique": "tenant",
+      "fts": true,
+      "pattern": "^[A-Z0-9]{2,6}(-[A-Z0-9]{2,8})*$",
+      "description": "Código de Ubicación Funcional (Functional Location FLOC) estandarizado tipo SAP (único por tenant)."
     },
     {
       "name": "type",
       "type": "enum",
       "options": [
+        "ENTERPRISE",
         "SITE",
+        "PLANT",
+        "AREA",
+        "PRODUCTION_LINE",
+        "WORK_CENTER",
+        "CELL",
         "BUILDING",
         "FLOOR",
         "ROOM",
-        "ZONE"
+        "ZONE",
+        "WAREHOUSE",
+        "MOBILE_UNIT"
       ],
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Nivel jerárquico según norma ISA-95 / ISO 14224 estandarizado en MAYÚSCULAS."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "OPERATIONAL",
+        "NON_OPERATIONAL",
+        "UNDER_MAINTENANCE",
+        "DECOMMISSIONED"
+      ],
+      "default_value": "OPERATIONAL",
+      "is_dimension": true,
+      "description": "Estado operativo actual de la ubicación."
+    },
+    {
+      "name": "criticality",
+      "type": "enum",
+      "options": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "default_value": "MEDIUM",
+      "is_dimension": true,
+      "description": "Clasificación de criticidad de la ubicación para priorización de mantenimiento según norma ISO 55000."
+    },
+    {
+      "name": "risk_probability_score",
+      "type": "integer",
+      "is_measure": true,
+      "description": "Escala de probabilidad de falla o evento de riesgo (1-5, ISO 31000 / RCM)."
+    },
+    {
+      "name": "risk_impact_score",
+      "type": "integer",
+      "is_measure": true,
+      "description": "Escala de impacto o consecuencia operacional/EHS (1-5, ISO 31000 / RCM)."
     },
     {
       "name": "parent_location_id",
       "type": "reference",
       "entityRef": "location",
       "cardinality": "one",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Referencia a la ubicación padre para construir el árbol jerárquico."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Descripción detallada del propósito u operaciones de la ubicación."
+    },
+    {
+      "name": "omniclass_code",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "vcb_omniclass_t13",
+      "description": "Código de clasificación estandarizado OmniClass Table 13 (Spaces / Ubicaciones y Espacios)."
+    },
+    {
+      "name": "omniclass_name",
+      "type": "string",
+      "fts": true,
+      "description": "Nombre o descripción verbal correspondiente al código de clasificación OmniClass Table 13."
     },
     {
       "name": "coordinates_geojson",
-      "type": "string"
+      "type": "string",
+      "description": "Geolocalización espacial en formato GeoJSON (Point, Polygon o MultiPolygon)."
+    },
+    {
+      "name": "address_street",
+      "type": "string",
+      "description": "Calle y número de la dirección física."
+    },
+    {
+      "name": "address_city",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Ciudad de la dirección física."
+    },
+    {
+      "name": "address_state_province",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Estado o provincia de la dirección física."
+    },
+    {
+      "name": "address_postal_code",
+      "type": "string",
+      "description": "Código postal de la dirección física."
+    },
+    {
+      "name": "address_country_iso2",
+      "type": "string",
+      "is_dimension": true,
+      "pattern": "^[A-Z]{2}$",
+      "description": "Código de país ISO 3166-1 alpha-2 de la dirección física."
     },
     {
       "name": "area_value",
       "type": "double",
       "is_measure": true,
-      "default_rollup": "avg"
+      "default_rollup": "sum",
+      "description": "Dimensión de superficie física."
     },
     {
       "name": "area_unit",
@@ -63,7 +171,42 @@
         "sq_yd"
       ],
       "default_value": "m2",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Unidad de medida de superficie."
+    },
+    {
+      "name": "timezone",
+      "type": "string",
+      "default_value": "UTC",
+      "is_dimension": true,
+      "description": "Zona horaria IANA oficial de la ubicación (ej: 'America/Mexico_City')."
+    },
+    {
+      "name": "cost_center",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Código de centro de costos o imputación contable para órdenes de trabajo vinculadas."
+    },
+    {
+      "name": "primary_contact_user_id",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "description": "Responsable o gerente operativo asignado a la ubicación."
+    },
+    {
+      "name": "custom_attributes",
+      "type": "json",
+      "subtype": "flat_map",
+      "is_dimension": true,
+      "description": "Diccionario clave-valor flexible para campos personalizados del cliente sin alterar el esquema."
+    },
+    {
+      "name": "photo_ids",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "many",
+      "description": "Fotos o imágenes adjuntas de la ubicación física."
     }
   ],
   "event_rules": [
@@ -72,7 +215,20 @@
       "event_trigger_type": "on_create",
       "filter_conditions": [],
       "detail_type_output": "system.location.created",
-      "description": "Notificaci\u00f3n sist\u00e9mica global al crear una nueva ubicaci\u00f3n."
+      "description": "Notificación sistémica global al crear una nueva ubicación."
+    },
+    {
+      "rule_code": "LOCATION_STATUS_CHANGED",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [
+        {
+          "field_name": "status",
+          "operator": "neq",
+          "target_value": ""
+        }
+      ],
+      "detail_type_output": "system.location.status_changed",
+      "description": "Evento de auditoría de cambio de estado operativo en una ubicación."
     }
   ]
 }

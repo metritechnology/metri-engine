@@ -50,3 +50,8 @@ macro_rules! fail {
         Err($crate::domain::errors::DomainError::new($code, $detail))
     };
 }
+
+#[cfg(test)]
+#[path = "../tests/result_tests.rs"]
+mod tests;
+

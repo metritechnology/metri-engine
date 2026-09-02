@@ -97,25 +97,8 @@ pub fn apply_metrics(rows: &[Value], metrics: &[MetricSpec]) -> Value {
 // ── truncate_to_interval — bucketing para TIMESERIES ─────────────────────────
 
 fn truncate_to_interval(epoch_secs: i64, interval: &str) -> i64 {
-    match interval {
-        "minute"  => (epoch_secs / 60) * 60,
-        "hour"    => (epoch_secs / 3600) * 3600,
-        "day"     => (epoch_secs / 86400) * 86400,
-        "week"    => {
-            // Aproximación: lunes = día de inicio (puede ser más preciso con chrono)
-            let day_secs = epoch_secs / 86400;
-            // 1970-01-01 fue jueves (4), ajustamos al lunes anterior
-            let dow = (day_secs + 3) % 7;  // 0=lunes
-            (day_secs - dow) * 86400
-        }
-        "month"   => {
-            // Aproximación: inicio del mes en 30 días
-            let day = epoch_secs / 86400;
-            let approx_month_start = (day / 30) * 30 * 86400;
-            approx_month_start
-        }
-        _ => epoch_secs, // sin truncado para intervalos desconocidos
-    }
+    let unit = interval.parse::<crate::temporal::core::CalUnit>().unwrap();
+    crate::temporal::core::truncate_to_unit(epoch_secs, unit, "UTC")
 }
 
 // ── apply_output_cast — punto de entrada principal ────────────────────────────
@@ -187,13 +170,13 @@ pub fn apply_output_cast(rows: Vec<Value>, ast_ir: &Value) -> Vec<Value> {
                     apply_metrics(&bucket_rows, &metrics)
                 };
                 if let Some(obj) = row.as_object_mut() {
-                    obj.insert("bucket".to_string(), json!(bucket));
+                    obj.insert(ts_field.clone(), json!(bucket));
                 }
                 row
             }).collect();
 
             // Ordenar por bucket ascendente
-            result.sort_by_key(|r| r.get("bucket").and_then(|v| v.as_i64()).unwrap_or(0));
+            result.sort_by_key(|r| r.get(&ts_field).and_then(|v| v.as_i64()).unwrap_or(0));
             result
         }
 
@@ -236,36 +219,6 @@ pub fn apply_output_cast(rows: Vec<Value>, ast_ir: &Value) -> Vec<Value> {
         }
 
         _ => rows,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn kpi_sum_aggregation() {
-        let rows = vec![
-            json!({"cost": 100.0, "status": "OPEN"}),
-            json!({"cost": 200.0, "status": "CLOSED"}),
-            json!({"cost": 300.0, "status": "OPEN"}),
-        ];
-        let ast = json!({
-            "output_cast": "KPI",
-            "metrics": [{"field": "cost", "aggregation": "SUM", "alias": "total_cost"}]
-        });
-        let result = apply_output_cast(rows, &ast);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0]["total_cost"], json!(600.0));
-    }
-
-    #[test]
-    fn table_passes_rows_through() {
-        let rows = vec![json!({"a": 1}), json!({"a": 2})];
-        let ast = json!({"output_cast": "TABLE"});
-        let result = apply_output_cast(rows.clone(), &ast);
-        assert_eq!(result.len(), 2);
     }
 }
 
@@ -343,12 +296,12 @@ pub fn apply_output_cast_fbs(rows: Vec<Value>, ast_ir: &fbs::AnalyticsRequestT) 
                     apply_metrics(&bucket_rows, &metrics)
                 };
                 if let Some(obj) = row.as_object_mut() {
-                    obj.insert("bucket".to_string(), json!(bucket));
+                    obj.insert(ts_field.clone(), json!(bucket));
                 }
                 row
             }).collect();
 
-            result.sort_by_key(|r| r.get("bucket").and_then(|v| v.as_i64()).unwrap_or(0));
+            result.sort_by_key(|r| r.get(&ts_field).and_then(|v| v.as_i64()).unwrap_or(0));
             result
         }
         "PIE" | "BUBBLE" => {

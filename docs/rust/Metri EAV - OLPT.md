@@ -905,53 +905,49 @@ Página 2 (cliente envía cursor):
 
 **El Problema:** En un CMMS, dos técnicos pueden intentar cambiar el estado de la misma Work Order simultáneamente (ej. ambos pulsan "Cerrar WO" en sus tablets al mismo tiempo). Sin control de concurrencia, la segunda escritura silenciosamente sobreescribe la primera — un datom con `tx_id=1002` puede retractar el datom `tx_id=1001` sin saber que ya fue retractado por `tx_id=1001`.
 
-**La Solución: TX-Version Optimistic Locking vía ConditionExpression**
+> [!WARNING]
+> **Nada de esto está implementado, y el boceto que había no podía funcionar.**
+> Hubo un `eav/writer/optimistic.rs` con un `build_version_condition_check()`.
+> No lo llamaba nadie, y si alguien lo hubiera llamado habría tumbado la
+> transacción entera siempre. Se retiró. Lo que sigue es por qué, y qué haría
+> falta para hacerlo bien — porque el problema de arriba es real y algún día
+> habrá que resolverlo.
 
-Cada entidad tiene un atributo de sistema `sys/version` (u64 monotónico) almacenado en EAVT. El motor lo usa como vector de versión para `ConditionExpression`:
+**Por qué una ConditionExpression no basta sobre un log de sólo-añadir**
 
-```rust
-/// Al construir la transacción de UPDATE, el motor:
-///   1. Lee el sys/version actual de la entidad (en el mismo roundtrip del Pull).
-///   2. Incluye una ConditionCheck en el TransactWriteItems que falla si version cambió.
-///   3. Si la condición falla → el cliente recibe EAV_TX_003 (Concurrent Modification).
+Una `ConditionExpression` de DynamoDB solo puede hablar del item que nombra, y
+nombrarlo exige su clave primaria completa. En un log append-only «la versión
+actual» no es un item: es *el datom de `sys/version` con el `tx_id` más alto*, y
+ese `tx_id` forma parte de la SK. Es decir, para condicionar sobre la versión
+vigente habría que conocer de antemano la clave del último datom escrito — que
+es justo lo que no se sabe cuando hay concurrencia.
 
-struct OptimisticWrite {
-    entity_id: u64,
-    expected_version: u64,     // Versión que el cliente leyó
-    new_version: u64,          // expected_version + 1
-    datoms: Vec<Datom>,
-}
+El helper retirado lo intentaba con `build_eavt_sk(attr, u64::MAX, true)`, una
+clave que por construcción no corresponde a ningún datom escrito nunca: la
+condición `v = :expected_v` se evaluaba sobre un item inexistente y fallaba
+siempre. Y el atributo sobre el que condicionaba, `SYS_VERSION_ATTR_ID = 0x0001`,
+es en el registro de este motor `entity/type` (`codice/registry.rs`) — el id que
+escribe el enricher en cada entidad.
 
-fn build_transact_items(write: &OptimisticWrite) -> Vec<TransactWriteItem> {
-    let mut items = vec![
-        // ── 1. ConditionCheck: versión no cambió desde que el cliente leyó ──
-        TransactWriteItem::ConditionCheck(ConditionCheck {
-            table_name: TABLE_NAME,
-            key: eavt_pk(write.entity_id),
-            condition_expression: "version = :expected_v",
-            expression_attribute_values: {":expected_v": write.expected_version},
-        }),
+**Qué necesitaría una implementación correcta**
 
-        // ── 2. Retract versión vieja ──────────────────────────────────────────
-        TransactWriteItem::Put(build_datom(
-            write.entity_id, SYS_VERSION_ATTR, write.expected_version,
-            write.new_tx_id, op=false  // retract
-        )),
+1. **Un id de atributo de sistema propio.** Los `0x0000`–`0x0004` están tomados
+   (`entity/ulid`, `entity/type`, `tenant/id`, `meta/created_at`,
+   `meta/updated_at`). Habría que registrar `sys/version` en el siguiente hueco.
+2. **Que el writer lo incremente** en cada transacción de la entidad. Hoy no lo
+   escribe nadie, así que no hay ninguna versión que comparar.
+3. **Que la condición apunte a un item que exista.** Dos formas: nombrar el datom
+   concreto con su `tx_id` —lo que obliga a devolverlo en el Pull y propagarlo
+   hasta el writer— o mantener un **item cabecera mutable por entidad**, fuera
+   del log, cuya única misión sea llevar la versión.
 
-        // ── 3. Assert versión nueva ───────────────────────────────────────────
-        TransactWriteItem::Put(build_datom(
-            write.entity_id, SYS_VERSION_ATTR, write.new_version,
-            write.new_tx_id, op=true   // assert
-        )),
+Esa tercera forma es exactamente la que ya usa el contador de cuota
+(`src/quota/ledger.rs`): un item mutable al lado del log, donde la condición y la
+escritura son la misma operación. Si algún día se retoma esto, lo reutilizable
+es ese patrón, no el helper que se borró.
 
-        // ── 4. Datoms de negocio (atributos del payload) ──────────────────────
-        // ... (retract old + assert new para cada attr modificado)
-    ];
-    items
-}
-```
-
-**Flujo de Concurrencia Resuelta:**
+**Flujo de Concurrencia — cómo se resolvería** (hoy no ocurre: sin bloqueo, la
+segunda escritura gana):
 
 ```
 T=0: Técnico A lee WO-0042 → version=5, status=IN_PROGRESS
@@ -968,7 +964,13 @@ T=2: Técnico B envía → status=CLOSED, expected_version=5
 ```
 
 > [!TIP]
-> **El cliente siempre incluye la versión leída en el request.** El campo `entity_version` se expone en el `EavPullResponse` proto y el Janus Router lo propaga transparentemente al `EavTransactRequest`. El técnico nunca ve el número — la UI lo maneja automáticamente. Si el cliente **no envía versión** (ej. operación de bulk import), el motor omite el ConditionCheck y acepta la escritura (modo `last-writer-wins`).
+> **Cómo llegaría la versión hasta aquí** (diseño, no implementación: el campo
+> `entity_version` no existe hoy en el proto ni lo propaga nadie). El cliente
+> incluiría en el request la versión que leyó, expuesta en `EavPullResponse` y
+> propagada por el Janus Router al `EavTransactRequest`; el técnico nunca vería
+> el número. Sin versión en el request —un bulk import, por ejemplo— el motor
+> omitiría el ConditionCheck y aceptaría la escritura, que es exactamente lo que
+> hace hoy con todas: `last-writer-wins`.
 
 ---
 
@@ -1110,7 +1112,6 @@ metri-engine/
         │   ├── chunker.rs       # Chunking transaccional (límite 100 items DynamoDB)
         │   ├── enricher.rs      # auto-generate: ulid, created_at, sys/version, tenant_id
         │   ├── outbox.rs        # build_outbox_item() para EDA
-        │   └── optimistic.rs    # build_condition_check() para Optimistic Locking
         │
         ├── reader/              # ── MÓDULO 4: Read Path ──
         │   ├── mod.rs

@@ -16,13 +16,19 @@
       "type": "array",
       "of": "object",
       "required": false,
-      "description": "Vector decodificador cuantitativo. Transmuta dimensiones MQTT crudas (num\u00e9ricas) hacia medidas UN/CEFACT puras (ej. Celsius, Watts) sobre el Parquet.",
+      "description": "Vector decodificador cuantitativo. Transmuta dimensiones MQTT crudas (numéricas) hacia medidas UN/CEFACT puras (ej. Celsius, Watts) sobre el Parquet.",
       "schema": [
         {
           "name": "source_key",
           "type": "string",
           "required": true,
-          "description": "La llave num\u00e9rica del PLC, ej 'tmp_val'"
+          "description": "La llave numérica del PLC, ej 'tmp_val'"
+        },
+        {
+          "name": "terminology_system",
+          "type": "string",
+          "required": false,
+          "description": "El sistema terminológico utilizado para la unidad o clasificación (ej. UN_CEFACT, OMNICLASS)."
         },
         {
           "name": "target_un_cefact",
@@ -32,10 +38,18 @@
           "required": true
         },
         {
+          "name": "metric_code",
+          "type": "string",
+          "subtype": "terminology",
+          "terminologyUri": "urn:api:system:metri:variables",
+          "required": false,
+          "description": "Código interno o estándar de la variable Metri."
+        },
+        {
           "name": "math_modifier",
           "type": "decimal",
           "default": 1.0,
-          "description": "Multiplicador de ajuste algor\u00edtmico."
+          "description": "Multiplicador de ajuste algorítmico."
         }
       ]
     },

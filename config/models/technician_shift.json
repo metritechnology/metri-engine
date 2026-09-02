@@ -40,6 +40,34 @@
       ],
       "default_value": "SCHEDULED",
       "is_dimension": true
+    },
+    {
+      "name": "shift_pattern_id",
+      "type": "reference",
+      "entityRef": "shift_pattern",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Patrón cuya ocurrencia esta fila corrige. Vacío si es un turno suelto que ningún patrón proyecta."
+    },
+    {
+      "name": "kind",
+      "type": "enum",
+      "options": [
+        "OVERRIDE",
+        "EXTRA",
+        "ABSENCE"
+      ],
+      "required": true,
+      "is_dimension": true,
+      "description": "OVERRIDE desplaza la ocurrencia del patrón; EXTRA añade capacidad que ningún patrón proyecta; ABSENCE la resta."
+    },
+    {
+      "name": "absence_reason",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:absence_reason",
+      "is_dimension": true,
+      "description": "Solo con kind = ABSENCE. Vocabulario controlado (P6): vacaciones, baja, formación, permiso. Es exactamente el eje por el que se pregunta «por qué se pierde capacidad», y en texto libre esa pregunta no se responde."
     }
   ]
 }

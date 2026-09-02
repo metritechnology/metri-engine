@@ -21,3 +21,8 @@ impl OutboxManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "tests/outbox_tests.rs"]
+mod tests;
+

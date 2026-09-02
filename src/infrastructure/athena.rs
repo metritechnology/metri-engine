@@ -2,6 +2,9 @@
 // infrastructure/athena.rs — AthenaQueryEngine implementando IQueryEngine.
 // En Clojure: AthenaClient SDK v2 Java.
 // En Rust:    aws-sdk-athena — polling de resultados con coerción de tipos.
+//
+// Este módulo es el cliente PURO de AWS Athena para producción.
+// En desarrollo local (LocalStack), se usa LocalS3QueryEngine en su lugar.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -32,8 +35,25 @@ impl AthenaQueryEngine {
         output_location: impl Into<String>,
         database:        impl Into<String>,
     ) -> Self {
-        let config = aws_config::load_from_env().await;
-        let client = Client::new(&config);
+        let region_provider = aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
+        let config = aws_config::from_env().region(region_provider).load().await;
+
+        let client = if let Ok(endpoint_url) = std::env::var("AWS_ENDPOINT_URL") {
+            info!("[Athena] Usando endpoint override de AWS_ENDPOINT_URL: {}", endpoint_url);
+            let athena_config = aws_sdk_athena::config::Builder::from(&config)
+                .endpoint_url(endpoint_url)
+                .build();
+            Client::from_conf(athena_config)
+        } else if let Ok(endpoint_url) = std::env::var("ATHENA_ENDPOINT") {
+            info!("[Athena] Usando endpoint override de ATHENA_ENDPOINT: {}", endpoint_url);
+            let athena_config = aws_sdk_athena::config::Builder::from(&config)
+                .endpoint_url(endpoint_url)
+                .build();
+            Client::from_conf(athena_config)
+        } else {
+            Client::new(&config)
+        };
+
         let wg = workgroup.into();
         info!("[Athena] cliente activo | workgroup: {wg}");
         AthenaQueryEngine {
@@ -69,12 +89,7 @@ impl IQueryEngine for AthenaQueryEngine {
             .work_group(&self.workgroup)
             .send()
             .await
-            .map_err(|e| {
-                DomainError::aegis(
-                    ErrorCode::Aeg002,
-                    format!("Athena start_query falló: {e}"),
-                )
-            })?;
+            .map_err(|e| DomainError::aegis(ErrorCode::Aeg002, format!("Athena start_query falló: {e}")))?;
 
         let execution_id = resp.query_execution_id
             .ok_or_else(|| DomainError::aegis(ErrorCode::Aeg002, "Sin execution_id en respuesta Athena"))?;

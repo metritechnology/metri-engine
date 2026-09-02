@@ -1,2 +1,11 @@
 pub mod fuzzy;
 pub mod compiler;
+pub(crate) mod dialect;
+pub(crate) mod security;
+pub(crate) mod where_compiler;
+pub(crate) mod select_compiler;
+pub(crate) mod metric_compiler;
+pub(crate) mod cte_compiler;
+pub(crate) mod virtual_table;
+pub(crate) mod query_config;
+pub mod registry;

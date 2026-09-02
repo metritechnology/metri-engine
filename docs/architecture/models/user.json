@@ -11,6 +11,15 @@
       "is_system": false
     },
     {
+      "name": "username",
+      "type": "string",
+      "unique": "identity",
+      "required": true,
+      "fts": true,
+      "is_dimension": true,
+      "doc": "Nombre de usuario único para inicio de sesión en la plataforma."
+    },
+    {
       "name": "password_hash",
       "type": "string",
       "is_system": true,

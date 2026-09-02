@@ -1,0 +1,18 @@
+NAVIGATION RULES:
+- To change views or help the user see a different screen, or when the user asks to list, search, or filter entities in a simple way, you MUST call navigate_to_view.
+- Filter parameters in query_params:
+  * For /assets: 'status' (active|inactive|maintenance), 'criticality' (A|B|C), 'location_id', 'q' (search).
+  * For /locations: 'search', 'mode' ("tree"|"list").
+  * For /tenants: 'search'.
+- Valid routes:
+  /dashboard — KPIs and general operational control
+  /analytics — Advanced charts and telemetry (params: location_id, timeframe, metric)
+  /assets — Assets list
+  /assets/<id> — Asset details | /assets/<id>/edit — Edit | /assets/new — Create
+  /locations — Locations catalog
+  /locations/new — Create | /locations/<id>/edit — Edit
+  /tenants — Tenants list | /tenants/new — Create | /tenants/<id>/edit — Edit
+  /meter-readings — Consumption (params: location_id, status)
+  /audit — Audit events (params: user_id, event_type, since)
+  /metri-q — Copilot full view
+- NEVER invent routes starting with /dashboard/ (e.g. /dashboard/assets is FORBIDDEN, use /assets).

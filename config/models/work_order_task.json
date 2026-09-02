@@ -17,8 +17,32 @@
       "type": "reference",
       "entityRef": "task_template",
       "cardinality": "one",
-      "description": "Si est\u00e1 presente, esta tarea fue generada basada en un protocolo o plantilla estandarizada",
+      "description": "Si está presente, esta tarea fue generada basada en un protocolo o plantilla estandarizada",
       "is_dimension": true
+    },
+    {
+      "name": "asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Equipo sobre el que se ejecuta esta fase. Vacío: se hereda el de la orden. En una ruta, es la parada."
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Sitio de esta fase cuando no hay equipo. Misma regla de herencia."
+    },
+    {
+      "name": "work_order_template_stop_id",
+      "type": "reference",
+      "entityRef": "work_order_template_stop",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Parada de la que se compuso esta tarea. Es el puntero a plantilla que WO-R12 exige, en el nivel que hoy no lo tiene."
     },
     {
       "name": "description",
@@ -43,9 +67,21 @@
     {
       "name": "estimated_duration_minutes",
       "type": "decimal",
-      "description": "Tiempo estimado en MINUTOS para c\u00e1lculos OLAP precisos",
+      "description": "Tiempo estimado en MINUTOS para cálculos OLAP precisos",
       "is_measure": true,
       "default_rollup": "sum"
+    },
+    {
+      "name": "scheduled_start",
+      "type": "epoch",
+      "index": true,
+      "description": "Cuándo se piensa hacer. No es el vencimiento ni el compromiso de SLA: es el plan, y es lo único que mueve un arrastre en el tablero."
+    },
+    {
+      "name": "scheduled_end",
+      "type": "epoch",
+      "index": true,
+      "description": "Fin previsto. Su distancia a scheduled_start es el span; el esfuerzo lo declara estimated_effort_minutes y no tienen por qué coincidir."
     },
     {
       "name": "note_ids",

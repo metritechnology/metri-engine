@@ -26,6 +26,42 @@ impl EventBridgeClient {
     }
 }
 
+/// Emite un evento a EventBridge de forma asíncrona fire-and-forget (tokio::spawn)
+pub fn publish_domain_event_async(
+    event_bus_name: String,
+    source: String,
+    detail_type: String,
+    detail: Value,
+) {
+    tokio::spawn(async move {
+        let config = aws_config::load_from_env().await;
+        let client = Client::new(&config);
+        let detail_json = serde_json::to_string(&detail).unwrap_or_default();
+
+        let entry = aws_sdk_eventbridge::types::PutEventsRequestEntry::builder()
+            .event_bus_name(&event_bus_name)
+            .source(&source)
+            .detail_type(&detail_type)
+            .detail(detail_json)
+            .build();
+
+        match client.put_events().entries(entry).send().await {
+            Ok(resp) => {
+                if let Some(first_entry) = resp.entries().first() {
+                    if let Some(event_id) = first_entry.event_id() {
+                        info!(event_id = %event_id, bus = %event_bus_name, detail_type = %detail_type, "[EventBridge] Domain event publicado con éxito");
+                    } else if let Some(err_code) = first_entry.error_code() {
+                        error!(err_code = %err_code, bus = %event_bus_name, "[EventBridge] PutEvents entry error");
+                    }
+                }
+            }
+            Err(e) => {
+                error!(error = ?e, bus = %event_bus_name, "[EventBridge] Error enviando evento de dominio");
+            }
+        }
+    });
+}
+
 #[async_trait]
 impl IEventBus for EventBridgeClient {
     /// Publica un evento de dominio en EventBridge.

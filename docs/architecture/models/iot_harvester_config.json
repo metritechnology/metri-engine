@@ -20,13 +20,34 @@
       "name": "target_url",
       "type": "string",
       "required": true,
-      "description": "El REST API Endpoint del Activo."
+      "description": "El REST API Endpoint o Dirección IP del Activo/PLC."
+    },
+    {
+      "name": "port",
+      "type": "integer",
+      "required": false,
+      "description": "Puerto de red de conexión opcional (ej. 502 para MODBUS TCP, 80/443 para HTTP, 50051 para gRPC)."
     },
     {
       "name": "polling_interval_seconds",
       "type": "integer",
       "default": 300,
+      "required": false
+    },
+    {
+      "name": "schedule_type",
+      "type": "enum",
+      "options": [
+        "INTERVAL",
+        "CRON"
+      ],
+      "default": "INTERVAL",
       "required": true
+    },
+    {
+      "name": "cron_expression",
+      "type": "string",
+      "required": false
     },
     {
       "name": "auth_type",
@@ -48,6 +69,28 @@
       "default": "JSON",
       "required": true,
       "description": "El formato esperado de la respuesta de la API para que el Worker de Go ensamble el decodificador correcto."
+    },
+    {
+      "name": "http_method",
+      "type": "string",
+      "default": "GET",
+      "required": true,
+      "description": "Método HTTP utilizado para interrogar la API (GET, POST, etc.)."
+    },
+    {
+      "name": "http_headers",
+      "type": "json",
+      "description": "Cabeceras HTTP en formato JSON enviadas con la petición de interrogación."
+    },
+    {
+      "name": "request_payload",
+      "type": "json",
+      "description": "Cuerpo/payload JSON enviado en las peticiones HTTP (generalmente para POST/PUT)."
+    },
+    {
+      "name": "url_query_params",
+      "type": "json",
+      "description": "Parámetros de consulta (Query Params) de la URL en formato JSON."
     },
     {
       "name": "mapping_directive",

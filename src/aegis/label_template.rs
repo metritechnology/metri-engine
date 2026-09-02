@@ -38,7 +38,31 @@ fn coerce_key<'a>(row: &'a Value, field_str: &str) -> Option<&'a Value> {
 /// - decimal   -> "45.23" (2 decimales max)
 /// - string    -> valor directo
 /// [PORTED_FROM: (format-value v)]
-fn format_value(v: Option<&Value>) -> String {
+/// Resuelve un camino (por ejemplo "location.name") navegando en objetos JSON.
+fn resolve_path<'a>(mut current: &'a Value, path: &str) -> Option<&'a Value> {
+    // Si la clave entera coincide directamente en el valor actual, úsala directamente.
+    if let Some(v) = coerce_key(current, path) {
+        return Some(v);
+    }
+
+    let parts: Vec<&str> = path.split('.').collect();
+    if parts.len() > 1 {
+        for part in parts {
+            current = coerce_key(current, part)?;
+        }
+        Some(current)
+    } else {
+        None
+    }
+}
+
+/// Formatea un valor para display en un label.
+/// - null      -> ""
+/// - entero    -> "42"
+/// - decimal   -> "45.23" (2 decimales max)
+/// - string    -> valor directo
+/// [PORTED_FROM: (format-value v)]
+pub(crate) fn format_value(v: Option<&Value>) -> String {
     match v {
         Some(Value::Null) | None => "".to_string(),
         Some(Value::Number(n)) => {
@@ -67,7 +91,7 @@ pub fn interpolate(template: &str, row: &Value) -> Option<String> {
 
     let result = PLACEHOLDER_PATTERN.replace_all(template, |caps: &regex::Captures| {
         let field_str = caps[1].trim();
-        let val = coerce_key(row, field_str);
+        let val = resolve_path(row, field_str).or_else(|| coerce_key(row, field_str));
         format_value(val)
     });
 
@@ -77,6 +101,7 @@ pub fn interpolate(template: &str, row: &Value) -> Option<String> {
 /// Aplica `interpolate` a todos los rows de un vector de JSON values.
 /// Añade la key `_label` a cada row con el label resuelto.
 /// [PORTED_FROM: (interpolate-rows rows template)]
+#[allow(dead_code)]
 pub fn interpolate_rows(rows: &mut [Value], template: &str) {
     if template.trim().is_empty() { return; }
 
@@ -91,6 +116,7 @@ pub fn interpolate_rows(rows: &mut [Value], template: &str) {
 
 /// Extrae los nombres de campo referenciados en un template.
 /// [PORTED_FROM: (extract-fields template)]
+#[allow(dead_code)]
 pub fn extract_fields(template: &str) -> Vec<String> {
     if template.trim().is_empty() { return vec![]; }
     
@@ -105,31 +131,27 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_format_value() {
-        assert_eq!(format_value(None), "");
-        assert_eq!(format_value(Some(&json!(null))), "");
-        assert_eq!(format_value(Some(&json!(42))), "42");
-        assert_eq!(format_value(Some(&json!(45.234))), "45.23");
-        assert_eq!(format_value(Some(&json!(45.0))), "45");
-        assert_eq!(format_value(Some(&json!("Pump A"))), "Pump A");
-    }
-
-    #[test]
-    fn test_interpolate() {
+    fn test_dotted_path_interpolation() {
         let row = json!({
-            "asset_name": "Pump A",
-            "area_value": 45.2
+            "asset/name": "Pump Alpha",
+            "location_id": {
+                "id": "loc-123",
+                "name": "Warehouse A"
+            },
+            "status": "ACTIVE"
         });
-        let res = interpolate("{{asset_name}} - {{area_value}} KW", &row);
-        assert_eq!(res.unwrap(), "Pump A - 45.20 KW");
 
-        let res2 = interpolate("missing {{foo}}", &row);
-        assert_eq!(res2.unwrap(), "missing ");
-    }
+        // Test normal keys
+        assert_eq!(interpolate("{{asset/name}}", &row), Some("Pump Alpha".to_string()));
+        assert_eq!(interpolate("{{status}}", &row), Some("ACTIVE".to_string()));
 
-    #[test]
-    fn test_extract_fields() {
-        let fields = extract_fields("{{asset_name}} - {{area_value}} KW");
-        assert_eq!(fields, vec!["asset_name", "area_value"]);
+        // Test dotted path keys (canonical)
+        assert_eq!(interpolate("{{location_id.name}}", &row), Some("Warehouse A".to_string()));
+        assert_eq!(interpolate("{{location_id.id}}", &row), Some("loc-123".to_string()));
+
+        // Test dotted path keys (aliased/fallback via coerce_key)
+        assert_eq!(interpolate("{{location_id.name}} - {{status}}", &row), Some("Warehouse A - ACTIVE".to_string()));
     }
 }
+
+

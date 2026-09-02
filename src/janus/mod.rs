@@ -17,4 +17,4 @@ pub mod plan_selector;
 pub mod aggregator;
 
 #[cfg(test)]
-pub mod contract_tests;
+mod testing;

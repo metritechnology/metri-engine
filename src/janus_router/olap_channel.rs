@@ -28,6 +28,9 @@ use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
 use crate::janus_router::ulid;
 
+use std::sync::Arc;
+use crate::domain::protocols::IStreamWriter;
+
 // ── OlapChannel ───────────────────────────────────────────────────────────────
 
 /// Canal de escritura OLAP vía Kinesis Firehose (Columnar Nativo).
@@ -35,14 +38,14 @@ use crate::janus_router::ulid;
 pub struct OlapChannel {
     /// Prefijo del stream Firehose — ej: "metri-olap-stream"
     stream_prefix: String,
-    // FASE 4: aws_sdk_firehose::Client
+    stream_writer: Arc<dyn IStreamWriter>,
 }
 
 impl OlapChannel {
-    pub fn new(stream_prefix: impl Into<String>) -> Self {
+    pub fn new(stream_prefix: impl Into<String>, stream_writer: Arc<dyn IStreamWriter>) -> Self {
         let stream_prefix = stream_prefix.into();
         info!("[OlapChannel] Columnar Nativo activo | prefix: {stream_prefix}");
-        Self { stream_prefix }
+        Self { stream_prefix, stream_writer }
     }
 
     /// Nombre del stream Firehose para la entidad.
@@ -101,30 +104,40 @@ impl IWriteChannel for OlapChannel {
         );
 
         let mut ingested = 0usize;
+        
+        // Procesar en chunks de 50 para evitar saturar el pool de conexiones del servidor LocalStack/AWS
+        for chunk in records.chunks(50) {
+            let mut tasks = Vec::new();
+            
+            for record in chunk {
+                let record_ulid = ulid::generate();
 
-        for record in &records {
-            let record_ulid = ulid::generate();
+                // 1. Coerción de tipos numéricos (string → number).
+                let coerced = coerce_numeric_fields(record.clone(), attributes);
 
-            // 1. Coerción de tipos numéricos (string → number).
-            // Crítico para Parquet/Iceberg donde los tipos deben coincidir exactamente.
-            // [PORTED_FROM: (coerce-numeric-fields record attributes)]
-            let coerced = coerce_numeric_fields(record.clone(), attributes);
+                // 2. Aplanar: campos de dominio + metadatos del sistema.
+                let decorated = decorate_record(coerced, tenant_id, created_at, &record_ulid);
 
-            // 2. Aplanar: campos de dominio + metadatos del sistema.
-            // Produce mapa plano compatible con esquema Iceberg de la entidad.
-            // [PORTED_FROM: (decorate-record coerced tenant-id created-at record-ulid)]
-            let decorated = decorate_record(coerced, tenant_id, created_at, &record_ulid);
+                // FASE 4: Real Firehose PutRecord
+                let payload_bytes = serde_json::to_vec(&decorated).map_err(|e| {
+                    DomainError::janus(
+                        ErrorCode::Jns001,
+                        format!("Error al serializar registro OLAP a JSON: {e}"),
+                    )
+                })?;
 
-            // FASE 4: aws_sdk_firehose::Client::put_record()
-            // Formato: PutRecordInput { delivery_stream_name, record: base64(JSON) }
-            // [PORTED_FROM: (proto/put-record! stream-writer stream-name record-ulid decorated)]
-            info!(
-                stream = %stream_name,
-                ulid   = %record_ulid,
-                "[OlapChannel] STUB Firehose PutRecord (FASE 4)"
-            );
+                let writer = Arc::clone(&self.stream_writer);
+                let stream_name_clone = stream_name.clone();
+                tasks.push(async move {
+                    writer.put_record(&stream_name_clone, &record_ulid, payload_bytes).await
+                });
+            }
 
-            ingested += 1;
+            let results = futures::future::join_all(tasks).await;
+            for res in results {
+                res?;
+                ingested += 1;
+            }
         }
 
         info!(
@@ -165,24 +178,9 @@ fn coerce_numeric_fields(
     let mut out = obj.clone();
 
     for attr in attrs {
-        let is_numeric = matches!(
-            attr.attr_type,
-            AttrType::Number | AttrType::Epoch | AttrType::Decimal
-        );
-        if !is_numeric { continue; }
-
-        if let Some(Value::String(s)) = out.get(&attr.name) {
-            // Intentar parsear como entero primero (epoch/long), luego como decimal.
-            let parsed = if let Ok(i) = s.parse::<i64>() {
-                Some(Value::Number(i.into()))
-            } else if let Ok(f) = s.parse::<f64>() {
-                serde_json::Number::from_f64(f).map(Value::Number)
-            } else {
-                None
-            };
-
-            if let Some(v) = parsed {
-                out.insert(attr.name.clone(), v);
+        if let Some(val) = out.get(&attr.name) {
+            if let Some(coerced_val) = crate::codice::coercion::coerce_value(val, &attr.attr_type) {
+                out.insert(attr.name.clone(), coerced_val);
             }
         }
     }

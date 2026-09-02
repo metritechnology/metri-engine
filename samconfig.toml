@@ -20,7 +20,7 @@ confirm_changeset = true
 resolve_s3 = true
 s3_prefix = "metri-engine"
 region = "us-east-1"
-parameter_overrides = "EavTableName=\"metri-prod\" AthenaWorkGroup=\"metri-analytics\""
+parameter_overrides = "EavTableName=\"metri-dynamo\" AthenaWorkGroup=\"metri-analytics\""
 image_repositories = []
 
 [default.package.parameters]

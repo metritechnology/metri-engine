@@ -12,4 +12,5 @@ pub mod router;
 pub mod ulid;
 pub mod partition;
 pub mod oltp_channel;   // [PORTED_FROM: channels/oltp.clj] — EAV ACID
+pub mod saga;           // [PORTED_FROM: projections/saga.clj] — scheduled_job en la misma TX
 pub mod olap_channel;   // [PORTED_FROM: channels/olap.clj] — Firehose OLAP

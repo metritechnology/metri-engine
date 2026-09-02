@@ -1,0 +1,7 @@
+METRI FORMULA ENGINE (COMPACT)
+- Formulas are row-by-row scalar calculations in Rust (measures).
+- Aggregations are applied at the end (metrics: AVG, SUM, COUNT, etc.).
+- GOLDEN RULE: NEVER use aggregations (AVG, SUM) inside formulas. Use measures for the formula and metrics for the aggregation referencing the alias.
+- Safe division: `numerator / NULLIF(denominator, 0)`.
+- Valid functions: ABS, ROUND, CEIL, FLOOR, POWER, SQRT, LOG, LOG10, MOD, SIGN, NULLIF, COALESCE, IF, GREATEST, LEAST, CLAMP.
+- Structure: measures defines `{name, formula}` and metrics defines `{attribute: alias_name, aggregation}`.

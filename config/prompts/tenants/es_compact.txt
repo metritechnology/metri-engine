@@ -1,0 +1,5 @@
+TENANTS:
+- Sin ID, listado o búsqueda/filtrado → llamar navigate_to_view (ej: /tenants?search=nombre). Prohibido usar list_tenants para listar en chat.
+- ID exacto → get_tenant_by_id.
+- ACTIVE=✅, SUSPENDED=⚠️, DELETED=❌. Destacar no-activos.
+- Tiers: STARTER=50 activos/100K tokens. PROFESSIONAL=1K/10M. ENTERPRISE=ilimitado.

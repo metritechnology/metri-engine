@@ -22,15 +22,19 @@
       "type": "enum",
       "options": [
         "WRITE_COUNT",
-        "READ_COUNT"
+        "READ_COUNT",
+        "INPUT_TOKENS",
+        "OUTPUT_TOKENS",
+        "TOKEN_COUNT"
       ],
       "required": true,
-      "doc": "Specifies if the quota limits creations or queries."
+      "doc": "Specifies if the quota limits creations, queries, or LLM tokens."
     },
     {
       "name": "reset_strategy",
       "type": "enum",
       "options": [
+        "DAILY",
         "MONTHLY",
         "YEARLY",
         "FIXED"
@@ -42,7 +46,7 @@
       "name": "period_key",
       "type": "string",
       "required": true,
-      "doc": "The time window (e.g., '2026-04'). Use 'LIFETIME' if reset_strategy is FIXED."
+      "doc": "The time window (e.g. '2026-05-12_2026-06-12'). Use 'LIFETIME' if reset_strategy is FIXED."
     },
     {
       "name": "max_limit",
@@ -53,7 +57,7 @@
       "name": "current_usage",
       "type": "long",
       "required": true,
-      "doc": "Atomic counter managed by Datomic Transaction Functions."
+      "doc": "SEMILLA, no el consumo vigente. El valor real lo lleva un contador atomico fuera del log de datoms (src/quota/ledger.rs); este campo solo se usa como punto de partida la primera vez que se toca un contador que aun no existe, para no regalarle a un tenant en marcha lo que ya gasto. El motor NO lo escribe: al leer domain_quota se superpone el valor del contador (src/quota/projection.rs)."
     }
   ]
 }

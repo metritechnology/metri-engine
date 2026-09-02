@@ -3,7 +3,6 @@
   "engine": "oltp",
   "is_system": false,
   "track_history": false,
-  "partition_strategy": "YYYY-MM-DD",
   "attributes": [
     {
       "name": "part_id",
@@ -11,7 +10,8 @@
       "entityRef": "part",
       "cardinality": "one",
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Parte o repuesto que se mueve."
     },
     {
       "name": "location_id",
@@ -19,7 +19,8 @@
       "entityRef": "location",
       "cardinality": "one",
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Almacén o ubicación origen/destino del movimiento."
     },
     {
       "name": "type",
@@ -33,40 +34,71 @@
         "TRANSFER_OUT"
       ],
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Tipo de movimiento de inventario."
     },
     {
       "name": "quantity",
       "type": "decimal",
       "required": true,
-      "description": "Can be negative for consumption/transfer_out, positive for receipt/transfer_in"
+      "description": "Cantidad de unidades transferidas o consumidas (decimal por unidades fraccionadas, ej. Kg)."
     },
     {
-      "name": "unit_cost",
-      "type": "decimal",
-      "description": "The cost of the part at the exact moment of this movement"
+      "name": "unit_cost_cents",
+      "type": "number",
+      "is_measure": true,
+      "required": true,
+      "description": "El costo unitario real imputado a este movimiento en céntimos (calculado según el método contable del tenant: FIFO, LIFO o PMP)."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "default_value": "USD",
+      "required": true,
+      "is_dimension": true,
+      "description": "Moneda utilizada para la imputación del costo unitario."
+    },
+    {
+      "name": "inventory_batch_id",
+      "type": "reference",
+      "entityRef": "inventory_batch",
+      "cardinality": "one",
+      "description": "Enlace opcional al lote específico (inventory_batch) afectado por este movimiento bajo estrategias FIFO/LIFO."
     },
     {
       "name": "reference_entity",
       "type": "string",
-      "description": "Which entity spawned this movement (e.g. work_order, purchase_order)"
+      "is_dimension": true,
+      "description": "Entidad origen que gatilló el movimiento (ej. 'work_order', 'purchase_order')."
     },
     {
       "name": "reference_id",
       "type": "uuid",
-      "description": "The ID of the reference entity"
+      "index": true,
+      "description": "ID UUID de la entidad de referencia origen."
     },
     {
       "name": "timestamp",
       "type": "epoch",
       "index": true,
-      "required": true
+      "required": true,
+      "description": "Timestamp epoch ms de la transacción física."
     },
     {
       "name": "performed_by",
       "type": "reference",
       "entityRef": "user",
-      "cardinality": "one"
+      "cardinality": "one",
+      "description": "Usuario responsable de realizar el movimiento físico."
+    },
+    {
+      "name": "tenant_id",
+      "type": "reference",
+      "entityRef": "tenant",
+      "required": true,
+      "is_dimension": true,
+      "description": "Tenant propietario del movimiento de inventario."
     }
   ]
 }

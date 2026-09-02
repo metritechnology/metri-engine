@@ -68,7 +68,7 @@ fn infer_required_fields(ast_ir: &Value, ts_field: &str) -> Vec<String> {
 
 /// Recupera el campo de tipo 'epoch' desde el esquema para usar como timestamp de serie temporal.
 /// [PORTED_FROM: (resolve-created-at-field entity-type schema)]
-fn resolve_ts_field(entity_type: &str, schema: Option<&Value>) -> String {
+pub(crate) fn resolve_ts_field(entity_type: &str, schema: Option<&Value>) -> String {
     if let Some(attrs) = schema.and_then(|s| s.get("attributes")).and_then(|v| v.as_array()) {
         for attr in attrs {
             if attr.get("type").and_then(|v| v.as_str()) == Some("epoch") {
@@ -149,7 +149,10 @@ pub fn compile_oltp_query(ast_ir: &Value, tenant_id: &str) -> Result<QueryExecut
     let ts_field    = resolve_ts_field(entity_type, ast_ir.get("schema"));
 
     let is_analytical = ["KPI", "PIE", "TIMESERIES", "BUBBLE"].contains(&output_cast)
-        || ast_ir.get("metrics").map(|v| v.is_array() && !v.as_array().unwrap().is_empty()).unwrap_or(false);
+        || ast_ir.get("metrics")
+            .and_then(|v| v.as_array())
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false);
 
     let pull_pattern = if is_analytical {
         infer_required_fields(ast_ir, &ts_field)
@@ -259,7 +262,7 @@ pub fn compile_native_plan_fbs(ast_ir: &fbs::AnalyticsRequestT, tenant_id: &str)
 /// `TimeRange` ya resuelto. Retorna Vec<String> listo para concat en la query.
 ///
 /// Ejemplo de uso en el executor:
-/// ```rust
+/// ```rust,ignore
 /// let clauses = build_temporal_datalog_clauses(&time_range, "_created_at", 1);
 /// // clauses = ["[?e :_created_at ?ts1]", "[>= ?ts1 1735689600000]", ...]
 /// ```
@@ -274,40 +277,4 @@ pub fn build_temporal_datalog_clauses(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
 
-    #[test]
-    fn test_resolve_ts_field() {
-        let schema = json!({
-            "attributes": [
-                {"name": "event_ts", "type": "epoch"},
-                {"name": "value", "type": "number"}
-            ]
-        });
-        assert_eq!(resolve_ts_field("asset", Some(&schema)), "asset/event_ts");
-        assert_eq!(resolve_ts_field("asset", None), "meta/created_at");
-    }
-
-    #[test]
-    fn test_compile_native_plan_point_lookup() {
-        let ast = json!({
-            "entity": "asset",
-            "where": ["=", "entity/ulid", "01JTEST"]
-        });
-        let plan = compile_native_plan(&ast, "tnt_01");
-        matches!(plan, NativeQueryPlan::PointLookup { entity_id } if entity_id == "01JTEST");
-    }
-
-    #[test]
-    fn test_compile_native_plan_fts() {
-        let ast = json!({
-            "entity": "asset",
-            "search": "bomba hidraulica"
-        });
-        let plan = compile_native_plan(&ast, "tnt_01");
-        matches!(plan, NativeQueryPlan::FtsSearch { term, .. } if term == "bomba hidraulica");
-    }
-}

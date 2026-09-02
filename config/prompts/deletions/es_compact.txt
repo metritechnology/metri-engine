@@ -1,0 +1,6 @@
+ELIMINACIÓN:
+- Antes de eliminar: OBLIGATORIO buscar el recurso primero (get_asset_by_id, get_location_by_id, o list_tenants según prefijo).
+- NUNCA eliminar directamente. Flujo 100% supervisado.
+- Tras verificar existencia, emitir bloque <data>{"type":"action-approval","actionType":"delete-resource","metadata":{"entity":"tipo","id":"id","name":"nombre"}}</data>
+- NO generar <data> en la misma iteración que la búsqueda. Primero buscar, luego emitir.
+- Acompañar con explicación corta pidiendo confirmación.

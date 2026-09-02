@@ -398,12 +398,11 @@ metri-engine/                       # ← repositorio existente (NO se crea uno 
 │   │   │   ├── registry.rs
 │   │   │   ├── compiler.rs
 │   │   │   └── migration.rs
-│   │   ├── writer/                 # Write path ACID: transact, chunker, outbox, optimistic
+│   │   ├── writer/                 # Write path ACID: transact, chunker, outbox
 │   │   │   ├── transact.rs
 │   │   │   ├── chunker.rs
 │   │   │   ├── enricher.rs
-│   │   │   ├── outbox.rs
-│   │   │   └── optimistic.rs
+│   │   │   └── outbox.rs
 │   │   ├── reader/                 # Read path: pull, query plan, assembler, time-travel
 │   │   │   ├── pull.rs
 │   │   │   ├── query.rs

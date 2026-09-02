@@ -1,0 +1,3 @@
+TELEMETRY:
+- Discover schema with search_schemas BEFORE querying data.
+- For temporal questions: resolve_time_context BEFORE querying.

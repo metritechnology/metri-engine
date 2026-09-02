@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .build_client(true)
         .file_descriptor_set_path(out_dir.join("metri_descriptor.bin"))
-        .compile(&["proto/metri.proto"], &["proto"])?;
+        .compile(&["proto/metri.proto", "proto/eda.proto"], &["proto"])?;
 
     // Compilar schema FlatBuffers (Janus AST IR)
     println!("cargo:rerun-if-changed=src/janus/janus_ir_ast.fbs");

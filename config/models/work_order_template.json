@@ -47,6 +47,49 @@
       ],
       "default_value": "ACTIVE",
       "is_dimension": true
+    },
+    {
+      "name": "subject_mode",
+      "type": "enum",
+      "options": [
+        "SINGLE",
+        "ENUMERATED",
+        "CRITERIA"
+      ],
+      "default_value": "SINGLE",
+      "is_dimension": true,
+      "description": "SINGLE: el sujeto lo aporta la pauta o el planificador, y es lo que existe hoy. ENUMERATED: las paradas declaradas. CRITERIA: se resuelven al componer."
+    },
+    {
+      "name": "scope_location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "description": "Raíz del subárbol ISA-95 sobre el que se resuelve la membresía."
+    },
+    {
+      "name": "scope_include_descendants",
+      "type": "boolean",
+      "default_value": true
+    },
+    {
+      "name": "scope_omniclass_code",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:omniclass",
+      "is_dimension": true,
+      "description": "Clase de activo, por taxonomía controlada."
+    },
+    {
+      "name": "scope_criticality",
+      "type": "enum",
+      "options": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "description": "Criticidad mínima. Vacío: todas."
     }
   ],
   "events": {

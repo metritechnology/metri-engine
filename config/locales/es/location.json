@@ -1,0 +1,34 @@
+{
+  "entities": {
+    "location": {
+      "label": "Ubicaciones",
+      "attributes": {
+        "name": "Nombre",
+        "tag": "Etiqueta",
+        "type": "Tipo",
+        "parent_location_id": "Ubicación Padre",
+        "coordinates_geojson": "Coordenadas",
+        "area_value": "Área",
+        "area_unit": "Unidad de Área",
+        "omniclass_code": "Código OmniClass",
+        "omniclass_name": "Nombre OmniClass"
+      }
+    }
+  },
+  "enums": {
+    "location": {
+      "type": {
+        "SITE": "Sitio",
+        "BUILDING": "Edificio",
+        "FLOOR": "Piso",
+        "ROOM": "Sala",
+        "ZONE": "Zona"
+      },
+      "area_unit": {
+        "m2": "m²",
+        "ft2": "ft²",
+        "sq_yd": "yd²"
+      }
+    }
+  }
+}

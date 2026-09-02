@@ -282,7 +282,7 @@ Toda la capa de ingesta cumple el contrato de la [FASE 10 — Gestión de Errore
 > Los errores Railway `[:error]` son manejados por sus propietarios (Janus, Cedar, Quota)
 > antes de retornar el `[:error]`. El IOP sólo propaga el resultado al transport layer.
 > La excepción es `handle-unary` en el gRPC runtime, que captura excepciones inesperadas
-> del pipeline completo — ver [01.01_FASE_RUNTIME_GRPC.md](01.01_FASE_RUNTIME_GRPC.md).
+> del pipeline completo — ver [01.03_FASE_RUNTIME_GRPC.md](01.03_FASE_RUNTIME_GRPC.md).
 
 ### Flujo: Error Railway → DTO Forense → EDA
 

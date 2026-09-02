@@ -1,127 +1,162 @@
 # metri-engine
 
-This project contains source code and supporting files for a serverless application that you can deploy with the SAM CLI. It includes the following files and folders.
+Motor de datos de la plataforma **metri** — CMMS/BI SaaS multitenant para gestión de activos en el sector salud. **100% Rust**, desplegado como una única AWS Lambda ARM64 (`provided.al2023`) que expone un servidor **gRPC** (Tonic) detrás de Function URL + CloudFront + WAF.
 
-- HelloWorldFunction/src/main - Code for the application's Lambda function.
-- events - Invocation events that you can use to invoke the function.
-- HelloWorldFunction/src/test - Unit tests for the application code. 
-- template.yaml - A template that defines the application's AWS resources.
+Combina en un solo proceso:
 
-The application uses several AWS resources, including Lambda functions and an API Gateway API. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
+- **OLTP** — motor EAV inmutable propio sobre DynamoDB (single-table, datoms EAVT/AEVT/AVET/VAET) con transacciones ACID, full-text search y jerarquías.
+- **OLAP** — data lake Parquet en S3 + Glue Data Catalog + Athena, con `tenant_id` como primera partición obligatoria.
+- **Seguridad** — autorización ABAC embebida (Cedar Policy), aislamiento por tenant fail-closed y censura Zero-Trust del tenant maestro.
+- **Cuotas** — ledger atómico por tenant con reservas para consumo de IA (Bedrock).
 
-If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
-The AWS Toolkit is an open source plug-in for popular IDEs that uses the SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds a simplified step-through debugging experience for Lambda function code. See the following links to get started.
+## Arquitectura en un vistazo
 
-* [CLion](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [GoLand](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [IntelliJ](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [WebStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [Rider](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PhpStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PyCharm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [RubyMine](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [DataGrip](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [VS Code](https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/welcome.html)
-* [Visual Studio](https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/welcome.html)
+```
+   Clientes (metri-app Flutter · system-bff · Metri Q Assistant)
+                   │  gRPC (tonic · grpc-web · reflection)
+                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│                metri-engine · Lambda ARM64                   │
+│                                                              │
+│  Interceptors: HMAC · sesión · Cedar (fail-closed)           │
+│        │                                                     │
+│  ┌─────▼──────┐  ┌──────────┐  ┌──────────────────────────┐  │
+│  │  janus     │  │  aegis   │  │  eav                     │  │
+│  │  read path │─▶│ compiler │─▶│  DynamoDB single-table   │  │
+│  └────────────┘  └──────────┘  └──────────────────────────┘  │
+│  ┌────────────┐  ┌──────────┐  ┌──────────────────────────┐  │
+│  │  iop       │  │  codice  │  │  quota                   │  │
+│  │ write path │  │ esquemas │  │  ledger + reservas IA    │  │
+│  └────────────┘  └──────────┘  └──────────────────────────┘  │
+│        │  eda — outbox · faults (EventBridge / SQS)          │
+└────────┼─────────────────────────────────────────────────────┘
+         ▼
+   S3 (Parquet) → Glue → Athena · Kinesis Firehose · EventBridge
+```
 
-## Deploy the sample application
+| Módulo | Rol |
+|---|---|
+| `janus` | Read path: compila queries a un AST IR en FlatBuffers (zero-copy), agregaciones, multi-series, FTS |
+| `janus_router` | Write path: routing OLTP/OLAP, sagas, particionado, generación de ULIDs |
+| `aegis` | Compilador SQL para Athena (via `sea-query`, inyección imposible por construcción) + executor OLTP + motor de fórmulas |
+| `eav` | Motor de almacenamiento EAV inmutable: datoms, transacciones, FTS, cursors, jerarquías |
+| `codice` | Registro SSOT de los ~60 modelos JSON (`config/models/`) — coerción y validación |
+| `cedar` | Autorización ABAC (Cedar Policy 3), cache de principals, reglas de seguridad del sistema |
+| `quota` | Cuotas atómicas por tenant: ledger con autoridad, reservas IA, sweeper |
+| `iop` | Pipeline de ingesta por pasos: Cedar → Quota → Janus |
+| `eda` | Arquitectura orientada a eventos: outbox, fault detection, routing |
+| `temporal` | Primitivas temporales timezone-aware (ventanas, shifts de calendario) |
+| `infrastructure` | Adaptadores AWS SDK (DynamoDB, S3, Athena, Kinesis, SQS, EventBridge, Glue) |
+| `otel` | Trazas OpenTelemetry (OTLP) |
 
-The Serverless Application Model Command Line Interface (SAM CLI) is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
+## API gRPC
 
-To use the SAM CLI, you need the following tools.
+El contrato vive en [`proto/metri.proto`](proto/metri.proto) — la única fuente de verdad del API. Servicio principal `metri.MetriService` (además de `QuotaService` y `AgentConfigService`):
 
-* SAM CLI - [Install the SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
-* java21 - [Install the Java 21](https://docs.aws.amazon.com/corretto/latest/corretto-21-ug/downloads-list.html)
-* Maven - [Install Maven](https://maven.apache.org/install.html)
-* Docker - [Install Docker community edition](https://hub.docker.com/search/?type=edition&offering=community)
+| RPC | Descripción |
+|---|---|
+| `Discovery` | Esquemas y metadata para UIs y agentes IA |
+| `Explore` | Autocompletados y dominios de valores |
+| `Query` | Consulta OLTP/OLAP con streaming server-side |
+| `ListEntities` | Censo de ids por tipo, con tope duro y `truncated` explícito |
+| `Transact` | Escritura transaccional en el motor EAV |
+| `BulkIngest` | Ingesta masiva y telemetría IoT |
+| `MatchRoutingRulesBatch` | Evaluación de reglas de routing EDA |
 
-To build and deploy your application for the first time, run the following in your shell:
+`tonic-reflection` está habilitado, así que el server es explorable con grpcurl sin importar los protos:
 
 ```bash
-sam build
-sam deploy --guided
+grpcurl -plaintext localhost:9090 list
+grpcurl -plaintext localhost:9090 describe metri.MetriService
 ```
 
-The first command will build the source of your application. The second command will package and deploy your application to AWS, with a series of prompts:
+## Requisitos
 
-* **Stack Name**: The name of the stack to deploy to CloudFormation. This should be unique to your account and region, and a good starting point would be something matching your project name.
-* **AWS Region**: The AWS region you want to deploy your app to.
-* **Confirm changes before deploy**: If set to yes, any change sets will be shown to you before execution for manual review. If set to no, the AWS SAM CLI will automatically deploy application changes.
-* **Allow SAM CLI IAM role creation**: Many AWS SAM templates, including this example, create AWS IAM roles required for the AWS Lambda function(s) included to access AWS services. By default, these are scoped down to minimum required permissions. To deploy an AWS CloudFormation stack which creates or modifies IAM roles, the `CAPABILITY_IAM` value for `capabilities` must be provided. If permission isn't provided through this prompt, to deploy this example you must explicitly pass `--capabilities CAPABILITY_IAM` to the `sam deploy` command.
-* **Save arguments to samconfig.toml**: If set to yes, your choices will be saved to a configuration file inside the project, so that in the future you can just re-run `sam deploy` without parameters to deploy changes to your application.
+- Rust stable + [`cargo-lambda`](https://www.cargo-lambda.info/) (para el build de Lambda)
+- Docker + Docker Compose
+- AWS SAM CLI (para desplegar)
+- `grpcurl` (smoke tests)
 
-You can find your API Gateway Endpoint URL in the output values displayed after deployment.
-
-## Use the SAM CLI to build and test locally
-
-Build your application with the `sam build` command.
+## Quickstart local
 
 ```bash
-metri-engine$ sam build
+make infra    # DynamoDB Local + MinIO + ElasticMQ (docker compose)
+make dev      # engine con hot-reload (cargo-watch) — gRPC en localhost:9090
+make seed     # datos de prueba: tenant demo + work_orders
+make smoke    # smoke test gRPC con grpcurl
 ```
 
-The SAM CLI installs dependencies defined in `HelloWorldFunction/pom.xml`, creates a deployment package, and saves it in the `.aws-sam/build` folder.
-
-Test a single function by invoking it directly with a test event. An event is a JSON document that represents the input that the function receives from the event source. Test events are included in the `events` folder in this project.
-
-Run functions locally and invoke them with the `sam local invoke` command.
+Alternativa sin hot-reload:
 
 ```bash
-metri-engine$ sam local invoke HelloWorldFunction --event events/event.json
+make engine   # infra + servidor compilado corriendo en background
 ```
 
-The SAM CLI can also emulate your application's API. Use the `sam local start-api` to run the API locally on port 3000.
+## Tests
 
 ```bash
-metri-engine$ sam local start-api
-metri-engine$ curl http://localhost:3000/
+make test               # suite unitaria (cargo test)
+make test-integration   # tests #[ignore] de integración contra DynamoDB Local
 ```
 
-The SAM CLI reads the application template to determine the API's routes and the functions that they invoke. The `Events` property on each function's definition includes the route and method for each path.
+Los tests de integración se ejecutan con variables apuntando a la infra local (`DYNAMODB_ENDPOINT=http://localhost:8000`, tablas `metri-*-local`); el Makefile ya las define.
 
-```yaml
-      Events:
-        HelloWorld:
-          Type: Api
-          Properties:
-            Path: /hello
-            Method: get
+## Estructura del repositorio
+
+```
+src/
+  grpc/           servidor gRPC, interceptors, implementación del servicio
+  domain/         protocolos (traits) y errores — cero dependencia de infraestructura
+  janus/          compilador de queries → AST IR (FlatBuffers)
+  janus_router/   routing de escritura, sagas, proyecciones
+  aegis/          compilador SQL Athena + executor OLTP + motor de fórmulas
+  eav/            motor de almacenamiento EAV (writer, reader, FTS, cursors)
+  codice/         registro de modelos y coerción
+  cedar/          autorización ABAC
+  quota/          cuotas, ledger, reservas
+  iop/            pipeline de ingesta
+  eda/            eventos de dominio (Moira, Sherlog)
+  temporal/       primitivas de tiempo
+  infrastructure/ adaptadores AWS SDK
+  otel/           trazas
+config/
+  models/         ~60 modelos JSON — fuente de verdad de los esquemas
+  errors/         catálogo canónico de errores (TOML) — validado fail-fast en el arranque
+  prompts/        prompts LLM de Metri Q Assistant
+  locales/        i18n (es / en)
+proto/            contratos gRPC — fuente única del API
+scripts/          seed, debugging y operación
+tests/            e2e, reliability y unit (Rust + Python)
+template.yaml     stack SAM completo (Lambda, CloudFront, WAF, KMS, S3, Glue, DynamoDB, SQS)
 ```
 
-## Add a resource to your application
-The application template uses AWS Serverless Application Model (AWS SAM) to define application resources. AWS SAM is an extension of AWS CloudFormation with a simpler syntax for configuring common serverless application resources such as functions, triggers, and APIs. For resources not included in [the SAM specification](https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md), you can use standard [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html) resource types.
+## Configuración
 
-## Fetch, tail, and filter Lambda function logs
+Variables de entorno principales (el arranque falla rápido si falta algo crítico en producción):
 
-To simplify troubleshooting, SAM CLI has a command called `sam logs`. `sam logs` lets you fetch logs generated by your deployed Lambda function from the command line. In addition to printing the logs on the terminal, this command has several nifty features to help you quickly find the bug.
+| Variable | Default | Descripción |
+|---|---|---|
+| `GRPC_PORT` | `9090` | Puerto del servidor gRPC |
+| `ENVIRONMENT` | `development` | `production`/`prod`/`staging` activa el fail-fast de seguridad |
+| `HMAC_SECRET` | — | Secreto de firma HMAC; obligatorio y fuerte en producción |
+| `MASTER_TENANT_ID` | `system` | Identificador del tenant maestro |
+| `DYNAMODB_ENDPOINT` | AWS | Endpoint DynamoDB (local: `http://localhost:8000`) |
+| `EAV_TABLE_NAME` | — | Tabla del motor EAV |
+| `QUOTA_TABLE` | — | Tabla del ledger de cuotas |
+| `CODICE_MODELS_DIR` | `config/models` | Directorio de modelos JSON |
+| `ERROR_CATALOG_PATH` | `config/errors/…` | Catálogo canónico de errores |
+| `ATHENA_MODE` · `KINESIS_MODE` · `EVENTBRIDGE_MODE` · `S3_MODE` · `SQS_MODE` | `stub` | Interruptores stub/real por servicio AWS — el engine levanta completo sin AWS |
+| `AWS_S3_LAKE_BUCKET` / `AWS_S3_EXPORT_BUCKET` | — | Buckets del data lake y de exports CSV |
+| `GLUE_DATABASE_NAME` · `ATHENA_WORKGROUP` | — | Recursos del canal OLAP |
 
-`NOTE`: This command works for all AWS Lambda functions; not just the ones you deploy using SAM.
+## Despliegue
 
 ```bash
-metri-engine$ sam logs -n HelloWorldFunction --stack-name metri-engine --tail
+make deploy   # cargo build --release + sam build + sam deploy (perfil metri-dev, us-east-1)
 ```
 
-You can find more information and examples about filtering Lambda function logs in the [SAM CLI Documentation](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-logging.html).
+El stack SAM crea: función Lambda ARM64 con Function URL, distribución CloudFront con dominio propio y WAFv2, clave KMS, secreto HMAC en Secrets Manager, bucket S3 del data lake, base de datos Glue, dos tablas DynamoDB (EAV y esquemas) y dos colas SQS (outbox + DLQ). Los parámetros están fijados en `samconfig.toml`.
 
-## Unit tests
+## Estado y documentación
 
-Tests are defined in the `HelloWorldFunction/src/test` folder in this project.
-
-```bash
-metri-engine$ cd HelloWorldFunction
-HelloWorldFunction$ mvn test
-```
-
-## Cleanup
-
-To delete the sample application that you created, use the AWS CLI. Assuming you used your project name for the stack name, you can run the following:
-
-```bash
-sam delete --stack-name metri-engine
-```
-
-## Resources
-
-See the [AWS SAM developer guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html) for an introduction to SAM specification, the SAM CLI, and serverless application concepts.
-
-Next, you can use AWS Serverless Application Repository to deploy ready to use Apps that go beyond hello world samples and learn how authors developed their applications: [AWS Serverless Application Repository main page](https://aws.amazon.com/serverless/serverlessrepo/)
+El motor está en producción. La documentación de arquitectura está en **rediseño completo** (la carpeta heredada se elimina y se reconstruye desde cero): el plan vivo, con el estado verificado del código y el roadmap, está en [`docs/architecture/PLAN_REFACTORIZACION.md`](docs/architecture/PLAN_REFACTORIZACION.md).

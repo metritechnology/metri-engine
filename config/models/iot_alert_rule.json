@@ -12,7 +12,14 @@
       "cardinality": "one",
       "required": true,
       "is_dimension": true,
-      "description": "El equipo f\u00edsico bajo vigilancia in-flight."
+      "description": "El equipo físico bajo vigilancia in-flight."
+    },
+    {
+      "name": "metric_code",
+      "type": "string",
+      "required": true,
+      "is_dimension": true,
+      "description": "Código unívoco de la variable a vigilar (ej. 'TEMPERATURE_HEAD'). Evita falsos positivos por colisión de unidades."
     },
     {
       "name": "threshold_operator",
@@ -25,13 +32,13 @@
         "LTE"
       ],
       "required": true,
-      "description": "Condici\u00f3n matem\u00e1tica a evaluar sobre lectura."
+      "description": "Condición matemática a evaluar sobre lectura."
     },
     {
       "name": "threshold_value",
       "type": "decimal",
       "required": true,
-      "description": "Punto de quiebre algor\u00edtmico."
+      "description": "Punto de quiebre algorítmico."
     },
     {
       "name": "unit_of_measure",
@@ -39,7 +46,14 @@
       "required": true,
       "subtype": "terminology",
       "terminologyUri": "urn:api:system:uncefact",
-      "description": "Unidad f\u00edsica a comparar. Crucial para que si el gerente escribe '90', Metri sepa si la m\u00e1quina se compara en 'CEL' o 'FAH'."
+      "description": "Unidad física a comparar. Crucial para que si el gerente escribe '90', Metri sepa si la máquina se compara en 'CEL' o 'FAH'."
+    },
+    {
+      "name": "cooldown_seconds",
+      "type": "integer",
+      "default": 300,
+      "required": true,
+      "description": "Tiempo mínimo (anti-chatter) para re-evaluar e informar otra alerta de este tipo."
     },
     {
       "name": "alert_severity",
@@ -58,7 +72,7 @@
       "entityRef": "user",
       "cardinality": "many",
       "required": false,
-      "description": "Lista de empleados o supervisores a notificar directamente v\u00eda @metri-notifications al detonarse la regla."
+      "description": "Lista de empleados o supervisores a notificar directamente vía @metri-notifications al detonarse la regla."
     },
     {
       "name": "notify_groups",
@@ -67,6 +81,45 @@
       "cardinality": "many",
       "required": false,
       "description": "Lista de grupos (roles) a notificar en masa, por ejemplo, 'Mantenimiento Planta Sur'."
+    },
+    {
+      "name": "is_multi_asset",
+      "type": "boolean",
+      "default": false,
+      "required": true,
+      "description": "Define si la regla evalúa y compara múltiples activos de forma cruzada (Doble Camino)."
+    },
+    {
+      "name": "target_asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "required": false,
+      "description": "El activo de comparación para la regla multi-activo."
+    },
+    {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "required": false,
+      "is_dimension": true,
+      "description": "La ubicación física o área donde se encuentra el activo. Si se proporciona, permite al Rule Synchronizer enrutar el cambio de regla (RULE_CHANGE) al mismo shard de Kinesis que su telemetría."
+    },
+    {
+      "name": "evaluate_on_bad_quality",
+      "type": "boolean",
+      "default": false,
+      "required": true,
+      "description": "Define si la regla debe evaluarse en caliente incluso cuando la lectura reporta calidad deficiente (evita tormentas de falsas alarmas por fallos de hardware o enlace)."
+    },
+    {
+      "name": "correlation_id",
+      "type": "uuid",
+      "required": false,
+      "index": true,
+      "is_system": true,
+      "description": "Llave de retorno cuando la regla fue aprovisionada por un scheduled_job de trigger_type TELEMETRY. Viaja en system.iot.alert.breach para que Metri Schedulers correlacione el breach físico con su Job y dispare el action_payload. Null en reglas creadas por el usuario."
     }
   ],
   "events": {
@@ -80,21 +133,21 @@
       "event_trigger_type": "on_create",
       "filter_conditions": [],
       "detail_type_output": "system.iot.alert.created",
-      "description": "Inyecta al vuelo la ejecuci\u00f3n SQL de la regla perimetral en la nube de AWS."
+      "description": "Sincroniza la regla de alerta hacia DynamoDB Rule Store e inyecta RULE_CHANGE en el stream Kinesis para hot-reload."
     },
     {
       "rule_code": "IOT_ALERT_UPDATED",
       "event_trigger_type": "on_update",
       "filter_conditions": [],
       "detail_type_output": "system.iot.alert.updated",
-      "description": "Reacomoda un Umbral/Threshold matem\u00e1tico dentro de la misma regla AWS IoT."
+      "description": "Actualiza el umbral en DynamoDB e inyecta RULE_CHANGE en Kinesis para hot-reload in-flight."
     },
     {
       "rule_code": "IOT_ALERT_DELETED",
       "event_trigger_type": "on_delete",
       "filter_conditions": [],
       "detail_type_output": "system.iot.alert.deleted",
-      "description": "Destruye la regla AWS IoT Core apagando el monitoreo inmediato."
+      "description": "Elimina la regla de DynamoDB e inyecta el RULE_CHANGE de borrado en Kinesis para apagar el monitoreo in-memory de forma inmediata."
     }
   ]
 }

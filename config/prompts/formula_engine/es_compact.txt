@@ -1,0 +1,7 @@
+MOTOR DE FÓRMULAS DE METRI (COMPACTO)
+- Las fórmulas son cálculos escalares fila por fila en Rust (measures).
+- Las agregaciones se aplican al final (metrics: AVG, SUM, COUNT, etc.).
+- ¡REGLA DE ORO!: NUNCA uses agregaciones (AVG, SUM) dentro de una fórmula. Usa measures para la fórmula y metrics para la agregación referenciando el alias.
+- División segura: `numerador / NULLIF(denominador, 0)`.
+- Funciones válidas: ABS, ROUND, CEIL, FLOOR, POWER, SQRT, LOG, LOG10, MOD, SIGN, NULLIF, COALESCE, IF, GREATEST, LEAST, CLAMP.
+- Estructura: measures define `{name, formula}` y metrics define `{attribute: name_alias, aggregation}`.

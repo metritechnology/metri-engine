@@ -1,0 +1,68 @@
+CONTEXTO Y REGLAS DEL MOTOR DE FÓRMULAS DE METRI (FORMULA ENGINE)
+
+El Motor de Fórmulas de Metri es un evaluador de expresiones matemáticas escalares fila por fila en Rust.
+
+REGLA DE ORO DE METRI (CRÍTICA):
+- Las fórmulas son cálculos escalares fila por fila.
+- Las agregaciones reducen múltiples filas a un valor (AVG, SUM, COUNT, MIN, MAX, MEDIAN, STD_DEV, VARIANCE, PERCENTILE_90, PERCENTILE_95, PERCENTILE_99, CORRELATION, LINEAR_REGRESSION).
+- NUNCA uses funciones de agregación como AVG, SUM, COUNT, MIN, MAX, MEDIAN, etc. DENTRO de un string de fórmula.
+- Si el usuario pide el promedio o la suma de un cálculo derivado, debes usar el pipeline de dos fases:
+  1. Definir la fórmula escalar en "measures" con un alias/nombre (ej: "eficiencia").
+  2. Aplicar la agregación en "metrics" referenciando ese alias/nombre como atributo (ej: attribute: "eficiencia", aggregation: "AVG").
+
+SINTAXIS DE FÓRMULAS:
+- Operadores aritméticos: + (suma), - (resta/negación), * (multiplicación), / (división), % (módulo), ^ (exponenciación).
+- Paréntesis: () para agrupar y forzar precedencia.
+- Variables/Atributos: Bare (ej: `health_score`) o Namespace (ej: `asset/health_score`).
+- Literales numéricos: Enteros (`100`) o decimales (`3.14`). No se soporta notación científica ni comas.
+
+CATÁLOGO DE FUNCIONES VÁLIDAS:
+- ABS(x): Valor absoluto.
+- ROUND(x) o ROUND(x, d): Redondeo a 'd' decimales.
+- CEIL(x): Redondeo hacia arriba.
+- FLOOR(x): Redondeo hacia abajo.
+- POWER(x, n): Eleva x a la potencia n (equivale a x ^ n).
+- SQRT(x): Raíz cuadrada (x debe ser >= 0).
+- LOG(x): Logaritmo natural.
+- LOG10(x): Logaritmo base 10.
+- MOD(x, y): Residuo de x / y.
+- SIGN(x): Retorna -1.0, 0.0 o 1.0.
+- NULLIF(x, y): Retorna NULL si x == y, de lo contrario retorna x.
+- COALESCE(x, y, ...): Retorna el primer argumento no nulo.
+- IF(cond, then, else): Si cond != 0 retorna then, sino else.
+- GREATEST(x, y, ...): El valor máximo del conjunto.
+- LEAST(x, y, ...): El valor mínimo del conjunto.
+- CLAMP(x, lo, hi): Restringe x al rango [lo, hi].
+
+DIVISIÓN SEGURA (PATRÓN NULLIF):
+- Para evitar errores de división por cero, protege siempre los denominadores: `numerador / NULLIF(denominador, 0)`.
+- Si quieres retornar 0 cuando el denominador sea 0: `COALESCE(numerador / NULLIF(denominador, 0), 0)`.
+
+RECETAS COMUNES:
+1. Eficiencia Operativa:
+   - Fórmula: `(asset/uptime_hours / NULLIF(asset/total_hours, 0)) * 100`
+   - Métrica: AVG de la eficiencia.
+2. ROI de Mantenimiento:
+   - Fórmula: `(asset/revenue - work_order/total_cost) / NULLIF(work_order/total_cost, 0) * 100`
+3. Score Normalizado y Limitado:
+   - Fórmula: `CLAMP((health_score * 0.5 + COALESCE(reliability, 50) * 0.5), 0, 100)`
+
+ESTRUCTURA DEL QUERYREQUEST:
+```json
+{
+  "measures": [
+    {
+      "name": "nombre_alias",
+      "formula": "expresión_escalar"
+    }
+  ],
+  "metrics": [
+    {
+      "entity": "entidad_primaria",
+      "attribute": "nombre_alias",
+      "aggregation": "AVG | SUM | COUNT | etc",
+      "name": "nombre_resultado"
+    }
+  ]
+}
+```

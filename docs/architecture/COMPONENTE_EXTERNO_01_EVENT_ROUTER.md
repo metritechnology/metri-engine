@@ -123,6 +123,7 @@ sequenceDiagram
   "MessageGroupId": "tnt_01J..._maintenance_order",
   "MessageBody": {
     "outbox_id":   "uuid-outbox...",
+    "ulid":        "01J...",
     "tenant_id":   "tnt_01J...",
     "entity_type": "maintenance_order",
     "operation":   "create",
@@ -140,6 +141,13 @@ sequenceDiagram
   }
 }
 ```
+
+> **Contrato de propagación.** El `detail` que este componente publica en EventBridge **debe** conservar el `ulid` y el `payload.delta` del mensaje original. No son adorno:
+>
+> - El **`ulid`** es monotónico y es la única llave de orden disponible aguas abajo. Metri Schedulers lo usa como ledger de versión para descartar mutaciones rezagadas; sin él, un `created` y un `deleted` invertidos dejan un Schedule fantasma que dispara un Job borrado (Componente Externo 05 §10.3).
+> - El **`delta`** permite a los consumidores distinguir un cambio sustantivo de una escritura de bitácora. Sin él, Metri Schedulers reprovisiona la trampa en cada disparo, generando un ciclo de realimentación (Componente Externo 05 §10.4).
+>
+> Descartar cualquiera de los dos al construir el evento rompe garantías de correctitud aguas abajo, no sólo observabilidad.
 
 ### Respuesta de Moira → construcción del evento EventBridge
 
@@ -298,17 +306,53 @@ func buildMessageGroupId(tenantId, entityType, ulid string) string {
 
 ---
 
-## DOMINIO VI: Event Schedulers — Latidos Temporales
+## DOMINIO VI: Ejecución del Boomerang — Pata de retorno de Metri Schedulers
 
-La reactividad de Metri no solo responde a mutaciones (`on_create`, `on_update`) sino también al paso del tiempo.
+La reactividad de Metri no sólo responde a mutaciones (`on_create`, `on_update`) sino también al paso del tiempo y a condiciones físicas.
 
-Los **Metri Schedulers** (modelo `scheduled_job.json`) realizan el "Heartbeat" del sistema:
+> **Corrección de contrato.** Versiones anteriores de este documento describían Metri Schedulers como un escáner que *"escanea proactivamente entidades con estados vencidos"* emitiendo eventos sintéticos. **Ese diseño quedó derogado.** Metri Schedulers no hace polling ni escanea el EAV: registra trampas en AWS EventBridge Scheduler y publica un evento de retorno cuando disparan. La descripción normativa vive en [Componente Externo 05](COMPONENTE_EXTERNO_05_METRI_SCHEDULERS.md).
 
-1. El Scheduler escanea proactivamente entidades con estados vencidos
-2. Si una cuota de tiempo se supera, dispara un **evento sintético** con el mismo formato que un evento transaccional
-3. El Event Router lo captura y rutea igual que cualquier otro evento
+### El rol real del Event Router frente a Schedulers
 
-Esto garantiza que el diseño de `event_routing_rules` sea **universal** para mutaciones y para umbrales temporales — sin distinción en el código del Event Router.
+Metri Schedulers es **ciego**: publica `system.scheduled_job.fired` con un `action_payload` íntegro y no ejecuta ninguna acción de negocio. Alguien tiene que ejecutarla, y ese alguien es este componente.
+
+**El Event Router es la pista de aterrizaje del Boomerang** porque ya reúne las tres capacidades necesarias y nadie más las tiene juntas:
+
+1. Ya consume el bus de EventBridge.
+2. Ya mantiene un pool gRPC contra el Core (`MoiraRoutingService`), reutilizable para `MetriService.Transact`.
+3. Ya es, por diseño, el único componente autorizado a tocar la red pública.
+
+Crear un ejecutor aparte duplicaría las tres y abriría una segunda vía de egreso.
+
+### `FiredHandler` — tercer punto de entrada Lambda
+
+Consume `system.scheduled_job.fired` desde `source: metri.schedulers` y ejecuta según `detail.action_type`:
+
+| `action_type` | Acción del FiredHandler |
+| :--- | :--- |
+| `RPC_CALL` | Invoca `MetriService.Transact` sobre el Core con el `tenant_id` del evento. Cedar y QuotaGuard se aplican en el interceptor, igual que para cualquier escritura |
+| `WEBHOOK` | Resuelve `target_webhook_id` → entidad `webhook_endpoint` y hace POST a su `target_url` con el `auth_token` descifrado, reutilizando el pool de Goroutines del `dispatcher`. **Nunca a una URL tomada del `action_payload`** |
+| `DISPATCH_NOTIFICATION` | **No lo procesa.** Lo consume @metri-notifications directamente desde el bus |
+| `EDA_BROADCAST` | **No lo procesa.** Lo resuelve una regla nativa de EventBridge con Input Transformer |
+
+### Aprovisionamiento telemétrico — la misma vía
+
+Por el mismo principio (el Core no consume el bus; toda escritura entra por gRPC atravesando Cedar y QuotaGuard), el `FiredHandler` es también el consumidor de los eventos de aprovisionamiento que emite Kairos:
+
+| Evento consumido | Acción |
+| :--- | :--- |
+| `system.iot.alert_rule.provision_requested` | `MetriService.Transact(entity_type: "iot_alert_rule", action: CREATE)` con el `correlation_id` recibido |
+| `system.iot.alert_rule.deprovision_requested` | `Transact(..., action: DELETE)` sobre la regla correlacionada |
+
+Es el **único camino sancionado de bus → escritura en el Core**. Cualquier otro consumidor que escribiera directamente en el EAV bypasearía la autorización.
+
+**Reautorización en `T=0`.** Antes de ejecutar nada, el handler reevalúa la autorización contra el `created_by` del evento: si el usuario no está `ACTIVE` o Cedar deniega, marca el Job `FAILED` con `last_error` y emite `DOMAIN_FAULT_DETECTED`. Un `scheduled_job` es una autorización diferida meses: sin esta comprobación seguiría ejecutando con privilegios que su creador ya perdió (Componente Externo 05 §10.5).
+
+**Idempotencia:** el evento trae `idempotency_key`. El FiredHandler la reserva con una **escritura condicional en DynamoDB** (`attribute_not_exists` + TTL nativo) antes de ejecutar, y descarta el duplicado si la llave ya existe.
+
+> **Por qué DynamoDB y no Valkey.** El diseño original especificaba `SET NX EX` sobre Valkey, pero **Valkey fue eliminado deliberadamente de la arquitectura**: el `template.yaml` del motor documenta que, junto con la VPC y los Interface Endpoints, representaba el 80 % de la factura AWS y no añadía protección real. Reintroducirlo por un guard de idempotencia revertiría esa decisión. DynamoDB da la misma garantía —compare-and-set atómico— sobre infraestructura ya existente, y es el patrón que el propio sistema usa para la blacklist de tokens HMAC revocados (`REVOKED#<jti>` con TTL).
+
+**Cierre del ciclo:** tras ejecutar, actualiza el `scheduled_job` vía `Transact` con **`suppress_events: true`**. Sin esa bandera la escritura de `status` reemitiría `system.scheduled_job.updated`, y Metri Schedulers re-aprovisionaría la trampa en cada disparo.
 
 ---
 
@@ -326,8 +370,10 @@ metri-event-router/
 ├── cmd/
 │   ├── sqs_handler/
 │   │   └── main.go                  ← SQSHandler — punto de entrada Lambda SQS
-│   └── watchdog_handler/
-│       └── main.go                  ← WatchdogHandler — punto de entrada Lambda Scheduler
+│   ├── watchdog_handler/
+│   │   └── main.go                  ← WatchdogHandler — punto de entrada Lambda Scheduler
+│   └── fired_handler/
+│       └── main.go                  ← FiredHandler — ejecuta el Boomerang (DOMINIO VI)
 │
 ├── internal/
 │   ├── grpc/
@@ -345,6 +391,10 @@ metri-event-router/
 │   ├── dispatcher/
 │   │   ├── dispatcher.go            ← orquesta: gRPC → EventBridge → Goroutines
 │   │   └── goroutine_pool.go        ← pool de Goroutines HTTP por destino
+│   │
+│   ├── fired/
+│   │   ├── executor.go              ← rutea por action_type: RPC_CALL / WEBHOOK
+│   │   └── idempotency.go           ← reserva idempotency_key en DynamoDB (attribute_not_exists + TTL)
 │   │
 │   ├── watchdog/
 │   │   └── watchdog.go              ← llama ResetOrphanedEvents, emite OTEL

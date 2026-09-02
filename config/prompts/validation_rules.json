@@ -1,0 +1,27 @@
+{
+  "field_types": {
+    "email": {
+      "type": "regex",
+      "pattern": "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+    },
+    "region": {
+      "type": "allowed_values",
+      "values": [
+        "us-east-1", "us-east-2", "us-west-1", "us-west-2",
+        "eu-west-1", "eu-central-1", "ap-southeast-1", "ap-northeast-1", "sa-east-1"
+      ]
+    },
+    "phone": {
+      "type": "regex",
+      "pattern": "\\+?[0-9]{7,15}"
+    }
+  },
+  "mappings": [
+    { "keyword": "email", "validator": "email" },
+    { "keyword": "mail", "validator": "email" },
+    { "keyword": "region", "validator": "region" },
+    { "keyword": "zone", "validator": "region" },
+    { "keyword": "phone", "validator": "phone" },
+    { "keyword": "tel", "validator": "phone" }
+  ]
+}

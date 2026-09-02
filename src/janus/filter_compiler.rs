@@ -8,14 +8,14 @@ use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Atributos de sistema en OLTP
 fn is_system_ts_field(field: &str) -> bool {
-    field == "created_at" || field == "updated_at"
+    field == "created_at" || field == "updated_at" || field == "createdAt" || field == "updatedAt"
 }
 
 /// Mapea campos de sistema al namespace `:meta/`
 fn oltp_system_field_map(field: &str) -> Option<&'static str> {
     match field {
-        "created_at" => Some("meta/created_at"),
-        "updated_at" => Some("meta/updated_at"),
+        "created_at" | "createdAt" => Some("meta/created_at"),
+        "updated_at" | "updatedAt" => Some("meta/updated_at"),
         _ => None,
     }
 }
@@ -30,6 +30,7 @@ fn extract_val(val_map: &Value) -> Option<Value> {
     val_map.get("string_val").cloned()
         .or_else(|| val_map.get("number_val").cloned())
         .or_else(|| val_map.get("bool_val").cloned())
+        .or_else(|| val_map.get("timestamp_val").cloned())
         .or_else(|| val_map.get("list_val").cloned())
 }
 

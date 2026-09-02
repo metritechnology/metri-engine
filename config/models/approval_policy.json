@@ -1,0 +1,52 @@
+{
+  "entity": "approval_policy",
+  "engine": "oltp",
+  "is_system": true,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "policy_code",
+      "type": "string",
+      "unique": "identity",
+      "required": true,
+      "description": "Código único de la política de aprobación (ej: 'POLICY_WO_HIGH_COST')."
+    },
+    {
+      "name": "target_entity_name",
+      "type": "string",
+      "required": true,
+      "is_dimension": true,
+      "description": "Entidad de negocio gobernada por la política (ej: 'work_order', 'asset', 'request')."
+    },
+    {
+      "name": "trigger_condition_ast",
+      "type": "json",
+      "description": "Árbol de Sintaxis Abstracta (AST) que evalúa dinámicamente si la entidad dispara la política."
+    },
+    {
+      "name": "min_required_tiers",
+      "type": "integer",
+      "required": true,
+      "default_value": "1",
+      "description": "Cantidad total de niveles de aprobación requeridos (1, 2 o 3)."
+    },
+    {
+      "name": "tier_configurations",
+      "type": "json",
+      "required": true,
+      "description": "Matriz declarativa de niveles con roles requeridos, grupos asignados y flag de firma electrónica obligatoria."
+    },
+    {
+      "name": "sla_duration_hours",
+      "type": "integer",
+      "default_value": "24",
+      "description": "Tiempo límite en horas antes de que la instancia venza y pase a estado EXPIRED."
+    },
+    {
+      "name": "is_active",
+      "type": "boolean",
+      "default_value": "true",
+      "is_dimension": true
+    }
+  ]
+}

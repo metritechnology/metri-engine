@@ -4,132 +4,69 @@
 // SRP: computar comparaciones temporales sobre rows EAV en memoria — sin I/O.
 //
 // Estrategias (paralelo al path Clojure/OLAP):
-//   TIME_SHIFT_RELATIVE  → desplazo período actual por N × granularidad
-//   TIME_SHIFT_SHORTCUT  → 12 atajos nombrados del contrato
+//   TIME_SHIFT_RELATIVE  → shift_by_calendar(N × granularidad) via temporal::comparison
+//   TIME_SHIFT_SHORTCUT  → resolve_shortcut via temporal::comparison (bisiesto-safe)
 //   TIME_SHIFT_ABSOLUTE  → ventana explícita absolute_start_ts / absolute_end_ts
-//   SMART                → histórico 90d → mean/std → z_score por métrica
+//   SMART                → smart_history_window(90d) via temporal::comparison → z_score
 //   BENCHMARK            → valor inline en resultado (sin query adicional)
 //
 // Diferencia respecto al path OLAP (Athena/SQL):
 //   SQL   → CTEs WITH prev_0 / smart_N + CROSS JOIN / LEFT JOIN en bucket
 //   Rust  → rows ya hidratados en memoria + filtro temporal inline
 //
-// Resultado: mapa plano (serde_json::Value::Object) fusionable con las métricas actuales.
-//   { "current_sum_revenue": 1234,
-//     "prev_0_sum_revenue":  1100,
-//     "benchmark_target":    1000.0,
-//     "mean_sum_revenue":    1050.0,
-//     "std_sum_revenue":     80.0,
-//     "z_score_sum_revenue": 2.3 }
+// Resolución de períodos:
+//   ✅ Delegada a temporal::comparison (shift_by_calendar, chrono) — única SSOT
+//   ✅ Bisiesto-safe, DST-aware, timezone propagada
+//   ✅ No más aritmética fija (30*86400, 365*86400) en este módulo
 
 use serde_json::{Value, json};
 use tracing::warn;
 
 use crate::janus::fbs::{
-    AnalyticalComparisonT, AnalyticalComparison_ComparisonType, MetricDefinitionT, AnalyticalComparison_ShiftShortcut,
+    AnalyticalComparisonT, AnalyticalComparison_ComparisonType,
+    MetricDefinitionT, AnalyticalComparison_ShiftShortcut,
 };
 use crate::aegis::oltp::aggregation::apply_metrics_fbs;
 use crate::temporal::core::TimeRange;
+use crate::temporal::comparison::{
+    resolve_comparison_period, resolve_shortcut,
+    smart_history_window, AnalyticalComparison as TempComparison,
+    ComparisonType, ShiftShortcut,
+};
 
-// ── Helpers de período ────────────────────────────────────────────────────────
+// ── Helpers de conversión FBS → temporal::comparison types ───────────────────
 
-/// Traduce granularidad de texto a segundos.
-/// [PORTED_FROM: (case gran ...) en comparison-period]
-fn gran_secs(gran: &str) -> i64 {
-    match gran {
-        "minute"  => 60,
-        "hour"    => 3600,
-        "day"     => 86400,
-        "week"    => 7 * 86400,
-        "month"   => 30 * 86400,
-        "quarter" => 91 * 86400,
-        "year"    => 365 * 86400,
-        _         => 86400, // fallback: day
-    }
-}
-
-/// Resuelve el ShiftShortcut a (prev_start, prev_end) dado el período actual.
-/// [PORTED_FROM: (shortcut->period shortcut cs ce)]
-fn shortcut_to_period(shortcut: i8, cs: i64, ce: i64) -> Option<(i64, i64)> {
-    let duration = ce - cs;
-    let shift = |s: i64| (cs - s, ce - s);
-
-    // Mapeo numérico del enum AnalyticalComparison_ShiftShortcut generado
-    match shortcut {
-        // PREVIOUS_PERIOD (0 o 1 según fbs)
-        s if s == AnalyticalComparison_ShiftShortcut::PREVIOUS_PERIOD.0 as i8 => {
-            Some((cs - duration, cs))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::SAME_PERIOD_LAST_YEAR.0 as i8 => {
-            Some(shift(365 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::SAME_PERIOD_LAST_QUARTER.0 as i8 => {
-            Some(shift(91 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::SAME_PERIOD_LAST_MONTH.0 as i8 => {
-            Some(shift(30 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::SAME_DAY_LAST_WEEK.0 as i8 => {
-            Some(shift(7 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::SAME_DAY_LAST_MONTH.0 as i8 => {
-            Some(shift(30 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::SAME_DAY_LAST_YEAR.0 as i8 => {
-            Some(shift(365 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::YESTERDAY_LAST_YEAR.0 as i8 => {
-            Some((cs - 366 * 86400, cs - 365 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::YESTERDAY_LAST_MONTH.0 as i8 => {
-            Some((cs - 31 * 86400, cs - 30 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::YESTERDAY_LAST_WEEK.0 as i8 => {
-            Some((cs - 8 * 86400, cs - 7 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::TODAY_LAST_YEAR.0 as i8 => {
-            Some(shift(365 * 86400))
-        }
-        s if s == AnalyticalComparison_ShiftShortcut::TODAY_LAST_MONTH.0 as i8 => {
-            Some(shift(30 * 86400))
-        }
-        _ => None,
-    }
-}
-
-/// Resuelve el AnalyticalComparison a (prev_start, prev_end) o None para BENCHMARK/SMART.
-/// [PORTED_FROM: (comparison->period comp {:keys [start-ts end-ts]})]
-fn comparison_to_period(
-    comp: &AnalyticalComparisonT,
-    cs: i64,
-    ce: i64,
-) -> Option<(i64, i64)> {
-    let ctype = comp.type_;
-
-    match ctype {
-        // TIME_SHIFT_RELATIVE
-        t if t == AnalyticalComparison_ComparisonType::TIME_SHIFT_RELATIVE => {
-            let gran   = comp.relative_granularity.as_deref().unwrap_or("day");
-            let amount = comp.relative_amount as i64;
-            let secs   = gran_secs(gran) * amount;
-            Some((cs - secs, ce - secs))
-        }
-        // TIME_SHIFT_SHORTCUT
-        t if t == AnalyticalComparison_ComparisonType::TIME_SHIFT_SHORTCUT => {
-            shortcut_to_period(comp.shortcut.0 as i8, cs, ce)
-        }
-        // TIME_SHIFT_ABSOLUTE
-        t if t == AnalyticalComparison_ComparisonType::TIME_SHIFT_ABSOLUTE => {
-            let ps = comp.absolute_start_ts;
-            let pe = comp.absolute_end_ts;
-            if ps > 0 && pe > 0 {
-                Some((ps, pe))
-            } else {
-                None
-            }
-        }
-        // BENCHMARK / SMART → no generan query shifted
-        _ => None,
+/// Convierte AnalyticalComparisonT (FBS) → TempComparison (temporal::comparison).
+/// Permite delegar la resolución de período a la SSOT temporal sin duplicar lógica.
+fn fbs_to_temp_comparison(comp: &AnalyticalComparisonT) -> TempComparison {
+    TempComparison {
+        comp_type: match comp.type_ {
+            t if t == AnalyticalComparison_ComparisonType::TIME_SHIFT_RELATIVE  => ComparisonType::TimeShiftRelative,
+            t if t == AnalyticalComparison_ComparisonType::TIME_SHIFT_SHORTCUT  => ComparisonType::TimeShiftShortcut,
+            t if t == AnalyticalComparison_ComparisonType::TIME_SHIFT_ABSOLUTE  => ComparisonType::TimeShiftAbsolute,
+            t if t == AnalyticalComparison_ComparisonType::BENCHMARK            => ComparisonType::Benchmark,
+            t if t == AnalyticalComparison_ComparisonType::SMART                => ComparisonType::Smart,
+            _                                                                   => ComparisonType::Unspecified,
+        },
+        relative_granularity: comp.relative_granularity.clone().unwrap_or_else(|| "day".to_string()),
+        relative_amount:      i64::max(comp.relative_amount as i64, 1),
+        shortcut: match comp.shortcut {
+            s if s == AnalyticalComparison_ShiftShortcut::PREVIOUS_PERIOD           => ShiftShortcut::PreviousPeriod,
+            s if s == AnalyticalComparison_ShiftShortcut::SAME_PERIOD_LAST_YEAR     => ShiftShortcut::SamePeriodLastYear,
+            s if s == AnalyticalComparison_ShiftShortcut::SAME_PERIOD_LAST_QUARTER  => ShiftShortcut::SamePeriodLastQuarter,
+            s if s == AnalyticalComparison_ShiftShortcut::SAME_PERIOD_LAST_MONTH    => ShiftShortcut::SamePeriodLastMonth,
+            s if s == AnalyticalComparison_ShiftShortcut::SAME_DAY_LAST_WEEK        => ShiftShortcut::SameDayLastWeek,
+            s if s == AnalyticalComparison_ShiftShortcut::SAME_DAY_LAST_MONTH       => ShiftShortcut::SameDayLastMonth,
+            s if s == AnalyticalComparison_ShiftShortcut::SAME_DAY_LAST_YEAR        => ShiftShortcut::SameDayLastYear,
+            s if s == AnalyticalComparison_ShiftShortcut::YESTERDAY_LAST_YEAR       => ShiftShortcut::YesterdayLastYear,
+            s if s == AnalyticalComparison_ShiftShortcut::YESTERDAY_LAST_MONTH      => ShiftShortcut::YesterdayLastMonth,
+            s if s == AnalyticalComparison_ShiftShortcut::YESTERDAY_LAST_WEEK       => ShiftShortcut::YesterdayLastWeek,
+            s if s == AnalyticalComparison_ShiftShortcut::TODAY_LAST_YEAR           => ShiftShortcut::TodayLastYear,
+            s if s == AnalyticalComparison_ShiftShortcut::TODAY_LAST_MONTH          => ShiftShortcut::TodayLastMonth,
+            _                                                                        => ShiftShortcut::Unspecified,
+        },
+        absolute_start_ts: if comp.absolute_start_ts != 0 { Some(comp.absolute_start_ts) } else { None },
+        absolute_end_ts:   if comp.absolute_end_ts   != 0 { Some(comp.absolute_end_ts)   } else { None },
     }
 }
 
@@ -233,14 +170,11 @@ fn build_metric_alias(m: &MetricDefinitionT) -> String {
 ///   comparisons     — [AnalyticalComparison] del AST IR
 ///   resolved_tf     — TimeRange del período actual (None = sin ventana temporal)
 ///   current_metrics — { alias → value } de apply_metrics_fbs período actual
+///   tz              — timezone string (ej: "UTC", "America/Mexico_City")
+///                     propagada a temporal::comparison para shift bisiesto-safe
 ///
-/// Retorna mapa plano:
-///   { "current_sum_revenue": 1234,   ← renombrado si hay TIME_SHIFT
-///     "prev_0_sum_revenue":  1100,
-///     "benchmark_target":    1000.0,
-///     "mean_sum_revenue":    1050.0,
-///     "std_sum_revenue":     80.0,
-///     "z_score_sum_revenue": 2.3 }
+/// Resolución de períodos delegada a `temporal::comparison::resolve_comparison_period`
+/// (shift_by_calendar — chrono — bisiesto-safe, DST-aware).
 ///
 /// [PORTED_FROM: (run-comparisons db base-clauses in-sym->val pull-pattern
 ///                metrics comparisons resolved-tf current-metrics ts-field)]
@@ -250,14 +184,12 @@ pub fn run_comparisons(
     comparisons: &[AnalyticalComparisonT],
     resolved_tf: Option<&TimeRange>,
     current_metrics: serde_json::Map<String, Value>,
+    tz: &str,
 ) -> serde_json::Map<String, Value> {
-    let now_s = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-
+    let now_s = chrono::Utc::now().timestamp();
     let cs = resolved_tf.and_then(|t| t.start_ts).unwrap_or(0);
     let ce = resolved_tf.and_then(|t| t.end_ts).unwrap_or(now_s);
+    let tf = TimeRange { start_ts: Some(cs), end_ts: Some(ce) };
 
     // Si hay algún TIME_SHIFT, renombramos current_metrics a current_X
     // [PORTED_FROM: (if (some #(time-shift? (:type %)) comparisons) rename-current ...)]
@@ -276,26 +208,29 @@ pub fn run_comparisons(
     };
 
     for (idx, comp) in comparisons.iter().enumerate() {
-        let label = comp.label.as_deref()
+        // CLJ: (or (:label comp) (str "comp_" idx))
+        let label: String = comp.label.as_deref()
             .filter(|s| !s.is_empty())
-            .unwrap_or("")
-            .to_string();
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("comp_{idx}"));
 
         match comp.type_ {
 
-            // ── TIME_SHIFT_* → filtrar rows por período desplazado ───────────
+            // ── TIME_SHIFT_* → delegar a temporal::comparison (bisiesto-safe) ─
+            // [CLJ: (:TIME_SHIFT_RELATIVE :TIME_SHIFT_SHORTCUT :TIME_SHIFT_ABSOLUTE)]
             t if t == AnalyticalComparison_ComparisonType::TIME_SHIFT_RELATIVE
               || t == AnalyticalComparison_ComparisonType::TIME_SHIFT_SHORTCUT
               || t == AnalyticalComparison_ComparisonType::TIME_SHIFT_ABSOLUTE =>
             {
-                match comparison_to_period(comp, cs, ce) {
-                    Some((prev_start, prev_end)) => {
-                        let prev_rows_refs = filter_rows_by_window(all_rows, prev_start, prev_end);
-                        let prev_rows_owned: Vec<Value> =
-                            prev_rows_refs.into_iter().cloned().collect();
-                        let prev_m = apply_metrics_fbs(&prev_rows_owned, metrics);
+                let temp_comp = fbs_to_temp_comparison(comp);
+                match resolve_comparison_period(&temp_comp, &tf, tz) {
+                    Some(period) => {
+                        let prev_rows: Vec<Value> =
+                            filter_rows_by_window(all_rows, period.prev_start, period.prev_end)
+                                .into_iter().cloned().collect();
+                        // CLJ: (str "prev_" idx "_") como prefix
                         let prefix = format!("prev_{idx}_");
-                        if let Value::Object(map) = prev_m {
+                        if let Value::Object(map) = apply_metrics_fbs(&prev_rows, metrics) {
                             for (k, v) in map {
                                 result.insert(format!("{prefix}{k}"), v);
                             }
@@ -303,34 +238,45 @@ pub fn run_comparisons(
                     }
                     None => {
                         warn!(
-                            "[Aegis Cmp] No se pudo resolver período para comp[{idx}] type={:?} label={label}",
+                            "[Aegis Cmp] No se pudo resolver período para comp[{idx}] \
+                             type={:?} label={label}",
                             comp.type_
                         );
                     }
                 }
             }
 
-            // ── BENCHMARK → valor inline (sin query) ────────────────────────
+            // ── BENCHMARK → columna inline sin query ────────────────────────
+            // [CLJ: (keyword (str "benchmark_" (or lbl "value")))]
             t if t == AnalyticalComparison_ComparisonType::BENCHMARK => {
-                let bk_key = if label.is_empty() {
-                    "benchmark_value".to_string()
-                } else {
-                    format!("benchmark_{label}")
-                };
-                result.insert(bk_key, json!(comp.benchmark_value));
+                // CLJ default label es "comp_{idx}" pero para benchmark usamos "value"
+                // cuando el label real está vacío, igual que Clojure:
+                // (or (:label comp) "value") — aquí label ya tiene fallback "comp_{idx}"
+                // pero el CLJ original usa "value" como default específico de BENCHMARK.
+                let bk_label = comp.label.as_deref()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("value");
+                let bk_key = format!("benchmark_{bk_label}");
+                // CLJ: (double (or (:benchmark-value comp) 0.0))
+                result.insert(bk_key, json!(comp.benchmark_value as f64));
             }
 
-            // ── SMART → histórico 90d → z-score ─────────────────────────────
+            // ── SMART → smart_history_window via temporal::comparison ─────────
+            // [CLJ: hist-start = (- cs (* 90 86400)) via temporal/smart-history-window]
             t if t == AnalyticalComparison_ComparisonType::SMART => {
-                let hist_start = cs - 90 * 86400;
-                let hist_rows_refs = filter_rows_by_window(all_rows, hist_start, cs);
-                let hist_rows_owned: Vec<Value> =
-                    hist_rows_refs.into_iter().cloned().collect();
-                let stats = compute_smart_stats(&hist_rows_owned, metrics, &current_metrics);
+                let hist_window = smart_history_window(&tf, None);
+                let hist_rows: Vec<Value> =
+                    filter_rows_by_window(
+                        all_rows,
+                        hist_window.start_ts.unwrap_or(cs - 90 * 86_400),
+                        hist_window.end_ts.unwrap_or(cs),
+                    )
+                    .into_iter().cloned().collect();
+                let stats = compute_smart_stats(&hist_rows, metrics, &current_metrics);
                 result.extend(stats);
             }
 
-            // Tipo desconocido
+            // :COMPARISON_TYPE_UNSPECIFIED → log y omitir [CLJ paridad]
             _ => {
                 warn!(
                     "[Aegis Cmp] AnalyticalComparison tipo desconocido: {:?} label={label}",
@@ -344,125 +290,4 @@ pub fn run_comparisons(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-    use crate::janus::fbs::{MetricDefinitionT, AggregationFunction, AnalyticalComparisonT, AnalyticalComparison_ComparisonType};
-    use crate::temporal::core::TimeRange;
 
-    fn make_row(created_at: i64, value: f64) -> Value {
-        json!({ "created_at": created_at, "revenue": value })
-    }
-
-    fn make_metric(attr: &str, name: &str) -> MetricDefinitionT {
-        MetricDefinitionT {
-            attribute: Some(attr.to_string()),
-            aggregation: AggregationFunction::SUM,
-            name: Some(name.to_string()),
-            ..Default::default()
-        }
-    }
-
-    fn epoch_now() -> i64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(1_700_000_000)
-    }
-
-    // ── Test 1: TIME_SHIFT_RELATIVE ───────────────────────────────────────────
-    #[test]
-    fn test_time_shift_relative() {
-        let now = epoch_now();
-        // Período actual: últimos 7 días
-        let cs = now - 7 * 86400;
-        let ce = now;
-        // Rows: 3 en período actual + 3 hace 7-14 días (prev)
-        let rows = vec![
-            make_row(now - 1 * 86400, 100.0),
-            make_row(now - 3 * 86400, 200.0),
-            make_row(now - 5 * 86400, 150.0),
-            make_row(now - 8 * 86400, 50.0),  // prev
-            make_row(now - 10 * 86400, 70.0), // prev
-            make_row(now - 12 * 86400, 80.0), // prev
-        ];
-        let metric = make_metric("revenue", "sum_revenue");
-        let tf = TimeRange { start_ts: Some(cs), end_ts: Some(ce) };
-
-        // Métricas actuales (período principal)
-        let current_rows: Vec<Value> = rows.iter()
-            .filter(|r| {
-                let ts = r["created_at"].as_i64().unwrap_or(0);
-                ts >= cs && ts <= ce
-            })
-            .cloned().collect();
-        let current_m = apply_metrics_fbs(&current_rows, &[metric.clone()]);
-        let current_map = match current_m { Value::Object(m) => m, _ => panic!("expected object") };
-
-        let comp = AnalyticalComparisonT {
-            type_: AnalyticalComparison_ComparisonType::TIME_SHIFT_RELATIVE,
-            relative_granularity: Some("day".to_string()),
-            relative_amount: 7,
-            label: Some("prev_week".to_string()),
-            ..Default::default()
-        };
-
-        let result = run_comparisons(&rows, &[metric], &[comp], Some(&tf), current_map);
-
-        assert!(result.contains_key("current_sum_revenue"), "debe tener current_X cuando hay TIME_SHIFT");
-        assert!(result.contains_key("prev_0_sum_revenue"), "debe tener prev_0_X");
-        let prev_sum = result["prev_0_sum_revenue"].as_f64().unwrap_or(0.0);
-        assert!((prev_sum - 200.0).abs() < 0.01, "prev_sum debe ser 50+70+80=200, got {prev_sum}");
-    }
-
-    // ── Test 2: BENCHMARK ─────────────────────────────────────────────────────
-    #[test]
-    fn test_benchmark_inline() {
-        let rows = vec![make_row(0, 500.0)];
-        let metric = make_metric("revenue", "sum_revenue");
-        let comp = AnalyticalComparisonT {
-            type_: AnalyticalComparison_ComparisonType::BENCHMARK,
-            benchmark_value: 1000.0,
-            label: Some("target".to_string()),
-            ..Default::default()
-        };
-        let current_m = apply_metrics_fbs(&rows, &[metric.clone()]);
-        let current_map = match current_m { Value::Object(m) => m, _ => panic!() };
-        let result = run_comparisons(&rows, &[metric], &[comp], None, current_map);
-
-        assert!(result.contains_key("benchmark_target"));
-        assert_eq!(result["benchmark_target"].as_f64().unwrap(), 1000.0);
-    }
-
-    // ── Test 3: SMART z-score ─────────────────────────────────────────────────
-    #[test]
-    fn test_smart_z_score() {
-        let now = epoch_now();
-        // Histórico: 91 días de data con valores conocidos
-        let mut rows = Vec::new();
-        for i in 1..=90 {
-            rows.push(make_row(now - i * 86400, 100.0)); // histórico uniforme
-        }
-        // Actual: valor muy alejado de la media
-        rows.push(make_row(now - 86400 / 2, 200.0)); // 1 día ago
-
-        let metric = make_metric("revenue", "sum_revenue");
-        let tf = TimeRange { start_ts: Some(now - 86400), end_ts: Some(now) };
-
-        let current_m = apply_metrics_fbs(&vec![rows.last().unwrap().clone()], &[metric.clone()]);
-        let current_map = match current_m { Value::Object(m) => m, _ => panic!() };
-
-        let comp = AnalyticalComparisonT {
-            type_: AnalyticalComparison_ComparisonType::SMART,
-            ..Default::default()
-        };
-        let result = run_comparisons(&rows, &[metric], &[comp], Some(&tf), current_map);
-
-        assert!(result.contains_key("mean_sum_revenue"), "debe tener mean_X");
-        assert!(result.contains_key("std_sum_revenue"), "debe tener std_X");
-        let mean = result["mean_sum_revenue"].as_f64().unwrap_or(0.0);
-        // Con 90 rows de 100.0, la media debería ser ~100.0
-        assert!((mean - 100.0).abs() < 1.0, "mean debe ser ~100.0, got {mean}");
-    }
-}
