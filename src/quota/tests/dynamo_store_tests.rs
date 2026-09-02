@@ -96,7 +96,13 @@ async fn el_ciclo_completo_de_una_reserva() {
 #[ignore]
 async fn dos_pretendientes_simultaneos_y_solo_uno_gana() {
     let s = store().await;
-    let r = nueva("tnt_test", 400, ahora() + 90);
+    // Tenant propio del test: los claim son por partición (tenant, quota) y
+    // otros tests en paralelo no deben compartir el lease.
+    let r = nueva(
+        &format!("tnt_claim_{}", ulid::Ulid::new()),
+        400,
+        ahora() + 90,
+    );
     s.open(&r).await.unwrap();
 
     let (a, b) = tokio::join!(
@@ -117,12 +123,21 @@ async fn dos_pretendientes_simultaneos_y_solo_uno_gana() {
 #[ignore]
 async fn un_lease_de_cero_la_deja_libre_al_instante() {
     let s = store().await;
-    let r = nueva("tnt_test", 400, ahora() + 90);
+    // Tenant propio: un lease de otro test en paralelo no debe bloquearlo.
+    let r = nueva(
+        &format!("tnt_lease_{}", ulid::Ulid::new()),
+        400,
+        ahora() + 90,
+    );
     s.open(&r).await.unwrap();
 
     s.claim(&r.tenant_id, &r.id, Duration::from_secs(0))
         .await
         .unwrap();
+    // Los leases vencen con granularidad de segundos: esperar a cruzar la
+    // frontera del segundo para que el lease de duración 0 esté vencido de
+    // verdad (sin esto el test era una moneda al aire).
+    tokio::time::sleep(Duration::from_millis(1100)).await;
     let segunda = s
         .claim(&r.tenant_id, &r.id, Duration::from_secs(30))
         .await

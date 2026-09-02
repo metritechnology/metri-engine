@@ -75,6 +75,15 @@ test-integration: infra ## Tests de integración contra DynamoDB Local
 	AWS_SECRET_ACCESS_KEY=test \
 	AWS_DEFAULT_REGION=us-east-1 \
 	cargo test --lib quota:: -- --ignored
+	@# El writer EAV exige infra viva: sus invariantes (retract+assert,
+	@# append-only, update sin upsert) son los del histórico auditable.
+	DYNAMODB_ENDPOINT=http://localhost:8000 \
+	EAV_TABLE=metri-eav-local \
+	SCHEMAS_TABLE=metri-schemas-local \
+	AWS_ACCESS_KEY_ID=test \
+	AWS_SECRET_ACCESS_KEY=test \
+	AWS_DEFAULT_REGION=us-east-1 \
+	cargo test --lib eav::writer:: -- --ignored
 
 # ── Seed ─────────────────────────────────────────────────────────────────────
 
