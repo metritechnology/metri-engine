@@ -1,8 +1,6 @@
-//! Conformidad de contratos — reemplazo Rust de los validadores Clojure.
+//! Conformidad de contratos — validación nativa en Rust.
 //!
-//! Lo que `docs/architecture/validate_contracts.clj` y `validate_traceability.clj`
-//! hacían con Clojure, lo hace ahora el propio engine en su lenguaje nativo:
-//! verifica que el contrato gRPC expone la superficie que el motor implementa,
+//! Verifica que el contrato gRPC expone la superficie que el motor implementa,
 //! que el Códice y el catálogo de errores están completos, y que la fuente
 //! única del contrato es una sola.
 

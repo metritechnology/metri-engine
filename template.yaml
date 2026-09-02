@@ -221,7 +221,7 @@ Resources:
             MetricName: AWSAnonymousIpMetrics
 
         # ── REGLA 5: Known Bad Inputs — Log4Shell / JNDI (Priority 30) ──────────────
-        # Crítico para Clojure/JVM: intercepta cadenas ${jndi:...} en cualquier campo.
+        # Intercepta cadenas ${jndi:...} en cualquier campo (protección log4shell).
         - Name: AWS-KnownBadInputsRuleSet
           Priority: 30
           Statement:

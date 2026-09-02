@@ -3,7 +3,7 @@
 
 namespace metres.eav;
 
-// - Datomic/Clojure: In-memory JVM math reductions via Transducers.
+// - el motor EAV/Rust: In-memory JVM math reductions via Transducers.
 enum AggregationFunction : int32 {
   AGGREGATION_FUNCTION_UNSPECIFIED = 0,
   COUNT = 1,
@@ -143,7 +143,7 @@ table DiscoveryRequest {
 }
 
 table AttributeSchema {
-  // Codex attribute name (Clojure namespace key: :entity/name)
+  // Codex attribute name (Rust namespace key: :entity/name)
   name: string;
   // Primitive type: "string", "number", "boolean", "date", "uuid", "json"
   type: string;
@@ -174,7 +174,7 @@ table AttributeSchema {
 }
 
 table EntitySchema {
-  // Codex entity name (Clojure namespace: :work_order, :asset, :location).
+  // Codex entity name (Rust namespace: :work_order, :asset, :location).
   entity: string;
   // Full hydrated attribute list. Omitted when DiscoveryRequest.include_attributes=false.
   attributes: [AttributeSchema];
@@ -262,7 +262,7 @@ table FilterValue {
   bool_val: bool;
   timestamp_val: int64;
   list_val: StringList;
-  // Minimizes string casting overhead in the Java/Clojure backend for scale.
+  // Minimizes string casting overhead in the backend nativo for scale.
   range_values: FilterValueList;
 }
 
@@ -418,7 +418,7 @@ table AnalyticsRequest {
   measures: [FormulaEntry];
   // Comparativas "Window" usando Time-Travel (WoW, YoY, vs Benchmark).
   comparisons: [AnalyticalComparison];
-  // - OLTP: Native Apache Lucene `d/fulltext` index on Datomic.
+  // - OLTP: índice FTS nativo del motor EAV.
   search: string;
   // Strategy for Lazy-Loading UI visual Trees usando pseudo-queries (has_children).
   hierarchy: HierarchyContext;
@@ -439,7 +439,7 @@ table QueryMetadata {
   execution_time_ms: int64;
   total_count: int64;
   engine: string;
-  // e.g. "datomic", "duckdb"
+  // e.g. "el motor EAV", "duckdb"
   is_semantic: bool;
   total_queries: int32;
   parallelism_factor: double;
