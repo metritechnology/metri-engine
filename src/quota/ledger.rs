@@ -134,7 +134,7 @@ pub enum SettleOutcome {
 /// Contador de cuota por tenant y periodo, atómico frente a concurrencia.
 #[derive(Clone)]
 pub struct QuotaLedger {
-    ddb:   Arc<DynamoClient>,
+    ddb: Arc<DynamoClient>,
     table: String,
 }
 
@@ -167,10 +167,10 @@ pub trait QuotaCounter: Send + Sync {
     async fn try_debit(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        amount:    i64,
+        quota_id: &str,
+        amount: i64,
         max_limit: i64,
-        seed:      i64,
+        seed: i64,
     ) -> Result<DebitOutcome, DomainError>;
 
     /// Ajusta el contador sin techo y devuelve el valor resultante.
@@ -183,12 +183,8 @@ pub trait QuotaCounter: Send + Sync {
     /// único responsable de cada apunte —el camino IOP, donde quien debita y
     /// quien compensa son el mismo proceso—; en cuanto el apunte lo puede hacer
     /// más de uno, es `settle_once`.
-    async fn settle(
-        &self,
-        tenant_id: &str,
-        quota_id:  &str,
-        delta:     i64,
-    ) -> Result<i64, DomainError>;
+    async fn settle(&self, tenant_id: &str, quota_id: &str, delta: i64)
+        -> Result<i64, DomainError>;
 
     /// Aplica `delta` UNA sola vez para `idem_key`. Repetirlo no hace nada.
     ///
@@ -203,9 +199,9 @@ pub trait QuotaCounter: Send + Sync {
     async fn settle_once(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        delta:     i64,
-        idem_key:  &str,
+        quota_id: &str,
+        delta: i64,
+        idem_key: &str,
     ) -> Result<SettleOutcome, DomainError>;
 
     /// Consumo real de varias cuotas de un tenant, en una sola llamada.
@@ -227,8 +223,8 @@ pub trait QuotaCounter: Send + Sync {
     async fn release(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        amount:    i64,
+        quota_id: &str,
+        amount: i64,
     ) -> Result<(), DomainError> {
         self.settle(tenant_id, quota_id, -amount).await.map(|_| ())
     }
@@ -239,9 +235,11 @@ const BATCH_GET_MAX: usize = 100;
 
 impl QuotaLedger {
     pub fn new(ddb: Arc<DynamoClient>, table: impl Into<String>) -> Self {
-        QuotaLedger { ddb, table: table.into() }
+        QuotaLedger {
+            ddb,
+            table: table.into(),
+        }
     }
-
 
     fn key(tenant_id: &str, quota_id: &str) -> (AttributeValue, AttributeValue) {
         (
@@ -303,20 +301,28 @@ impl QuotaCounter for QuotaLedger {
                 .projection_expression("PK, #n")
                 .expression_attribute_names("#n", USAGE_ATTR)
                 .build()
-                .map_err(|e| DomainError::new(
-                    ErrorCode::Infra001,
-                    format!("Lectura de contadores mal formada: {e}"),
-                ).with_stage("quota"))?;
+                .map_err(|e| {
+                    DomainError::new(
+                        ErrorCode::Infra001,
+                        format!("Lectura de contadores mal formada: {e}"),
+                    )
+                    .with_stage("quota")
+                })?;
 
-            let out = self.ddb.client
+            let out = self
+                .ddb
+                .client
                 .batch_get_item()
                 .request_items(&self.table, peticion)
                 .send()
                 .await
-                .map_err(|e| DomainError::new(
-                    ErrorCode::Infra001,
-                    format!("Fallo al leer contadores: {}", e.into_service_error()),
-                ).with_stage("quota"))?;
+                .map_err(|e| {
+                    DomainError::new(
+                        ErrorCode::Infra001,
+                        format!("Fallo al leer contadores: {}", e.into_service_error()),
+                    )
+                    .with_stage("quota")
+                })?;
 
             let Some(items) = out.responses().and_then(|r| r.get(&self.table)) else {
                 continue;
@@ -324,8 +330,12 @@ impl QuotaCounter for QuotaLedger {
 
             let prefijo = format!("T#{tenant_id}#QC#");
             for item in items {
-                let Some(pk) = item.get("PK").and_then(|v| v.as_s().ok()) else { continue };
-                let Some(quota_id) = pk.strip_prefix(&prefijo) else { continue };
+                let Some(pk) = item.get("PK").and_then(|v| v.as_s().ok()) else {
+                    continue;
+                };
+                let Some(quota_id) = pk.strip_prefix(&prefijo) else {
+                    continue;
+                };
                 if let Some(n) = Self::read_usage(Some(item)) {
                     usos.insert(quota_id.to_string(), n);
                 }
@@ -338,10 +348,10 @@ impl QuotaCounter for QuotaLedger {
     async fn try_debit(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        amount:    i64,
+        quota_id: &str,
+        amount: i64,
         max_limit: i64,
-        seed:      i64,
+        seed: i64,
     ) -> Result<DebitOutcome, DomainError> {
         let (pk, sk) = Self::key(tenant_id, quota_id);
 
@@ -352,7 +362,9 @@ impl QuotaCounter for QuotaLedger {
         // UpdateItem plano, no transacción: este es el camino caliente —corre
         // en cada CREATE y cada GET del motor— y una escritura simple nunca
         // choca con otra sobre el mismo item, mientras que dos transacciones sí.
-        let result = self.ddb.client
+        let result = self
+            .ddb
+            .client
             .update_item()
             .table_name(&self.table)
             .key("PK", pk)
@@ -360,9 +372,9 @@ impl QuotaCounter for QuotaLedger {
             .update_expression("SET #n = if_not_exists(#n, :seed) + :amount")
             .condition_expression(debit_condition(seed, max_limit))
             .expression_attribute_names("#n", USAGE_ATTR)
-            .expression_attribute_values(":seed",   AttributeValue::N(seed.to_string()))
+            .expression_attribute_values(":seed", AttributeValue::N(seed.to_string()))
             .expression_attribute_values(":amount", AttributeValue::N(amount.to_string()))
-            .expression_attribute_values(":max",    AttributeValue::N(max_limit.to_string()))
+            .expression_attribute_values(":max", AttributeValue::N(max_limit.to_string()))
             .return_values(ReturnValue::UpdatedNew)
             // Para que el rechazo pueda informar del consumo REAL y no de la
             // lectura previa de quien llamó, que puede estar desactualizada.
@@ -387,7 +399,10 @@ impl QuotaCounter for QuotaLedger {
                         tenant = %tenant_id, quota = %quota_id, current_usage, limit = max_limit,
                         "[QuotaLedger] Débito rechazado por el techo"
                     );
-                    return Ok(DebitOutcome::Exhausted { current_usage, limit: max_limit });
+                    return Ok(DebitOutcome::Exhausted {
+                        current_usage,
+                        limit: max_limit,
+                    });
                 }
                 // El mensaje del servicio, no solo su tipo. `Display` de un
                 // error no modelado —`ValidationException` no lo está para
@@ -402,7 +417,8 @@ impl QuotaCounter for QuotaLedger {
                 Err(DomainError::new(
                     ErrorCode::Infra001,
                     format!("Fallo al debitar cuota {quota_id}: {service_err}: {detalle}"),
-                ).with_stage("quota"))
+                )
+                .with_stage("quota"))
             }
         }
     }
@@ -410,28 +426,36 @@ impl QuotaCounter for QuotaLedger {
     async fn settle(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        delta:     i64,
+        quota_id: &str,
+        delta: i64,
     ) -> Result<i64, DomainError> {
         // ── Cargar (o leer, con delta cero) ──────────────────────────────────
         if delta >= 0 {
             let (pk, sk) = Self::key(tenant_id, quota_id);
-            let out = self.ddb.client
+            let out = self
+                .ddb
+                .client
                 .update_item()
                 .table_name(&self.table)
                 .key("PK", pk)
                 .key("SK", sk)
                 .update_expression("SET #n = if_not_exists(#n, :zero) + :delta")
                 .expression_attribute_names("#n", USAGE_ATTR)
-                .expression_attribute_values(":zero",  AttributeValue::N("0".to_string()))
+                .expression_attribute_values(":zero", AttributeValue::N("0".to_string()))
                 .expression_attribute_values(":delta", AttributeValue::N(delta.to_string()))
                 .return_values(ReturnValue::UpdatedNew)
                 .send()
                 .await
-                .map_err(|e| DomainError::new(
-                    ErrorCode::Infra001,
-                    format!("Fallo al cargar cuota {quota_id}: {}", e.into_service_error()),
-                ).with_stage("quota"))?;
+                .map_err(|e| {
+                    DomainError::new(
+                        ErrorCode::Infra001,
+                        format!(
+                            "Fallo al cargar cuota {quota_id}: {}",
+                            e.into_service_error()
+                        ),
+                    )
+                    .with_stage("quota")
+                })?;
 
             let new_usage = Self::read_usage(out.attributes()).unwrap_or(0);
             info!(tenant = %tenant_id, quota = %quota_id, delta, new_usage, "[QuotaLedger] Cargo aplicado");
@@ -442,7 +466,9 @@ impl QuotaCounter for QuotaLedger {
         let amount = -delta;
         let (pk, sk) = Self::key(tenant_id, quota_id);
 
-        let result = self.ddb.client
+        let result = self
+            .ddb
+            .client
             .update_item()
             .table_name(&self.table)
             .key("PK", pk)
@@ -469,11 +495,15 @@ impl QuotaCounter for QuotaLedger {
             }
             Err(err) => {
                 let service_err = err.into_service_error();
-                if !matches!(service_err, UpdateItemError::ConditionalCheckFailedException(_)) {
+                if !matches!(
+                    service_err,
+                    UpdateItemError::ConditionalCheckFailedException(_)
+                ) {
                     return Err(DomainError::new(
                         ErrorCode::Infra001,
                         format!("Fallo al devolver cuota {quota_id}: {service_err}"),
-                    ).with_stage("quota"));
+                    )
+                    .with_stage("quota"));
                 }
                 self.clamp_to_zero(tenant_id, quota_id, amount).await
             }
@@ -483,14 +513,16 @@ impl QuotaCounter for QuotaLedger {
     async fn settle_once(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        delta:     i64,
-        idem_key:  &str,
+        quota_id: &str,
+        delta: i64,
+        idem_key: &str,
     ) -> Result<SettleOutcome, DomainError> {
         for attempt in 0..TX_MAX_ATTEMPTS {
             let items = self.settle_items(tenant_id, quota_id, delta, idem_key, Floor::Guard)?;
 
-            let result = self.ddb.client
+            let result = self
+                .ddb
+                .client
                 .transact_write_items()
                 .set_transact_items(Some(items))
                 .send()
@@ -521,7 +553,9 @@ impl QuotaCounter for QuotaLedger {
                 // La devolución era mayor que lo apuntado. Se deja en cero, con
                 // la misma marca, para que siga siendo una sola aplicación.
                 Cancellation::WouldGoNegative => {
-                    return self.settle_clamped(tenant_id, quota_id, delta, idem_key).await;
+                    return self
+                        .settle_clamped(tenant_id, quota_id, delta, idem_key)
+                        .await;
                 }
                 Cancellation::Conflict if attempt + 1 < TX_MAX_ATTEMPTS => {
                     let backoff = backoff_ms(attempt);
@@ -544,7 +578,8 @@ impl QuotaCounter for QuotaLedger {
         Err(DomainError::new(
             ErrorCode::Infra001,
             format!("Contención persistente al aplicar {idem_key} sobre la cuota {quota_id}"),
-        ).with_stage("quota"))
+        )
+        .with_stage("quota"))
     }
 }
 
@@ -568,10 +603,10 @@ impl QuotaLedger {
     fn settle_items(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        delta:     i64,
-        idem_key:  &str,
-        floor:     Floor,
+        quota_id: &str,
+        delta: i64,
+        idem_key: &str,
+        floor: Floor,
     ) -> Result<Vec<TransactWriteItem>, DomainError> {
         let (pk, sk) = Self::key(tenant_id, quota_id);
 
@@ -595,13 +630,16 @@ impl QuotaLedger {
                 .expression_attribute_values(":amount", AttributeValue::N((-delta).to_string())),
             Floor::Guard => update
                 .update_expression("SET #n = if_not_exists(#n, :zero) + :delta")
-                .expression_attribute_values(":zero",  AttributeValue::N("0".to_string()))
+                .expression_attribute_values(":zero", AttributeValue::N("0".to_string()))
                 .expression_attribute_values(":delta", AttributeValue::N(delta.to_string())),
         };
 
         let update = update.build().map_err(|e| {
-            DomainError::new(ErrorCode::Infra001, format!("Update de cuota mal formado: {e}"))
-                .with_stage("quota")
+            DomainError::new(
+                ErrorCode::Infra001,
+                format!("Update de cuota mal formado: {e}"),
+            )
+            .with_stage("quota")
         })?;
 
         let (idem_pk, idem_sk) = Self::idem_key(tenant_id, idem_key);
@@ -622,8 +660,11 @@ impl QuotaLedger {
             .condition_expression("attribute_not_exists(PK)")
             .build()
             .map_err(|e| {
-                DomainError::new(ErrorCode::Infra001, format!("Marca de cuota mal formada: {e}"))
-                    .with_stage("quota")
+                DomainError::new(
+                    ErrorCode::Infra001,
+                    format!("Marca de cuota mal formada: {e}"),
+                )
+                .with_stage("quota")
             })?;
 
         // El orden fija la lectura de `cancellation_reasons`: 0 = contador,
@@ -644,13 +685,15 @@ impl QuotaLedger {
     async fn settle_clamped(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        delta:     i64,
-        idem_key:  &str,
+        quota_id: &str,
+        delta: i64,
+        idem_key: &str,
     ) -> Result<SettleOutcome, DomainError> {
         let items = self.settle_items(tenant_id, quota_id, delta, idem_key, Floor::Clamp)?;
 
-        let result = self.ddb.client
+        let result = self
+            .ddb
+            .client
             .transact_write_items()
             .set_transact_items(Some(items))
             .send()
@@ -682,7 +725,8 @@ impl QuotaLedger {
             _ => Err(DomainError::new(
                 ErrorCode::Infra001,
                 format!("Fallo al poner a cero la cuota {quota_id}: {err}"),
-            ).with_stage("quota")),
+            )
+            .with_stage("quota")),
         }
     }
 
@@ -691,12 +735,14 @@ impl QuotaLedger {
     async fn clamp_to_zero(
         &self,
         tenant_id: &str,
-        quota_id:  &str,
-        amount:    i64,
+        quota_id: &str,
+        amount: i64,
     ) -> Result<i64, DomainError> {
         let (pk, sk) = Self::key(tenant_id, quota_id);
 
-        let result = self.ddb.client
+        let result = self
+            .ddb
+            .client
             .update_item()
             .table_name(&self.table)
             .key("PK", pk)
@@ -718,7 +764,10 @@ impl QuotaLedger {
             }
             Err(err) => {
                 let service_err = err.into_service_error();
-                if matches!(service_err, UpdateItemError::ConditionalCheckFailedException(_)) {
+                if matches!(
+                    service_err,
+                    UpdateItemError::ConditionalCheckFailedException(_)
+                ) {
                     // El contador no existe: no había nada que devolver.
                     warn!(
                         tenant = %tenant_id, quota = %quota_id,
@@ -729,7 +778,8 @@ impl QuotaLedger {
                 Err(DomainError::new(
                     ErrorCode::Infra001,
                     format!("Fallo al poner a cero la cuota {quota_id}: {service_err}"),
-                ).with_stage("quota"))
+                )
+                .with_stage("quota"))
             }
         }
     }
@@ -768,7 +818,10 @@ fn classify(err: &TransactWriteItemsError) -> Cancellation {
     if code(0) == "ConditionalCheckFailed" {
         return Cancellation::WouldGoNegative;
     }
-    if reasons.iter().any(|r| r.code() == Some("TransactionConflict")) {
+    if reasons
+        .iter()
+        .any(|r| r.code() == Some("TransactionConflict"))
+    {
         return Cancellation::Conflict;
     }
     Cancellation::Other

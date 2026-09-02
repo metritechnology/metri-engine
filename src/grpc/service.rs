@@ -1,18 +1,17 @@
 // grpc/service.rs — Implementación de gRPC (Tonic)
 // SRP: Implementa la interfaz gRPC `MetriService`.
 
-use tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{info, error};
+use tonic::{Request, Response, Status};
+use tracing::{error, info};
 
 use super::pb::metri_service_server::MetriService;
 use super::pb::{
-    DiscoveryRequest, DiscoveryResponse, ExploreRequest, ExploreResponse,
-    ListEntitiesRequest, ListEntitiesResponse,
-    QueryRequest, QueryResponse, TransactionRequest, TransactionResponse,
-    BulkRequest, BulkResponse, MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse,
-    MatchRoutingRulesResponse, MatchedRule, WebhookTarget
+    BulkRequest, BulkResponse, DiscoveryRequest, DiscoveryResponse, ExploreRequest,
+    ExploreResponse, ListEntitiesRequest, ListEntitiesResponse, MatchRoutingRulesBatchRequest,
+    MatchRoutingRulesBatchResponse, MatchRoutingRulesResponse, MatchedRule, QueryRequest,
+    QueryResponse, TransactionRequest, TransactionResponse, WebhookTarget,
 };
 use crate::janus::router;
 use crate::janus::router::CedarCtx;
@@ -38,7 +37,9 @@ impl MetriGrpcService {
         // Solo para fabricar el contador de cuota; el motor escribe por Janus.
         eav_writer: crate::eav::writer::EavWriter,
         janus_router: std::sync::Arc<crate::janus_router::router::JanusRouter>,
-        audit_interceptor: std::sync::Arc<crate::infrastructure::audit::interceptor::AuditInterceptorImpl>,
+        audit_interceptor: std::sync::Arc<
+            crate::infrastructure::audit::interceptor::AuditInterceptorImpl,
+        >,
         athena_engine: Option<std::sync::Arc<dyn crate::domain::protocols::IQueryEngine>>,
         moira_emitter: Option<std::sync::Arc<dyn crate::iop::core::MoiraEmitter>>,
         valkey_store: std::sync::Arc<dyn crate::domain::protocols::ISessionStore>,
@@ -59,14 +60,12 @@ impl MetriGrpcService {
             oltp_executor.clone(),
             eav_writer.quota_ledger(),
         ));
-        let janus_step = std::sync::Arc::new(crate::iop::janus_step::JanusRouterStep::new(janus_router));
-        
-        let steps: Vec<std::sync::Arc<dyn crate::iop::core::IopStep>> = vec![
-            cedar_step,
-            quota_step,
-            janus_step,
-        ];
-        
+        let janus_step =
+            std::sync::Arc::new(crate::iop::janus_step::JanusRouterStep::new(janus_router));
+
+        let steps: Vec<std::sync::Arc<dyn crate::iop::core::IopStep>> =
+            vec![cedar_step, quota_step, janus_step];
+
         let iop_orchestrator = std::sync::Arc::new(crate::iop::core::IopOrchestrator::new(
             steps,
             moira_emitter,
@@ -74,12 +73,13 @@ impl MetriGrpcService {
             fault_notifier.clone(),
             olap_channel.clone(),
         ));
-        
+
         // Compilar políticas de Cedar para el path de consultas analíticas
         use std::str::FromStr;
         let policies_src = include_str!("../../docs/architecture/cedar/metri.cedar");
-        let policies = cedar_policy::PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
-        
+        let policies =
+            cedar_policy::PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
+
         let mut policy_cache = std::collections::HashMap::new();
         policy_cache.insert("admin".to_string(), policies.clone());
         policy_cache.insert("tenant-admin".to_string(), policies.clone());
@@ -89,9 +89,9 @@ impl MetriGrpcService {
         policy_cache.insert("system-admin".to_string(), policies.clone());
         policy_cache.insert("role_super_master".to_string(), policies.clone());
 
-        Self { 
-            oltp_executor, 
-            iop_orchestrator, 
+        Self {
+            oltp_executor,
+            iop_orchestrator,
             athena_engine,
             valkey_store,
             principal_cache,
@@ -148,10 +148,11 @@ impl MetriGrpcService {
                 &error_clone,
                 &error_dto,
                 entity_type_clone,
-            ).await;
+            )
+            .await;
         });
     }
-    
+
     fn validate_role_grants(&self, grants_value: &serde_json::Value) -> Result<(), Status> {
         use regex::Regex;
         // Strict regex pattern for grant format validation
@@ -170,8 +171,9 @@ impl MetriGrpcService {
 
         let elements = if let Some(s) = grants_value.as_str() {
             if s.starts_with('[') {
-                serde_json::from_str::<serde_json::Value>(s)
-                    .map_err(|e| Status::invalid_argument(format!("Failed to parse grants JSON string: {}", e)))?
+                serde_json::from_str::<serde_json::Value>(s).map_err(|e| {
+                    Status::invalid_argument(format!("Failed to parse grants JSON string: {}", e))
+                })?
             } else {
                 serde_json::Value::Array(vec![serde_json::Value::String(s.to_string())])
             }
@@ -184,22 +186,34 @@ impl MetriGrpcService {
                 match item {
                     serde_json::Value::String(s) => {
                         if s.starts_with('{') {
-                            if let Ok(serde_json::Value::Object(obj)) = serde_json::from_str::<serde_json::Value>(s) {
-                                let domain = obj.get("domain")
+                            if let Ok(serde_json::Value::Object(obj)) =
+                                serde_json::from_str::<serde_json::Value>(s)
+                            {
+                                let domain = obj
+                                    .get("domain")
                                     .and_then(|v| v.as_str())
-                                    .ok_or_else(|| Status::invalid_argument("Grant object missing 'domain' field"))?;
-                                
+                                    .ok_or_else(|| {
+                                        Status::invalid_argument(
+                                            "Grant object missing 'domain' field",
+                                        )
+                                    })?;
+
                                 if let Some(actions_val) = obj.get("actions") {
                                     if let Some(actions_arr) = actions_val.as_array() {
                                         for act_val in actions_arr {
-                                            let action = act_val.as_str()
-                                                .ok_or_else(|| Status::invalid_argument("Grant action must be a string"))?;
+                                            let action = act_val.as_str().ok_or_else(|| {
+                                                Status::invalid_argument(
+                                                    "Grant action must be a string",
+                                                )
+                                            })?;
                                             validate_pair(domain, action)?;
                                         }
                                     } else if let Some(action_str) = actions_val.as_str() {
                                         validate_pair(domain, action_str)?;
                                     } else {
-                                        return Err(Status::invalid_argument("Grant 'actions' field must be an array or string"));
+                                        return Err(Status::invalid_argument(
+                                            "Grant 'actions' field must be an array or string",
+                                        ));
                                     }
                                 } else {
                                     validate_pair(domain, "*")?;
@@ -215,52 +229,64 @@ impl MetriGrpcService {
                         }
                     }
                     serde_json::Value::Object(obj) => {
-                        let domain = obj.get("domain")
-                            .and_then(|v| v.as_str())
-                            .ok_or_else(|| Status::invalid_argument("Grant object missing 'domain' field"))?;
-                        
+                        let domain =
+                            obj.get("domain").and_then(|v| v.as_str()).ok_or_else(|| {
+                                Status::invalid_argument("Grant object missing 'domain' field")
+                            })?;
+
                         if let Some(actions_val) = obj.get("actions") {
                             if let Some(actions_arr) = actions_val.as_array() {
                                 for act_val in actions_arr {
-                                    let action = act_val.as_str()
-                                        .ok_or_else(|| Status::invalid_argument("Grant action must be a string"))?;
+                                    let action = act_val.as_str().ok_or_else(|| {
+                                        Status::invalid_argument("Grant action must be a string")
+                                    })?;
                                     validate_pair(domain, action)?;
                                 }
                             } else if let Some(action_str) = actions_val.as_str() {
                                 validate_pair(domain, action_str)?;
                             } else {
-                                return Err(Status::invalid_argument("Grant 'actions' field must be an array or string"));
+                                return Err(Status::invalid_argument(
+                                    "Grant 'actions' field must be an array or string",
+                                ));
                             }
                         } else {
                             validate_pair(domain, "*")?;
                         }
                     }
                     _ => {
-                        return Err(Status::invalid_argument("Grant item must be a string or object"));
+                        return Err(Status::invalid_argument(
+                            "Grant item must be a string or object",
+                        ));
                     }
                 }
             }
         } else if let Some(obj) = elements.as_object() {
-            let domain = obj.get("domain")
+            let domain = obj
+                .get("domain")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| Status::invalid_argument("Grant object missing 'domain' field"))?;
             if let Some(actions_val) = obj.get("actions") {
                 if let Some(actions_arr) = actions_val.as_array() {
                     for act_val in actions_arr {
-                        let action = act_val.as_str()
-                            .ok_or_else(|| Status::invalid_argument("Grant action must be a string"))?;
+                        let action = act_val.as_str().ok_or_else(|| {
+                            Status::invalid_argument("Grant action must be a string")
+                        })?;
                         validate_pair(domain, action)?;
                     }
                 } else if let Some(action_str) = actions_val.as_str() {
                     validate_pair(domain, action_str)?;
                 } else {
-                    return Err(Status::invalid_argument("Grant 'actions' field must be an array or string"));
+                    return Err(Status::invalid_argument(
+                        "Grant 'actions' field must be an array or string",
+                    ));
                 }
             } else {
                 validate_pair(domain, "*")?;
             }
         } else {
-            return Err(Status::invalid_argument("Grants field must be an array, string, or object"));
+            return Err(Status::invalid_argument(
+                "Grants field must be an array, string, or object",
+            ));
         }
 
         Ok(())
@@ -291,7 +317,9 @@ impl MetriGrpcService {
                 &principal.tenant_id,
                 &principal.user_id,
             ) {
-                return Err(Status::permission_denied("Auth403: Cannot mutate other tenant"));
+                return Err(Status::permission_denied(
+                    "Auth403: Cannot mutate other tenant",
+                ));
             }
         }
 
@@ -313,18 +341,34 @@ impl MetriGrpcService {
 
         // Hydrate assigned_company_id if possible
         let mut assigned_company_id: Option<String> = None;
-        for key in &["assigned_company_id", "company_id", "assigned_company", "company"] {
+        for key in &[
+            "assigned_company_id",
+            "company_id",
+            "assigned_company",
+            "company",
+        ] {
             if let Some(val) = payload.get(*key).and_then(|v| v.as_str()) {
                 assigned_company_id = Some(val.to_string());
                 break;
             }
         }
 
-        if assigned_company_id.is_none() && (action == "UPDATE" || action == "DELETE") && !entity_id.is_empty() {
+        if assigned_company_id.is_none()
+            && (action == "UPDATE" || action == "DELETE")
+            && !entity_id.is_empty()
+        {
             let eav_reader = self.oltp_executor.pull_reader();
             if let Ok(entity_map) = eav_reader.pull(tenant_id, &entity_id, None).await {
-                for key in &["assigned_company_id", "company_id", "assigned_company", "company"] {
-                    if let Some(val) = entity_map.get(*key).or_else(|| entity_map.get(&format!("{}/{}", entity_type, key))) {
+                for key in &[
+                    "assigned_company_id",
+                    "company_id",
+                    "assigned_company",
+                    "company",
+                ] {
+                    if let Some(val) = entity_map
+                        .get(*key)
+                        .or_else(|| entity_map.get(&format!("{}/{}", entity_type, key)))
+                    {
                         match val {
                             crate::eav::types::datom::DatomValue::Str(s) => {
                                 assigned_company_id = Some(s.clone());
@@ -343,7 +387,10 @@ impl MetriGrpcService {
 
         if let Some(comp_id) = assigned_company_id {
             if let Some(obj) = resource.as_object_mut() {
-                obj.insert("assigned_company_id".to_string(), serde_json::json!(comp_id));
+                obj.insert(
+                    "assigned_company_id".to_string(),
+                    serde_json::json!(comp_id),
+                );
             }
         }
 
@@ -359,9 +406,8 @@ impl MetriGrpcService {
             action,
             &resource,
             &body,
-        ).map_err(|err| {
-            Status::permission_denied(format!("Auth403: {}", err.detail))
-        })?;
+        )
+        .map_err(|err| Status::permission_denied(format!("Auth403: {}", err.detail)))?;
 
         Ok(())
     }
@@ -372,34 +418,40 @@ impl MetriGrpcService {
         entity_id: &str,
         actual_payload: &serde_json::Value,
     ) -> Result<(), Status> {
-        let parent_id = actual_payload.get("parent_user_group_id")
+        let parent_id = actual_payload
+            .get("parent_user_group_id")
             .or_else(|| actual_payload.get("user_group/parent_user_group_id"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        
+
         if !parent_id.is_empty() {
             if !entity_id.is_empty() && parent_id == entity_id {
-                return Err(Status::invalid_argument("Circular dependency detected: a group cannot be its own parent"));
+                return Err(Status::invalid_argument(
+                    "Circular dependency detected: a group cannot be its own parent",
+                ));
             }
-            
+
             let eav_reader = self.oltp_executor.pull_reader();
             let mut current_id = parent_id.to_string();
             let mut visited = std::collections::HashSet::new();
             visited.insert(entity_id.to_string());
-            
+
             for _depth in 0..10 {
                 if current_id.is_empty() {
                     break;
                 }
                 if !visited.insert(current_id.clone()) {
-                    return Err(Status::invalid_argument("Circular dependency detected in user groups"));
+                    return Err(Status::invalid_argument(
+                        "Circular dependency detected in user groups",
+                    ));
                 }
-                
+
                 if let Ok(group_map) = eav_reader.pull(tenant_id, &current_id, None).await {
                     if group_map.is_empty() {
                         break;
                     }
-                    let next_parent = group_map.get("parent_user_group_id")
+                    let next_parent = group_map
+                        .get("parent_user_group_id")
                         .or_else(|| group_map.get("user_group/parent_user_group_id"))
                         .and_then(|v| match v {
                             crate::eav::types::datom::DatomValue::Str(s) => Some(s.clone()),
@@ -458,7 +510,10 @@ pub(crate) fn validate_list_filters(
     for name in filter_names {
         match model.attributes.iter().find(|a| a.name == *name) {
             None => {
-                return Err(format!("'{}' no es un atributo de '{}'", name, model.entity));
+                return Err(format!(
+                    "'{}' no es un atributo de '{}'",
+                    name, model.entity
+                ));
             }
             Some(a) => {
                 if matches!(a.attr_type, AttrType::Bytes | AttrType::Array) {
@@ -492,14 +547,21 @@ pub(crate) fn sort_and_truncate(ids: &mut Vec<String>, limit: usize) -> bool {
 impl MetriService for MetriGrpcService {
     type QueryStream = ReceiverStream<Result<QueryResponse, Status>>;
 
-    async fn discovery(&self, request: Request<DiscoveryRequest>) -> Result<Response<DiscoveryResponse>, Status> {
+    async fn discovery(
+        &self,
+        request: Request<DiscoveryRequest>,
+    ) -> Result<Response<DiscoveryResponse>, Status> {
         let (session_tenant_id, session_user_id) = {
-            let session = request.extensions().get::<crate::grpc::interceptors::AuthenticatedSession>()
+            let session = request
+                .extensions()
+                .get::<crate::grpc::interceptors::AuthenticatedSession>()
                 .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
             (session.tenant_id.clone(), session.user_id.clone())
         };
 
-        let accept_language = request.metadata().get("accept-language")
+        let accept_language = request
+            .metadata()
+            .get("accept-language")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("es")
             .to_string();
@@ -516,18 +578,34 @@ impl MetriService for MetriGrpcService {
         };
         req.tenant_id = resolved_tenant_id;
 
-        info!("Discovery request: tenant={}, solicitante={}, accept-language={}", req.tenant_id, session_user_id, accept_language);
+        info!(
+            "Discovery request: tenant={}, solicitante={}, accept-language={}",
+            req.tenant_id, session_user_id, accept_language
+        );
 
         if req.tenant_id != session_tenant_id && session_tenant_id != "system" {
-            error!("[gRPC Discovery] Acceso denegado: Conflicto de tenant. Req={} vs Token={}", req.tenant_id, session_tenant_id);
+            error!(
+                "[gRPC Discovery] Acceso denegado: Conflicto de tenant. Req={} vs Token={}",
+                req.tenant_id, session_tenant_id
+            );
             let domain_err = crate::domain::errors::DomainError::auth(
                 crate::domain::errors::ErrorCode::GrpcTenant001,
-                format!("Acceso denegado: Conflicto de tenant. Req={} vs Token={}", req.tenant_id, session_tenant_id)
+                format!(
+                    "Acceso denegado: Conflicto de tenant. Req={} vs Token={}",
+                    req.tenant_id, session_tenant_id
+                ),
             );
-            self.emit_read_error(&req.tenant_id, &session_user_id, domain_err, Some("discovery".to_string()));
-            return Err(Status::permission_denied("Acceso denegado: Conflicto de organización"));
+            self.emit_read_error(
+                &req.tenant_id,
+                &session_user_id,
+                domain_err,
+                Some("discovery".to_string()),
+            );
+            return Err(Status::permission_denied(
+                "Acceso denegado: Conflicto de organización",
+            ));
         }
-        
+
         let registry = crate::codice::global();
         let entity_names: Vec<String> = registry.entity_names().map(str::to_string).collect();
         let mut schemas = Vec::new();
@@ -540,9 +618,13 @@ impl MetriService for MetriGrpcService {
                 let mut attrs = Vec::new();
                 if req.include_attributes {
                     for attr in &model.attributes {
-                        let label = registry.get_localized_label(&accept_language, name, Some(&attr.name))
-                            .unwrap_or_else(|| attr.label.clone().unwrap_or_else(|| attr.name.clone()));
-                        let enum_labels = registry.get_localized_enum_labels(&accept_language, name, &attr.name);
+                        let label = registry
+                            .get_localized_label(&accept_language, name, Some(&attr.name))
+                            .unwrap_or_else(|| {
+                                attr.label.clone().unwrap_or_else(|| attr.name.clone())
+                            });
+                        let enum_labels =
+                            registry.get_localized_enum_labels(&accept_language, name, &attr.name);
 
                         attrs.push(crate::grpc::pb::AttributeSchema {
                             name: attr.name.clone(),
@@ -551,7 +633,11 @@ impl MetriService for MetriGrpcService {
                             filterable: true,
                             sortable: true,
                             groupable: attr.is_dimension,
-                            aggregatable: matches!(attr.attr_type, crate::codice::registry::AttrType::Number | crate::codice::registry::AttrType::Epoch),
+                            aggregatable: matches!(
+                                attr.attr_type,
+                                crate::codice::registry::AttrType::Number
+                                    | crate::codice::registry::AttrType::Epoch
+                            ),
                             fts: attr.fts,
                             entity_ref: attr.entity_ref.clone().unwrap_or_default(),
                             enum_labels,
@@ -563,7 +649,8 @@ impl MetriService for MetriGrpcService {
                         });
                     }
                 }
-                let label = registry.get_localized_label(&accept_language, name, None)
+                let label = registry
+                    .get_localized_label(&accept_language, name, None)
                     .unwrap_or_else(|| model.label.clone().unwrap_or_else(|| model.entity.clone()));
 
                 schemas.push(crate::grpc::pb::EntitySchema {
@@ -571,7 +658,10 @@ impl MetriService for MetriGrpcService {
                     attributes: attrs,
                     label,
                     icon: model.icon.clone().unwrap_or_default(),
-                    primary_key: model.primary_key.clone().unwrap_or_else(|| "id".to_string()),
+                    primary_key: model
+                        .primary_key
+                        .clone()
+                        .unwrap_or_else(|| "id".to_string()),
                     fts_fields: model.fts_fields.clone(),
                     ..Default::default()
                 });
@@ -590,14 +680,21 @@ impl MetriService for MetriGrpcService {
         Ok(Response::new(resp))
     }
 
-    async fn explore(&self, request: Request<ExploreRequest>) -> Result<Response<ExploreResponse>, Status> {
+    async fn explore(
+        &self,
+        request: Request<ExploreRequest>,
+    ) -> Result<Response<ExploreResponse>, Status> {
         let (session_tenant_id, session_user_id) = {
-            let session = request.extensions().get::<crate::grpc::interceptors::AuthenticatedSession>()
+            let session = request
+                .extensions()
+                .get::<crate::grpc::interceptors::AuthenticatedSession>()
                 .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
             (session.tenant_id.clone(), session.user_id.clone())
         };
 
-        let auth_header = request.metadata().get("authorization")
+        let auth_header = request
+            .metadata()
+            .get("authorization")
             .or_else(|| request.metadata().get("sid"))
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
@@ -614,7 +711,7 @@ impl MetriService for MetriGrpcService {
             session_tenant_id.clone()
         };
         req.tenant_id = resolved_tenant_id;
-        
+
         let mut dummy_req = tonic::Request::new(());
         if !auth_header.is_empty() {
             if let Ok(m_val) = auth_header.parse() {
@@ -625,7 +722,9 @@ impl MetriService for MetriGrpcService {
             dummy_req.metadata_mut().insert("x-metri-action", m_val);
         }
         if let Ok(m_val) = req.entity.parse() {
-            dummy_req.metadata_mut().insert("x-metri-entity-type", m_val);
+            dummy_req
+                .metadata_mut()
+                .insert("x-metri-entity-type", m_val);
         }
         if let Ok(m_val) = req.entity.parse() {
             dummy_req.metadata_mut().insert("x-metri-domains", m_val);
@@ -638,31 +737,52 @@ impl MetriService for MetriGrpcService {
             self.principal_cache.as_ref(),
             &self.cedar_engine,
             &self.policy_cache,
-        ).await {
+        )
+        .await
+        {
             Ok(ctx) => ctx,
             Err(e) => {
                 error!("[gRPC Explore] Acceso rechazado por Cedar: {:?}", e);
                 let err_msg = e.detail.clone();
                 let domain_err = crate::domain::errors::DomainError::auth(
                     crate::domain::errors::ErrorCode::InfraCedar002,
-                    format!("Explore Access Denied by Cedar: {}", err_msg)
+                    format!("Explore Access Denied by Cedar: {}", err_msg),
                 );
-                self.emit_read_error(&req.tenant_id, &session_user_id, domain_err, Some(req.entity.clone()));
-                return Err(Status::unauthenticated(format!("Acceso denegado: {}", err_msg)));
+                self.emit_read_error(
+                    &req.tenant_id,
+                    &session_user_id,
+                    domain_err,
+                    Some(req.entity.clone()),
+                );
+                return Err(Status::unauthenticated(format!(
+                    "Acceso denegado: {}",
+                    err_msg
+                )));
             }
         };
-        
+
         if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
             &req.tenant_id,
             &authenticated_ctx.tenant_id,
             &authenticated_ctx.user_id,
         ) {
-            error!("[gRPC Explore] Conflicto de Tenant: Request={:?} vs Session={:?}", req.tenant_id, authenticated_ctx.tenant_id);
+            error!(
+                "[gRPC Explore] Conflicto de Tenant: Request={:?} vs Session={:?}",
+                req.tenant_id, authenticated_ctx.tenant_id
+            );
             let domain_err = crate::domain::errors::DomainError::auth(
                 crate::domain::errors::ErrorCode::GrpcTenant001,
-                format!("Tenant conflict in Explore: Request={} vs Session={}", req.tenant_id, authenticated_ctx.tenant_id)
+                format!(
+                    "Tenant conflict in Explore: Request={} vs Session={}",
+                    req.tenant_id, authenticated_ctx.tenant_id
+                ),
             );
-            self.emit_read_error(&req.tenant_id, &authenticated_ctx.user_id, domain_err, Some(req.entity.clone()));
+            self.emit_read_error(
+                &req.tenant_id,
+                &authenticated_ctx.user_id,
+                domain_err,
+                Some(req.entity.clone()),
+            );
             return Err(Status::permission_denied(e.detail));
         }
 
@@ -676,9 +796,12 @@ impl MetriService for MetriGrpcService {
             return Err(Status::permission_denied(e.detail));
         }
 
-        info!("Explore request: tenant={} entity={} attr={}", req.tenant_id, req.entity, req.attribute);
+        info!(
+            "Explore request: tenant={} entity={} attr={}",
+            req.tenant_id, req.entity, req.attribute
+        );
         let exec = self.oltp_executor.clone();
-        
+
         let registry = crate::codice::global();
         let is_olap = if let Some(model) = registry.get_model(&req.entity) {
             matches!(model.engine, crate::codice::registry::EngineChannel::Olap)
@@ -687,7 +810,11 @@ impl MetriService for MetriGrpcService {
         };
 
         // Use AEVT scan to get distinct values for the attribute
-        let limit = if req.limit > 0 { req.limit as usize } else { 100 };
+        let limit = if req.limit > 0 {
+            req.limit as usize
+        } else {
+            100
+        };
         let ast_ir = crate::janus::fbs::AnalyticsRequestT {
             entity: Some(req.entity.clone()),
             dimensions: Some(vec![crate::janus::fbs::DimensionDefinitionT {
@@ -710,13 +837,18 @@ impl MetriService for MetriGrpcService {
         let mut values = Vec::new();
 
         if is_olap {
-            let is_master = crate::cedar::authorizer::is_master_tenant(&authenticated_ctx.tenant_id);
+            let is_master =
+                crate::cedar::authorizer::is_master_tenant(&authenticated_ctx.tenant_id);
             let cedar_ctx = crate::janus::router::CedarCtx {
                 tenant_id: req.tenant_id.clone(),
                 user_id: authenticated_ctx.user_id.clone(),
                 roles: authenticated_ctx.roles.iter().cloned().collect(),
                 is_super_master: is_master,
-                cross_tenant_scope: if is_master { "FULL".to_string() } else { "NONE".to_string() },
+                cross_tenant_scope: if is_master {
+                    "FULL".to_string()
+                } else {
+                    "NONE".to_string()
+                },
                 domain_boundaries: authenticated_ctx.domain_boundaries.clone(),
             };
 
@@ -727,11 +859,14 @@ impl MetriService for MetriGrpcService {
                 &exec,
                 self.athena_engine.as_ref(),
                 false,
-            ).await;
+            )
+            .await;
 
             if !chunks.is_empty() && chunks[0].success {
                 let body = &chunks[0].body;
-                let rows = body.get("data").and_then(|d| d.as_array())
+                let rows = body
+                    .get("data")
+                    .and_then(|d| d.as_array())
                     .cloned()
                     .unwrap_or_default();
                 for row in &rows {
@@ -749,7 +884,12 @@ impl MetriService for MetriGrpcService {
                 }
             } else {
                 let err_msg = if !chunks.is_empty() {
-                    chunks[0].body.get("reason").and_then(|r| r.as_str()).unwrap_or("Unknown OLAP query error").to_string()
+                    chunks[0]
+                        .body
+                        .get("reason")
+                        .and_then(|r| r.as_str())
+                        .unwrap_or("Unknown OLAP query error")
+                        .to_string()
                 } else {
                     "No OLAP response chunks".to_string()
                 };
@@ -768,7 +908,9 @@ impl MetriService for MetriGrpcService {
         } else {
             match exec.run_oltp_query_fbs(&req.tenant_id, &ast_ir).await {
                 Ok(result) => {
-                    let rows = result.get("data").and_then(|d| d.as_array())
+                    let rows = result
+                        .get("data")
+                        .and_then(|d| d.as_array())
                         .or_else(|| result.as_array())
                         .cloned()
                         .unwrap_or_default();
@@ -787,10 +929,16 @@ impl MetriService for MetriGrpcService {
                     }
                 }
                 Err(e) => {
-                    self.emit_read_error(&req.tenant_id, &authenticated_ctx.user_id, e.clone(), Some(req.entity.clone()));
+                    self.emit_read_error(
+                        &req.tenant_id,
+                        &authenticated_ctx.user_id,
+                        e.clone(),
+                        Some(req.entity.clone()),
+                    );
                     let resp = ExploreResponse {
                         status: Some(crate::grpc::pb::Status {
-                            success: false, error_code: "EXPLORE_ERROR".to_string(),
+                            success: false,
+                            error_code: "EXPLORE_ERROR".to_string(),
                             error_message: e.to_string(),
                             error_context: None,
                         }),
@@ -803,7 +951,9 @@ impl MetriService for MetriGrpcService {
 
         let resp = ExploreResponse {
             status: Some(crate::grpc::pb::Status {
-                success: true, error_code: String::new(), error_message: String::new(),
+                success: true,
+                error_code: String::new(),
+                error_message: String::new(),
                 error_context: None,
             }),
             values,
@@ -811,14 +961,21 @@ impl MetriService for MetriGrpcService {
         Ok(Response::new(resp))
     }
 
-    async fn query(&self, request: Request<QueryRequest>) -> Result<Response<Self::QueryStream>, Status> {
+    async fn query(
+        &self,
+        request: Request<QueryRequest>,
+    ) -> Result<Response<Self::QueryStream>, Status> {
         let (session_tenant_id, session_user_id) = {
-            let session = request.extensions().get::<crate::grpc::interceptors::AuthenticatedSession>()
+            let session = request
+                .extensions()
+                .get::<crate::grpc::interceptors::AuthenticatedSession>()
                 .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
             (session.tenant_id.clone(), session.user_id.clone())
         };
 
-        let auth_header = request.metadata().get("authorization")
+        let auth_header = request
+            .metadata()
+            .get("authorization")
             .or_else(|| request.metadata().get("sid"))
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
@@ -837,7 +994,9 @@ impl MetriService for MetriGrpcService {
         req.tenant_id = resolved_tenant_id;
 
         // Extraer entidades implicadas en la consulta del gRPC Request
-        let mut query_entities: Vec<String> = req.queries.values()
+        let mut query_entities: Vec<String> = req
+            .queries
+            .values()
             .map(|q| q.entity.clone())
             .filter(|e| !e.is_empty())
             .collect();
@@ -848,7 +1007,10 @@ impl MetriService for MetriGrpcService {
         } else {
             query_entities.join(",")
         };
-        let target_entity = query_entities.first().cloned().unwrap_or_else(|| "project".to_string());
+        let target_entity = query_entities
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "project".to_string());
 
         let mut dummy_req = tonic::Request::new(());
         if !auth_header.is_empty() {
@@ -862,7 +1024,9 @@ impl MetriService for MetriGrpcService {
             dummy_req.metadata_mut().insert("x-metri-action", m_val);
         }
         if let Ok(m_val) = target_entity.parse() {
-            dummy_req.metadata_mut().insert("x-metri-entity-type", m_val);
+            dummy_req
+                .metadata_mut()
+                .insert("x-metri-entity-type", m_val);
         }
         if let Ok(m_val) = target_domains.parse() {
             dummy_req.metadata_mut().insert("x-metri-domains", m_val);
@@ -875,17 +1039,27 @@ impl MetriService for MetriGrpcService {
             self.principal_cache.as_ref(),
             &self.cedar_engine,
             &self.policy_cache,
-        ).await {
+        )
+        .await
+        {
             Ok(ctx) => ctx,
             Err(e) => {
                 error!("[gRPC Query] Acceso rechazado por Cedar: {:?}", e);
                 let err_msg = e.detail.clone();
                 let domain_err = crate::domain::errors::DomainError::auth(
                     crate::domain::errors::ErrorCode::InfraCedar002,
-                    format!("Query Access Denied by Cedar: {}", err_msg)
+                    format!("Query Access Denied by Cedar: {}", err_msg),
                 );
-                self.emit_read_error(&req.tenant_id, &session_user_id, domain_err, Some(target_entity.clone()));
-                return Err(Status::unauthenticated(format!("Acceso denegado: {}", err_msg)));
+                self.emit_read_error(
+                    &req.tenant_id,
+                    &session_user_id,
+                    domain_err,
+                    Some(target_entity.clone()),
+                );
+                return Err(Status::unauthenticated(format!(
+                    "Acceso denegado: {}",
+                    err_msg
+                )));
             }
         };
 
@@ -894,12 +1068,23 @@ impl MetriService for MetriGrpcService {
             &authenticated_ctx.tenant_id,
             &authenticated_ctx.user_id,
         ) {
-            error!("[gRPC Query] Conflicto de Tenant: Request={:?} vs Session={:?}", req.tenant_id, authenticated_ctx.tenant_id);
+            error!(
+                "[gRPC Query] Conflicto de Tenant: Request={:?} vs Session={:?}",
+                req.tenant_id, authenticated_ctx.tenant_id
+            );
             let domain_err = crate::domain::errors::DomainError::auth(
                 crate::domain::errors::ErrorCode::GrpcTenant001,
-                format!("Tenant conflict in Query: Request={} vs Session={}", req.tenant_id, authenticated_ctx.tenant_id)
+                format!(
+                    "Tenant conflict in Query: Request={} vs Session={}",
+                    req.tenant_id, authenticated_ctx.tenant_id
+                ),
             );
-            self.emit_read_error(&req.tenant_id, &authenticated_ctx.user_id, domain_err, Some(target_entity.clone()));
+            self.emit_read_error(
+                &req.tenant_id,
+                &authenticated_ctx.user_id,
+                domain_err,
+                Some(target_entity.clone()),
+            );
             return Err(Status::permission_denied(e.detail));
         }
 
@@ -925,7 +1110,7 @@ impl MetriService for MetriGrpcService {
         let fault_notifier_clone = self.fault_notifier.clone();
         let olap_channel_clone = self.olap_channel.clone();
         let export_storage_clone = self.export_storage.clone();
-        
+
         tokio::spawn(async move {
             let tenant_id = req.tenant_id.clone();
             let user_id_str = authenticated_ctx_clone.user_id.clone();
@@ -945,15 +1130,20 @@ impl MetriService for MetriGrpcService {
                 }
             };
             tracing::debug!("QUERIES_MAP LEN: {}", queries_map.len());
-            
+
             // Construir el contexto ABAC para este request a partir de la sesión autenticada real
-            let is_master = crate::cedar::authorizer::is_master_tenant(&authenticated_ctx_clone.tenant_id);
+            let is_master =
+                crate::cedar::authorizer::is_master_tenant(&authenticated_ctx_clone.tenant_id);
             let cedar_ctx = CedarCtx {
                 tenant_id: tenant_id.clone(),
                 user_id: authenticated_ctx_clone.user_id.clone(),
                 roles: authenticated_ctx_clone.roles.iter().cloned().collect(),
                 is_super_master: is_master,
-                cross_tenant_scope: if is_master { "FULL".to_string() } else { "NONE".to_string() },
+                cross_tenant_scope: if is_master {
+                    "FULL".to_string()
+                } else {
+                    "NONE".to_string()
+                },
                 domain_boundaries: authenticated_ctx_clone.domain_boundaries.clone(),
             };
 
@@ -969,15 +1159,18 @@ impl MetriService for MetriGrpcService {
                     Some(target_entity.clone()),
                 );
                 let mut batch_results = std::collections::HashMap::new();
-                batch_results.insert("__pipeline__".to_string(), QueryResponse {
-                    status: Some(crate::grpc::pb::Status {
-                        success: false,
-                        error_code: "JANUS_400".to_string(),
-                        error_message: e.to_string(),
-                        error_context: None,
-                    }),
-                    ..Default::default()
-                });
+                batch_results.insert(
+                    "__pipeline__".to_string(),
+                    QueryResponse {
+                        status: Some(crate::grpc::pb::Status {
+                            success: false,
+                            error_code: "JANUS_400".to_string(),
+                            error_message: e.to_string(),
+                            error_context: None,
+                        }),
+                        ..Default::default()
+                    },
+                );
                 let pb_chunk = QueryResponse {
                     status: Some(crate::grpc::pb::Status {
                         success: false,
@@ -1021,15 +1214,18 @@ impl MetriService for MetriGrpcService {
                             Some(target_entity_qk.clone()),
                         );
                         let mut batch_results = std::collections::HashMap::new();
-                        batch_results.insert(qk.clone(), QueryResponse {
-                            status: Some(crate::grpc::pb::Status {
-                                success: false,
-                                error_code: "JANUS_400".to_string(),
-                                error_message: e.to_string(),
-                                error_context: None,
-                            }),
-                            ..Default::default()
-                        });
+                        batch_results.insert(
+                            qk.clone(),
+                            QueryResponse {
+                                status: Some(crate::grpc::pb::Status {
+                                    success: false,
+                                    error_code: "JANUS_400".to_string(),
+                                    error_message: e.to_string(),
+                                    error_context: None,
+                                }),
+                                ..Default::default()
+                            },
+                        );
                         let pb_chunk = QueryResponse {
                             status: Some(crate::grpc::pb::Status {
                                 success: false,
@@ -1045,12 +1241,28 @@ impl MetriService for MetriGrpcService {
                     }
 
                     let is_system_bff = cedar.roles.iter().any(|r| r == "system-bff");
-                    let chunks = crate::janus::router::process_single_query(&qk, &qm, &cedar, &exec, athena.as_ref(), explain_plan).await;
+                    let chunks = crate::janus::router::process_single_query(
+                        &qk,
+                        &qm,
+                        &cedar,
+                        &exec,
+                        athena.as_ref(),
+                        explain_plan,
+                    )
+                    .await;
                     for chunk in chunks {
                         if !chunk.success {
-                            let error_code_str = chunk.body.get("code").and_then(|c| c.as_str()).unwrap_or("JANUS_500");
-                            let reason = chunk.body.get("reason").and_then(|r| r.as_str()).unwrap_or("Unknown Janus query error");
-                            
+                            let error_code_str = chunk
+                                .body
+                                .get("code")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("JANUS_500");
+                            let reason = chunk
+                                .body
+                                .get("reason")
+                                .and_then(|r| r.as_str())
+                                .unwrap_or("Unknown Janus query error");
+
                             let domain_err = if error_code_str == "JANUS_400" {
                                 crate::domain::errors::DomainError::new(
                                     crate::domain::errors::ErrorCode::JnsRef002,
@@ -1062,7 +1274,7 @@ impl MetriService for MetriGrpcService {
                                     reason.to_string(),
                                 )
                             };
-                            
+
                             Self::emit_read_error_static(
                                 fault_notifier_qk.clone(),
                                 olap_channel_qk.clone(),
@@ -1072,17 +1284,18 @@ impl MetriService for MetriGrpcService {
                                 Some(target_entity_qk.clone()),
                             );
                         }
-                        
+
                         let pb_chunk = map_chunk_to_response(
                             chunk,
                             is_system_bff,
                             export_storage_qk.as_ref(),
                             &cedar.tenant_id,
-                        ).await;
-                        
+                        )
+                        .await;
+
                         // Añadir pacing delay (150ms) en modo de desarrollo para visualización fluida
                         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-                        
+
                         if tx_clone.send(Ok(pb_chunk)).await.is_err() {
                             break; // El cliente se desconectó
                         }
@@ -1112,12 +1325,16 @@ impl MetriService for MetriGrpcService {
         request: Request<ListEntitiesRequest>,
     ) -> Result<Response<ListEntitiesResponse>, Status> {
         let (session_tenant_id, session_user_id) = {
-            let session = request.extensions().get::<crate::grpc::interceptors::AuthenticatedSession>()
+            let session = request
+                .extensions()
+                .get::<crate::grpc::interceptors::AuthenticatedSession>()
                 .ok_or_else(|| Status::unauthenticated("Peticion no autenticada [Fail-Closed]"))?;
             (session.tenant_id.clone(), session.user_id.clone())
         };
 
-        let auth_header = request.metadata().get("authorization")
+        let auth_header = request
+            .metadata()
+            .get("authorization")
             .or_else(|| request.metadata().get("sid"))
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
@@ -1128,7 +1345,11 @@ impl MetriService for MetriGrpcService {
         // El tenant de la SESION manda sobre el del cuerpo. Confiar en el del cuerpo
         // seria un salto de particion trivial entre inquilinos.
         req.tenant_id = if session_tenant_id == "system" {
-            if req.tenant_id.is_empty() { "system".to_string() } else { req.tenant_id.clone() }
+            if req.tenant_id.is_empty() {
+                "system".to_string()
+            } else {
+                req.tenant_id.clone()
+            }
         } else {
             session_tenant_id.clone()
         };
@@ -1147,7 +1368,8 @@ impl MetriService for MetriGrpcService {
         }
         if req.limit > MAX_LIMIT {
             return Err(Status::invalid_argument(format!(
-                "limit {} supera el maximo del servicio ({})", req.limit, MAX_LIMIT
+                "limit {} supera el maximo del servicio ({})",
+                req.limit, MAX_LIMIT
             )));
         }
 
@@ -1162,7 +1384,9 @@ impl MetriService for MetriGrpcService {
             dummy_req.metadata_mut().insert("x-metri-action", m_val);
         }
         if let Ok(m_val) = req.entity_type.parse() {
-            dummy_req.metadata_mut().insert("x-metri-entity-type", m_val);
+            dummy_req
+                .metadata_mut()
+                .insert("x-metri-entity-type", m_val);
         }
         if let Ok(m_val) = req.entity_type.parse() {
             dummy_req.metadata_mut().insert("x-metri-domains", m_val);
@@ -1175,7 +1399,9 @@ impl MetriService for MetriGrpcService {
             self.principal_cache.as_ref(),
             &self.cedar_engine,
             &self.policy_cache,
-        ).await {
+        )
+        .await
+        {
             Ok(ctx) => ctx,
             Err(e) => {
                 error!("[gRPC ListEntities] Acceso rechazado por Cedar: {:?}", e);
@@ -1184,10 +1410,18 @@ impl MetriService for MetriGrpcService {
                     crate::domain::errors::ErrorCode::InfraCedar002,
                     format!("ListEntities Access Denied by Cedar: {}", err_msg),
                 );
-                self.emit_read_error(&req.tenant_id, &session_user_id, domain_err, Some(req.entity_type.clone()));
+                self.emit_read_error(
+                    &req.tenant_id,
+                    &session_user_id,
+                    domain_err,
+                    Some(req.entity_type.clone()),
+                );
                 // Denegacion explicita, NO lista vacia: confundirlas convierte un
                 // fallo de permisos en "no hay datos".
-                return Err(Status::permission_denied(format!("Acceso denegado: {}", err_msg)));
+                return Err(Status::permission_denied(format!(
+                    "Acceso denegado: {}",
+                    err_msg
+                )));
             }
         };
 
@@ -1196,8 +1430,10 @@ impl MetriService for MetriGrpcService {
             &authenticated_ctx.tenant_id,
             &authenticated_ctx.user_id,
         ) {
-            error!("[gRPC ListEntities] Conflicto de Tenant: Request={:?} vs Session={:?}",
-                   req.tenant_id, authenticated_ctx.tenant_id);
+            error!(
+                "[gRPC ListEntities] Conflicto de Tenant: Request={:?} vs Session={:?}",
+                req.tenant_id, authenticated_ctx.tenant_id
+            );
             return Err(Status::permission_denied(e.detail));
         }
 
@@ -1213,7 +1449,10 @@ impl MetriService for MetriGrpcService {
         // ── Validacion de filtros contra el Codice ──
         let registry = crate::codice::global();
         let model = registry.get_model(&req.entity_type).ok_or_else(|| {
-            Status::invalid_argument(format!("Entidad desconocida en el Codice: '{}'", req.entity_type))
+            Status::invalid_argument(format!(
+                "Entidad desconocida en el Codice: '{}'",
+                req.entity_type
+            ))
         })?;
 
         let filter_names: Vec<&str> = req.filters.keys().map(|k| k.as_str()).collect();
@@ -1229,7 +1468,10 @@ impl MetriService for MetriGrpcService {
             crate::eav::types::datom::DatomValue::Str(req.entity_type.clone()),
         )];
         for (k, v) in &req.filters {
-            filters.push((k.clone(), crate::eav::types::datom::DatomValue::Str(v.clone())));
+            filters.push((
+                k.clone(),
+                crate::eav::types::datom::DatomValue::Str(v.clone()),
+            ));
         }
 
         let plan = crate::eav::reader::query::NativeQueryPlan::AvetIntersect {
@@ -1237,11 +1479,19 @@ impl MetriService for MetriGrpcService {
             filters,
         };
 
-        let mut ids = match self.oltp_executor.query_executor().execute_native_plan(&plan).await {
+        let mut ids = match self
+            .oltp_executor
+            .query_executor()
+            .execute_native_plan(&plan)
+            .await
+        {
             Ok(ids) => ids,
             Err(e) => {
                 error!("[gRPC ListEntities] Error de consulta: {:?}", e);
-                return Err(Status::internal(format!("Error listando entidades: {}", e.detail)));
+                return Err(Status::internal(format!(
+                    "Error listando entidades: {}",
+                    e.detail
+                )));
             }
         };
 
@@ -1249,7 +1499,11 @@ impl MetriService for MetriGrpcService {
 
         info!(
             "ListEntities: tenant={} entity={} filtros={} devueltos={} truncated={}",
-            req.tenant_id, req.entity_type, req.filters.len(), ids.len(), truncated
+            req.tenant_id,
+            req.entity_type,
+            req.filters.len(),
+            ids.len(),
+            truncated
         );
 
         Ok(Response::new(ListEntitiesResponse {
@@ -1265,17 +1519,22 @@ impl MetriService for MetriGrpcService {
         }))
     }
 
-    async fn transact(&self, request: Request<TransactionRequest>) -> Result<Response<TransactionResponse>, Status> {
+    async fn transact(
+        &self,
+        request: Request<TransactionRequest>,
+    ) -> Result<Response<TransactionResponse>, Status> {
         let principal = crate::cedar::authorizer::get_principal_data(
             &request,
             self.valkey_store.as_ref(),
             &self.oltp_executor.pull_reader(),
             self.principal_cache.as_ref(),
-        ).await.map_err(|err| {
-            Status::unauthenticated(format!("Authentication failed: {}", err.detail))
-        })?;
+        )
+        .await
+        .map_err(|err| Status::unauthenticated(format!("Authentication failed: {}", err.detail)))?;
 
-        let auth_header = request.metadata().get("authorization")
+        let auth_header = request
+            .metadata()
+            .get("authorization")
             .or_else(|| request.metadata().get("sid"))
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
@@ -1292,7 +1551,7 @@ impl MetriService for MetriGrpcService {
             principal.tenant_id.clone()
         };
         req.tenant_id = resolved_tenant_id;
-        
+
         let operation_str = match req.action {
             1 => "CREATE",
             2 => "UPDATE",
@@ -1300,7 +1559,10 @@ impl MetriService for MetriGrpcService {
             _ => "UNKNOWN",
         };
 
-        info!("Transaction request | tenant: {} | entity: {} | op: {}", req.tenant_id, req.entity_type, operation_str);
+        info!(
+            "Transaction request | tenant: {} | entity: {} | op: {}",
+            req.tenant_id, req.entity_type, operation_str
+        );
 
         let payload_json = if let Some(struct_payload) = req.payload {
             translator::struct_to_value(struct_payload)
@@ -1309,7 +1571,7 @@ impl MetriService for MetriGrpcService {
         };
 
         let mut request_map = serde_json::Map::new();
-        
+
         let mut actual_payload = if let Some(obj) = payload_json.as_object() {
             if let Some(data) = obj.get("data") {
                 data.clone()
@@ -1327,8 +1589,14 @@ impl MetriService for MetriGrpcService {
 
         if !entity_id.is_empty() {
             if let Some(obj) = actual_payload.as_object_mut() {
-                if !obj.contains_key("id") && !obj.contains_key("entity_id") && !obj.contains_key("ulid") {
-                    obj.insert("id".to_string(), serde_json::Value::String(entity_id.clone()));
+                if !obj.contains_key("id")
+                    && !obj.contains_key("entity_id")
+                    && !obj.contains_key("ulid")
+                {
+                    obj.insert(
+                        "id".to_string(),
+                        serde_json::Value::String(entity_id.clone()),
+                    );
                 }
             }
         }
@@ -1349,7 +1617,8 @@ impl MetriService for MetriGrpcService {
                         operation_str,
                         item,
                         &principal,
-                    ).await?;
+                    )
+                    .await?;
                 }
             }
         } else {
@@ -1359,32 +1628,56 @@ impl MetriService for MetriGrpcService {
                 operation_str,
                 &actual_payload,
                 &principal,
-            ).await?;
+            )
+            .await?;
         }
 
         // --- Prevent cycle in user group hierarchy ---
-        if req.entity_type == "user_group" && (operation_str == "CREATE" || operation_str == "UPDATE") {
-            self.validate_user_group_hierarchy_cycle(
-                &req.tenant_id,
-                &entity_id,
-                &actual_payload,
-            ).await?;
+        if req.entity_type == "user_group"
+            && (operation_str == "CREATE" || operation_str == "UPDATE")
+        {
+            self.validate_user_group_hierarchy_cycle(&req.tenant_id, &entity_id, &actual_payload)
+                .await?;
         }
 
         request_map.insert("payload".to_string(), actual_payload.clone());
-        request_map.insert("tenant_id".to_string(), serde_json::Value::String(req.tenant_id.clone()));
-        request_map.insert("entity_type".to_string(), serde_json::Value::String(req.entity_type.clone()));
-        request_map.insert("operation".to_string(), serde_json::Value::String(operation_str.to_string()));
+        request_map.insert(
+            "tenant_id".to_string(),
+            serde_json::Value::String(req.tenant_id.clone()),
+        );
+        request_map.insert(
+            "entity_type".to_string(),
+            serde_json::Value::String(req.entity_type.clone()),
+        );
+        request_map.insert(
+            "operation".to_string(),
+            serde_json::Value::String(operation_str.to_string()),
+        );
 
         // Inyección controlada y programática de metadatos para autorización Cedar
         if !auth_header.is_empty() {
-            request_map.insert("authorization".to_string(), serde_json::Value::String(auth_header));
+            request_map.insert(
+                "authorization".to_string(),
+                serde_json::Value::String(auth_header),
+            );
         }
-        request_map.insert("x-metri-action".to_string(), serde_json::Value::String(operation_str.to_string()));
-        request_map.insert("x-metri-entity-type".to_string(), serde_json::Value::String(req.entity_type.clone()));
-        request_map.insert("x-metri-domains".to_string(), serde_json::Value::String(req.entity_type.clone()));
+        request_map.insert(
+            "x-metri-action".to_string(),
+            serde_json::Value::String(operation_str.to_string()),
+        );
+        request_map.insert(
+            "x-metri-entity-type".to_string(),
+            serde_json::Value::String(req.entity_type.clone()),
+        );
+        request_map.insert(
+            "x-metri-domains".to_string(),
+            serde_json::Value::String(req.entity_type.clone()),
+        );
         if !entity_id.is_empty() {
-            request_map.insert("x-metri-entity-id".to_string(), serde_json::Value::String(entity_id));
+            request_map.insert(
+                "x-metri-entity-id".to_string(),
+                serde_json::Value::String(entity_id),
+            );
         }
 
         let ctx = crate::iop::core::IopContext::new(
@@ -1400,8 +1693,16 @@ impl MetriService for MetriGrpcService {
 
         if let Some("error") = response_value.get("status").and_then(|s| s.as_str()) {
             let error_obj = response_value.get("error").unwrap();
-            let code = error_obj.get("code").and_then(|c| c.as_str()).unwrap_or("UNKNOWN").to_string();
-            let desc = error_obj.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
+            let code = error_obj
+                .get("code")
+                .and_then(|c| c.as_str())
+                .unwrap_or("UNKNOWN")
+                .to_string();
+            let desc = error_obj
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .to_string();
 
             let response = TransactionResponse {
                 status: Some(super::pb::Status {
@@ -1422,15 +1723,19 @@ impl MetriService for MetriGrpcService {
             return Ok(Response::new(response));
         }
 
-        let entity_id = response_value.get("entity_id")
+        let entity_id = response_value
+            .get("entity_id")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .or_else(|| response_value.get("result")
-                .and_then(|res| res.get("entity_id"))
-                .and_then(|v| v.as_str()))
+            .or_else(|| {
+                response_value
+                    .get("result")
+                    .and_then(|res| res.get("entity_id"))
+                    .and_then(|v| v.as_str())
+            })
             .unwrap_or("")
             .to_string();
-        
+
         tracing::debug!("Raw IOP Response: {}", response_value);
         tracing::debug!("Extracted entity_id: {}", entity_id);
 
@@ -1446,7 +1751,11 @@ impl MetriService for MetriGrpcService {
             status: Some(super::pb::Status {
                 success: true,
                 error_code: String::new(),
-                error_message: if entity_id.is_empty() { response_value.to_string() } else { String::new() },
+                error_message: if entity_id.is_empty() {
+                    response_value.to_string()
+                } else {
+                    String::new()
+                },
                 error_context: None,
             }),
             entity_id,
@@ -1455,21 +1764,29 @@ impl MetriService for MetriGrpcService {
         Ok(Response::new(response))
     }
 
-    async fn bulk_ingest(&self, request: Request<BulkRequest>) -> Result<Response<BulkResponse>, Status> {
+    async fn bulk_ingest(
+        &self,
+        request: Request<BulkRequest>,
+    ) -> Result<Response<BulkResponse>, Status> {
         let principal = crate::cedar::authorizer::get_principal_data(
             &request,
             self.valkey_store.as_ref(),
             &self.oltp_executor.pull_reader(),
             self.principal_cache.as_ref(),
-        ).await.map_err(|err| {
-            Status::unauthenticated(format!("Authentication failed: {}", err.detail))
-        })?;
+        )
+        .await
+        .map_err(|err| Status::unauthenticated(format!("Authentication failed: {}", err.detail)))?;
 
         if principal.user_id != "usr_system_bff" {
-            info!("[gRPC BulkIngest] Solicitud de ingesta masiva por usuario regular: {}", principal.user_id);
+            info!(
+                "[gRPC BulkIngest] Solicitud de ingesta masiva por usuario regular: {}",
+                principal.user_id
+            );
         }
 
-        let auth_header = request.metadata().get("authorization")
+        let auth_header = request
+            .metadata()
+            .get("authorization")
             .or_else(|| request.metadata().get("sid"))
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
@@ -1493,14 +1810,21 @@ impl MetriService for MetriGrpcService {
             _ => "UNKNOWN",
         };
 
-        info!("BulkIngest request | tenant: {} | entity: {} | op: {}", req.tenant_id, req.entity_type, operation_str);
+        info!(
+            "BulkIngest request | tenant: {} | entity: {} | op: {}",
+            req.tenant_id, req.entity_type, operation_str
+        );
 
-        let row_set = req.data.ok_or_else(|| Status::invalid_argument("data (RowSet) is required"))?;
+        let row_set = req
+            .data
+            .ok_or_else(|| Status::invalid_argument("data (RowSet) is required"))?;
         let columns = row_set.columns;
-        
-        let payload_strategy = row_set.payload_strategy.ok_or_else(|| Status::invalid_argument("payload_strategy is required"))?;
+
+        let payload_strategy = row_set
+            .payload_strategy
+            .ok_or_else(|| Status::invalid_argument("payload_strategy is required"))?;
         let mut ingested_count = 0;
-        
+
         match payload_strategy {
             crate::grpc::pb::row_set::PayloadStrategy::RowsJson(data_row_list) => {
                 let mut rows_vec = Vec::new();
@@ -1509,18 +1833,26 @@ impl MetriService for MetriGrpcService {
                     for (i, val) in row.values.into_iter().enumerate() {
                         if let Some(col) = columns.get(i) {
                             let json_val = match val.kind {
-                                Some(prost_types::value::Kind::StringValue(s)) => serde_json::Value::String(s),
+                                Some(prost_types::value::Kind::StringValue(s)) => {
+                                    serde_json::Value::String(s)
+                                }
                                 Some(prost_types::value::Kind::NumberValue(n)) => {
                                     if n.fract() == 0.0 {
-                                        serde_json::Value::Number(serde_json::Number::from(n as i64))
+                                        serde_json::Value::Number(serde_json::Number::from(
+                                            n as i64,
+                                        ))
                                     } else if let Some(num) = serde_json::Number::from_f64(n) {
                                         serde_json::Value::Number(num)
                                     } else {
                                         serde_json::Value::Null
                                     }
-                                },
-                                Some(prost_types::value::Kind::BoolValue(b)) => serde_json::Value::Bool(b),
-                                Some(prost_types::value::Kind::StructValue(s)) => translator::struct_to_value(s),
+                                }
+                                Some(prost_types::value::Kind::BoolValue(b)) => {
+                                    serde_json::Value::Bool(b)
+                                }
+                                Some(prost_types::value::Kind::StructValue(s)) => {
+                                    translator::struct_to_value(s)
+                                }
                                 _ => serde_json::Value::Null,
                             };
                             payload_map.insert(col.key.clone(), json_val);
@@ -1529,7 +1861,9 @@ impl MetriService for MetriGrpcService {
                     let row_val = serde_json::Value::Object(payload_map);
 
                     // Validate role grants if role is being created/updated
-                    if req.entity_type == "role" && (operation_str == "CREATE" || operation_str == "UPDATE") {
+                    if req.entity_type == "role"
+                        && (operation_str == "CREATE" || operation_str == "UPDATE")
+                    {
                         if let Some(grants) = row_val.get("grants") {
                             self.validate_role_grants(grants)?;
                         }
@@ -1547,12 +1881,16 @@ impl MetriService for MetriGrpcService {
                         operation_str,
                         first_row,
                         &principal,
-                    ).await?;
+                    )
+                    .await?;
                 }
 
                 // Gather entity IDs for invalidation
                 let mut entity_ids = Vec::new();
-                if req.entity_type == "user" || req.entity_type == "role" || req.entity_type == "user_group" {
+                if req.entity_type == "user"
+                    || req.entity_type == "role"
+                    || req.entity_type == "user_group"
+                {
                     for row_val in &rows_vec {
                         if let Some(eid) = extract_entity_id(row_val) {
                             entity_ids.push(eid);
@@ -1562,17 +1900,38 @@ impl MetriService for MetriGrpcService {
 
                 let mut request_map = serde_json::Map::new();
                 request_map.insert("data".to_string(), serde_json::Value::Array(rows_vec));
-                request_map.insert("tenant_id".to_string(), serde_json::Value::String(req.tenant_id.clone()));
-                request_map.insert("entity_type".to_string(), serde_json::Value::String(req.entity_type.clone()));
-                request_map.insert("operation".to_string(), serde_json::Value::String(operation_str.to_string()));
+                request_map.insert(
+                    "tenant_id".to_string(),
+                    serde_json::Value::String(req.tenant_id.clone()),
+                );
+                request_map.insert(
+                    "entity_type".to_string(),
+                    serde_json::Value::String(req.entity_type.clone()),
+                );
+                request_map.insert(
+                    "operation".to_string(),
+                    serde_json::Value::String(operation_str.to_string()),
+                );
 
                 // Inyección programática controlada para BulkIngest
                 if !auth_header.is_empty() {
-                    request_map.insert("authorization".to_string(), serde_json::Value::String(auth_header));
+                    request_map.insert(
+                        "authorization".to_string(),
+                        serde_json::Value::String(auth_header),
+                    );
                 }
-                request_map.insert("x-metri-action".to_string(), serde_json::Value::String("BulkIngestData".to_string()));
-                request_map.insert("x-metri-entity-type".to_string(), serde_json::Value::String(req.entity_type.clone()));
-                request_map.insert("x-metri-domains".to_string(), serde_json::Value::String(req.entity_type.clone()));
+                request_map.insert(
+                    "x-metri-action".to_string(),
+                    serde_json::Value::String("BulkIngestData".to_string()),
+                );
+                request_map.insert(
+                    "x-metri-entity-type".to_string(),
+                    serde_json::Value::String(req.entity_type.clone()),
+                );
+                request_map.insert(
+                    "x-metri-domains".to_string(),
+                    serde_json::Value::String(req.entity_type.clone()),
+                );
 
                 let ctx = crate::iop::core::IopContext::new(
                     &req.tenant_id,
@@ -1584,11 +1943,19 @@ impl MetriService for MetriGrpcService {
 
                 let response_value = self.iop_orchestrator.run(ctx).await;
                 info!("BulkIngest response value: {:?}", response_value);
-                
+
                 if let Some("error") = response_value.get("status").and_then(|s| s.as_str()) {
                     let error_obj = response_value.get("error").unwrap();
-                    let code = error_obj.get("code").and_then(|c| c.as_str()).unwrap_or("UNKNOWN").to_string();
-                    let desc = error_obj.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string();
+                    let code = error_obj
+                        .get("code")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("UNKNOWN")
+                        .to_string();
+                    let desc = error_obj
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     error!("Error bulk ingesting [{}]: {}", code, desc);
 
                     // Antes esto era `Status::internal(desc)`: un error de
@@ -1613,7 +1980,10 @@ impl MetriService for MetriGrpcService {
                         ..Default::default()
                     }));
                 } else {
-                    if let Some(count) = response_value.get("ingested_count").and_then(|c| c.as_u64()) {
+                    if let Some(count) = response_value
+                        .get("ingested_count")
+                        .and_then(|c| c.as_u64())
+                    {
                         ingested_count = count as i32;
                     } else {
                         ingested_count = 0;
@@ -1629,9 +1999,11 @@ impl MetriService for MetriGrpcService {
                         let _ = crate::cedar::authorizer::INVALIDATION_TX.send(msg);
                     }
                 }
-            },
+            }
             _ => {
-                return Err(Status::unimplemented("Only RowsJson is supported for BulkIngest right now"));
+                return Err(Status::unimplemented(
+                    "Only RowsJson is supported for BulkIngest right now",
+                ));
             }
         }
 
@@ -1648,16 +2020,26 @@ impl MetriService for MetriGrpcService {
         Ok(Response::new(response))
     }
 
-    async fn match_routing_rules_batch(&self, request: Request<MatchRoutingRulesBatchRequest>) -> Result<Response<MatchRoutingRulesBatchResponse>, Status> {
+    async fn match_routing_rules_batch(
+        &self,
+        request: Request<MatchRoutingRulesBatchRequest>,
+    ) -> Result<Response<MatchRoutingRulesBatchResponse>, Status> {
         let (session_tenant_id, session_user_id) = {
-            let session = request.extensions().get::<crate::grpc::interceptors::AuthenticatedSession>()
+            let session = request
+                .extensions()
+                .get::<crate::grpc::interceptors::AuthenticatedSession>()
                 .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
             (session.tenant_id.clone(), session.user_id.clone())
         };
 
         if session_tenant_id != "system" {
-            error!("[gRPC RoutingRules] Acceso denegado: Se requiere rol de sistema. Solicitante={}", session_user_id);
-            return Err(Status::permission_denied("Acceso denegado: Se requiere rol de sistema para la consulta de ruteo"));
+            error!(
+                "[gRPC RoutingRules] Acceso denegado: Se requiere rol de sistema. Solicitante={}",
+                session_user_id
+            );
+            return Err(Status::permission_denied(
+                "Acceso denegado: Se requiere rol de sistema para la consulta de ruteo",
+            ));
         }
 
         let batch = request.into_inner();
@@ -1669,10 +2051,13 @@ impl MetriService for MetriGrpcService {
             let trigger_type = &req.trigger_type;
 
             // 1. Decodificar CDC payload
-            let cdc_payload: serde_json::Value = match serde_json::from_slice(&req.cdc_payload_json) {
+            let cdc_payload: serde_json::Value = match serde_json::from_slice(&req.cdc_payload_json)
+            {
                 Ok(val) => val,
                 Err(e) => {
-                    return Err(Status::invalid_argument(format!("Payload JSON inválido: {e}")));
+                    return Err(Status::invalid_argument(format!(
+                        "Payload JSON inválido: {e}"
+                    )));
                 }
             };
 
@@ -1688,10 +2073,16 @@ impl MetriService for MetriGrpcService {
                 "limit": 100
             });
 
-            let rules_rows = match self.oltp_executor.run_oltp_query(tenant_id, &query_rules).await {
+            let rules_rows = match self
+                .oltp_executor
+                .run_oltp_query(tenant_id, &query_rules)
+                .await
+            {
                 Ok(val) => val,
                 Err(e) => {
-                    return Err(Status::internal(format!("Fallo al consultar reglas de ruteo: {e:?}")));
+                    return Err(Status::internal(format!(
+                        "Fallo al consultar reglas de ruteo: {e:?}"
+                    )));
                 }
             };
 
@@ -1708,7 +2099,11 @@ impl MetriService for MetriGrpcService {
                 "limit": 100
             });
 
-            let webhooks_rows = match self.oltp_executor.run_oltp_query(tenant_id, &query_webhooks).await {
+            let webhooks_rows = match self
+                .oltp_executor
+                .run_oltp_query(tenant_id, &query_webhooks)
+                .await
+            {
                 Ok(val) => val,
                 Err(_) => serde_json::Value::Array(vec![]),
             };
@@ -1720,13 +2115,20 @@ impl MetriService for MetriGrpcService {
             for rule in rules {
                 let rule_id = rule.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let rule_code = rule.get("rule_code").and_then(|v| v.as_str()).unwrap_or("");
-                let description = rule.get("description").and_then(|v| v.as_str()).unwrap_or("");
-                let detail_type_output = rule.get("detail_type_output").and_then(|v| v.as_str()).unwrap_or("");
+                let description = rule
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let detail_type_output = rule
+                    .get("detail_type_output")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
 
                 // 4. Evaluación nativa de FilterNode
                 if let Some(fc) = rule.get("filter_conditions") {
                     if let Some(fbs_node) = fc_to_fbs_filter_node(fc) {
-                        let passes = crate::aegis::oltp::filter::eval_filter_node(&cdc_payload, &fbs_node);
+                        let passes =
+                            crate::aegis::oltp::filter::eval_filter_node(&cdc_payload, &fbs_node);
                         if !passes {
                             continue;
                         }
@@ -1747,11 +2149,30 @@ impl MetriService for MetriGrpcService {
                     }
 
                     if matches_rule {
-                        let target_url = webhook.get("target_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let http_method = webhook.get("http_method").and_then(|v| v.as_str()).unwrap_or("POST").to_string();
-                        let auth_type = webhook.get("authentication_type").and_then(|v| v.as_str()).unwrap_or("NONE").to_string();
-                        let resolved_auth_secret = webhook.get("auth_token").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let max_retries = webhook.get("max_retries").and_then(|v| v.as_i64()).unwrap_or(3) as i32;
+                        let target_url = webhook
+                            .get("target_url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let http_method = webhook
+                            .get("http_method")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("POST")
+                            .to_string();
+                        let auth_type = webhook
+                            .get("authentication_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("NONE")
+                            .to_string();
+                        let resolved_auth_secret = webhook
+                            .get("auth_token")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let max_retries = webhook
+                            .get("max_retries")
+                            .and_then(|v| v.as_i64())
+                            .unwrap_or(3) as i32;
 
                         matched_webhooks.push(WebhookTarget {
                             target_url,
@@ -1765,7 +2186,9 @@ impl MetriService for MetriGrpcService {
                     }
                 }
 
-                let condition_proto = rule.get("filter_conditions").and_then(|fc| fc_to_proto_filter_node(fc));
+                let condition_proto = rule
+                    .get("filter_conditions")
+                    .and_then(|fc| fc_to_proto_filter_node(fc));
 
                 matched_rules.push(MatchedRule {
                     rule_code: rule_code.to_string(),
@@ -1798,12 +2221,13 @@ impl MetriService for MetriGrpcService {
             responses,
         }))
     }
-
 }
 
-pub(crate) fn fc_to_fbs_filter_node(filter_conditions: &serde_json::Value) -> Option<crate::janus::fbs::FilterNodeT> {
+pub(crate) fn fc_to_fbs_filter_node(
+    filter_conditions: &serde_json::Value,
+) -> Option<crate::janus::fbs::FilterNodeT> {
     use crate::janus::fbs;
-    
+
     let parsed_value;
     let fc = if let Some(s) = filter_conditions.as_str() {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
@@ -1820,11 +2244,11 @@ pub(crate) fn fc_to_fbs_filter_node(filter_conditions: &serde_json::Value) -> Op
     if arr.is_empty() {
         return None;
     }
-    
+
     if arr.len() == 1 {
         return fc_item_to_fbs_node(&arr[0]);
     }
-    
+
     let first = &arr[0];
     let parsed_first;
     let first_obj = if let Some(s) = first.as_str() {
@@ -1838,23 +2262,26 @@ pub(crate) fn fc_to_fbs_filter_node(filter_conditions: &serde_json::Value) -> Op
         first
     };
 
-    let logical_op = first_obj.get("logical_operator").and_then(|v| v.as_str()).unwrap_or("AND");
+    let logical_op = first_obj
+        .get("logical_operator")
+        .and_then(|v| v.as_str())
+        .unwrap_or("AND");
     let conjunction = match logical_op {
         "OR" => 2,
         _ => 1,
     };
-    
+
     let mut child_nodes = Vec::new();
     for item in arr {
         if let Some(node) = fc_item_to_fbs_node(item) {
             child_nodes.push(node);
         }
     }
-    
+
     if child_nodes.is_empty() {
         return None;
     }
-    
+
     Some(fbs::FilterNodeT {
         group: Some(Box::new(fbs::FilterGroupT {
             conjunction: fbs::FilterGroup_Conjunction(conjunction),
@@ -1864,9 +2291,11 @@ pub(crate) fn fc_to_fbs_filter_node(filter_conditions: &serde_json::Value) -> Op
     })
 }
 
-pub(crate) fn fc_item_to_fbs_node(item: &serde_json::Value) -> Option<crate::janus::fbs::FilterNodeT> {
+pub(crate) fn fc_item_to_fbs_node(
+    item: &serde_json::Value,
+) -> Option<crate::janus::fbs::FilterNodeT> {
     use crate::janus::fbs;
-    
+
     let parsed_value;
     let obj = if let Some(s) = item.as_str() {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
@@ -1882,8 +2311,11 @@ pub(crate) fn fc_item_to_fbs_node(item: &serde_json::Value) -> Option<crate::jan
     let field = obj.get("field_name").and_then(|v| v.as_str())?.to_string();
     let op_str = obj.get("operator").and_then(|v| v.as_str())?.to_lowercase();
     let target_val_str = obj.get("target_value").and_then(|v| v.as_str())?;
-    let val_type = obj.get("target_value_type").and_then(|v| v.as_str()).unwrap_or("string");
-    
+    let val_type = obj
+        .get("target_value_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("string");
+
     let op = match op_str.as_str() {
         "eq" => fbs::FilterOperator::EQ,
         "neq" => fbs::FilterOperator::NEQ,
@@ -1895,7 +2327,7 @@ pub(crate) fn fc_item_to_fbs_node(item: &serde_json::Value) -> Option<crate::jan
         "in" => fbs::FilterOperator::IN,
         _ => fbs::FilterOperator::EQ,
     };
-    
+
     let fval = match val_type {
         "long" | "double" => fbs::FilterValueT {
             number_val: target_val_str.parse::<f64>().unwrap_or(0.0),
@@ -1910,7 +2342,7 @@ pub(crate) fn fc_item_to_fbs_node(item: &serde_json::Value) -> Option<crate::jan
             ..Default::default()
         },
     };
-    
+
     Some(fbs::FilterNodeT {
         criteria: Some(Box::new(fbs::FilterCriteriaT {
             field: Some(field),
@@ -1922,7 +2354,9 @@ pub(crate) fn fc_item_to_fbs_node(item: &serde_json::Value) -> Option<crate::jan
     })
 }
 
-fn fc_to_proto_filter_node(filter_conditions: &serde_json::Value) -> Option<crate::grpc::pb::FilterNode> {
+fn fc_to_proto_filter_node(
+    filter_conditions: &serde_json::Value,
+) -> Option<crate::grpc::pb::FilterNode> {
     let parsed_value;
     let fc = if let Some(s) = filter_conditions.as_str() {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
@@ -1939,11 +2373,11 @@ fn fc_to_proto_filter_node(filter_conditions: &serde_json::Value) -> Option<crat
     if arr.is_empty() {
         return None;
     }
-    
+
     if arr.len() == 1 {
         return fc_item_to_proto_node(&arr[0]);
     }
-    
+
     let first = &arr[0];
     let parsed_first;
     let first_obj = if let Some(s) = first.as_str() {
@@ -1957,24 +2391,27 @@ fn fc_to_proto_filter_node(filter_conditions: &serde_json::Value) -> Option<crat
         first
     };
 
-    let logical_op = first_obj.get("logical_operator").and_then(|v| v.as_str()).unwrap_or("AND");
+    let logical_op = first_obj
+        .get("logical_operator")
+        .and_then(|v| v.as_str())
+        .unwrap_or("AND");
     let conjunction = match logical_op {
         "OR" => 2,
         _ => 1,
     };
-    
+
     let mut child_nodes = Vec::new();
     for item in arr {
         if let Some(node) = fc_item_to_proto_node(item) {
             child_nodes.push(node);
         }
     }
-    
+
     if child_nodes.is_empty() {
         return None;
     }
-    
-    use crate::grpc::pb::{FilterNode, filter_node::Node, FilterGroup};
+
+    use crate::grpc::pb::{filter_node::Node, FilterGroup, FilterNode};
     Some(FilterNode {
         node: Some(Node::Group(FilterGroup {
             conjunction,
@@ -1999,8 +2436,11 @@ fn fc_item_to_proto_node(item: &serde_json::Value) -> Option<crate::grpc::pb::Fi
     let field = obj.get("field_name").and_then(|v| v.as_str())?.to_string();
     let op_str = obj.get("operator").and_then(|v| v.as_str())?.to_lowercase();
     let target_val_str = obj.get("target_value").and_then(|v| v.as_str())?;
-    let val_type = obj.get("target_value_type").and_then(|v| v.as_str()).unwrap_or("string");
-    
+    let val_type = obj
+        .get("target_value_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("string");
+
     let op = match op_str.as_str() {
         "eq" => 1,
         "neq" => 2,
@@ -2018,15 +2458,21 @@ fn fc_item_to_proto_node(item: &serde_json::Value) -> Option<crate::grpc::pb::Fi
         "contains" => 14,
         _ => 1,
     };
-    
-    use crate::grpc::pb::{FilterNode, filter_node::Node, FilterCriteria, FilterValue, filter_value::Kind};
-    
+
+    use crate::grpc::pb::{
+        filter_node::Node, filter_value::Kind, FilterCriteria, FilterNode, FilterValue,
+    };
+
     let kind = match val_type {
-        "long" | "double" => Some(Kind::NumberVal(target_val_str.parse::<f64>().unwrap_or(0.0))),
-        "boolean" => Some(Kind::BoolVal(target_val_str.parse::<bool>().unwrap_or(false))),
+        "long" | "double" => Some(Kind::NumberVal(
+            target_val_str.parse::<f64>().unwrap_or(0.0),
+        )),
+        "boolean" => Some(Kind::BoolVal(
+            target_val_str.parse::<bool>().unwrap_or(false),
+        )),
         _ => Some(Kind::StringVal(target_val_str.to_string())),
     };
-    
+
     Some(FilterNode {
         node: Some(Node::Criteria(FilterCriteria {
             field,
@@ -2044,21 +2490,43 @@ fn map_columns(
     let mut col_keys = Vec::new();
     if let Some(cols) = columns_val.and_then(|c| c.as_array()) {
         for col in cols {
-            let key = col.get("key").and_then(|k| k.as_str()).unwrap_or("").to_string();
-            
+            let key = col
+                .get("key")
+                .and_then(|k| k.as_str())
+                .unwrap_or("")
+                .to_string();
+
             // FLS: Si el atributo es password_hash y el cliente NO tiene el rol system-bff, omitirlo
             if key == "password_hash" && !is_system_bff {
                 continue;
             }
-            
+
             col_keys.push(key.clone());
             pb_columns.push(crate::grpc::pb::ColumnSchema {
                 key,
-                label: col.get("label").and_then(|l| l.as_str()).unwrap_or("").to_string(),
-                r#type: col.get("type").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-                format: col.get("format").and_then(|f| f.as_str()).unwrap_or("").to_string(),
-                is_dimension: col.get("is_dimension").and_then(|b| b.as_bool()).unwrap_or(false),
-                is_measure: col.get("is_measure").and_then(|b| b.as_bool()).unwrap_or(false),
+                label: col
+                    .get("label")
+                    .and_then(|l| l.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                r#type: col
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                format: col
+                    .get("format")
+                    .and_then(|f| f.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                is_dimension: col
+                    .get("is_dimension")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false),
+                is_measure: col
+                    .get("is_measure")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(false),
             });
         }
     }
@@ -2086,55 +2554,96 @@ fn map_data_rows(
     pb_rows
 }
 
-fn map_metadata(
-    meta_val: Option<&serde_json::Value>,
-) -> Option<crate::grpc::pb::QueryMetadata> {
-    meta_val.map(|m| {
-        crate::grpc::pb::QueryMetadata {
-            execution_time_ms: m.get("execution_time_ms").and_then(|v| v.as_i64()).unwrap_or(0),
-            total_count: m.get("total_count").and_then(|v| v.as_i64()).unwrap_or(0),
-            engine: m.get("engine").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            is_semantic: m.get("is_semantic").and_then(|v| v.as_bool()).unwrap_or(false),
-            total_queries: m.get("total_queries").and_then(|v| v.as_i64()).unwrap_or(1) as i32,
-            parallelism_factor: m.get("parallelism_factor").and_then(|v| v.as_f64()).unwrap_or(1.0),
-            cache_hits: m.get("cache_hits").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-            query_id: m.get("query_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            cache_ttl_seconds: m.get("cache_ttl_seconds").and_then(|v| v.as_i64()).unwrap_or(0),
-        }
+fn map_metadata(meta_val: Option<&serde_json::Value>) -> Option<crate::grpc::pb::QueryMetadata> {
+    meta_val.map(|m| crate::grpc::pb::QueryMetadata {
+        execution_time_ms: m
+            .get("execution_time_ms")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
+        total_count: m.get("total_count").and_then(|v| v.as_i64()).unwrap_or(0),
+        engine: m
+            .get("engine")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        is_semantic: m
+            .get("is_semantic")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        total_queries: m.get("total_queries").and_then(|v| v.as_i64()).unwrap_or(1) as i32,
+        parallelism_factor: m
+            .get("parallelism_factor")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1.0),
+        cache_hits: m.get("cache_hits").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        query_id: m
+            .get("query_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        cache_ttl_seconds: m
+            .get("cache_ttl_seconds")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
     })
 }
 
-fn map_pagination(
-    pag_val: Option<&serde_json::Value>,
-) -> Option<crate::grpc::pb::Pagination> {
+fn map_pagination(pag_val: Option<&serde_json::Value>) -> Option<crate::grpc::pb::Pagination> {
     pag_val.and_then(|p| {
-        if p.is_null() { return None; }
+        if p.is_null() {
+            return None;
+        }
         let mut links = Vec::new();
         if let Some(arr) = p.get("links").and_then(|l| l.as_array()) {
             for lnk in arr {
                 links.push(crate::grpc::pb::Link {
-                    rel: lnk.get("rel").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    href: lnk.get("href").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    method: lnk.get("method").and_then(|v| v.as_str()).unwrap_or("POST").to_string(),
+                    rel: lnk
+                        .get("rel")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    href: lnk
+                        .get("href")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    method: lnk
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("POST")
+                        .to_string(),
                 });
             }
         }
         Some(crate::grpc::pb::Pagination {
-            next_cursor: p.get("next_cursor").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            previous_cursor: p.get("previous_cursor").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            next_cursor: p
+                .get("next_cursor")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            previous_cursor: p
+                .get("previous_cursor")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             page_size: p.get("page_size").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
             has_next: p.get("has_next").and_then(|v| v.as_bool()).unwrap_or(false),
-            has_previous: p.get("has_previous").and_then(|v| v.as_bool()).unwrap_or(false),
+            has_previous: p
+                .get("has_previous")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             links,
         })
     })
 }
 
-fn map_viz_meta(
-    viz_val: Option<&serde_json::Value>,
-) -> Option<crate::grpc::pb::VizMeta> {
+fn map_viz_meta(viz_val: Option<&serde_json::Value>) -> Option<crate::grpc::pb::VizMeta> {
     viz_val.map(|vz| {
-        let viz_type = vz.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let viz_type = vz
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let payload_json = vz.get("payload");
 
         let payload = if let Some(pj) = payload_json {
@@ -2143,87 +2652,219 @@ fn map_viz_meta(
                     crate::grpc::pb::AnalyticalSignal {
                         value: signal.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0),
                         previous_value: signal.get("previous_value").and_then(|v| v.as_f64()),
-                        unit: signal.get("unit").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        status_label: signal.get("status_label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        entity_ref: signal.get("entity_ref").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        unit: signal
+                            .get("unit")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        status_label: signal
+                            .get("status_label")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        entity_ref: signal
+                            .get("entity_ref")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         intelligence: signal.get("intelligence").map(|intel| {
                             crate::grpc::pb::IntelligenceSignal {
-                                direction: intel.get("direction").and_then(|v| v.as_str()).unwrap_or("neutral").to_string(),
-                                percentage: intel.get("percentage").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                delta_abs: intel.get("delta_abs").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                previous_value: intel.get("previous_value").and_then(|v| v.as_f64()),
-                                label: intel.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                is_anomaly: intel.get("is_anomaly").and_then(|v| v.as_bool()).unwrap_or(false),
-                                z_score: intel.get("z_score").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                represents_initial: intel.get("represents_initial").and_then(|v| v.as_bool()).unwrap_or(false),
+                                direction: intel
+                                    .get("direction")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("neutral")
+                                    .to_string(),
+                                percentage: intel
+                                    .get("percentage")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0),
+                                delta_abs: intel
+                                    .get("delta_abs")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0),
+                                previous_value: intel
+                                    .get("previous_value")
+                                    .and_then(|v| v.as_f64()),
+                                label: intel
+                                    .get("label")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                is_anomaly: intel
+                                    .get("is_anomaly")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false),
+                                z_score: intel
+                                    .get("z_score")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0),
+                                represents_initial: intel
+                                    .get("represents_initial")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false),
                             }
                         }),
                         ..Default::default()
-                    }
+                    },
                 ))
             } else if let Some(chart) = pj.get("chart") {
                 Some(crate::grpc::pb::viz_meta::Payload::Chart(
                     crate::grpc::pb::ChartDecoration {
-                        x_dimension: chart.get("x_dimension").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        y_dimensions: chart.get("y_dimensions").and_then(|v| v.as_array())
-                            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        x_dimension: chart
+                            .get("x_dimension")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        y_dimensions: chart
+                            .get("y_dimensions")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(str::to_string))
+                                    .collect()
+                            })
                             .unwrap_or_default(),
-                        color_scheme: chart.get("color_scheme").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        show_legend: chart.get("show_legend").and_then(|v| v.as_bool()).unwrap_or(true),
-                        show_tooltip: chart.get("show_tooltip").and_then(|v| v.as_bool()).unwrap_or(true),
-                        title: chart.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        stacked: chart.get("stacked").and_then(|v| v.as_bool()).unwrap_or(false),
-                        smooth: chart.get("smooth").and_then(|v| v.as_bool()).unwrap_or(false),
-                        label_template: chart.get("label_template").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        fill_gaps: chart.get("fill_gaps").and_then(|v| v.as_bool()).unwrap_or(false),
-                        x_axis_label_template: chart.get("x_axis_label_template").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        y_axis_label_template: chart.get("y_axis_label_template").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        horizontal: chart.get("horizontal").and_then(|v| v.as_bool()).unwrap_or(false),
-                    }
+                        color_scheme: chart
+                            .get("color_scheme")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        show_legend: chart
+                            .get("show_legend")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                        show_tooltip: chart
+                            .get("show_tooltip")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true),
+                        title: chart
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        stacked: chart
+                            .get("stacked")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        smooth: chart
+                            .get("smooth")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        label_template: chart
+                            .get("label_template")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        fill_gaps: chart
+                            .get("fill_gaps")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                        x_axis_label_template: chart
+                            .get("x_axis_label_template")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        y_axis_label_template: chart
+                            .get("y_axis_label_template")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        horizontal: chart
+                            .get("horizontal")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false),
+                    },
                 ))
             } else if let Some(breakdown) = pj.get("breakdown") {
                 let mut pb_signals = std::collections::HashMap::new();
                 if let Some(signals) = breakdown.get("signals").and_then(|s| s.as_object()) {
                     for (k, v) in signals {
-                        pb_signals.insert(k.clone(), crate::grpc::pb::AnalyticalSignal {
-                            value: v.get("value").and_then(|val| val.as_f64()).unwrap_or(0.0),
-                            ..Default::default()
-                        });
+                        pb_signals.insert(
+                            k.clone(),
+                            crate::grpc::pb::AnalyticalSignal {
+                                value: v.get("value").and_then(|val| val.as_f64()).unwrap_or(0.0),
+                                ..Default::default()
+                            },
+                        );
                     }
                 }
                 Some(crate::grpc::pb::viz_meta::Payload::Breakdown(
                     crate::grpc::pb::BreakdownSignal {
                         signals: pb_signals,
-                    }
+                    },
                 ))
             } else if let Some(table) = pj.get("table") {
-                let table_columns = table.get("columns")
+                let table_columns = table
+                    .get("columns")
                     .and_then(|c| c.as_array())
-                    .map(|cols| cols.iter().map(|col| crate::grpc::pb::TableColumn {
-                        key: col.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        label: col.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        r#type: col.get("type").and_then(|v| v.as_str()).unwrap_or("string").to_string(),
-                        sortable: col.get("sortable").and_then(|v| v.as_bool()).unwrap_or(true),
-                        format: col.get("format").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        ..Default::default()
-                    }).collect())
+                    .map(|cols| {
+                        cols.iter()
+                            .map(|col| crate::grpc::pb::TableColumn {
+                                key: col
+                                    .get("key")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                label: col
+                                    .get("label")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                r#type: col
+                                    .get("type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("string")
+                                    .to_string(),
+                                sortable: col
+                                    .get("sortable")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(true),
+                                format: col
+                                    .get("format")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
+                                ..Default::default()
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
                 Some(crate::grpc::pb::viz_meta::Payload::Table(
                     crate::grpc::pb::TableMeta {
                         columns: table_columns,
                         row_actions: vec![],
                         global_links: vec![],
-                    }
+                    },
                 ))
             } else if let Some(tree) = pj.get("tree") {
                 Some(crate::grpc::pb::viz_meta::Payload::Tree(
                     crate::grpc::pb::TreeMeta {
-                        id_key: tree.get("id_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        parent_id_key: tree.get("parent_id_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        label_key: tree.get("label_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        has_children_key: tree.get("has_children_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        icon_key: tree.get("icon_key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    }
+                        id_key: tree
+                            .get("id_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        parent_id_key: tree
+                            .get("parent_id_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        label_key: tree
+                            .get("label_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        has_children_key: tree
+                            .get("has_children_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        icon_key: tree
+                            .get("icon_key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    },
                 ))
             } else {
                 None
@@ -2243,19 +2884,34 @@ fn map_status(
     status_val: Option<&serde_json::Value>,
     chunk_success: bool,
 ) -> crate::grpc::pb::Status {
-    status_val.map(|s| {
-        crate::grpc::pb::Status {
-            success: s.get("success").and_then(|v| v.as_bool()).unwrap_or(chunk_success),
-            error_code: s.get("error_code").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            error_message: s.get("error_message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+    status_val
+        .map(|s| crate::grpc::pb::Status {
+            success: s
+                .get("success")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(chunk_success),
+            error_code: s
+                .get("error_code")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            error_message: s
+                .get("error_message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             error_context: None,
-        }
-    }).unwrap_or(crate::grpc::pb::Status {
-        success: chunk_success,
-        error_code: if !chunk_success { "JANUS_ERROR".to_string() } else { "".to_string() },
-        error_message: String::new(),
-        error_context: None,
-    })
+        })
+        .unwrap_or(crate::grpc::pb::Status {
+            success: chunk_success,
+            error_code: if !chunk_success {
+                "JANUS_ERROR".to_string()
+            } else {
+                "".to_string()
+            },
+            error_message: String::new(),
+            error_context: None,
+        })
 }
 
 async fn map_chunk_to_response(
@@ -2265,7 +2921,7 @@ async fn map_chunk_to_response(
     tenant_id: &str,
 ) -> crate::grpc::pb::QueryResponse {
     tracing::debug!("CHUNK BODY: {}", chunk.body);
-    
+
     let mut batch_results = std::collections::HashMap::new();
 
     // ── 1. Columns & 2. DataRows ────────────────────────────────
@@ -2277,28 +2933,41 @@ async fn map_chunk_to_response(
 
     let output_cast = chunk.body.get("output_cast").and_then(|v| v.as_str());
 
-    let payload_strategy = if output_cast == Some("CSV_EXPORT")
-        && pb_rows.len() > 5000
-        && export_storage.is_some()
-    {
-        tracing::info!("[Service] Output is CSV_EXPORT with {} rows (> 5000), uploading to S3...", pb_rows.len());
-        match export_storage.unwrap().generate_presigned_url(tenant_id, &chunk.query_key, &pb_columns, &pb_rows).await {
-            Ok(url) => {
-                tracing::info!("[Service] S3 export success. Presigned URL generated: {}", url);
-                Some(crate::grpc::pb::row_set::PayloadStrategy::PresignedCsvUrl(url))
+    let payload_strategy =
+        if output_cast == Some("CSV_EXPORT") && pb_rows.len() > 5000 && export_storage.is_some() {
+            tracing::info!(
+                "[Service] Output is CSV_EXPORT with {} rows (> 5000), uploading to S3...",
+                pb_rows.len()
+            );
+            match export_storage
+                .unwrap()
+                .generate_presigned_url(tenant_id, &chunk.query_key, &pb_columns, &pb_rows)
+                .await
+            {
+                Ok(url) => {
+                    tracing::info!(
+                        "[Service] S3 export success. Presigned URL generated: {}",
+                        url
+                    );
+                    Some(crate::grpc::pb::row_set::PayloadStrategy::PresignedCsvUrl(
+                        url,
+                    ))
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "[Service] S3 export failed: {}. Falling back to inline JSON.",
+                        e.detail
+                    );
+                    Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(
+                        crate::grpc::pb::DataRowList { iter: pb_rows },
+                    ))
+                }
             }
-            Err(e) => {
-                tracing::error!("[Service] S3 export failed: {}. Falling back to inline JSON.", e.detail);
-                Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(
-                    crate::grpc::pb::DataRowList { iter: pb_rows }
-                ))
-            }
-        }
-    } else {
-        Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(
-            crate::grpc::pb::DataRowList { iter: pb_rows }
-        ))
-    };
+        } else {
+            Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(
+                crate::grpc::pb::DataRowList { iter: pb_rows },
+            ))
+        };
 
     // ── 3. QueryMetadata ────────────────────────────────────────
     let pb_metadata = map_metadata(chunk.body.get("metadata"));
@@ -2314,17 +2983,20 @@ async fn map_chunk_to_response(
 
     // ── 7. Assemble inner QueryResponse ─────────────────────────
     let query_key = chunk.query_key.clone();
-    batch_results.insert(query_key, crate::grpc::pb::QueryResponse {
-        status: Some(inner_status),
-        data: Some(crate::grpc::pb::RowSet {
-            columns: pb_columns,
-            payload_strategy,
-        }),
-        viz_ext: pb_viz_ext.clone(),
-        metadata: pb_metadata.clone(),
-        pagination: pb_pagination.clone(),
-        ..Default::default()
-    });
+    batch_results.insert(
+        query_key,
+        crate::grpc::pb::QueryResponse {
+            status: Some(inner_status),
+            data: Some(crate::grpc::pb::RowSet {
+                columns: pb_columns,
+                payload_strategy,
+            }),
+            viz_ext: pb_viz_ext.clone(),
+            metadata: pb_metadata.clone(),
+            pagination: pb_pagination.clone(),
+            ..Default::default()
+        },
+    );
 
     // ── 8. Assemble outer (envelope) QueryResponse ──────────────
     crate::grpc::pb::QueryResponse {

@@ -13,7 +13,7 @@ use crate::domain::protocols::{ISqsBus, SqsMessage};
 
 /// [PORTED_FROM: (defrecord SQSFifoBus [client queue-url])]
 pub struct SqsFifoBus {
-    client:    Client,
+    client: Client,
     queue_url: String,
 }
 
@@ -22,9 +22,12 @@ impl SqsFifoBus {
     pub async fn new(queue_url: impl Into<String>) -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
-        let url    = queue_url.into();
+        let url = queue_url.into();
         info!("[SQS] cliente FIFO activo | queue: {url}");
-        SqsFifoBus { client, queue_url: url }
+        SqsFifoBus {
+            client,
+            queue_url: url,
+        }
     }
 
     /// Health check: verifica que la cola existe.
@@ -42,7 +45,9 @@ impl SqsFifoBus {
                 let msgs = resp
                     .attributes
                     .as_ref()
-                    .and_then(|m| m.get(&aws_sdk_sqs::types::QueueAttributeName::ApproximateNumberOfMessages))
+                    .and_then(|m| {
+                        m.get(&aws_sdk_sqs::types::QueueAttributeName::ApproximateNumberOfMessages)
+                    })
                     .cloned()
                     .unwrap_or_default();
                 info!("[SQS] cola activa | msgs ~{msgs}");
@@ -62,7 +67,7 @@ impl ISqsBus for SqsFifoBus {
     /// [PORTED_FROM: (publish! [_ payload group-id dedup-id])]
     async fn publish(
         &self,
-        payload:  &str,
+        payload: &str,
         group_id: &str,
         dedup_id: &str,
     ) -> Result<String, DomainError> {
@@ -104,7 +109,12 @@ impl ISqsBus for SqsFifoBus {
             .wait_time_seconds(5) // long-polling
             .send()
             .await
-            .map_err(|e| DomainError::infra(ErrorCode::Infra003, format!("SQS ReceiveMessage falló: {e}")))?;
+            .map_err(|e| {
+                DomainError::infra(
+                    ErrorCode::Infra003,
+                    format!("SQS ReceiveMessage falló: {e}"),
+                )
+            })?;
 
         let messages = resp
             .messages
@@ -113,8 +123,8 @@ impl ISqsBus for SqsFifoBus {
             .filter_map(|m| {
                 Some(SqsMessage {
                     receipt_handle: m.receipt_handle?,
-                    body:           m.body.unwrap_or_default(),
-                    message_id:     m.message_id.unwrap_or_default(),
+                    body: m.body.unwrap_or_default(),
+                    message_id: m.message_id.unwrap_or_default(),
                 })
             })
             .collect();
@@ -131,7 +141,9 @@ impl ISqsBus for SqsFifoBus {
             .receipt_handle(receipt_handle)
             .send()
             .await
-            .map_err(|e| DomainError::infra(ErrorCode::Infra003, format!("SQS DeleteMessage falló: {e}")))?;
+            .map_err(|e| {
+                DomainError::infra(ErrorCode::Infra003, format!("SQS DeleteMessage falló: {e}"))
+            })?;
         Ok(())
     }
 }
@@ -153,7 +165,7 @@ impl StubSqsBus {
 impl ISqsBus for StubSqsBus {
     async fn publish(
         &self,
-        payload:  &str,
+        payload: &str,
         group_id: &str,
         dedup_id: &str,
     ) -> Result<String, DomainError> {
@@ -183,4 +195,3 @@ impl ISqsBus for StubSqsBus {
         Ok(())
     }
 }
-

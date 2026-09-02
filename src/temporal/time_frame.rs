@@ -11,21 +11,18 @@
 //
 // 29 tipos soportados (28 relativos + CUSTOM_RANGE).
 
-use crate::temporal::core::{
-    self as t, CalUnit, TimeRange,
-    shift_by_calendar, ms_to_s,
-};
+use crate::temporal::core::{self as t, ms_to_s, shift_by_calendar, CalUnit, TimeRange};
 
 /// Representa un TimeFrameContext del proto (campos renombrados a snake_case Rust).
 #[derive(Debug, Clone)]
 pub struct TimeFrameCtx {
-    pub tf_type:   TimeFrameType,
-    pub n_value:   i64,
+    pub tf_type: TimeFrameType,
+    pub n_value: i64,
     /// start_ts en epoch-MILISEGUNDOS (como define el proto)
     pub start_ts_ms: i64,
     /// end_ts en epoch-MILISEGUNDOS
-    pub end_ts_ms:   i64,
-    pub timezone:  String,
+    pub end_ts_ms: i64,
+    pub timezone: String,
 }
 
 /// Mapeo del enum TimeFrameContext.TimeFilterType del proto.
@@ -67,15 +64,15 @@ impl TimeFrameType {
     /// Convierte el valor numérico del enum proto al tipo Rust.
     pub fn from_proto(v: i32) -> Self {
         match v {
-            1  => Self::CustomRange,
-            2  => Self::Today,
-            3  => Self::Yesterday,
-            4  => Self::Tomorrow,
-            5  => Self::LastNMinutes,
-            6  => Self::LastNHours,
-            7  => Self::LastNDays,
-            8  => Self::NextNDays,
-            9  => Self::ThisWeek,
+            1 => Self::CustomRange,
+            2 => Self::Today,
+            3 => Self::Yesterday,
+            4 => Self::Tomorrow,
+            5 => Self::LastNMinutes,
+            6 => Self::LastNHours,
+            7 => Self::LastNDays,
+            8 => Self::NextNDays,
+            9 => Self::ThisWeek,
             10 => Self::LastWeek,
             11 => Self::NextWeek,
             12 => Self::LastNWeeks,
@@ -96,7 +93,7 @@ impl TimeFrameType {
             27 => Self::LastNYears,
             28 => Self::YearToDate,
             29 => Self::AllTime,
-            _  => Self::Unspecified,
+            _ => Self::Unspecified,
         }
     }
 }
@@ -111,9 +108,9 @@ impl TimeFrameType {
 /// Retorna None si el tipo no está especificado / no reconocido.
 /// Retorna TimeRange { start_ts: None, end_ts: None } para ALL_TIME.
 pub fn resolve_time_frame(tf: &TimeFrameCtx) -> Option<TimeRange> {
-    let tz  = &tf.timezone;
+    let tz = &tf.timezone;
     let now = chrono::Utc::now().timestamp();
-    let n   = tf.n_value.max(1);
+    let n = tf.n_value.max(1);
 
     let td = || t::truncate_to_unit(now, CalUnit::Day, tz);
     let wk = || t::truncate_to_unit(now, CalUnit::Week, tz);
@@ -131,54 +128,132 @@ pub fn resolve_time_frame(tf: &TimeFrameCtx) -> Option<TimeRange> {
         // CUSTOM_RANGE: proto envía epoch-ms → convertir a epoch-s
         TimeFrameType::CustomRange => TimeRange {
             start_ts: Some(ms_to_s(tf.start_ts_ms)),
-            end_ts:   Some(ms_to_s(tf.end_ts_ms)),
+            end_ts: Some(ms_to_s(tf.end_ts_ms)),
         },
 
         // ── Diario / Horario ───────────────────────────────────────────────
-        TimeFrameType::Today     => TimeRange { start_ts: Some(td()), end_ts: Some(d(td(), 1)) },
-        TimeFrameType::Yesterday => TimeRange { start_ts: Some(d(td(), -1)), end_ts: Some(td()) },
-        TimeFrameType::Tomorrow  => TimeRange { start_ts: Some(d(td(), 1)), end_ts: Some(d(td(), 2)) },
+        TimeFrameType::Today => TimeRange {
+            start_ts: Some(td()),
+            end_ts: Some(d(td(), 1)),
+        },
+        TimeFrameType::Yesterday => TimeRange {
+            start_ts: Some(d(td(), -1)),
+            end_ts: Some(td()),
+        },
+        TimeFrameType::Tomorrow => TimeRange {
+            start_ts: Some(d(td(), 1)),
+            end_ts: Some(d(td(), 2)),
+        },
         TimeFrameType::LastNMinutes => TimeRange {
             start_ts: Some(now - n * 60),
-            end_ts:   Some(now),
+            end_ts: Some(now),
         },
         TimeFrameType::LastNHours => TimeRange {
             start_ts: Some(now - n * 3600),
-            end_ts:   Some(now),
+            end_ts: Some(now),
         },
-        TimeFrameType::LastNDays => TimeRange { start_ts: Some(d(td(), -n)), end_ts: Some(now) },
-        TimeFrameType::NextNDays => TimeRange { start_ts: Some(now), end_ts: Some(d(now, n)) },
+        TimeFrameType::LastNDays => TimeRange {
+            start_ts: Some(d(td(), -n)),
+            end_ts: Some(now),
+        },
+        TimeFrameType::NextNDays => TimeRange {
+            start_ts: Some(now),
+            end_ts: Some(d(now, n)),
+        },
 
         // ── Semanal ────────────────────────────────────────────────────────
-        TimeFrameType::ThisWeek    => TimeRange { start_ts: Some(wk()), end_ts: Some(now) },
-        TimeFrameType::LastWeek    => TimeRange { start_ts: Some(w(wk(), -1)), end_ts: Some(wk()) },
-        TimeFrameType::NextWeek    => TimeRange { start_ts: Some(w(wk(), 1)), end_ts: Some(w(wk(), 2)) },
-        TimeFrameType::LastNWeeks  => TimeRange { start_ts: Some(w(wk(), -n)), end_ts: Some(now) },
-        TimeFrameType::NextNWeeks  => TimeRange { start_ts: Some(now), end_ts: Some(w(now, n)) },
-        TimeFrameType::WeekToDate  => TimeRange { start_ts: Some(wk()), end_ts: Some(now) },
+        TimeFrameType::ThisWeek => TimeRange {
+            start_ts: Some(wk()),
+            end_ts: Some(now),
+        },
+        TimeFrameType::LastWeek => TimeRange {
+            start_ts: Some(w(wk(), -1)),
+            end_ts: Some(wk()),
+        },
+        TimeFrameType::NextWeek => TimeRange {
+            start_ts: Some(w(wk(), 1)),
+            end_ts: Some(w(wk(), 2)),
+        },
+        TimeFrameType::LastNWeeks => TimeRange {
+            start_ts: Some(w(wk(), -n)),
+            end_ts: Some(now),
+        },
+        TimeFrameType::NextNWeeks => TimeRange {
+            start_ts: Some(now),
+            end_ts: Some(w(now, n)),
+        },
+        TimeFrameType::WeekToDate => TimeRange {
+            start_ts: Some(wk()),
+            end_ts: Some(now),
+        },
 
         // ── Mensual ────────────────────────────────────────────────────────
-        TimeFrameType::ThisMonth    => TimeRange { start_ts: Some(mo()), end_ts: Some(now) },
-        TimeFrameType::LastMonth    => TimeRange { start_ts: Some(m(mo(), -1)), end_ts: Some(mo()) },
-        TimeFrameType::NextMonth    => TimeRange { start_ts: Some(m(mo(), 1)), end_ts: Some(m(mo(), 2)) },
-        TimeFrameType::LastNMonths  => TimeRange { start_ts: Some(m(mo(), -n)), end_ts: Some(now) },
-        TimeFrameType::NextNMonths  => TimeRange { start_ts: Some(now), end_ts: Some(m(now, n)) },
-        TimeFrameType::MonthToDate  => TimeRange { start_ts: Some(mo()), end_ts: Some(now) },
+        TimeFrameType::ThisMonth => TimeRange {
+            start_ts: Some(mo()),
+            end_ts: Some(now),
+        },
+        TimeFrameType::LastMonth => TimeRange {
+            start_ts: Some(m(mo(), -1)),
+            end_ts: Some(mo()),
+        },
+        TimeFrameType::NextMonth => TimeRange {
+            start_ts: Some(m(mo(), 1)),
+            end_ts: Some(m(mo(), 2)),
+        },
+        TimeFrameType::LastNMonths => TimeRange {
+            start_ts: Some(m(mo(), -n)),
+            end_ts: Some(now),
+        },
+        TimeFrameType::NextNMonths => TimeRange {
+            start_ts: Some(now),
+            end_ts: Some(m(now, n)),
+        },
+        TimeFrameType::MonthToDate => TimeRange {
+            start_ts: Some(mo()),
+            end_ts: Some(now),
+        },
 
         // ── Trimestral ─────────────────────────────────────────────────────
-        TimeFrameType::ThisQuarter    => TimeRange { start_ts: Some(qt()), end_ts: Some(now) },
-        TimeFrameType::LastQuarter    => TimeRange { start_ts: Some(m(qt(), -3)), end_ts: Some(qt()) },
-        TimeFrameType::LastNQuarters  => TimeRange { start_ts: Some(m(qt(), -3 * n)), end_ts: Some(now) },
-        TimeFrameType::QuarterToDate  => TimeRange { start_ts: Some(qt()), end_ts: Some(now) },
+        TimeFrameType::ThisQuarter => TimeRange {
+            start_ts: Some(qt()),
+            end_ts: Some(now),
+        },
+        TimeFrameType::LastQuarter => TimeRange {
+            start_ts: Some(m(qt(), -3)),
+            end_ts: Some(qt()),
+        },
+        TimeFrameType::LastNQuarters => TimeRange {
+            start_ts: Some(m(qt(), -3 * n)),
+            end_ts: Some(now),
+        },
+        TimeFrameType::QuarterToDate => TimeRange {
+            start_ts: Some(qt()),
+            end_ts: Some(now),
+        },
 
         // ── Anual ──────────────────────────────────────────────────────────
-        TimeFrameType::ThisYear    => TimeRange { start_ts: Some(yr()), end_ts: Some(now) },
-        TimeFrameType::LastYear    => TimeRange { start_ts: Some(y(yr(), -1)), end_ts: Some(yr()) },
-        TimeFrameType::LastNYears  => TimeRange { start_ts: Some(y(yr(), -n)), end_ts: Some(now) },
-        TimeFrameType::YearToDate  => TimeRange { start_ts: Some(yr()), end_ts: Some(now) },
+        TimeFrameType::ThisYear => TimeRange {
+            start_ts: Some(yr()),
+            end_ts: Some(now),
+        },
+        TimeFrameType::LastYear => TimeRange {
+            start_ts: Some(y(yr(), -1)),
+            end_ts: Some(yr()),
+        },
+        TimeFrameType::LastNYears => TimeRange {
+            start_ts: Some(y(yr(), -n)),
+            end_ts: Some(now),
+        },
+        TimeFrameType::YearToDate => TimeRange {
+            start_ts: Some(yr()),
+            end_ts: Some(now),
+        },
 
         // ── Sin filtro temporal ────────────────────────────────────────────
-        TimeFrameType::AllTime => TimeRange { start_ts: None, end_ts: None },
+        TimeFrameType::AllTime => TimeRange {
+            start_ts: None,
+            end_ts: None,
+        },
 
         // Tipo no reconocido → None (loggeable upstream)
         TimeFrameType::Unspecified => return None,
@@ -196,7 +271,7 @@ mod tests {
             tf_type,
             n_value: 7,
             start_ts_ms: 1_600_000_000_000,
-            end_ts_ms:   1_700_000_000_000,
+            end_ts_ms: 1_700_000_000_000,
             timezone: "UTC".to_string(),
         }
     }
@@ -204,9 +279,9 @@ mod tests {
     #[test]
     fn custom_range_converts_ms_to_s() {
         let tf = ctx(TimeFrameType::CustomRange);
-        let r  = resolve_time_frame(&tf).unwrap();
+        let r = resolve_time_frame(&tf).unwrap();
         assert_eq!(r.start_ts.unwrap(), 1_600_000_000);
-        assert_eq!(r.end_ts.unwrap(),   1_700_000_000);
+        assert_eq!(r.end_ts.unwrap(), 1_700_000_000);
     }
 
     #[test]

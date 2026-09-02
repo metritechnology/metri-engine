@@ -23,11 +23,15 @@ pub struct TenantGuard {
 
 impl TenantGuard {
     pub fn new() -> Self {
-        TenantGuard { allowed_system_ops: false }
+        TenantGuard {
+            allowed_system_ops: false,
+        }
     }
 
     pub fn with_system_ops() -> Self {
-        TenantGuard { allowed_system_ops: true }
+        TenantGuard {
+            allowed_system_ops: true,
+        }
     }
 
     /// Valida que el tenant_id sea un valor no-vacío y bien formado.
@@ -61,7 +65,7 @@ impl TenantGuard {
     pub fn ensure_schema(
         &self,
         entity_type: &str,
-        registry:    &CodeRegistry,
+        registry: &CodeRegistry,
     ) -> Result<(), DomainError> {
         if registry.get_model(entity_type).is_none() {
             return Err(DomainError::eav(

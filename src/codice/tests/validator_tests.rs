@@ -1,6 +1,6 @@
 use super::*;
-use serde_json::json;
 use crate::codice::registry::{AttributeDescriptor, EngineChannel};
+use serde_json::json;
 
 fn make_test_model() -> EntityModel {
     EntityModel {
@@ -210,17 +210,38 @@ fn test_validate_payload_success() {
 
     let result = validate_payload(&model, &payload, "tnt_01", true);
     assert!(result.is_ok());
-    
+
     let attrs = result.unwrap();
-    assert_eq!(attrs.get("id").unwrap(), &DatomValue::Str("asset-001".to_string()));
-    assert_eq!(attrs.get("name").unwrap(), &DatomValue::Str("Compressor A".to_string()));
+    assert_eq!(
+        attrs.get("id").unwrap(),
+        &DatomValue::Str("asset-001".to_string())
+    );
+    assert_eq!(
+        attrs.get("name").unwrap(),
+        &DatomValue::Str("Compressor A".to_string())
+    );
     assert_eq!(attrs.get("cost").unwrap(), &DatomValue::Double(1500.50));
     assert_eq!(attrs.get("is_active").unwrap(), &DatomValue::Bool(true));
-    assert_eq!(attrs.get("created_at").unwrap(), &DatomValue::Instant(1622000000000));
-    assert_eq!(attrs.get("tags").unwrap(), &DatomValue::Array(vec!["hvac".to_string(), "critical".to_string()]));
-    assert_eq!(attrs.get("location_ref").unwrap(), &DatomValue::Str("loc-100".to_string()));
-    assert_eq!(attrs.get("status").unwrap(), &DatomValue::Str("ACTIVE".to_string()));
-    assert_eq!(attrs.get("tag").unwrap(), &DatomValue::Str("AST-101".to_string()));
+    assert_eq!(
+        attrs.get("created_at").unwrap(),
+        &DatomValue::Instant(1622000000000)
+    );
+    assert_eq!(
+        attrs.get("tags").unwrap(),
+        &DatomValue::Array(vec!["hvac".to_string(), "critical".to_string()])
+    );
+    assert_eq!(
+        attrs.get("location_ref").unwrap(),
+        &DatomValue::Str("loc-100".to_string())
+    );
+    assert_eq!(
+        attrs.get("status").unwrap(),
+        &DatomValue::Str("ACTIVE".to_string())
+    );
+    assert_eq!(
+        attrs.get("tag").unwrap(),
+        &DatomValue::Str("AST-101".to_string())
+    );
 }
 
 #[test]
@@ -236,7 +257,9 @@ fn test_validate_payload_missing_required() {
     let err = result.unwrap_err();
     assert_eq!(err.code, ErrorCode::Cod001);
     assert!(err.detail.contains("Campo requerido 'name' está ausente"));
-    assert!(err.detail.contains("Campo requerido 'is_active' está ausente"));
+    assert!(err
+        .detail
+        .contains("Campo requerido 'is_active' está ausente"));
 }
 
 #[test]

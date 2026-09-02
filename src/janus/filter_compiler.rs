@@ -27,7 +27,9 @@ fn coerce_epoch(val: &Value) -> Option<f64> {
 
 /// Extrae valor simple de proto
 fn extract_val(val_map: &Value) -> Option<Value> {
-    val_map.get("string_val").cloned()
+    val_map
+        .get("string_val")
+        .cloned()
         .or_else(|| val_map.get("number_val").cloned())
         .or_else(|| val_map.get("bool_val").cloned())
         .or_else(|| val_map.get("timestamp_val").cloned())
@@ -37,15 +39,26 @@ fn extract_val(val_map: &Value) -> Option<Value> {
 /// Compila un Criteria Hoja
 fn build_leaf_node(entity: &str, criteria: &Value) -> Result<Value, DomainError> {
     let field_name = criteria.get("field").and_then(|v| v.as_str()).unwrap_or("");
-    let op = criteria.get("op_ref").and_then(|v| v.as_str()).unwrap_or("EQ");
-    
+    let op = criteria
+        .get("op_ref")
+        .and_then(|v| v.as_str())
+        .unwrap_or("EQ");
+
     let field = oltp_system_field_map(field_name)
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("{entity}/{field_name}"));
 
     let val_map = criteria.get("value").cloned().unwrap_or(json!({}));
-    let list_vals = val_map.get("list_val").and_then(|v| v.get("values")).cloned().unwrap_or(json!([]));
-    let range_vals = val_map.get("range_values").and_then(|v| v.get("values")).cloned().unwrap_or(json!([]));
+    let list_vals = val_map
+        .get("list_val")
+        .and_then(|v| v.get("values"))
+        .cloned()
+        .unwrap_or(json!([]));
+    let range_vals = val_map
+        .get("range_values")
+        .and_then(|v| v.get("values"))
+        .cloned()
+        .unwrap_or(json!([]));
 
     let val = extract_val(&val_map).unwrap_or(Value::Null);
 
@@ -75,8 +88,17 @@ fn build_leaf_node(entity: &str, criteria: &Value) -> Result<Value, DomainError>
                 json!(["=", "1", "1"])
             }
         }
-        "MATCHES" => json!(["matches", field, val_map.get("string_val").unwrap_or(&Value::Null)]),
-        _ => return Err(DomainError::janus(ErrorCode::Janus400, format!("Unknown operator: {op}"))),
+        "MATCHES" => json!([
+            "matches",
+            field,
+            val_map.get("string_val").unwrap_or(&Value::Null)
+        ]),
+        _ => {
+            return Err(DomainError::janus(
+                ErrorCode::Janus400,
+                format!("Unknown operator: {op}"),
+            ))
+        }
     };
 
     Ok(node)
@@ -85,13 +107,19 @@ fn build_leaf_node(entity: &str, criteria: &Value) -> Result<Value, DomainError>
 /// Validar enums UNSPECIFIED
 fn check_not_unspecified(val: &str, label: &str) -> Result<(), DomainError> {
     if val.ends_with("_UNSPECIFIED") {
-        return Err(DomainError::janus(ErrorCode::Janus400, format!("Unspecified enum in {label}")));
+        return Err(DomainError::janus(
+            ErrorCode::Janus400,
+            format!("Unspecified enum in {label}"),
+        ));
     }
     Ok(())
 }
 
 fn compile_criteria(criteria: &Value, entity: &str) -> Result<Value, DomainError> {
-    let op = criteria.get("op_ref").and_then(|v| v.as_str()).unwrap_or("EQ");
+    let op = criteria
+        .get("op_ref")
+        .and_then(|v| v.as_str())
+        .unwrap_or("EQ");
     check_not_unspecified(op, "filter operator")?;
 
     // FASE 3: En el puerto a Rust simplificamos dot-path por ahora asumiendo que el UI
@@ -100,7 +128,10 @@ fn compile_criteria(criteria: &Value, entity: &str) -> Result<Value, DomainError
 }
 
 fn compile_group(group: &Value, entity: &str) -> Result<Value, DomainError> {
-    let conj = group.get("conjunction").and_then(|v| v.as_str()).unwrap_or("AND");
+    let conj = group
+        .get("conjunction")
+        .and_then(|v| v.as_str())
+        .unwrap_or("AND");
     check_not_unspecified(conj, "conjunction")?;
 
     let op = match conj {

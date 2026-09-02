@@ -8,10 +8,10 @@
 // Zero-Drop Policy: todos los métodos de cada defprotocol están presentes.
 // Los contratos Railway [:ok ...] | [:error ...] se mapean a Result<T, DomainError>.
 
-use std::collections::HashMap;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::domain::errors::DomainError;
 
@@ -25,9 +25,9 @@ pub type DomainResult<T> = Result<T, DomainError>;
 #[derive(Debug, Clone)]
 pub struct Session {
     pub tenant_id: String,
-    pub user_id:   String,
-    pub jti:       String,
-    pub exp:       i64,
+    pub user_id: String,
+    pub jti: String,
+    pub exp: i64,
 }
 
 /// ISessionStore — verifica tokens HMAC-SHA256 y gestiona blacklist.
@@ -53,8 +53,8 @@ pub trait ISessionStore: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct SqsMessage {
     pub receipt_handle: String,
-    pub body:           String,
-    pub message_id:     String,
+    pub body: String,
+    pub message_id: String,
 }
 
 /// ISQSBus — bus de mensajes FIFO.
@@ -63,12 +63,7 @@ pub struct SqsMessage {
 pub trait ISqsBus: Send + Sync {
     /// Publica un mensaje en la cola FIFO.
     /// [PORTED_FROM: (publish! [bus payload group-id dedup-id])]
-    async fn publish(
-        &self,
-        payload:  &str,
-        group_id: &str,
-        dedup_id: &str,
-    ) -> DomainResult<String>; // retorna message_id
+    async fn publish(&self, payload: &str, group_id: &str, dedup_id: &str) -> DomainResult<String>; // retorna message_id
 
     /// Recibe hasta `max_count` mensajes.
     /// [PORTED_FROM: (receive-messages [bus max-count])]
@@ -85,7 +80,7 @@ pub trait ISqsBus: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct QueryResults {
     pub columns: Vec<String>,
-    pub rows:    Vec<HashMap<String, Value>>,
+    pub rows: Vec<HashMap<String, Value>>,
 }
 
 /// IQueryEngine — motor analítico (Athena / stub).
@@ -111,9 +106,9 @@ pub trait IStreamWriter: Send + Sync {
     /// [PORTED_FROM: (put-record! [writer stream-name partition-key data])]
     async fn put_record(
         &self,
-        stream_name:   &str,
+        stream_name: &str,
         partition_key: &str,
-        data:          Vec<u8>,
+        data: Vec<u8>,
     ) -> DomainResult<String>;
 }
 
@@ -128,9 +123,9 @@ pub trait IEventBus: Send + Sync {
     async fn put_event(
         &self,
         event_bus_name: &str,
-        source:         &str,
-        detail_type:    &str,
-        detail:         Value,
+        source: &str,
+        detail_type: &str,
+        detail: Value,
     ) -> DomainResult<String>;
 }
 
@@ -140,9 +135,9 @@ pub trait IEventBus: Send + Sync {
 /// Equivale al mapa {:tenant-id :user-id :roles :domain-boundaries} de Clojure.
 #[derive(Debug, Clone)]
 pub struct CedarCtx {
-    pub tenant_id:        String,
-    pub user_id:          String,
-    pub roles:            Vec<String>,
+    pub tenant_id: String,
+    pub user_id: String,
+    pub roles: Vec<String>,
     pub domain_boundaries: HashMap<String, Value>,
 }
 
@@ -163,11 +158,7 @@ pub trait IAstCompiler: Send + Sync {
     /// Transforma descriptor gRPC + cedar-ctx → AST IR inmutable.
     /// Invariante: ast_ir["where"] siempre incluye tenant_id filter.
     /// [PORTED_FROM: (compile-ast [this query-descriptor cedar-ctx])]
-    fn compile_ast(
-        &self,
-        query_descriptor: &Value,
-        cedar_ctx:        &CedarCtx,
-    ) -> DomainResult<Value>;
+    fn compile_ast(&self, query_descriptor: &Value, cedar_ctx: &CedarCtx) -> DomainResult<Value>;
 }
 
 // ── Aegis Engine ──────────────────────────────────────────────────────────────
@@ -176,8 +167,8 @@ pub trait IAstCompiler: Send + Sync {
 /// Equivale a cada [:ok chunk-map] del lazy-seq Clojure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResultChunk {
-    pub data:     Value,
-    pub is_last:  bool,
+    pub data: Value,
+    pub is_last: bool,
 }
 
 /// IAegisEngine — motor analítico: AST IR → Datalog (OLTP) o SQL (OLAP).
@@ -187,10 +178,7 @@ pub trait IAegisEngine: Send + Sync {
     /// Ejecuta el AST IR contra el motor correcto.
     /// Retorna stream de chunks (equivalente a lazy-seq Clojure).
     /// [PORTED_FROM: (transmute! [this ast-ir])]
-    async fn transmute(
-        &self,
-        ast_ir: Value,
-    ) -> DomainResult<Vec<ResultChunk>>;
+    async fn transmute(&self, ast_ir: Value) -> DomainResult<Vec<ResultChunk>>;
 }
 
 // ── Export Storage (S3) ──────────────────────────────────────────────────────
@@ -207,4 +195,3 @@ pub trait IExportStorage: Send + Sync {
         rows: &[crate::grpc::pb::DataRow],
     ) -> Result<String, crate::domain::errors::DomainError>;
 }
-

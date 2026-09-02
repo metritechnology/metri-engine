@@ -11,8 +11,8 @@ use std::sync::Mutex;
 
 /// Paso configurable que anota cuándo lo compensan.
 struct PasoDeMentira {
-    nombre:      &'static str,
-    falla:       bool,
+    nombre: &'static str,
+    falla: bool,
     deja_reserva: bool,
     compensados: Arc<Mutex<Vec<&'static str>>>,
 }
@@ -21,10 +21,14 @@ struct PasoDeMentira {
 impl IopStep for PasoDeMentira {
     async fn execute(&self, mut ctx: IopContext) -> Result<IopContext, DomainError> {
         if self.falla {
-            return Err(DomainError::new(ErrorCode::Eav001, format!("{} falló", self.nombre)));
+            return Err(DomainError::new(
+                ErrorCode::Eav001,
+                format!("{} falló", self.nombre),
+            ));
         }
         if self.deja_reserva {
-            ctx.quota_reservation = Some(serde_json::json!({ "id": "quota_01", "status": "pending" }));
+            ctx.quota_reservation =
+                Some(serde_json::json!({ "id": "quota_01", "status": "pending" }));
         }
         Ok(ctx)
     }
@@ -38,36 +42,53 @@ struct NotifierMudo;
 #[async_trait::async_trait]
 impl crate::iop::sherlog::IFaultNotifier for NotifierMudo {
     async fn notify(
-        &self, _dto: &Value, _sev: &crate::iop::sherlog::FaultSeverity,
-    ) -> Result<(), DomainError> { Ok(()) }
+        &self,
+        _dto: &Value,
+        _sev: &crate::iop::sherlog::FaultSeverity,
+    ) -> Result<(), DomainError> {
+        Ok(())
+    }
 }
 
 struct CanalMudo;
 #[async_trait::async_trait]
 impl crate::janus_router::router::IWriteChannel for CanalMudo {
-    async fn route(&self, _ctx: IopContext) -> Result<Value, DomainError> { Ok(Value::Null) }
+    async fn route(&self, _ctx: IopContext) -> Result<Value, DomainError> {
+        Ok(Value::Null)
+    }
 }
 
 fn orquestador(steps: Vec<Arc<dyn IopStep>>) -> IopOrchestrator {
     IopOrchestrator {
         steps,
-        moira_emitter:     None,
+        moira_emitter: None,
         audit_interceptor: None,
-        fault_notifier:    Arc::new(NotifierMudo),
-        olap_channel:      Arc::new(CanalMudo),
+        fault_notifier: Arc::new(NotifierMudo),
+        olap_channel: Arc::new(CanalMudo),
     }
 }
 
 fn contexto() -> IopContext {
-    IopContext::new("tnt_01", "usr_01", "asset", "CREATE", serde_json::Map::new())
+    IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "asset",
+        "CREATE",
+        serde_json::Map::new(),
+    )
 }
 
 fn paso(
-    nombre: &'static str, falla: bool, deja_reserva: bool,
+    nombre: &'static str,
+    falla: bool,
+    deja_reserva: bool,
     compensados: &Arc<Mutex<Vec<&'static str>>>,
 ) -> Arc<dyn IopStep> {
     Arc::new(PasoDeMentira {
-        nombre, falla, deja_reserva, compensados: Arc::clone(compensados),
+        nombre,
+        falla,
+        deja_reserva,
+        compensados: Arc::clone(compensados),
     })
 }
 
@@ -77,13 +98,16 @@ async fn un_fallo_posterior_deshace_lo_ya_hecho() {
     let compensados = Arc::new(Mutex::new(Vec::new()));
     let orq = orquestador(vec![
         paso("cedar", false, false, &compensados),
-        paso("quota", false, true,  &compensados),  // deja reserva
-        paso("janus", true,  false, &compensados),  // y aquí se rompe
+        paso("quota", false, true, &compensados), // deja reserva
+        paso("janus", true, false, &compensados), // y aquí se rompe
     ]);
 
     let resultado = orq.run_steps(contexto()).await;
 
-    assert!(resultado.is_err(), "el error original debe llegar al cliente");
+    assert!(
+        resultado.is_err(),
+        "el error original debe llegar al cliente"
+    );
     // Orden inverso: se deshace lo último primero, como en cualquier saga.
     assert_eq!(*compensados.lock().unwrap(), vec!["quota", "cedar"]);
 }
@@ -95,7 +119,7 @@ async fn si_falla_el_paso_que_reserva_no_se_compensa_nada() {
     let compensados = Arc::new(Mutex::new(Vec::new()));
     let orq = orquestador(vec![
         paso("cedar", false, false, &compensados),
-        paso("quota", true,  false, &compensados),
+        paso("quota", true, false, &compensados),
     ]);
 
     assert!(orq.run_steps(contexto()).await.is_err());
@@ -109,11 +133,14 @@ async fn el_camino_feliz_no_deshace_nada() {
     let compensados = Arc::new(Mutex::new(Vec::new()));
     let orq = orquestador(vec![
         paso("cedar", false, false, &compensados),
-        paso("quota", false, true,  &compensados),
+        paso("quota", false, true, &compensados),
         paso("janus", false, false, &compensados),
     ]);
 
-    let ctx = orq.run_steps(contexto()).await.expect("los tres pasos van bien");
+    let ctx = orq
+        .run_steps(contexto())
+        .await
+        .expect("los tres pasos van bien");
 
     assert!(compensados.lock().unwrap().is_empty());
     assert!(ctx.quota_reservation.is_some());
@@ -126,7 +153,7 @@ async fn sin_reserva_un_fallo_no_dispara_compensacion() {
     let compensados = Arc::new(Mutex::new(Vec::new()));
     let orq = orquestador(vec![
         paso("cedar", false, false, &compensados),
-        paso("janus", true,  false, &compensados),
+        paso("janus", true, false, &compensados),
     ]);
 
     assert!(orq.run_steps(contexto()).await.is_err());

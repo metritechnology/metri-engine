@@ -49,7 +49,10 @@ impl SqlDialect for AthenaDialect {
     }
 
     fn format_epoch_to_timestamp(&self, col: &str) -> String {
-        format!("from_unixtime(IF({} > 100000000000, {} / 1000.0, CAST({} AS DOUBLE)))", col, col, col)
+        format!(
+            "from_unixtime(IF({} > 100000000000, {} / 1000.0, CAST({} AS DOUBLE)))",
+            col, col, col
+        )
     }
 
     fn format_date_trunc(&self, interval: &str, col: &str) -> String {
@@ -84,7 +87,9 @@ impl SqlDialect for AthenaDialect {
     fn format_exists(&self, table: &str, tenant_id: &str, parent_col: &str) -> String {
         format!(
             "EXISTS(SELECT 1 FROM {} WHERE _tenant = '{}' AND {} = t.id)",
-            table, tenant_id.replace('\'', "''"), parent_col
+            table,
+            tenant_id.replace('\'', "''"),
+            parent_col
         )
     }
 }
@@ -112,7 +117,10 @@ impl SqlDialect for PostgresDialect {
     }
 
     fn format_percentile(&self, col: &str, percentile: f64) -> String {
-        format!("percentile_cont({}) WITHIN GROUP (ORDER BY {})", percentile, col)
+        format!(
+            "percentile_cont({}) WITHIN GROUP (ORDER BY {})",
+            percentile, col
+        )
     }
 
     fn format_stddev_samp(&self, col: &str) -> String {
@@ -138,7 +146,9 @@ impl SqlDialect for PostgresDialect {
     fn format_exists(&self, table: &str, tenant_id: &str, parent_col: &str) -> String {
         format!(
             "EXISTS(SELECT 1 FROM {} WHERE _tenant = '{}' AND {} = t.id)",
-            table, tenant_id.replace('\'', "''"), parent_col
+            table,
+            tenant_id.replace('\'', "''"),
+            parent_col
         )
     }
 }

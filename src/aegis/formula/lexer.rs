@@ -1,8 +1,8 @@
 // aegis/formula/lexer.rs — Convierte un string de fórmula en una secuencia de tokens.
 // SRP: Solo tokeniza. No reordena, no evalúa, no valida semántica.
 
-use crate::aegis::formula::token::{Token, Operator};
 use crate::aegis::formula::errors::FormulaError;
+use crate::aegis::formula::token::{Operator, Token};
 use std::iter::Peekable;
 use std::str::CharIndices;
 
@@ -40,16 +40,22 @@ pub fn tokenize(formula: &str) -> Result<Vec<Token>, FormulaError> {
         }
 
         match ch {
-            ' ' | '\t' | '\n' | '\r' => { chars.next(); }
-            '+' => { tokens.push(Token::Operator(Operator::Add)); chars.next(); }
+            ' ' | '\t' | '\n' | '\r' => {
+                chars.next();
+            }
+            '+' => {
+                tokens.push(Token::Operator(Operator::Add));
+                chars.next();
+            }
             '-' => {
                 // Distinguir negación unaria vs resta binaria:
                 // Es unario si es el primer token, o si el token anterior es
                 // un operador, ParenOpen, o Comma.
-                let is_unary = tokens.is_empty() || matches!(
-                    tokens.last(),
-                    Some(Token::Operator(_) | Token::ParenOpen | Token::Comma)
-                );
+                let is_unary = tokens.is_empty()
+                    || matches!(
+                        tokens.last(),
+                        Some(Token::Operator(_) | Token::ParenOpen | Token::Comma)
+                    );
                 if is_unary {
                     tokens.push(Token::Operator(Operator::Neg));
                 } else {
@@ -57,21 +63,43 @@ pub fn tokenize(formula: &str) -> Result<Vec<Token>, FormulaError> {
                 }
                 chars.next();
             }
-            '*' => { tokens.push(Token::Operator(Operator::Mul)); chars.next(); }
-            '/' => {
-                tokens.push(Token::Operator(Operator::Div)); chars.next();
+            '*' => {
+                tokens.push(Token::Operator(Operator::Mul));
+                chars.next();
             }
-            '%' => { tokens.push(Token::Operator(Operator::Mod)); chars.next(); }
-            '^' => { tokens.push(Token::Operator(Operator::Power)); chars.next(); }
-            '(' => { tokens.push(Token::ParenOpen); chars.next(); }
-            ')' => { tokens.push(Token::ParenClose); chars.next(); }
-            ',' => { tokens.push(Token::Comma); chars.next(); }
+            '/' => {
+                tokens.push(Token::Operator(Operator::Div));
+                chars.next();
+            }
+            '%' => {
+                tokens.push(Token::Operator(Operator::Mod));
+                chars.next();
+            }
+            '^' => {
+                tokens.push(Token::Operator(Operator::Power));
+                chars.next();
+            }
+            '(' => {
+                tokens.push(Token::ParenOpen);
+                chars.next();
+            }
+            ')' => {
+                tokens.push(Token::ParenClose);
+                chars.next();
+            }
+            ',' => {
+                tokens.push(Token::Comma);
+                chars.next();
+            }
             '0'..='9' | '.' => {
                 // Scan numérico: consume dígitos y punto decimal
                 let num_str = scan_number(&mut chars);
-                let val = num_str.parse::<f64>().map_err(|_|
-                    FormulaError::UnexpectedToken { position: pos, found: num_str.clone() }
-                )?;
+                let val = num_str
+                    .parse::<f64>()
+                    .map_err(|_| FormulaError::UnexpectedToken {
+                        position: pos,
+                        found: num_str.clone(),
+                    })?;
                 tokens.push(Token::Literal(val));
             }
             'a'..='z' | 'A'..='Z' | '_' => {

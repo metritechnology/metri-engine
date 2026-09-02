@@ -1,20 +1,20 @@
 // grpc/interceptors.rs — WAF + Auth gRPC middleware
 // SRP: Intercepta peticiones para asegurar Zero-Trust y límites WAF.
 
-use tonic::{Request, Status};
-use tracing::{debug, info};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use constant_time_eq::constant_time_eq;
+use tonic::{Request, Status};
+use tracing::{debug, info};
 
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Debug)]
 pub struct AuthenticatedSession {
     pub tenant_id: String,
-    pub user_id:   String,
-    pub jti:       String,
+    pub user_id: String,
+    pub jti: String,
 }
 
 /// Interceptor WAF y Auth para proteger los endpoints gRPC (Fail-Closed estricto).
@@ -22,15 +22,22 @@ pub fn auth_waf_interceptor(mut req: Request<()>) -> Result<Request<()>, Status>
     // 1. Extraer token preferentemente desde el metadato "sid" o "authorization"
     let token = if let Some(sid_header) = req.metadata().get("sid").and_then(|v| v.to_str().ok()) {
         sid_header.trim().to_string()
-    } else if let Some(auth_header) = req.metadata().get("authorization").and_then(|v| v.to_str().ok()) {
+    } else if let Some(auth_header) = req
+        .metadata()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+    {
         let auth_str = auth_header.trim();
-        auth_str.strip_prefix("Bearer ")
+        auth_str
+            .strip_prefix("Bearer ")
             .or_else(|| auth_str.strip_prefix("bearer "))
             .unwrap_or(auth_str)
             .trim()
             .to_string()
     } else {
-        return Err(Status::unauthenticated("Missing authorization or sid header [Fail-Closed]"));
+        return Err(Status::unauthenticated(
+            "Missing authorization or sid header [Fail-Closed]",
+        ));
     };
 
     // 2. Verificar la firma HMAC del token localmente (sub-0.1ms sin red)
@@ -39,7 +46,7 @@ pub fn auth_waf_interceptor(mut req: Request<()>) -> Result<Request<()>, Status>
 
     // 3. Inyectar sesión autenticada en las extensiones de la petición gRPC
     req.extensions_mut().insert(session);
-    
+
     debug!("[gRPC-Auth] Petición autenticada exitosamente");
     Ok(req)
 }
@@ -80,7 +87,7 @@ fn verify_hmac_token_local(raw_token: &str) -> Option<AuthenticatedSession> {
 
     Some(AuthenticatedSession {
         tenant_id: claims["tid"].as_str()?.to_string(),
-        user_id:   claims["uid"].as_str()?.to_string(),
-        jti:       claims["jti"].as_str()?.to_string(),
+        user_id: claims["uid"].as_str()?.to_string(),
+        jti: claims["jti"].as_str()?.to_string(),
     })
 }

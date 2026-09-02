@@ -1,9 +1,9 @@
-pub mod registry;
 pub mod base36;
-pub mod sequence;
-pub mod generator;
 pub mod coercion;
+pub mod generator;
+pub mod registry;
+pub mod sequence;
 
-pub use registry::{CodeRegistry, EntityModel, AttributeDescriptor, EngineChannel, AttrType};
-pub use registry::{init_global, global};
+pub use registry::{global, init_global};
+pub use registry::{AttrType, AttributeDescriptor, CodeRegistry, EngineChannel, EntityModel};
 pub mod validator;

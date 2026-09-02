@@ -1,13 +1,15 @@
 // aegis/oltp/caster.rs
 // SRP: Encapsular el formateo, agrupamiento y agregación final en memoria de los rows (KPI, TIMESERIES, PIE, BUBBLE).
 
-use serde_json::{json, Value};
-use tracing::info;
-use crate::janus::fbs::{AnalyticsRequestT, MetricDefinitionT, DimensionDefinitionT};
-use crate::temporal::core::TimeRange;
+use crate::aegis::formula::{
+    lexer, parser, FormulaEvaluator, FunctionRegistry, OltpVariableResolver,
+};
 use crate::aegis::oltp::aggregation::apply_metrics_fbs;
 use crate::aegis::oltp::comparison::run_comparisons;
-use crate::aegis::formula::{lexer, parser, FormulaEvaluator, FunctionRegistry, OltpVariableResolver};
+use crate::janus::fbs::{AnalyticsRequestT, DimensionDefinitionT, MetricDefinitionT};
+use crate::temporal::core::TimeRange;
+use serde_json::{json, Value};
+use tracing::info;
 
 /// Aplica las agregaciones de OutputCast (KPI, TIMESERIES, PIE, BUBBLE) sobre los rows finales hidratados.
 pub fn apply_output_cast_fbs(
@@ -26,17 +28,25 @@ pub fn apply_output_cast_fbs(
                     let formula_str = measure.formula.as_deref()?;
                     let name = measure.name.as_deref().unwrap_or("measure");
                     match lexer::tokenize(formula_str) {
-                        Ok(tokens) => {
-                            match parser::to_rpn(tokens, &registry) {
-                                Ok(rpn) => Some((name.to_string(), FormulaEvaluator::new(rpn))),
-                                Err(e) => {
-                                    tracing::warn!("Formula parser failed for '{}' ({}): {:?}", name, formula_str, e);
-                                    None
-                                }
+                        Ok(tokens) => match parser::to_rpn(tokens, &registry) {
+                            Ok(rpn) => Some((name.to_string(), FormulaEvaluator::new(rpn))),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Formula parser failed for '{}' ({}): {:?}",
+                                    name,
+                                    formula_str,
+                                    e
+                                );
+                                None
                             }
-                        }
+                        },
                         Err(e) => {
-                            tracing::warn!("Formula lexer failed for '{}' ({}): {:?}", name, formula_str, e);
+                            tracing::warn!(
+                                "Formula lexer failed for '{}' ({}): {:?}",
+                                name,
+                                formula_str,
+                                e
+                            );
                             None
                         }
                     }
@@ -52,11 +62,18 @@ pub fn apply_output_cast_fbs(
                                 if !result.is_nan() {
                                     obj.insert(name.clone(), serde_json::json!(result));
                                 } else {
-                                    tracing::info!("Formula evaluated to NaN for measure '{}'", name);
+                                    tracing::info!(
+                                        "Formula evaluated to NaN for measure '{}'",
+                                        name
+                                    );
                                 }
                             }
                             Err(e) => {
-                                tracing::warn!("Formula evaluator failed for measure '{}': {:?}", name, e);
+                                tracing::warn!(
+                                    "Formula evaluator failed for measure '{}': {:?}",
+                                    name,
+                                    e
+                                );
                             }
                         }
                     }
@@ -67,7 +84,7 @@ pub fn apply_output_cast_fbs(
     let rows = &rows_cloned;
 
     let output_cast = ast_ir.output_cast.0;
-    
+
     if let Some(metrics) = &ast_ir.metrics {
         if !metrics.is_empty() {
             match output_cast {
@@ -268,42 +285,72 @@ pub fn apply_timeseries_bucketing(
     use std::collections::BTreeMap;
 
     let time_dim = dimensions.iter().find(|d| {
-        d.interval.as_deref().map(|i| !i.is_empty()).unwrap_or(false)
+        d.interval
+            .as_deref()
+            .map(|i| !i.is_empty())
+            .unwrap_or(false)
     });
-    let interval = time_dim.and_then(|d| d.interval.as_deref()).unwrap_or("day");
-    let bucket_attr = time_dim.and_then(|d| d.attribute.as_deref()).unwrap_or("bucket");
+    let interval = time_dim
+        .and_then(|d| d.interval.as_deref())
+        .unwrap_or("day");
+    let bucket_attr = time_dim
+        .and_then(|d| d.attribute.as_deref())
+        .unwrap_or("bucket");
 
-    let other_dims: Vec<&str> = dimensions.iter()
+    let other_dims: Vec<&str> = dimensions
+        .iter()
         .filter(|d| d.interval.as_deref().map(|i| i.is_empty()).unwrap_or(true))
         .filter_map(|d| d.attribute.as_deref())
         .collect();
 
-    let ts_candidates = &["created_at", "meta/created_at", "timestamp",
-                          "updated_at", "ingested_at"];
+    let ts_candidates = &[
+        "created_at",
+        "meta/created_at",
+        "timestamp",
+        "updated_at",
+        "ingested_at",
+    ];
     let mut groups: BTreeMap<(i64, Vec<String>), Vec<Value>> = BTreeMap::new();
 
     for row in rows {
-        let ts_raw = ts_candidates.iter()
+        let ts_raw = ts_candidates
+            .iter()
             .find_map(|f| row.get(*f).and_then(|v| v.as_f64()))
             .unwrap_or(0.0);
-        let ts_secs = if ts_raw > 1e11 { (ts_raw / 1000.0) as i64 } else { ts_raw as i64 };
+        let ts_secs = if ts_raw > 1e11 {
+            (ts_raw / 1000.0) as i64
+        } else {
+            ts_raw as i64
+        };
         let bucket = truncate_to_interval(ts_secs, interval);
 
-        let dim_vals: Vec<String> = other_dims.iter()
-            .map(|k| row.get(*k).and_then(|v| v.as_str()).unwrap_or("").to_string())
+        let dim_vals: Vec<String> = other_dims
+            .iter()
+            .map(|k| {
+                row.get(*k)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            })
             .collect();
 
-        groups.entry((bucket, dim_vals)).or_default().push(row.clone());
+        groups
+            .entry((bucket, dim_vals))
+            .or_default()
+            .push(row.clone());
     }
 
-    groups.into_iter().map(|((bucket_val, dim_vals), group_rows)| {
-        let mut agg = apply_metrics_fbs(&group_rows, metrics);
-        if let Some(obj) = agg.as_object_mut() {
-            obj.insert(bucket_attr.to_string(), json!(bucket_val));
-            for (k, v) in other_dims.iter().zip(&dim_vals) {
-                obj.insert((*k).to_string(), json!(v));
+    groups
+        .into_iter()
+        .map(|((bucket_val, dim_vals), group_rows)| {
+            let mut agg = apply_metrics_fbs(&group_rows, metrics);
+            if let Some(obj) = agg.as_object_mut() {
+                obj.insert(bucket_attr.to_string(), json!(bucket_val));
+                for (k, v) in other_dims.iter().zip(&dim_vals) {
+                    obj.insert((*k).to_string(), json!(v));
+                }
             }
-        }
-        agg
-    }).collect()
+            agg
+        })
+        .collect()
 }

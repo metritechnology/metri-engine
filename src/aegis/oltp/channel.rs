@@ -2,14 +2,14 @@
 // SRP: Implementación de IWriteChannel para el Motor OLTP (EAV).
 
 use serde_json::{json, Value};
-use tracing::{info, error};
+use tracing::{error, info};
 
-use crate::domain::errors::{DomainError, ErrorCode};
-use crate::iop::core::IopContext;
-use crate::janus_router::router::IWriteChannel;
-use crate::eav::writer::{EavWriter, TransactPayload, TransactOp};
 use crate::codice::global as codice_global;
 use crate::codice::validator;
+use crate::domain::errors::{DomainError, ErrorCode};
+use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
+use crate::iop::core::IopContext;
+use crate::janus_router::router::IWriteChannel;
 
 pub struct OltpChannel {
     writer: EavWriter,
@@ -24,21 +24,30 @@ impl OltpChannel {
 #[async_trait::async_trait]
 impl IWriteChannel for OltpChannel {
     async fn route(&self, mut ctx: IopContext) -> Result<Value, DomainError> {
-        info!("[OltpChannel] Ejecutando Write Path para {}", ctx.entity_type);
+        info!(
+            "[OltpChannel] Ejecutando Write Path para {}",
+            ctx.entity_type
+        );
 
         let registry = codice_global();
-        
+
         let model = registry.get_model(&ctx.entity_type).ok_or_else(|| {
-            DomainError::janus(ErrorCode::Jns001, format!("Entidad desconocida: '{}'", ctx.entity_type))
+            DomainError::janus(
+                ErrorCode::Jns001,
+                format!("Entidad desconocida: '{}'", ctx.entity_type),
+            )
         })?;
 
-        let payload_val = ctx.request.get("payload")
+        let payload_val = ctx
+            .request
+            .get("payload")
             .cloned()
             .unwrap_or(Value::Object(serde_json::Map::new()));
 
         // FASE 3: Validación estructural contra Códice
         let is_create = ctx.operation == "CREATE";
-        let validated_attrs = validator::validate_payload(&model, &payload_val, &ctx.tenant_id, is_create)?;
+        let validated_attrs =
+            validator::validate_payload(&model, &payload_val, &ctx.tenant_id, is_create)?;
 
         let op = match ctx.operation.as_str() {
             "CREATE" => TransactOp::Create,
@@ -53,7 +62,9 @@ impl IWriteChannel for OltpChannel {
         };
 
         // Extraer entity_id opcional (requerido para UPDATE/DELETE)
-        let entity_id = ctx.request.get("entity_id")
+        let entity_id = ctx
+            .request
+            .get("entity_id")
             .or_else(|| payload_val.get("entity_id"))
             .or_else(|| payload_val.get("id"))
             .and_then(|v| v.as_str())
@@ -76,7 +87,10 @@ impl IWriteChannel for OltpChannel {
 
         match self.writer.transact(transact_payload).await {
             Ok(result) => {
-                info!("[OltpChannel] Transacción EAV exitosa: tx_id={} entity_id={}", result.tx_id, result.entity_id);
+                info!(
+                    "[OltpChannel] Transacción EAV exitosa: tx_id={} entity_id={}",
+                    result.tx_id, result.entity_id
+                );
                 // Retornar información clave en la respuesta (ID, TX_ID)
                 Ok(json!({
                     "entity_id": result.entity_id,

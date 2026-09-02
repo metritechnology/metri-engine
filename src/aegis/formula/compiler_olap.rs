@@ -4,10 +4,10 @@
 //        El RPN se genera SOLO para validar sintaxis y aridad.
 //        El SQL se reconstruye desde los tokens INFIX (pre-RPN).
 
-use crate::aegis::formula::token::{Token, Operator};
-use crate::aegis::formula::resolver::OlapVariableResolver;
-use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::errors::FormulaError;
+use crate::aegis::formula::functions_registry::FunctionRegistry;
+use crate::aegis::formula::resolver::OlapVariableResolver;
+use crate::aegis::formula::token::{Operator, Token};
 use crate::aegis::formula::{lexer, parser, security};
 
 pub struct OlapFormulaCompiler;
@@ -29,10 +29,7 @@ impl OlapFormulaCompiler {
     /// )?;
     /// // → "(revenue - cost) / NULLIF(revenue, 0)"
     /// ```
-    pub fn compile(
-        formula_str: &str,
-        registry: &FunctionRegistry,
-    ) -> Result<String, FormulaError> {
+    pub fn compile(formula_str: &str, registry: &FunctionRegistry) -> Result<String, FormulaError> {
         // 1. Validación de seguridad anti-inyección (word-boundary)
         security::validate_formula(formula_str)?;
 
@@ -65,14 +62,12 @@ impl OlapFormulaCompiler {
             let part = match token {
                 Token::Literal(v) => {
                     if *v == (*v as i64) as f64 && !v.is_nan() {
-                        format!("{}", *v as i64)  // 100.0 → "100" (entero limpio)
+                        format!("{}", *v as i64) // 100.0 → "100" (entero limpio)
                     } else {
-                        format!("{}", v)          // 3.14 → "3.14"
+                        format!("{}", v) // 3.14 → "3.14"
                     }
                 }
-                Token::Variable(name) => {
-                    OlapVariableResolver::resolve_to_sql_column(name)
-                }
+                Token::Variable(name) => OlapVariableResolver::resolve_to_sql_column(name),
                 Token::Operator(op) => match op {
                     Operator::Add => "+".to_string(),
                     Operator::Sub => "-".to_string(),
@@ -80,7 +75,7 @@ impl OlapFormulaCompiler {
                     Operator::Div => "/".to_string(),
                     Operator::Mod => "%".to_string(),
                     Operator::Power => "^".to_string(),
-                    Operator::Neg => "-".to_string(),  // unario
+                    Operator::Neg => "-".to_string(), // unario
                 },
                 Token::Function(name, _) => name.clone(),
                 Token::ParenOpen => "(".to_string(),
@@ -95,14 +90,23 @@ impl OlapFormulaCompiler {
         for (i, part) in parts.iter().enumerate() {
             if i > 0 {
                 let prev = &parts[i - 1];
-                let is_after_open   = prev.ends_with('(');   // "(" → no espacio después
+                let is_after_open = prev.ends_with('('); // "(" → no espacio después
                 let is_before_close = part.starts_with(')'); // ")" → no espacio antes
                 let is_before_comma = part.starts_with(','); // "," → no espacio antes
-                let is_unary_neg    = prev == "-" && matches!(
-                    parts.get(i.wrapping_sub(2)).map(|s| s.as_str()),
-                    None | Some("(") | Some("+") | Some("-") | Some("*") | Some("/") | Some("%") | Some("^") | Some(",")
-                );
-                let is_func_call    = part == "(" && matches!(tokens.get(i - 1), Some(Token::Function(_, _)));
+                let is_unary_neg = prev == "-"
+                    && matches!(
+                        parts.get(i.wrapping_sub(2)).map(|s| s.as_str()),
+                        None | Some("(")
+                            | Some("+")
+                            | Some("-")
+                            | Some("*")
+                            | Some("/")
+                            | Some("%")
+                            | Some("^")
+                            | Some(",")
+                    );
+                let is_func_call =
+                    part == "(" && matches!(tokens.get(i - 1), Some(Token::Function(_, _)));
 
                 let needs_space = !is_after_open
                     && !is_before_close

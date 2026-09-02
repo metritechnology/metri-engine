@@ -3,21 +3,18 @@
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
-use regex::Regex;
 use once_cell::sync::Lazy;
+use regex::Regex;
 
 /// Palabras clave SQL prohibidas en fórmulas (prevención de inyección).
 /// Se validan con word-boundary regex (`\bKEYWORD\b`) para evitar falsos positivos.
 const SQL_KEYWORD_BLACKLIST: &[&str] = &[
-    "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
-    "CREATE", "EXEC", "EXECUTE", "UNION", "FROM", "WHERE",
-    "JOIN", "INTO", "GRANT", "REVOKE", "TRUNCATE",
+    "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "EXEC", "EXECUTE", "UNION",
+    "FROM", "WHERE", "JOIN", "INTO", "GRANT", "REVOKE", "TRUNCATE",
 ];
 
 /// Patrones literales (NO word-boundary) — siempre peligrosos.
-const SQL_LITERAL_BLACKLIST: &[&str] = &[
-    "--", "/*", "*/", ";",
-];
+const SQL_LITERAL_BLACKLIST: &[&str] = &["--", "/*", "*/", ";"];
 
 /// Regex pre-compilada para word-boundary matching de SQL keywords.
 static SQL_KEYWORD_RE: Lazy<Regex> = Lazy::new(|| {

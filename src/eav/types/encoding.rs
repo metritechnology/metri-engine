@@ -22,8 +22,8 @@ use crate::eav::types::value_type::ValueType;
 pub fn build_eavt_sk(attr_id: u16, tx_id: u64, op: bool) -> Vec<u8> {
     let mut buf = Vec::with_capacity(11);
     buf.extend_from_slice(&attr_id.to_be_bytes()); // 2 bytes
-    buf.extend_from_slice(&tx_id.to_be_bytes());   // 8 bytes
-    buf.push(if op { 0x01 } else { 0x00 });        // 1 byte
+    buf.extend_from_slice(&tx_id.to_be_bytes()); // 8 bytes
+    buf.push(if op { 0x01 } else { 0x00 }); // 1 byte
     buf
 }
 
@@ -48,8 +48,8 @@ pub fn eavt_sk_as_of(attr_id: u16, as_of_tx: u64) -> Vec<u8> {
 pub fn build_aevt_sk(entity_id: &str, tx_id: u64) -> Vec<u8> {
     let eid_bytes = entity_id.as_bytes();
     let mut buf = Vec::with_capacity(eid_bytes.len() + 9);
-    buf.push(eid_bytes.len() as u8);       // 1 byte length prefix
-    buf.extend_from_slice(eid_bytes);      // entity_id UTF-8
+    buf.push(eid_bytes.len() as u8); // 1 byte length prefix
+    buf.extend_from_slice(eid_bytes); // entity_id UTF-8
     buf.extend_from_slice(&tx_id.to_be_bytes()); // 8 bytes tx_id
     buf
 }
@@ -92,9 +92,9 @@ pub fn build_avet_sk(value: &DatomValue, entity_id: &str) -> Vec<u8> {
             // [BLUEPRINT: §II.4 — IEEE 754 bit-flip para AVET ordering]
             let bits = d.to_bits();
             let normalized = if *d < 0.0 {
-                bits ^ u64::MAX           // negativo: invertir todos
+                bits ^ u64::MAX // negativo: invertir todos
             } else {
-                bits ^ 0x8000_0000_0000_0000u64  // positivo: invertir solo signo
+                bits ^ 0x8000_0000_0000_0000u64 // positivo: invertir solo signo
             };
             buf.extend_from_slice(&normalized.to_be_bytes());
         }
@@ -121,7 +121,11 @@ pub fn build_avet_sk(value: &DatomValue, entity_id: &str) -> Vec<u8> {
             // Dos f64 con bit-flip — lat primero, lon segundo
             for d in [*lat, *lon] {
                 let bits = d.to_bits();
-                let normalized = if d < 0.0 { bits ^ u64::MAX } else { bits ^ 0x8000_0000_0000_0000u64 };
+                let normalized = if d < 0.0 {
+                    bits ^ u64::MAX
+                } else {
+                    bits ^ 0x8000_0000_0000_0000u64
+                };
                 buf.extend_from_slice(&normalized.to_be_bytes());
             }
         }
@@ -189,6 +193,9 @@ mod tests {
         let n1 = build_avet_sk(&DatomValue::Long(-100), "e");
         let n2 = build_avet_sk(&DatomValue::Long(0), "e");
         let n3 = build_avet_sk(&DatomValue::Long(100), "e");
-        assert!(n1 < n2 && n2 < n3, "orden numérico debe ser preservado en AVET SK");
+        assert!(
+            n1 < n2 && n2 < n3,
+            "orden numérico debe ser preservado en AVET SK"
+        );
     }
 }

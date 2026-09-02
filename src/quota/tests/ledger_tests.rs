@@ -45,7 +45,10 @@ fn el_techo_del_contador_se_lee_como_saldo_insuficiente() {
 #[test]
 fn si_fallan_las_dos_manda_la_marca() {
     assert_eq!(
-        classify(&cancelada(&["ConditionalCheckFailed", "ConditionalCheckFailed"])),
+        classify(&cancelada(&[
+            "ConditionalCheckFailed",
+            "ConditionalCheckFailed"
+        ])),
         Cancellation::AlreadyApplied
     );
 }
@@ -76,7 +79,10 @@ fn el_backoff_crece_y_esta_acotado() {
     for intento in 0..TX_MAX_ATTEMPTS {
         let espera = backoff_ms(intento);
         let base = 25_u64 << intento;
-        assert!(espera >= base && espera <= base * 2, "intento {intento}: {espera} ms");
+        assert!(
+            espera >= base && espera <= base * 2,
+            "intento {intento}: {espera} ms"
+        );
     }
 }
 
@@ -125,7 +131,11 @@ async fn el_mismo_apunte_no_se_cuenta_dos_veces() {
         l.settle_once("tnt_test", &quota, 40, &clave).await.unwrap(),
         SettleOutcome::AlreadyApplied
     );
-    assert_eq!(usage(&l, "tnt_test", &quota).await, 40, "el contador no se movió");
+    assert_eq!(
+        usage(&l, "tnt_test", &quota).await,
+        40,
+        "el contador no se movió"
+    );
 }
 
 /// El caso que obliga a que esto exista: dos réplicas creen que les toca cerrar
@@ -147,7 +157,10 @@ async fn dos_replicas_reintegrando_a_la_vez_solo_apuntan_una() {
 
     let resultados = [a.unwrap(), b.unwrap()];
     assert_eq!(
-        resultados.iter().filter(|r| **r == SettleOutcome::Applied).count(),
+        resultados
+            .iter()
+            .filter(|r| **r == SettleOutcome::Applied)
+            .count(),
         1,
         "exactamente una de las dos aplica: {resultados:?}"
     );
@@ -166,14 +179,18 @@ async fn devolver_de_mas_deja_el_contador_en_cero() {
     l.settle("tnt_test", &quota, 3).await.unwrap();
 
     assert_eq!(
-        l.settle_once("tnt_test", &quota, -10, &clave).await.unwrap(),
+        l.settle_once("tnt_test", &quota, -10, &clave)
+            .await
+            .unwrap(),
         SettleOutcome::Applied
     );
     assert_eq!(usage(&l, "tnt_test", &quota).await, 0);
 
     // Y el aplastamiento también quedó marcado: repetirlo no lo repite.
     assert_eq!(
-        l.settle_once("tnt_test", &quota, -10, &clave).await.unwrap(),
+        l.settle_once("tnt_test", &quota, -10, &clave)
+            .await
+            .unwrap(),
         SettleOutcome::AlreadyApplied
     );
     assert_eq!(usage(&l, "tnt_test", &quota).await, 0);
@@ -187,8 +204,12 @@ async fn claves_distintas_se_aplican_las_dos() {
     let l = ledger().await;
     let quota = cuota_nueva("q_claves");
 
-    l.settle_once("tnt_test", &quota, 30, &format!("{quota}#debit")).await.unwrap();
-    l.settle_once("tnt_test", &quota, -12, &format!("{quota}#final")).await.unwrap();
+    l.settle_once("tnt_test", &quota, 30, &format!("{quota}#debit"))
+        .await
+        .unwrap();
+    l.settle_once("tnt_test", &quota, -12, &format!("{quota}#final"))
+        .await
+        .unwrap();
 
     assert_eq!(usage(&l, "tnt_test", &quota).await, 18);
 }
@@ -203,7 +224,11 @@ async fn el_seed_solo_cuenta_la_primera_vez() {
     let quota = cuota_nueva("q_seed");
 
     let primero = l.try_debit("tnt_test", &quota, 1, 100, 7).await.unwrap();
-    assert_eq!(primero, DebitOutcome::Debited { new_usage: 8 }, "arranca en el seed");
+    assert_eq!(
+        primero,
+        DebitOutcome::Debited { new_usage: 8 },
+        "arranca en el seed"
+    );
 
     let segundo = l.try_debit("tnt_test", &quota, 1, 100, 999).await.unwrap();
     assert_eq!(
@@ -278,7 +303,10 @@ fn sin_contador_previo_manda_el_arranque() {
         expr.contains("attribute_not_exists(#n)"),
         "un contador que aún no existe debe poder crearse: {expr}"
     );
-    assert!(expr.contains("#n < :max"), "y el que ya existe sigue con techo: {expr}");
+    assert!(
+        expr.contains("#n < :max"),
+        "y el que ya existe sigue con techo: {expr}"
+    );
 }
 
 #[test]

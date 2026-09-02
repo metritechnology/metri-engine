@@ -26,50 +26,50 @@ use crate::janus::normalizer::{normalize_response, ResponseType};
 /// [PORTED_FROM: el mapa `ctx` / `request` que pasa por cada step]
 #[derive(Debug, Clone)]
 pub struct IopContext {
-    pub tenant_id:  String,
-    pub user_id:    String,
-    pub request:    Map<String, Value>, // payload original gRPC
+    pub tenant_id: String,
+    pub user_id: String,
+    pub request: Map<String, Value>, // payload original gRPC
     pub entity_type: String,
-    pub operation:  String,
+    pub operation: String,
     // Enriquecido por cada paso del pipeline:
-    pub schema:     Option<Value>,
-    pub model:      Option<Value>,
-    pub roles:      Vec<String>,
+    pub schema: Option<Value>,
+    pub model: Option<Value>,
+    pub roles: Vec<String>,
     pub exec_start: Option<Instant>,
     pub execution_time_ms: Option<u64>,
     // ── Cedar (Paso 1) ─────────────────────────────────────────────────────────
     pub granted_action_keys: std::collections::HashSet<String>,
-    pub is_super_master:     bool,
-    pub cross_tenant_scope:  String,
-    pub domain_boundaries:   Value,
+    pub is_super_master: bool,
+    pub cross_tenant_scope: String,
+    pub domain_boundaries: Value,
     // ── Quota (Paso 2) ─────────────────────────────────────────────────────────
-    pub quota_reservation:   Option<Value>,
+    pub quota_reservation: Option<Value>,
 }
 
 impl IopContext {
     pub fn new(
-        tenant_id:   impl Into<String>,
-        user_id:     impl Into<String>,
+        tenant_id: impl Into<String>,
+        user_id: impl Into<String>,
         entity_type: impl Into<String>,
-        operation:   impl Into<String>,
-        request:     Map<String, Value>,
+        operation: impl Into<String>,
+        request: Map<String, Value>,
     ) -> Self {
         IopContext {
-            tenant_id:   tenant_id.into(),
-            user_id:     user_id.into(),
+            tenant_id: tenant_id.into(),
+            user_id: user_id.into(),
             entity_type: entity_type.into(),
-            operation:   operation.into(),
+            operation: operation.into(),
             request,
-            schema:      None,
-            model:       None,
-            roles:       Vec::new(),
-            exec_start:  Some(Instant::now()),
+            schema: None,
+            model: None,
+            roles: Vec::new(),
+            exec_start: Some(Instant::now()),
             execution_time_ms: None,
             granted_action_keys: std::collections::HashSet::new(),
-            is_super_master:     false,
-            cross_tenant_scope:  "NONE".to_string(),
-            domain_boundaries:   Value::Object(serde_json::Map::new()),
-            quota_reservation:   None,
+            is_super_master: false,
+            cross_tenant_scope: "NONE".to_string(),
+            domain_boundaries: Value::Object(serde_json::Map::new()),
+            quota_reservation: None,
         }
     }
 
@@ -96,24 +96,24 @@ pub trait IIopOrchestrator: Send + Sync {
 /// [PORTED_FROM: ig/init-key :iop/orchestrator]
 pub struct IopOrchestrator {
     /// Interceptores del pipeline en orden (Cedar → Quota → Janus)
-    steps:             Vec<Arc<dyn IopStep>>,
+    steps: Vec<Arc<dyn IopStep>>,
     /// Emitter Moira — fire-and-forget tras Ok
-    moira_emitter:     Option<Arc<dyn MoiraEmitter>>,
+    moira_emitter: Option<Arc<dyn MoiraEmitter>>,
     /// Audit interceptor — se invoca siempre
     audit_interceptor: Option<Arc<dyn IAuditInterceptor>>,
     /// Notifier de fallos de Sherlog
-    fault_notifier:    Arc<dyn crate::iop::sherlog::IFaultNotifier>,
+    fault_notifier: Arc<dyn crate::iop::sherlog::IFaultNotifier>,
     /// Canal OLAP para persistir domain_fault
-    olap_channel:      Arc<dyn crate::janus_router::router::IWriteChannel>,
+    olap_channel: Arc<dyn crate::janus_router::router::IWriteChannel>,
 }
 
 impl IopOrchestrator {
     pub fn new(
-        steps:             Vec<Arc<dyn IopStep>>,
-        moira_emitter:     Option<Arc<dyn MoiraEmitter>>,
+        steps: Vec<Arc<dyn IopStep>>,
+        moira_emitter: Option<Arc<dyn MoiraEmitter>>,
         audit_interceptor: Option<Arc<dyn IAuditInterceptor>>,
-        fault_notifier:    Arc<dyn crate::iop::sherlog::IFaultNotifier>,
-        olap_channel:      Arc<dyn crate::janus_router::router::IWriteChannel>,
+        fault_notifier: Arc<dyn crate::iop::sherlog::IFaultNotifier>,
+        olap_channel: Arc<dyn crate::janus_router::router::IWriteChannel>,
     ) -> Self {
         info!(
             "[IOP] Orchestrator activo | {} pasos síncronos",
@@ -150,7 +150,7 @@ impl IIopOrchestrator for IopOrchestrator {
         let start = Instant::now();
         let request_clone = ctx.request.clone(); // para audit
         let tenant_id = ctx.tenant_id.clone();
-        let user_id   = ctx.user_id.clone();
+        let user_id = ctx.user_id.clone();
         let entity_type = ctx.entity_type.clone();
 
         // ── Pipeline Railway: Cedar → Quota → Janus ──────────────────────────
@@ -246,8 +246,7 @@ impl IopOrchestrator {
         warn!("[IOP] Pipeline error: {e:?}");
 
         // Cargar el EntityModel para la sanitización de privacidad (redactado de campos sensitive: true)
-        let model = crate::codice::registry::global_opt()
-            .and_then(|r| r.get_model(entity_type));
+        let model = crate::codice::registry::global_opt().and_then(|r| r.get_model(entity_type));
 
         let error_dto = crate::iop::error_response::build_error_dto(
             e,
@@ -271,7 +270,8 @@ impl IopOrchestrator {
                 &error_clone,
                 &error_dto_clone,
                 Some(entity_type_clone),
-            ).await;
+            )
+            .await;
         });
 
         error_dto
@@ -308,7 +308,10 @@ impl IopOrchestrator {
                 let mut body = Value::Object(ctx.request.clone());
                 // Inyectar execution_time_ms en la respuesta
                 if let Some(obj) = body.as_object_mut() {
-                    obj.insert("execution_time_ms".to_string(), Value::Number(exec_ms.into()));
+                    obj.insert(
+                        "execution_time_ms".to_string(),
+                        Value::Number(exec_ms.into()),
+                    );
                 }
                 let response_type = ResponseType::infer(&body);
                 normalize_response(&body, response_type)
@@ -345,7 +348,11 @@ pub trait IopStep: Send + Sync {
 #[async_trait::async_trait]
 pub trait MoiraEmitter: Send + Sync {
     async fn emit(&self, ctx: IopContext) -> Result<(), DomainError>;
-    async fn reset_orphaned_processing(&self, tenant_id: &str, ttl_ms: i64) -> Result<usize, DomainError>;
+    async fn reset_orphaned_processing(
+        &self,
+        tenant_id: &str,
+        ttl_ms: i64,
+    ) -> Result<usize, DomainError>;
 }
 
 #[cfg(test)]

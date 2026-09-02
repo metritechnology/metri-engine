@@ -44,14 +44,18 @@ pub fn validate_query_request(payload: &Value) -> Result<(), DomainError> {
     })?;
 
     // tenant_id obligatorio
-    let tenant_id = obj.get("tenant_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let tenant_id = obj.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("");
     validate_tenant(tenant_id)?;
 
     // queries: mapa no vacío
     let queries = obj.get("queries");
-    if queries.map(|q| q.is_null() || (q.is_object() && q.as_object().map(|obj| obj.is_empty()).unwrap_or(true))).unwrap_or(true) {
+    if queries
+        .map(|q| {
+            q.is_null()
+                || (q.is_object() && q.as_object().map(|obj| obj.is_empty()).unwrap_or(true))
+        })
+        .unwrap_or(true)
+    {
         return Err(DomainError::janus(
             ErrorCode::JanusVal001,
             "queries vacío — la request no tiene sub-queries definidas",
@@ -114,27 +118,30 @@ pub fn validate_analytics_request_fbs(req: &AnalyticsRequestT) -> Result<(), Dom
 /// [PORTED_FROM: (validate! :metri.spec/transaction-request ctx)]
 pub fn validate_transaction_request(payload: &Value) -> Result<(), DomainError> {
     let obj = payload.as_object().ok_or_else(|| {
-        DomainError::janus(ErrorCode::JanusVal001, "payload de transacción no es un objeto JSON")
+        DomainError::janus(
+            ErrorCode::JanusVal001,
+            "payload de transacción no es un objeto JSON",
+        )
     })?;
 
     // tenant_id obligatorio
-    let tenant_id = obj.get("tenant_id")
+    let tenant_id = obj
+        .get("tenant_id")
         .or_else(|| obj.get("tenant-id"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
     validate_tenant(tenant_id)?;
 
     // entity_type obligatorio
-    let entity_type = obj.get("entity_type")
+    let entity_type = obj
+        .get("entity_type")
         .or_else(|| obj.get("entity-type"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
     validate_entity_type(entity_type)?;
 
     // operation obligatoria
-    let operation = obj.get("operation")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let operation = obj.get("operation").and_then(|v| v.as_str()).unwrap_or("");
     if operation.is_empty() {
         return Err(DomainError::janus(
             ErrorCode::JanusVal001,

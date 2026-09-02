@@ -100,7 +100,11 @@ impl DynamoReservationStore {
             tenant_id: s("t")?,
             quota_id: s("q")?,
             estimated: n("e")?,
-            debited: item.get("d").and_then(|v| v.as_bool().ok()).copied().unwrap_or(false),
+            debited: item
+                .get("d")
+                .and_then(|v| v.as_bool().ok())
+                .copied()
+                .unwrap_or(false),
             expires_at: n("xa")?,
         })
     }
@@ -120,14 +124,23 @@ impl ReservationStore for DynamoReservationStore {
         item.insert("e".to_string(), AttributeValue::N(r.estimated.to_string()));
         item.insert("d".to_string(), AttributeValue::Bool(r.debited));
         item.insert("s".to_string(), AttributeValue::S(STATUS_OPEN.to_string()));
-        item.insert("xa".to_string(), AttributeValue::N(r.expires_at.to_string()));
+        item.insert(
+            "xa".to_string(),
+            AttributeValue::N(r.expires_at.to_string()),
+        );
         item.insert(
             "ttl".to_string(),
             AttributeValue::N((r.expires_at + RESERVATION_TTL_SECS).to_string()),
         );
         // Índice de barrido. Existe solo mientras la reserva está abierta.
-        item.insert("gp".to_string(), AttributeValue::S(Self::sweep_pk(shard_of(&r.id))));
-        item.insert("gs".to_string(), AttributeValue::N(r.expires_at.to_string()));
+        item.insert(
+            "gp".to_string(),
+            AttributeValue::S(Self::sweep_pk(shard_of(&r.id))),
+        );
+        item.insert(
+            "gs".to_string(),
+            AttributeValue::N(r.expires_at.to_string()),
+        );
 
         self.ddb
             .client
@@ -239,7 +252,10 @@ impl ReservationStore for DynamoReservationStore {
                     )));
                 };
 
-                let cerrada = item.get("s").and_then(|v| v.as_s().ok()).map(String::as_str)
+                let cerrada = item
+                    .get("s")
+                    .and_then(|v| v.as_s().ok())
+                    .map(String::as_str)
                     == Some(STATUS_CLOSED);
                 if cerrada {
                     let razon = item
@@ -293,7 +309,12 @@ impl ReservationStore for DynamoReservationStore {
         Ok(())
     }
 
-    async fn sweep(&self, shard: u8, now: i64, limit: i32) -> Result<Vec<Reservation>, DomainError> {
+    async fn sweep(
+        &self,
+        shard: u8,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<Reservation>, DomainError> {
         let out = self
             .ddb
             .client

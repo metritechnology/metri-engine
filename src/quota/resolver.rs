@@ -125,7 +125,11 @@ impl<E: OltpQueryRunner> QuotaResolver<E> {
 
     /// `ttl` cero desactiva la memoria: cada resolución consulta.
     pub fn with_ttl(oltp: E, ttl: Duration) -> Self {
-        QuotaResolver { oltp, cache: Mutex::new(HashMap::new()), ttl }
+        QuotaResolver {
+            oltp,
+            cache: Mutex::new(HashMap::new()),
+            ttl,
+        }
     }
 
     /// Acceso al ejecutor para quien además necesite consultar otra cosa.
@@ -158,7 +162,10 @@ impl<E: OltpQueryRunner> QuotaResolver<E> {
 
         let today = chrono::Utc::now().date_naive();
 
-        let spec = match self.query_domain(tenant_id, resource_domain, limit_type, today).await? {
+        let spec = match self
+            .query_domain(tenant_id, resource_domain, limit_type, today)
+            .await?
+        {
             Some(spec) => Some(spec),
             // Sin fila propia, el plan por defecto del tenant. Solo aquí: es una
             // segunda consulta y no debe pagarla quien sí tiene la suya. Y como
@@ -286,8 +293,12 @@ fn exact_match(row: &Value, today: NaiveDate) -> Option<QuotaSpec> {
     Some(QuotaSpec {
         counter_id: id.clone(),
         id,
-        max_limit: field(row, "max_limit").and_then(|v| v.as_i64()).unwrap_or(0),
-        seed_usage: field(row, "current_usage").and_then(|v| v.as_i64()).unwrap_or(0),
+        max_limit: field(row, "max_limit")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
+        seed_usage: field(row, "current_usage")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
         period_key: period_key.to_string(),
     })
 }
@@ -310,14 +321,22 @@ fn renew_latest(rows: &[Value], today: NaiveDate) -> Option<QuotaSpec> {
     let mut mejor: Option<(String, QuotaSpec)> = None;
 
     for row in rows {
-        let Some(period_key) = field(row, "period_key").and_then(|v| v.as_str()) else { continue };
-        let estrategia = field(row, "reset_strategy").and_then(|v| v.as_str()).unwrap_or("");
+        let Some(period_key) = field(row, "period_key").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let estrategia = field(row, "reset_strategy")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         // El periodo vigente solo se deriva hacia DELANTE. Una fila del ciclo
         // que viene todavía no gobierna, y adelantarla daría techo nuevo antes
         // de tiempo.
-        let Some(actual) = renewed_period(estrategia, today) else { continue };
-        let Some(inicio) = period_key.split('_').next() else { continue };
+        let Some(actual) = renewed_period(estrategia, today) else {
+            continue;
+        };
+        let Some(inicio) = period_key.split('_').next() else {
+            continue;
+        };
         if inicio >= actual.as_str() {
             continue;
         }
@@ -327,13 +346,18 @@ fn renew_latest(rows: &[Value], today: NaiveDate) -> Option<QuotaSpec> {
         let spec = QuotaSpec {
             counter_id: format!("{id}#{actual}"),
             id,
-            max_limit: field(row, "max_limit").and_then(|v| v.as_i64()).unwrap_or(0),
+            max_limit: field(row, "max_limit")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
             // Ciclo nuevo, cuenta nueva.
             seed_usage: 0,
             period_key: actual,
         };
 
-        if mejor.as_ref().is_none_or(|(prev, _)| inicio > prev.as_str()) {
+        if mejor
+            .as_ref()
+            .is_none_or(|(prev, _)| inicio > prev.as_str())
+        {
             mejor = Some((inicio.to_string(), spec));
         }
     }
@@ -369,7 +393,10 @@ fn derive_for_domain(plantilla: QuotaSpec, resource_domain: &str) -> QuotaSpec {
 /// cuotas sin id del tenant compartirían cuenta. Antes se resolvía con
 /// `unwrap_or("")` y se debitaba contra ese contador basura.
 fn row_id(row: &Value) -> Option<String> {
-    match field(row, "id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    match field(row, "id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
         Some(id) => Some(id.to_string()),
         None => {
             warn!(
@@ -407,7 +434,11 @@ pub fn renewed_period(reset_strategy: &str, today: NaiveDate) -> Option<String> 
         _ => return None,
     };
 
-    Some(format!("{}_{}", inicio.format("%Y-%m-%d"), fin.format("%Y-%m-%d")))
+    Some(format!(
+        "{}_{}",
+        inicio.format("%Y-%m-%d"),
+        fin.format("%Y-%m-%d")
+    ))
 }
 
 /// ¿Este `period_key` cubre el día de hoy?

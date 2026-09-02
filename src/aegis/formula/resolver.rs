@@ -24,7 +24,8 @@ impl<'a> OltpVariableResolver<'a> {
 impl<'a> VariableResolver for OltpVariableResolver<'a> {
     fn resolve(&self, var_name: &str) -> Option<f64> {
         let bare_name = var_name.split('/').last().unwrap_or(var_name);
-        self.row.get(var_name)
+        self.row
+            .get(var_name)
             .or_else(|| self.row.get(bare_name))
             .and_then(|v| v.as_f64())
     }

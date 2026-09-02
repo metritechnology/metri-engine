@@ -24,21 +24,20 @@
 // Ahora el ticket es un ULID opaco, lo que se concilia sale del item guardado, y
 // el tenant del item se contrasta con el de la sesión autenticada.
 
+use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tonic::{Request, Response, Status};
-use tracing::{info, warn, error};
-use serde_json::json;
+use tracing::{error, info, warn};
 
 use super::pb::quota_service_server::QuotaService;
 use super::pb::{
-    ReserveTokensRequest, ReserveTokensResponse,
-    ReconcileTokensRequest, ReconcileTokensResponse,
+    ReconcileTokensRequest, ReconcileTokensResponse, ReserveTokensRequest, ReserveTokensResponse,
     Status as PbStatus,
 };
+use crate::aegis::oltp::executor::OltpExecutor;
 use crate::eav::writer::EavWriter;
 use crate::grpc::interceptors::AuthenticatedSession;
-use crate::aegis::oltp::executor::OltpExecutor;
 use crate::quota::reservations::late_charge_key;
 use crate::quota::{
     settlement_key, split_wire_id, wire_id, ClaimResult, CloseReason, DebitOutcome,
@@ -94,7 +93,12 @@ impl QuotaServiceImpl<OltpExecutor> {
         // las réplicas lo ejecutan; el `claim` decide cuál cierra cada reserva.
         crate::quota::sweeper::spawn(Arc::clone(&store), Arc::clone(&counter));
 
-        Self { resolver: QuotaResolver::new(oltp_executor), counter, store, reservation_ttl }
+        Self {
+            resolver: QuotaResolver::new(oltp_executor),
+            counter,
+            store,
+            reservation_ttl,
+        }
     }
 }
 
@@ -106,7 +110,12 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
         store: Arc<dyn ReservationStore>,
         reservation_ttl: i64,
     ) -> Self {
-        Self { resolver: QuotaResolver::new(oltp_executor), counter, store, reservation_ttl }
+        Self {
+            resolver: QuotaResolver::new(oltp_executor),
+            counter,
+            store,
+            reservation_ttl,
+        }
     }
 
     /// La sesión que el interceptor dejó en la petición.
@@ -168,14 +177,17 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
         })
     }
 
-    fn rejected(code: &str, message: String, context: Option<serde_json::Value>) -> ReserveTokensResponse {
+    fn rejected(
+        code: &str,
+        message: String,
+        context: Option<serde_json::Value>,
+    ) -> ReserveTokensResponse {
         ReserveTokensResponse {
             status: Some(PbStatus {
                 success: false,
                 error_code: code.to_string(),
                 error_message: message,
-                error_context: context
-                    .map(|v| crate::grpc::translator::value_to_struct(&v)),
+                error_context: context.map(|v| crate::grpc::translator::value_to_struct(&v)),
             }),
             reservation_id: String::new(),
             allowed_tokens: 0,
@@ -214,7 +226,8 @@ where
         }
 
         // ── 1. Cuota vigente ─────────────────────────────────────────────────
-        let quota = match self.resolver
+        let quota = match self
+            .resolver
             .active_quota(&req.tenant_id, &req.model_urn, "TOKEN_COUNT")
             .await
         {
@@ -262,7 +275,8 @@ where
         }
 
         // ── 3. Techo y débito, en una sola escritura condicional ─────────────
-        let outcome = match self.counter
+        let outcome = match self
+            .counter
             .try_debit(
                 &req.tenant_id,
                 &quota.id,
@@ -286,7 +300,10 @@ where
         };
 
         let new_usage = match outcome {
-            DebitOutcome::Exhausted { current_usage, limit } => {
+            DebitOutcome::Exhausted {
+                current_usage,
+                limit,
+            } => {
                 warn!(
                     tenant_id = %req.tenant_id,
                     current = current_usage,
@@ -296,7 +313,11 @@ where
                 // El ticket nunca llegó a valer nada: fuera del índice de
                 // barrido, para que nadie intente devolver un débito que no se
                 // aplicó.
-                if let Err(e) = self.store.close(&req.tenant_id, &id, CloseReason::Rejected).await {
+                if let Err(e) = self
+                    .store
+                    .close(&req.tenant_id, &id, CloseReason::Rejected)
+                    .await
+                {
                     warn!(reserva = %id, error = ?e, "[QuotaService] Reserva rechazada no cerrada — la cerrará el barrido");
                 }
                 return Ok(Response::new(Self::rejected(
@@ -324,8 +345,14 @@ where
                 reserva = %id, error = ?e,
                 "[QuotaService] No se pudo marcar el débito — se deshace la reserva"
             );
-            if let Err(e) = self.counter
-                .settle_once(&req.tenant_id, &quota.id, -req.estimated_tokens, &settlement_key(&id))
+            if let Err(e) = self
+                .counter
+                .settle_once(
+                    &req.tenant_id,
+                    &quota.id,
+                    -req.estimated_tokens,
+                    &settlement_key(&id),
+                )
                 .await
             {
                 error!(
@@ -333,8 +360,13 @@ where
                     "[QuotaService] Tampoco se pudo devolver el débito — el contador queda alto"
                 );
             }
-            let _ = self.store.close(&req.tenant_id, &id, CloseReason::Rejected).await;
-            return Err(Status::internal("No se pudo registrar la reserva de tokens"));
+            let _ = self
+                .store
+                .close(&req.tenant_id, &id, CloseReason::Rejected)
+                .await;
+            return Err(Status::internal(
+                "No se pudo registrar la reserva de tokens",
+            ));
         }
 
         info!(
@@ -381,11 +413,14 @@ where
             // Formato de cuatro partes: lo emitió una versión anterior, que
             // guardaba las reservas en memoria. Su dueño —si sigue vivo— las
             // devolverá al vencer, así que aquí solo se apunta lo consumido.
-            return self.reconcile_legacy(&session, &req.reservation_id, actual_consumed).await;
+            return self
+                .reconcile_legacy(&session, &req.reservation_id, actual_consumed)
+                .await;
         };
         Self::authorize(&session, tenant_hint)?;
 
-        let claim = self.store
+        let claim = self
+            .store
             .claim(tenant_hint, id, RECONCILE_LEASE)
             .await
             .map_err(|e| {
@@ -435,7 +470,8 @@ where
             actual_consumed
         };
 
-        if let Err(e) = self.counter
+        if let Err(e) = self
+            .counter
             .settle_once(
                 &reservation.tenant_id,
                 &reservation.quota_id,
@@ -447,10 +483,20 @@ where
             error!("[QuotaService] Fallo en la conciliación: {:?}", e);
             // Sin cerrar: al vencer el lease, el barrido la recoge. La clave de
             // idempotencia hace que reintentarlo no cuente dos veces.
-            return Err(Status::internal(format!("Fallo escribiendo conciliación: {e}")));
+            return Err(Status::internal(format!(
+                "Fallo escribiendo conciliación: {e}"
+            )));
         }
 
-        if let Err(e) = self.store.close(&reservation.tenant_id, &reservation.id, CloseReason::Settled).await {
+        if let Err(e) = self
+            .store
+            .close(
+                &reservation.tenant_id,
+                &reservation.id,
+                CloseReason::Settled,
+            )
+            .await
+        {
             // El apunte ya está hecho y marcado. Que el cierre falle solo
             // significa que el barrido la verá vencida y encontrará la marca.
             warn!(reserva = %reservation.id, error = ?e, "[QuotaService] Conciliada pero no cerrada");
@@ -467,7 +513,11 @@ where
         Ok(Response::new(ReconcileTokensResponse {
             status: Self::ok_status(),
             tokens_consumed: actual_consumed,
-            tokens_returned: if reservation.debited { tokens_returned } else { 0 },
+            tokens_returned: if reservation.debited {
+                tokens_returned
+            } else {
+                0
+            },
         }))
     }
 }
@@ -490,8 +540,14 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
                     "[QuotaService] Conciliación tardía — la reserva ya había vencido; se apunta lo consumido"
                 );
                 if actual_consumed > 0 {
-                    if let Err(e) = self.counter
-                        .settle_once(&r.tenant_id, &r.quota_id, actual_consumed, &late_charge_key(&r.id))
+                    if let Err(e) = self
+                        .counter
+                        .settle_once(
+                            &r.tenant_id,
+                            &r.quota_id,
+                            actual_consumed,
+                            &late_charge_key(&r.id),
+                        )
                         .await
                     {
                         error!("[QuotaService] Falló el cargo tardío: {:?}", e);
@@ -546,7 +602,9 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
     ) -> Result<Response<ReconcileTokensResponse>, Status> {
         let parts: Vec<&str> = wire.split(':').collect();
         if parts.len() != 4 {
-            return Err(Status::invalid_argument("Formato de reservation_id inválido"));
+            return Err(Status::invalid_argument(
+                "Formato de reservation_id inválido",
+            ));
         }
         let quota_id = parts[0];
         let tenant_id = parts[2];
@@ -559,12 +617,15 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
         );
 
         if actual_consumed > 0 {
-            if let Err(e) = self.counter
+            if let Err(e) = self
+                .counter
                 .settle_once(tenant_id, quota_id, actual_consumed, &late_charge_key(wire))
                 .await
             {
                 error!("[QuotaService] Falló la conciliación heredada: {:?}", e);
-                return Err(Status::internal(format!("Fallo escribiendo conciliación: {e}")));
+                return Err(Status::internal(format!(
+                    "Fallo escribiendo conciliación: {e}"
+                )));
             }
         }
 
@@ -574,7 +635,6 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
             tokens_returned: 0,
         }))
     }
-
 }
 
 #[cfg(test)]

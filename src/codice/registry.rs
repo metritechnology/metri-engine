@@ -40,23 +40,23 @@ pub enum AttrType {
 impl From<&str> for AttrType {
     fn from(s: &str) -> Self {
         match s {
-            "string"    => AttrType::String,
-            "number"    => AttrType::Number,
-            "integer"   => AttrType::Number,
-            "int"       => AttrType::Number,
-            "long"      => AttrType::Number,
-            "epoch"     => AttrType::Epoch,
-            "decimal"   => AttrType::Decimal,
-            "boolean"   => AttrType::Boolean,
-            "array"     => AttrType::Array,
+            "string" => AttrType::String,
+            "number" => AttrType::Number,
+            "integer" => AttrType::Number,
+            "int" => AttrType::Number,
+            "long" => AttrType::Number,
+            "epoch" => AttrType::Epoch,
+            "decimal" => AttrType::Decimal,
+            "boolean" => AttrType::Boolean,
+            "array" => AttrType::Array,
             "reference" => AttrType::Reference,
-            "uuid"      => AttrType::Uuid,
-            "bytes"     => AttrType::Bytes,
-            "enum"      => AttrType::Enum,
-            "json"      => AttrType::Json,
-            "double"    => AttrType::Decimal,
-            "float"     => AttrType::Decimal,
-            other       => AttrType::Unknown(other.to_string()),
+            "uuid" => AttrType::Uuid,
+            "bytes" => AttrType::Bytes,
+            "enum" => AttrType::Enum,
+            "json" => AttrType::Json,
+            "double" => AttrType::Decimal,
+            "float" => AttrType::Decimal,
+            other => AttrType::Unknown(other.to_string()),
         }
     }
 }
@@ -74,7 +74,7 @@ impl From<&str> for EngineChannel {
     fn from(s: &str) -> Self {
         match s {
             "olap" => EngineChannel::Olap,
-            _      => EngineChannel::Oltp, // default seguro
+            _ => EngineChannel::Oltp, // default seguro
         }
     }
 }
@@ -83,24 +83,24 @@ impl From<&str> for EngineChannel {
 /// Equivale al mapa de atributos en el JSON del Códice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttributeDescriptor {
-    pub name:                    String,
-    pub attr_type:               AttrType,
-    pub label:                   Option<String>,
-    pub required:                bool,
-    pub unique:                  Option<String>, // "tenant" | "identity" | "value" | null
-    pub indexed:                 bool,           // genera item AVET
-    pub fts:                     bool,           // Full-text search index
-    pub is_dimension:            bool,           // dimension para OLAP
-    pub is_metric:               bool,           // métrica para OLAP
-    pub entity_ref:              Option<String>, // referencia a otra entidad
-    pub options:                 Vec<String>,    // enum values
-    pub is_sequence_scope:       bool,
-    pub is_sequence_scope_via:   bool,
+    pub name: String,
+    pub attr_type: AttrType,
+    pub label: Option<String>,
+    pub required: bool,
+    pub unique: Option<String>, // "tenant" | "identity" | "value" | null
+    pub indexed: bool,          // genera item AVET
+    pub fts: bool,              // Full-text search index
+    pub is_dimension: bool,     // dimension para OLAP
+    pub is_metric: bool,        // métrica para OLAP
+    pub entity_ref: Option<String>, // referencia a otra entidad
+    pub options: Vec<String>,   // enum values
+    pub is_sequence_scope: bool,
+    pub is_sequence_scope_via: bool,
     /// Marca PII — sanitizado en error_response (Clojure: :sensitive true).
-    pub sensitive:               bool,
-    pub auto_generate:           Option<serde_json::Value>,
-    pub validation_regex:        Option<String>,
-    pub default_value:           Option<String>,
+    pub sensitive: bool,
+    pub auto_generate: Option<serde_json::Value>,
+    pub validation_regex: Option<String>,
+    pub default_value: Option<String>,
 }
 
 /// Ámbito de una restricción de unicidad.
@@ -154,13 +154,13 @@ pub enum ConstraintKind {
 /// Modelo completo de una entidad del Códice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityModel {
-    pub entity:      String,
-    pub label:       Option<String>,
-    pub icon:        Option<String>,
+    pub entity: String,
+    pub label: Option<String>,
+    pub icon: Option<String>,
     pub primary_key: Option<String>,
-    pub fts_fields:  Vec<String>,
-    pub engine:      EngineChannel,
-    pub attributes:  Vec<AttributeDescriptor>,
+    pub fts_fields: Vec<String>,
+    pub engine: EngineChannel,
+    pub attributes: Vec<AttributeDescriptor>,
     pub event_rules: Vec<serde_json::Value>,
     pub is_sequence_scope_provider: bool,
     #[serde(default)]
@@ -188,7 +188,7 @@ pub struct EntityModel {
 /// Entrada del registry para una entidad.
 #[derive(Debug, Clone)]
 pub struct RegistryEntry {
-    pub model:       EntityModel,
+    pub model: EntityModel,
     pub fingerprint: String, // SHA-256 hex — COD_003 collision detection
 }
 
@@ -197,13 +197,13 @@ pub struct RegistryEntry {
 /// [PORTED_FROM: (def ^:private registry (atom {})) + ig/init-key :codice/registry]
 pub struct CodeRegistry {
     /// Lookup por nombre de entidad → entry
-    by_entity:   HashMap<String, RegistryEntry>,
+    by_entity: HashMap<String, RegistryEntry>,
     /// Lookup por fingerprint → entity_name (para COD_003)
-    by_hash:     HashMap<String, String>,
+    by_hash: HashMap<String, String>,
     /// Lookup inverso: DJB2 hash de atributo → nombre de atributo
-    by_attr_id:  HashMap<u16, String>,
+    by_attr_id: HashMap<u16, String>,
     /// Diccionarios de localización: locale -> JSON
-    locales:     HashMap<String, serde_json::Value>,
+    locales: HashMap<String, serde_json::Value>,
 }
 
 impl CodeRegistry {
@@ -216,20 +216,30 @@ impl CodeRegistry {
         if files.is_empty() {
             return Err(DomainError::codice(
                 ErrorCode::Cod002,
-                format!("Códice: no JSON model files found in: {}", models_dir.display()),
+                format!(
+                    "Códice: no JSON model files found in: {}",
+                    models_dir.display()
+                ),
             ));
         }
 
-        info!("Códice: scanning {} JSON models from {}", files.len(), models_dir.display());
+        info!(
+            "Códice: scanning {} JSON models from {}",
+            files.len(),
+            models_dir.display()
+        );
 
-        let mut by_entity:        HashMap<String, RegistryEntry> = HashMap::new();
-        let mut by_hash:          HashMap<String, String>        = HashMap::new();
-        let mut by_attr_id:       HashMap<u16, String>           = HashMap::new();
-        let mut event_rules_seed: Vec<serde_json::Value>         = Vec::new();
+        let mut by_entity: HashMap<String, RegistryEntry> = HashMap::new();
+        let mut by_hash: HashMap<String, String> = HashMap::new();
+        let mut by_attr_id: HashMap<u16, String> = HashMap::new();
+        let mut event_rules_seed: Vec<serde_json::Value> = Vec::new();
 
         // Cargar archivos de diccionarios localizados recursivamente
         let mut locales = HashMap::new();
-        let locales_dir = models_dir.parent().map(|p| p.join("locales")).unwrap_or_else(|| Path::new("config/locales").to_path_buf());
+        let locales_dir = models_dir
+            .parent()
+            .map(|p| p.join("locales"))
+            .unwrap_or_else(|| Path::new("config/locales").to_path_buf());
         if locales_dir.is_dir() {
             fn merge_json(a: &mut serde_json::Value, b: serde_json::Value) {
                 match (a, b) {
@@ -242,7 +252,11 @@ impl CodeRegistry {
                 }
             }
 
-            fn load_locales_recursive(dir: &Path, base_dir: &Path, locales: &mut HashMap<String, serde_json::Value>) {
+            fn load_locales_recursive(
+                dir: &Path,
+                base_dir: &Path,
+                locales: &mut HashMap<String, serde_json::Value>,
+            ) {
                 if let Ok(entries) = std::fs::read_dir(dir) {
                     for entry in entries {
                         if let Ok(entry) = entry {
@@ -259,8 +273,18 @@ impl CodeRegistry {
                                                 locale_name
                                             };
                                             if let Ok(content) = std::fs::read_to_string(&path) {
-                                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                                                    let locale_entry = locales.entry(clean_locale.to_string()).or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                                                if let Ok(json) =
+                                                    serde_json::from_str::<serde_json::Value>(
+                                                        &content,
+                                                    )
+                                                {
+                                                    let locale_entry = locales
+                                                        .entry(clean_locale.to_string())
+                                                        .or_insert_with(|| {
+                                                            serde_json::Value::Object(
+                                                                serde_json::Map::new(),
+                                                            )
+                                                        });
                                                     merge_json(locale_entry, json);
                                                 }
                                             }
@@ -282,7 +306,10 @@ impl CodeRegistry {
         by_attr_id.insert(0x0002, "tenant/id".to_string());
         by_attr_id.insert(0x0003, "meta/created_at".to_string());
         by_attr_id.insert(0x0004, "meta/updated_at".to_string());
-        by_attr_id.insert(crate::eav::types::datom::Datom::hash_attr_name("entity_type"), "entity_type".to_string());
+        by_attr_id.insert(
+            crate::eav::types::datom::Datom::hash_attr_name("entity_type"),
+            "entity_type".to_string(),
+        );
 
         for file in &files {
             let raw = std::fs::read_to_string(file).map_err(|e| {
@@ -351,7 +378,12 @@ impl CodeRegistry {
             by_entity.insert(entity_name, RegistryEntry { model, fingerprint });
         }
 
-        let registry = CodeRegistry { by_entity, by_hash, by_attr_id, locales };
+        let registry = CodeRegistry {
+            by_entity,
+            by_hash,
+            by_attr_id,
+            locales,
+        };
 
         // Post-build: validar scope providers
         // [PORTED_FROM: (validate-scope-providers! registry)]
@@ -388,7 +420,11 @@ impl CodeRegistry {
             .map(|e| e.model.attributes.as_slice())
     }
 
-    pub fn get_attribute(&self, entity_type: &str, attr_name: &str) -> Option<&AttributeDescriptor> {
+    pub fn get_attribute(
+        &self,
+        entity_type: &str,
+        attr_name: &str,
+    ) -> Option<&AttributeDescriptor> {
         self.get_attributes(entity_type)
             .and_then(|attrs| attrs.iter().find(|a| a.name == attr_name))
     }
@@ -401,7 +437,9 @@ impl CodeRegistry {
     /// Obtiene el fingerprint SHA-256.
     /// [PORTED_FROM: (entity-hash entity-type)]
     pub fn get_fingerprint(&self, entity_type: &str) -> Option<&str> {
-        self.by_entity.get(entity_type).map(|e| e.fingerprint.as_str())
+        self.by_entity
+            .get(entity_type)
+            .map(|e| e.fingerprint.as_str())
     }
 
     /// Lista todos los nombres de entidades registradas.
@@ -416,10 +454,15 @@ impl CodeRegistry {
 
     /// Obtiene una etiqueta localizada para una entidad o atributo.
     /// Soporta códigos locales compuestos (ej: "es-CO" -> "es").
-    pub fn get_localized_label(&self, locale: &str, entity: &str, attr: Option<&str>) -> Option<String> {
+    pub fn get_localized_label(
+        &self,
+        locale: &str,
+        entity: &str,
+        attr: Option<&str>,
+    ) -> Option<String> {
         let clean_locale = locale.split('-').next().unwrap_or(locale);
         let doc = self.locales.get(clean_locale)?;
-        
+
         if let Some(attr_name) = attr {
             doc.pointer(&format!("/entities/{}/attributes/{}", entity, attr_name))
                 .and_then(|v| v.as_str())
@@ -433,11 +476,19 @@ impl CodeRegistry {
 
     /// Obtiene las traducciones de enum localizadas para un atributo específico.
     /// Retorna un `HashMap<String, String>` con todas las traducciones.
-    pub fn get_localized_enum_labels(&self, locale: &str, entity: &str, attr: &str) -> std::collections::HashMap<String, String> {
+    pub fn get_localized_enum_labels(
+        &self,
+        locale: &str,
+        entity: &str,
+        attr: &str,
+    ) -> std::collections::HashMap<String, String> {
         let clean_locale = locale.split('-').next().unwrap_or(locale);
         let mut labels = std::collections::HashMap::new();
         if let Some(doc) = self.locales.get(clean_locale) {
-            if let Some(enum_map) = doc.pointer(&format!("/enums/{}/{}", entity, attr)).and_then(|v| v.as_object()) {
+            if let Some(enum_map) = doc
+                .pointer(&format!("/enums/{}/{}", entity, attr))
+                .and_then(|v| v.as_object())
+            {
                 for (k, v) in enum_map {
                     if let Some(val_str) = v.as_str() {
                         labels.insert(k.clone(), val_str.to_string());
@@ -499,7 +550,9 @@ pub fn global_opt() -> Option<&'static CodeRegistry> {
 
 /// Accede al registry global. Panics si no fue inicializado.
 pub fn global() -> &'static CodeRegistry {
-    REGISTRY.get().expect("CodeRegistry no inicializado — llamar init_global primero")
+    REGISTRY
+        .get()
+        .expect("CodeRegistry no inicializado — llamar init_global primero")
 }
 
 // ── Helpers privados ─────────────────────────────────────────────────────────
@@ -509,12 +562,7 @@ pub fn global() -> &'static CodeRegistry {
 fn schema_fingerprint(entity_name: &str, json: &serde_json::Value) -> String {
     let attr_names: Vec<&str> = json["attributes"]
         .as_array()
-        .map(|attrs| {
-            attrs
-                .iter()
-                .filter_map(|a| a["name"].as_str())
-                .collect()
-        })
+        .map(|attrs| attrs.iter().filter_map(|a| a["name"].as_str()).collect())
         .unwrap_or_default();
 
     let input = format!("{entity_name}{attr_names:?}");
@@ -525,10 +573,7 @@ fn schema_fingerprint(entity_name: &str, json: &serde_json::Value) -> String {
 /// Parsea un modelo JSON en un EntityModel tipado.
 /// [PORTED_FROM: (load-model-file file)]
 fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainError> {
-    let entity = json["entity"]
-        .as_str()
-        .unwrap_or("unknown")
-        .to_string();
+    let entity = json["entity"].as_str().unwrap_or("unknown").to_string();
 
     let engine = EngineChannel::from(json["engine"].as_str().unwrap_or("oltp"));
 
@@ -538,36 +583,40 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
         .unwrap_or_default()
         .iter()
         .map(|a| AttributeDescriptor {
-            name:                    a["name"].as_str().unwrap_or("").to_string(),
-            attr_type:               AttrType::from(a["type"].as_str().unwrap_or("string")),
-            label:                   a["label"].as_str().map(str::to_string),
-            required:                a["required"].as_bool().unwrap_or(false),
-            unique:                  a["unique"].as_str().map(str::to_string),
-            indexed:                 a["index"].as_bool().unwrap_or(false),
-            fts:                     a["fts"].as_bool().unwrap_or(false),
-            is_dimension:            a["is_dimension"].as_bool().unwrap_or(false),
-            is_metric:               a["is_metric"].as_bool().unwrap_or(false),
-            entity_ref:              a["entityRef"].as_str().map(str::to_string),
-            options:                 a["options"]
-                                        .as_array()
-                                        .map(|o| {
-                                            o.iter()
-                                             .filter_map(|v| v.as_str().map(str::to_string))
-                                             .collect()
-                                        })
-                                        .unwrap_or_default(),
-            is_sequence_scope:       a["is_sequence_scope"].as_bool().unwrap_or(false),
-            is_sequence_scope_via:   a["is_sequence_scope_via"].as_bool().unwrap_or(false),
-            sensitive:               a["sensitive"].as_bool().unwrap_or(false),
-            auto_generate:           a.get("auto_generate").cloned(),
-            validation_regex:        a["pattern"].as_str().map(str::to_string),
-            default_value:           a["default_value"].as_str().map(str::to_string),
+            name: a["name"].as_str().unwrap_or("").to_string(),
+            attr_type: AttrType::from(a["type"].as_str().unwrap_or("string")),
+            label: a["label"].as_str().map(str::to_string),
+            required: a["required"].as_bool().unwrap_or(false),
+            unique: a["unique"].as_str().map(str::to_string),
+            indexed: a["index"].as_bool().unwrap_or(false),
+            fts: a["fts"].as_bool().unwrap_or(false),
+            is_dimension: a["is_dimension"].as_bool().unwrap_or(false),
+            is_metric: a["is_metric"].as_bool().unwrap_or(false),
+            entity_ref: a["entityRef"].as_str().map(str::to_string),
+            options: a["options"]
+                .as_array()
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            is_sequence_scope: a["is_sequence_scope"].as_bool().unwrap_or(false),
+            is_sequence_scope_via: a["is_sequence_scope_via"].as_bool().unwrap_or(false),
+            sensitive: a["sensitive"].as_bool().unwrap_or(false),
+            auto_generate: a.get("auto_generate").cloned(),
+            validation_regex: a["pattern"].as_str().map(str::to_string),
+            default_value: a["default_value"].as_str().map(str::to_string),
         })
         .collect();
 
     let mut fts_fields: Vec<String> = json["fts_fields"]
         .as_array()
-        .map(|f| f.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|f| {
+            f.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
 
     if fts_fields.is_empty() {
@@ -578,28 +627,30 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
         }
     }
 
-    let event_rules = json["event_rules"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let event_rules = json["event_rules"].as_array().cloned().unwrap_or_default();
 
-    let write_path_locked = json["routing"]["write_path_locked"].as_bool().unwrap_or(false);
+    let write_path_locked = json["routing"]["write_path_locked"]
+        .as_bool()
+        .unwrap_or(false);
     let is_system = json["is_system"].as_bool().unwrap_or(false);
 
     Ok(EntityModel {
         entity,
-        label:       json["label"].as_str().map(str::to_string),
-        icon:        json["icon"].as_str().map(str::to_string),
+        label: json["label"].as_str().map(str::to_string),
+        icon: json["icon"].as_str().map(str::to_string),
         primary_key: json["primary_key"].as_str().map(str::to_string),
         fts_fields,
         engine,
         attributes,
         event_rules,
-        is_sequence_scope_provider: json["is_sequence_scope_provider"].as_bool().unwrap_or(false),
+        is_sequence_scope_provider: json["is_sequence_scope_provider"]
+            .as_bool()
+            .unwrap_or(false),
         write_path_locked,
         is_system,
         disable_eda: json["disable_eda"].as_bool().unwrap_or(false),
-        shadow_sagas_mapping: json.get("shadow_sagas_mapping")
+        shadow_sagas_mapping: json
+            .get("shadow_sagas_mapping")
             .filter(|v| v.is_object())
             .cloned(),
         constraints: parse_constraints(json),
@@ -629,7 +680,11 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
 
             let attributes: Vec<String> = c["attributes"]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             if attributes.is_empty() {
@@ -677,4 +732,3 @@ fn collect_json_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, DomainError
 #[cfg(test)]
 #[path = "tests/registry_tests.rs"]
 mod tests;
-

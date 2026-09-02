@@ -3,16 +3,16 @@
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use tracing::{info, error, instrument};
+use tracing::{error, info, instrument};
 
+use crate::aegis::oltp::executor::OltpExecutor;
 use crate::grpc::pb::eda::v1::moira_routing_service_server::MoiraRoutingService;
 use crate::grpc::pb::eda::v1::{
-    MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse,
-    ResetOrphanedEventsRequest, ResetOrphanedEventsResponse,
+    MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse, ResetOrphanedEventsRequest,
+    ResetOrphanedEventsResponse,
 };
-use crate::iop::core::MoiraEmitter;
-use crate::aegis::oltp::executor::OltpExecutor;
 use crate::grpc::service::fc_to_fbs_filter_node;
+use crate::iop::core::MoiraEmitter;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct EdaMatchRequest {
@@ -49,11 +49,11 @@ pub struct EdaGrpcService {
 }
 
 impl EdaGrpcService {
-    pub fn new(
-        moira_emitter: Arc<dyn MoiraEmitter>,
-        oltp_executor: OltpExecutor,
-    ) -> Self {
-        Self { moira_emitter, oltp_executor }
+    pub fn new(moira_emitter: Arc<dyn MoiraEmitter>, oltp_executor: OltpExecutor) -> Self {
+        Self {
+            moira_emitter,
+            oltp_executor,
+        }
     }
 }
 
@@ -65,7 +65,7 @@ impl MoiraRoutingService for EdaGrpcService {
         request: Request<MatchRoutingRulesBatchRequest>,
     ) -> Result<Response<MatchRoutingRulesBatchResponse>, Status> {
         let req = request.into_inner();
-        
+
         // 1. Descomprimir el batch de MessagePack
         let requests: Vec<EdaMatchRequest> = rmp_serde::from_slice(&req.messagepack_encoded_batch)
             .map_err(|e| Status::invalid_argument(format!("MessagePack inválido: {e}")))?;
@@ -80,12 +80,15 @@ impl MoiraRoutingService for EdaGrpcService {
             let outbox_id = &req_item.outbox_id;
 
             // 2. Decodificar el CDC payload JSON
-            let cdc_payload: serde_json::Value = match serde_json::from_slice(&req_item.cdc_payload_json) {
-                Ok(val) => val,
-                Err(e) => {
-                    return Err(Status::invalid_argument(format!("Payload JSON inválido para outbox_id={outbox_id}: {e}")));
-                }
-            };
+            let cdc_payload: serde_json::Value =
+                match serde_json::from_slice(&req_item.cdc_payload_json) {
+                    Ok(val) => val,
+                    Err(e) => {
+                        return Err(Status::invalid_argument(format!(
+                            "Payload JSON inválido para outbox_id={outbox_id}: {e}"
+                        )));
+                    }
+                };
 
             // 3. Consultar las reglas activas para esta entidad y gatillo
             let query_rules = serde_json::json!({
@@ -99,10 +102,16 @@ impl MoiraRoutingService for EdaGrpcService {
                 "limit": 100
             });
 
-            let rules_rows = match self.oltp_executor.run_oltp_query(tenant_id, &query_rules).await {
+            let rules_rows = match self
+                .oltp_executor
+                .run_oltp_query(tenant_id, &query_rules)
+                .await
+            {
                 Ok(val) => val,
                 Err(e) => {
-                    return Err(Status::internal(format!("Fallo al consultar reglas de ruteo: {e:?}")));
+                    return Err(Status::internal(format!(
+                        "Fallo al consultar reglas de ruteo: {e:?}"
+                    )));
                 }
             };
 
@@ -119,7 +128,11 @@ impl MoiraRoutingService for EdaGrpcService {
                 "limit": 100
             });
 
-            let webhooks_rows = match self.oltp_executor.run_oltp_query(tenant_id, &query_webhooks).await {
+            let webhooks_rows = match self
+                .oltp_executor
+                .run_oltp_query(tenant_id, &query_webhooks)
+                .await
+            {
                 Ok(val) => val,
                 Err(_) => serde_json::Value::Array(vec![]),
             };
@@ -132,12 +145,16 @@ impl MoiraRoutingService for EdaGrpcService {
 
             for rule in rules {
                 let rule_id = rule.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let detail_type_output = rule.get("detail_type_output").and_then(|v| v.as_str()).unwrap_or("");
+                let detail_type_output = rule
+                    .get("detail_type_output")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
 
                 // 5. Evaluación AST de condiciones
                 if let Some(fc) = rule.get("filter_conditions") {
                     if let Some(fbs_node) = fc_to_fbs_filter_node(fc) {
-                        let passes = crate::aegis::oltp::filter::eval_filter_node(&cdc_payload, &fbs_node);
+                        let passes =
+                            crate::aegis::oltp::filter::eval_filter_node(&cdc_payload, &fbs_node);
                         if !passes {
                             continue;
                         }
@@ -160,9 +177,17 @@ impl MoiraRoutingService for EdaGrpcService {
                     }
 
                     if matches_rule {
-                        let target_url = webhook.get("target_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let secret_token_cipher = webhook.get("auth_token").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        
+                        let target_url = webhook
+                            .get("target_url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let secret_token_cipher = webhook
+                            .get("auth_token")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
                         // Base64 encoding del payload original
                         let prepared_payload_base64 = base64::Engine::encode(
                             &base64::engine::general_purpose::STANDARD,
@@ -220,7 +245,7 @@ impl MoiraRoutingService for EdaGrpcService {
                 }
             }
         }
-        
+
         // Si no hay especificado, usar por defecto el tenant local estándar
         if tenants.is_empty() {
             tenants.push("tnt_01".to_string());
@@ -231,7 +256,11 @@ impl MoiraRoutingService for EdaGrpcService {
 
         for tenant_id in tenants {
             info!(tenant_id = %tenant_id, ttl_ms = %ttl_ms, "[Watchdog] Iniciando barrido de huérfanos");
-            match self.moira_emitter.reset_orphaned_processing(&tenant_id, ttl_ms).await {
+            match self
+                .moira_emitter
+                .reset_orphaned_processing(&tenant_id, ttl_ms)
+                .await
+            {
                 Ok(count) => {
                     if count > 0 {
                         info!(tenant_id = %tenant_id, count = %count, "[Watchdog] Eventos huérfanos reseteados");

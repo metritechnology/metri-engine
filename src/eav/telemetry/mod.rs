@@ -1,2 +1,2 @@
 pub mod bucket;
-pub use bucket::{epoch_bucket, compress_readings, decompress_readings, IoTReading};
+pub use bucket::{compress_readings, decompress_readings, epoch_bucket, IoTReading};

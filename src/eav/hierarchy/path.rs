@@ -1,8 +1,8 @@
 // eav/hierarchy/path.rs — Materialized Paths para jerarquías O(1)
 // Blueprint: Metri EAV §XI.1
 
-use tracing::debug;
 use crate::domain::errors::{DomainError, ErrorCode};
+use tracing::debug;
 
 /// Construye el path de jerarquía de una entidad recorriendo
 /// el árbol de padres hacia arriba.

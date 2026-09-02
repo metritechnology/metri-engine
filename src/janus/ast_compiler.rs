@@ -5,12 +5,12 @@
 use serde_json::{json, Value};
 use tracing::{info, warn};
 
-use crate::domain::errors::{DomainError, ErrorCode};
-use crate::janus::router::CedarCtx;
-use crate::janus::abac_clauses;
-use crate::janus::filter_compiler;
-use crate::janus::fbs::{FilterOperator, FilterGroup_Conjunction};
 use crate::cedar::authorizer::is_master_tenant;
+use crate::domain::errors::{DomainError, ErrorCode};
+use crate::janus::abac_clauses;
+use crate::janus::fbs::{FilterGroup_Conjunction, FilterOperator};
+use crate::janus::filter_compiler;
+use crate::janus::router::CedarCtx;
 
 /// Construye la proyección :select
 /// [PORTED_FROM: (build-select entity stree schema)]
@@ -27,22 +27,25 @@ fn build_select(entity: &str, stree: Option<&Value>, is_olap: bool) -> Vec<Value
             if arr.is_empty() {
                 return vec![json!("*")];
             }
-            return arr.iter().map(|v| {
-                let fname = v.as_str().unwrap_or("");
-                if fname == "id" {
-                    if is_olap {
-                        json!(format!("{}/id", entity))
+            return arr
+                .iter()
+                .map(|v| {
+                    let fname = v.as_str().unwrap_or("");
+                    if fname == "id" {
+                        if is_olap {
+                            json!(format!("{}/id", entity))
+                        } else {
+                            json!("entity/ulid")
+                        }
+                    } else if fname == "created_at" || fname == "createdAt" {
+                        json!("meta/created_at")
+                    } else if fname == "updated_at" || fname == "updatedAt" {
+                        json!("meta/updated_at")
                     } else {
-                        json!("entity/ulid")
+                        json!(format!("{}/{}", entity, fname))
                     }
-                } else if fname == "created_at" || fname == "createdAt" {
-                    json!("meta/created_at")
-                } else if fname == "updated_at" || fname == "updatedAt" {
-                    json!("meta/updated_at")
-                } else {
-                    json!(format!("{}/{}", entity, fname))
-                }
-            }).collect();
+                })
+                .collect();
         } else if let Some(obj) = stree.as_object() {
             let mut acc = Vec::new();
             for (k, v) in obj {
@@ -86,11 +89,16 @@ pub fn compile_ast_internal(
     cedar_ctx: &CedarCtx,
     schema: &Value,
 ) -> Result<Value, DomainError> {
-    let entity = query_descriptor.get("entity").and_then(|v| v.as_str()).unwrap_or("");
+    let entity = query_descriptor
+        .get("entity")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let tenant_id = &cedar_ctx.tenant_id;
     let user_id = &cedar_ctx.user_id;
 
-    let boundaries = cedar_ctx.domain_boundaries.get(entity)
+    let boundaries = cedar_ctx
+        .domain_boundaries
+        .get(entity)
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -116,12 +124,16 @@ pub fn compile_ast_internal(
             &boundaries,
             owner_fields.owner_field.as_deref(),
             owner_fields.assignee_field.as_deref(),
-            user_id
+            user_id,
         )?
     };
 
     // 4d: Filters
-    let filters = query_descriptor.get("filters").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let filters = query_descriptor
+        .get("filters")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     let filter_nodes = filter_compiler::compile_filters(&filters, entity)?;
 
     // 4d-SEARCH: Omnisearch -> fuzzy mapping
@@ -129,12 +141,13 @@ pub fn compile_ast_internal(
     let mut search_node = None;
     if let Some(term) = search_term {
         if let Some(attrs) = schema.get("attributes").and_then(|v| v.as_array()) {
-            let fts_fields: Vec<String> = attrs.iter()
+            let fts_fields: Vec<String> = attrs
+                .iter()
                 .filter(|a| a.get("fts").and_then(|v| v.as_bool()).unwrap_or(false))
                 .filter_map(|a| a.get("name").and_then(|v| v.as_str()))
                 .map(|name| format!("{}/{}", entity, name))
                 .collect();
-            
+
             if !fts_fields.is_empty() {
                 if fts_fields.len() == 1 {
                     search_node = Some(json!(["fuzzy", fts_fields[0], term]));
@@ -169,22 +182,30 @@ pub fn compile_ast_internal(
 
     // 4e: Select
     let is_olap = schema.get("engine").and_then(|v| v.as_str()) == Some("olap");
-    let stree = query_descriptor.get("select_tree").or_else(|| query_descriptor.get("select-tree"));
+    let stree = query_descriptor
+        .get("select_tree")
+        .or_else(|| query_descriptor.get("select-tree"));
     let select = build_select(entity, stree, is_olap);
 
     // Limit and Output Cast
-    let limit = query_descriptor.get("limit").and_then(|v| v.as_u64()).unwrap_or(100);
+    let limit = query_descriptor
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100);
     let output_cast_from_viz = match query_descriptor.get("viz").and_then(|v| v.as_str()) {
-        Some("pie") | Some("donut")                              => "PIE",
+        Some("pie") | Some("donut") => "PIE",
         Some("bar") | Some("line") | Some("area") | Some("scatter") | Some("timeseries") => {
-            let has_interval = query_descriptor.get("dimensions")
+            let has_interval = query_descriptor
+                .get("dimensions")
                 .and_then(|v| v.as_array())
-                .map(|dims| dims.iter().any(|d| {
-                    d.get("interval")
-                        .and_then(|i| i.as_str())
-                        .filter(|s| !s.is_empty())
-                        .is_some()
-                }))
+                .map(|dims| {
+                    dims.iter().any(|d| {
+                        d.get("interval")
+                            .and_then(|i| i.as_str())
+                            .filter(|s| !s.is_empty())
+                            .is_some()
+                    })
+                })
                 .unwrap_or(false);
             if has_interval {
                 "TIMESERIES"
@@ -192,11 +213,12 @@ pub fn compile_ast_internal(
                 "PIE"
             }
         }
-        Some("tree") | Some("table")                             => "TABLE",
-        Some("kpi") | Some("indicator") | Some("gauge")          => "KPI",
-        _                                                        => "TABLE",
+        Some("tree") | Some("table") => "TABLE",
+        Some("kpi") | Some("indicator") | Some("gauge") => "KPI",
+        _ => "TABLE",
     };
-    let output_cast = query_descriptor.get("output_cast")
+    let output_cast = query_descriptor
+        .get("output_cast")
         .or_else(|| query_descriptor.get("output-cast"))
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty() && *s != "0" && *s != "OUTPUT_CAST_UNSPECIFIED")
@@ -213,9 +235,17 @@ pub fn compile_ast_internal(
 
     // Pass-through elements
     let pass_through = [
-        "metrics", "dimensions", "group_by", "time_frame", 
-        "order_by", "hierarchy", "comparisons", "semantic_measures",
-        "search", "cursor", "viz"
+        "metrics",
+        "dimensions",
+        "group_by",
+        "time_frame",
+        "order_by",
+        "hierarchy",
+        "comparisons",
+        "semantic_measures",
+        "search",
+        "cursor",
+        "viz",
     ];
 
     if let Some(obj) = ast.as_object_mut() {
@@ -248,7 +278,7 @@ pub fn compile_ast_fbs(
     let mut new_req = req.clone();
     let entity = req.entity.as_deref().unwrap_or("");
     let tenant_id = &cedar_ctx.tenant_id;
-    
+
     let mut base_filters = new_req.filters.take().unwrap_or_default();
 
     // 4a: Tenant isolation & Entity type
@@ -299,7 +329,9 @@ pub fn compile_ast_fbs(
     base_filters.insert(std::cmp::min(1, base_filters.len()), entity_type_filter);
 
     // 4b+4c: ABAC RLS Filters
-    let boundaries = cedar_ctx.domain_boundaries.get(entity)
+    let boundaries = cedar_ctx
+        .domain_boundaries
+        .get(entity)
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -316,7 +348,11 @@ pub fn compile_ast_fbs(
     let mut location_restricted = true;
 
     for boundary in &boundaries {
-        let scope = boundary.get("query_scope").or_else(|| boundary.get("query-scope")).and_then(|v| v.as_str()).unwrap_or("NONE");
+        let scope = boundary
+            .get("query_scope")
+            .or_else(|| boundary.get("query-scope"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("NONE");
         if scope != "NONE" {
             valid_scopes_count += 1;
             match scope {
@@ -327,7 +363,11 @@ pub fn compile_ast_fbs(
                 _ => {}
             }
 
-            if let Some(locs) = boundary.get("permitted_locations").or_else(|| boundary.get("permitted-locations")).and_then(|v| v.as_array()) {
+            if let Some(locs) = boundary
+                .get("permitted_locations")
+                .or_else(|| boundary.get("permitted-locations"))
+                .and_then(|v| v.as_array())
+            {
                 if locs.is_empty() {
                     location_restricted = false;
                 } else {
@@ -471,10 +511,10 @@ pub fn compile_ast_fbs(
         }
         _ => {}
     }
-    
+
     // 4d-SEARCH: Omnisearch -> fuzzy mapping
     if let Some(_term) = &req.search {
-        // NOTA: No añadimos un filtro CONTAINS aquí porque OltpExecutor::run_oltp_query_fbs 
+        // NOTA: No añadimos un filtro CONTAINS aquí porque OltpExecutor::run_oltp_query_fbs
         // aplica `fuzzy_match` globalmente o por atributos fts_fields en memoria
         // para aprovechar el Trigram Index (eav::fts) y Damerau-Levenshtein.
         // Inyectar un CONTAINS rompería el fuzzy matching exigiendo coincidencia de substring exacta.
@@ -483,18 +523,25 @@ pub fn compile_ast_fbs(
     new_req.filters = Some(base_filters);
 
     // Select resolution
-    // Convert select_tree JSON string into measures/dimensions if needed, 
+    // Convert select_tree JSON string into measures/dimensions if needed,
     // but the FlatBuffers already separates them in metric/dimension definitions!
     // We just keep the typed objects.
 
     // Infer output_cast from viz if not explicitly set
-    if new_req.output_cast.0 == 0 /* OUTPUT_CAST_UNSPECIFIED */ {
+    if new_req.output_cast.0 == 0
+    /* OUTPUT_CAST_UNSPECIFIED */
+    {
         if let Some(viz) = &new_req.viz {
             let cast = match viz.as_str() {
                 "pie" | "donut" => 4, // PIE
                 "bar" | "line" | "area" | "scatter" | "timeseries" => {
-                    let has_interval = new_req.dimensions.as_ref()
-                        .map(|dims| dims.iter().any(|d| d.interval.as_ref().filter(|s| !s.is_empty()).is_some()))
+                    let has_interval = new_req
+                        .dimensions
+                        .as_ref()
+                        .map(|dims| {
+                            dims.iter()
+                                .any(|d| d.interval.as_ref().filter(|s| !s.is_empty()).is_some())
+                        })
                         .unwrap_or(false);
                     if has_interval {
                         2 // TIMESERIES
@@ -502,9 +549,9 @@ pub fn compile_ast_fbs(
                         4 // PIE
                     }
                 }
-                "tree" | "table" => 3, // TABLE
+                "tree" | "table" => 3,              // TABLE
                 "kpi" | "indicator" | "gauge" => 1, // KPI
-                _ => 3, // TABLE
+                _ => 3,                             // TABLE
             };
             new_req.output_cast = fbs::OutputCastType(cast);
         } else {

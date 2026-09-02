@@ -25,44 +25,44 @@ pub enum ErrorCode {
     JanusFilterCompileError,
     JanusSchemaNotFound,
     JanusTenantMismatch,
-    JanusVal001,    // Defensa Inquebrantable — payload inválido
-    Jns001,         // Sin canal de escritura para engine
-    JnsLock001,     // write_path_locked = true
-    JnsSeed001,     // is_system_seeded = true
-    JnsOlap001,     // rpc Transact prohibido en engine:olap (solo BulkIngest)
-    JnsTx001,       // TX ACID falló en el canal OLTP
+    JanusVal001, // Defensa Inquebrantable — payload inválido
+    Jns001,      // Sin canal de escritura para engine
+    JnsLock001,  // write_path_locked = true
+    JnsSeed001,  // is_system_seeded = true
+    JnsOlap001,  // rpc Transact prohibido en engine:olap (solo BulkIngest)
+    JnsTx001,    // TX ACID falló en el canal OLTP
 
     // ── Aegis SQL Compiler ───────────────────────────────────────────────────
-    Aeg001,  // SQL compilation failed
-    Aeg002,  // Athena execution failed
-    Aeg003,  // Athena timeout
-    Aeg004,  // Athena output parse error
-    Aeg005,  // Unsupported aggregation function
+    Aeg001, // SQL compilation failed
+    Aeg002, // Athena execution failed
+    Aeg003, // Athena timeout
+    Aeg004, // Athena output parse error
+    Aeg005, // Unsupported aggregation function
 
     // ── EAV Engine ──────────────────────────────────────────────────────────
-    Eav001,  // TransactWriteItems failed
-    Eav002,  // Entity not found
+    Eav001, // TransactWriteItems failed
+    Eav002, // Entity not found
     // Cursor obsoleto: el AST cambió entre páginas (eav/cursor/composite.rs).
     // El código canónico dice `EAV_TX_003` y el catálogo lo describe como un
     // conflicto de bloqueo optimista, que es lo que se pensaba usar cuando se
     // reservó. Nada implementa ese bloqueo; cambiar la cadena tocaría el
     // contrato con los clientes, así que se deja y se documenta.
     Eav003,
-    Eav004,  // Attribute not in registry
-    Eav005,  // Sort key overflow (> 1024 bytes)
+    Eav004,    // Attribute not in registry
+    Eav005,    // Sort key overflow (> 1024 bytes)
     EavFts001, // FTS index write failed
 
     // ── Códice / Schema Registry ─────────────────────────────────────────────
-    Cod001,  // Model file parse error
-    Cod002,  // Duplicate entity in registry
-    Cod003,  // SHA-256 fingerprint collision
+    Cod001,      // Model file parse error
+    Cod002,      // Duplicate entity in registry
+    Cod003,      // SHA-256 fingerprint collision
     CodScope001, // Sequence scope provider not found
 
     // ── IOP Pipeline ─────────────────────────────────────────────────────────
-    Iop001,  // Integrity validation failed
-    Iop002,  // Enrichment failed
-    Iop003,  // ACID transaction failed
-    Iop004,  // Outbox publish failed
+    Iop001, // Integrity validation failed
+    Iop002, // Enrichment failed
+    Iop003, // ACID transaction failed
+    Iop004, // Outbox publish failed
 
     // ── Quota ────────────────────────────────────────────────────────────────
     Quota001, // Tenant quota exhausted
@@ -75,8 +75,8 @@ pub enum ErrorCode {
     Infra005, // Kinesis client error
 
     // ── Auth / Tenant ────────────────────────────────────────────────────────
-    Auth401, // Token inválido o expirado
-    Auth403, // Tenant mismatch — acceso denegado
+    Auth401,     // Token inválido o expirado
+    Auth403,     // Tenant mismatch — acceso denegado
     AuthRevoked, // Token revocado (blacklist)
 
     // ── Auditoria ────────────────────────────────────────────────────────────
@@ -317,14 +317,10 @@ impl ErrorCode {
             | ErrorCode::Eav005
             | ErrorCode::EavFts001
             | ErrorCode::EavTx001 => "eav",
-            ErrorCode::Cod001
-            | ErrorCode::Cod002
-            | ErrorCode::Cod003
-            | ErrorCode::CodScope001 => "codice",
-            ErrorCode::Iop001
-            | ErrorCode::Iop002
-            | ErrorCode::Iop003
-            | ErrorCode::Iop004 => "iop",
+            ErrorCode::Cod001 | ErrorCode::Cod002 | ErrorCode::Cod003 | ErrorCode::CodScope001 => {
+                "codice"
+            }
+            ErrorCode::Iop001 | ErrorCode::Iop002 | ErrorCode::Iop003 | ErrorCode::Iop004 => "iop",
             ErrorCode::Quota001 => "quota",
             ErrorCode::Infra001
             | ErrorCode::Infra002
@@ -424,4 +420,3 @@ impl DomainError {
 #[cfg(test)]
 #[path = "tests/errors_tests.rs"]
 mod tests;
-

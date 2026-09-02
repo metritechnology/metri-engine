@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use chrono::{Datelike, TimeZone, Timelike};
 use serde_json::Value;
 use tracing::info;
-use chrono::{Datelike, Timelike, TimeZone};
 
 use crate::codice::registry::{self as codice_registry, AttrType};
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -22,19 +22,19 @@ use crate::domain::protocols::{IQueryEngine, QueryResults};
 /// Motor de consultas local que lee datos de S3 escritos por Firehose.
 pub struct LocalS3QueryEngine {
     s3_client: aws_sdk_s3::Client,
-    bucket:    String,
+    bucket: String,
     /// Almacén en memoria de SQL por execution_id (misma estrategia que el polling de Athena).
-    queries:   Arc<Mutex<HashMap<String, String>>>,
+    queries: Arc<Mutex<HashMap<String, String>>>,
     /// Caché en memoria para evitar leer repetidamente miles de archivos de S3 local en desarrollo.
     /// Clave: S3 Object Key, Valor: Lista de registros crudos JSON de ese archivo.
-    cache:     Mutex<HashMap<String, Vec<serde_json::Map<String, Value>>>>,
+    cache: Mutex<HashMap<String, Vec<serde_json::Map<String, Value>>>>,
 }
 
 impl LocalS3QueryEngine {
     /// Crea un nuevo motor S3 local.
     pub async fn new(bucket: impl Into<String>) -> Self {
-        let region_provider = aws_config::meta::region::RegionProviderChain::default_provider()
-            .or_else("us-east-1");
+        let region_provider =
+            aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
         let config = aws_config::from_env().region(region_provider).load().await;
 
         let s3_client = if let Ok(endpoint_url) = std::env::var("AWS_ENDPOINT_URL") {
@@ -113,7 +113,10 @@ impl IQueryEngine for LocalS3QueryEngine {
 
         // Si la consulta empieza por WITH, es una CTE
         if let Some((ctes, final_select)) = parse_cte_queries(&sql) {
-            tracing::info!("[LocalS3QueryEngine] Detectada consulta CTE con {} subconsultas.", ctes.len());
+            tracing::info!(
+                "[LocalS3QueryEngine] Detectada consulta CTE con {} subconsultas.",
+                ctes.len()
+            );
 
             // 1. Ejecutar cada subconsulta
             let mut current_results = None;
@@ -132,12 +135,16 @@ impl IQueryEngine for LocalS3QueryEngine {
             }
 
             let curr = current_results.ok_or_else(|| {
-                DomainError::aegis(ErrorCode::Aeg004, "Subconsulta 'current_data' requerida en la CTE")
+                DomainError::aegis(
+                    ErrorCode::Aeg004,
+                    "Subconsulta 'current_data' requerida en la CTE",
+                )
             })?;
 
             // 2. Extraer columnas y límites de la consulta final
             let projected_info = extract_projected_columns(&final_select);
-            let projected_columns: Vec<String> = projected_info.iter().map(|c| c.alias.clone()).collect();
+            let projected_columns: Vec<String> =
+                projected_info.iter().map(|c| c.alias.clone()).collect();
             let limit = extract_limit_from_sql(&final_select);
 
             // 3. Unir resultados por índice (o por producto cartesiano)
@@ -145,7 +152,13 @@ impl IQueryEngine for LocalS3QueryEngine {
             for (idx, curr_row) in curr.rows.iter().enumerate() {
                 let mut combined = HashMap::new();
                 for col in &projected_info {
-                    let val = evaluate_final_expression(&col.expr, Some(curr_row), &prev_results, &smart_results, idx);
+                    let val = evaluate_final_expression(
+                        &col.expr,
+                        Some(curr_row),
+                        &prev_results,
+                        &smart_results,
+                        idx,
+                    );
                     combined.insert(col.alias.clone(), val);
                 }
                 rows.push(combined);
@@ -162,7 +175,10 @@ impl IQueryEngine for LocalS3QueryEngine {
                 rows.truncate(lim as usize);
             }
 
-            tracing::info!("[LocalS3QueryEngine] Retornando {} filas de consulta CTE", rows.len());
+            tracing::info!(
+                "[LocalS3QueryEngine] Retornando {} filas de consulta CTE",
+                rows.len()
+            );
 
             return Ok(QueryResults {
                 columns: projected_columns,
@@ -179,12 +195,14 @@ impl LocalS3QueryEngine {
     /// Ejecuta una única consulta analítica estándar no-CTE y retorna los resultados aggregados.
     async fn execute_single_query(&self, sql: &str) -> Result<QueryResults, DomainError> {
         // 1. Extraer entidad del SQL (FROM {db}.{entity} o FROM {entity})
-        let entity = extract_entity_from_sql(sql)
-            .ok_or_else(|| DomainError::aegis(ErrorCode::Aeg004, "No se pudo extraer la entidad del SQL"))?;
+        let entity = extract_entity_from_sql(sql).ok_or_else(|| {
+            DomainError::aegis(ErrorCode::Aeg004, "No se pudo extraer la entidad del SQL")
+        })?;
 
         // 2. Extraer columnas de proyección del SQL con info de agregación
         let projected_info = extract_projected_columns(sql);
-        let projected_columns: Vec<String> = projected_info.iter().map(|c| c.alias.clone()).collect();
+        let projected_columns: Vec<String> =
+            projected_info.iter().map(|c| c.alias.clone()).collect();
         if projected_columns.is_empty() {
             return Err(DomainError::aegis(
                 ErrorCode::Aeg004,
@@ -214,16 +232,17 @@ impl LocalS3QueryEngine {
         let mut all_objects = Vec::new();
         let mut continuation_token: Option<String> = None;
         loop {
-            let mut req = self.s3_client
+            let mut req = self
+                .s3_client
                 .list_objects_v2()
                 .bucket(&self.bucket)
                 .prefix(&prefix);
             if let Some(token) = &continuation_token {
                 req = req.continuation_token(token);
             }
-            let list_res = req.send()
-                .await
-                .map_err(|e| DomainError::aegis(ErrorCode::Aeg004, format!("S3 list falló: {e}")))?;
+            let list_res = req.send().await.map_err(|e| {
+                DomainError::aegis(ErrorCode::Aeg004, format!("S3 list falló: {e}"))
+            })?;
 
             if let Some(objects) = list_res.contents {
                 all_objects.extend(objects);
@@ -239,7 +258,11 @@ impl LocalS3QueryEngine {
         let mut fail_log_count = 0;
         let mut raw_records: Vec<serde_json::Map<String, Value>> = Vec::new();
         // Límite de escaneo alto pero seguro para desarrollo local
-        let max_scan_records = if any_is_aggregate { 50000 } else { limit.unwrap_or(2000) as usize };
+        let max_scan_records = if any_is_aggregate {
+            50000
+        } else {
+            limit.unwrap_or(2000) as usize
+        };
 
         // Ordenar por fecha de modificación descendente (más recientes primero)
         all_objects.sort_by(|a, b| b.last_modified().cmp(&a.last_modified()));
@@ -248,7 +271,10 @@ impl LocalS3QueryEngine {
         let mut keys_to_fetch = Vec::new();
         {
             let cache_map = self.cache.lock().map_err(|_| {
-                DomainError::aegis(ErrorCode::Aeg004, "Lock poisoned en el cache de LocalS3QueryEngine")
+                DomainError::aegis(
+                    ErrorCode::Aeg004,
+                    "Lock poisoned en el cache de LocalS3QueryEngine",
+                )
             })?;
             for obj in &all_objects {
                 let key = match obj.key() {
@@ -404,7 +430,8 @@ impl LocalS3QueryEngine {
 
             // Filtrar por rango de tiempo si se especifica
             if start_ts.is_some() || end_ts.is_some() {
-                let record_ts = obj_map.get("timestamp")
+                let record_ts = obj_map
+                    .get("timestamp")
                     .or_else(|| obj_map.get("created_at"))
                     .and_then(|v| match v {
                         Value::Number(n) => n.as_i64(),
@@ -412,9 +439,17 @@ impl LocalS3QueryEngine {
                         _ => None,
                     });
                 if let Some(r_ts) = record_ts {
-                    let r_ts_sec = if r_ts > 100000000000 { r_ts / 1000 } else { r_ts };
+                    let r_ts_sec = if r_ts > 100000000000 {
+                        r_ts / 1000
+                    } else {
+                        r_ts
+                    };
                     if let Some(start) = start_ts {
-                        let start_sec = if start > 100000000000 { start / 1000 } else { start };
+                        let start_sec = if start > 100000000000 {
+                            start / 1000
+                        } else {
+                            start
+                        };
                         if r_ts_sec < start_sec {
                             continue;
                         }
@@ -436,8 +471,10 @@ impl LocalS3QueryEngine {
         let mut rows: Vec<HashMap<String, Value>> = Vec::new();
 
         if any_is_aggregate {
-            let group_cols: Vec<&ProjectedColumn> = projected_info.iter().filter(|c| !c.is_aggregate).collect();
-            let agg_cols: Vec<&ProjectedColumn> = projected_info.iter().filter(|c| c.is_aggregate).collect();
+            let group_cols: Vec<&ProjectedColumn> =
+                projected_info.iter().filter(|c| !c.is_aggregate).collect();
+            let agg_cols: Vec<&ProjectedColumn> =
+                projected_info.iter().filter(|c| c.is_aggregate).collect();
 
             let mut groups: HashMap<Vec<String>, GroupState> = HashMap::new();
 
@@ -452,13 +489,16 @@ impl LocalS3QueryEngine {
 
                 let state = groups.entry(group_key).or_insert_with(|| GroupState {
                     group_values,
-                    agg_states: vec![AggState {
-                        count: 0,
-                        sum: 0.0,
-                        min: f64::MAX,
-                        max: f64::MIN,
-                        has_values: false,
-                    }; agg_cols.len()],
+                    agg_states: vec![
+                        AggState {
+                            count: 0,
+                            sum: 0.0,
+                            min: f64::MAX,
+                            max: f64::MIN,
+                            has_values: false,
+                        };
+                        agg_cols.len()
+                    ],
                 });
 
                 for (i, col) in agg_cols.iter().enumerate() {
@@ -470,7 +510,10 @@ impl LocalS3QueryEngine {
                         let should_count = if field_name == "*" {
                             true
                         } else {
-                            obj_map.get(&cleaned_field).map(|v| !v.is_null()).unwrap_or(false)
+                            obj_map
+                                .get(&cleaned_field)
+                                .map(|v| !v.is_null())
+                                .unwrap_or(false)
                         };
                         if should_count {
                             agg_state.count += 1;
@@ -527,7 +570,10 @@ impl LocalS3QueryEngine {
                         Some("COUNT") => Value::Number(serde_json::Number::from(agg_state.count)),
                         Some("SUM") => {
                             if agg_state.has_values {
-                                Value::Number(serde_json::Number::from_f64(agg_state.sum).unwrap_or(serde_json::Number::from(0)))
+                                Value::Number(
+                                    serde_json::Number::from_f64(agg_state.sum)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                )
                             } else {
                                 Value::Null
                             }
@@ -535,21 +581,30 @@ impl LocalS3QueryEngine {
                         Some("AVG") => {
                             if agg_state.has_values && agg_state.count > 0 {
                                 let avg = agg_state.sum / (agg_state.count as f64);
-                                Value::Number(serde_json::Number::from_f64(avg).unwrap_or(serde_json::Number::from(0)))
+                                Value::Number(
+                                    serde_json::Number::from_f64(avg)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                )
                             } else {
                                 Value::Null
                             }
                         }
                         Some("MIN") => {
                             if agg_state.has_values {
-                                Value::Number(serde_json::Number::from_f64(agg_state.min).unwrap_or(serde_json::Number::from(0)))
+                                Value::Number(
+                                    serde_json::Number::from_f64(agg_state.min)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                )
                             } else {
                                 Value::Null
                             }
                         }
                         Some("MAX") => {
                             if agg_state.has_values {
-                                Value::Number(serde_json::Number::from_f64(agg_state.max).unwrap_or(serde_json::Number::from(0)))
+                                Value::Number(
+                                    serde_json::Number::from_f64(agg_state.max)
+                                        .unwrap_or(serde_json::Number::from(0)),
+                                )
                             } else {
                                 Value::Null
                             }
@@ -618,7 +673,8 @@ fn extract_entity_from_sql(sql: &str) -> Option<String> {
         while let Some(idx) = lower[search_pos..].find(keyword) {
             let abs_idx = search_pos + idx + keyword.len();
             let rest = &lower[abs_idx..];
-            let table_end = rest.find(|c: char| c.is_whitespace() || c == ')' || c == ';')
+            let table_end = rest
+                .find(|c: char| c.is_whitespace() || c == ')' || c == ';')
                 .unwrap_or(rest.len());
             let table_ref = &rest[..table_end];
 
@@ -688,8 +744,14 @@ fn extract_projected_columns(sql: &str) -> Vec<ProjectedColumn> {
 
     for c in select_part.chars() {
         match c {
-            '(' => { depth += 1; current.push(c); }
-            ')' => { depth -= 1; current.push(c); }
+            '(' => {
+                depth += 1;
+                current.push(c);
+            }
+            ')' => {
+                depth -= 1;
+                current.push(c);
+            }
             ',' if depth == 0 => {
                 let trimmed = current.trim();
                 if !trimmed.is_empty() {
@@ -869,7 +931,10 @@ fn extract_filters_from_sql(sql: &str) -> HashMap<String, Value> {
                 let mut list_vals = Vec::new();
                 for item in list_content.split(',') {
                     let trimmed_item = item.trim();
-                    if trimmed_item.starts_with('\'') && trimmed_item.ends_with('\'') && trimmed_item.len() >= 2 {
+                    if trimmed_item.starts_with('\'')
+                        && trimmed_item.ends_with('\'')
+                        && trimmed_item.len() >= 2
+                    {
                         let inner_val = &trimmed_item[1..trimmed_item.len() - 1];
                         list_vals.push(Value::String(inner_val.to_string()));
                     } else if !trimmed_item.is_empty() {
@@ -927,7 +992,8 @@ fn extract_right_value(right_part: &str) -> Option<(Value, usize)> {
             return Some((Value::String(val_str.to_string()), offset + 1 + end_idx + 1));
         }
     } else {
-        let val_str: String = trimmed.chars()
+        let val_str: String = trimmed
+            .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '.' || *c == '-')
             .collect();
         let val_len = val_str.len();
@@ -989,15 +1055,19 @@ fn extract_timestamp_range_from_sql(sql: &str) -> (Option<i64>, Option<i64>) {
         let abs_idx = search_pos + idx;
         let left_raw = &lower[search_pos..abs_idx];
         let right = &sql[abs_idx + 2..];
-        
-        let is_time_col = left_raw.contains("timestamp") || left_raw.contains("created_at") || left_raw.contains("day");
+
+        let is_time_col = left_raw.contains("timestamp")
+            || left_raw.contains("created_at")
+            || left_raw.contains("day");
         if is_time_col {
             if let Some(val) = extract_val(right) {
                 let ts = match val {
                     Value::Number(n) => n.as_i64(),
                     Value::String(s) => {
                         if let Ok(naive_date) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
-                            naive_date.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp())
+                            naive_date
+                                .and_hms_opt(0, 0, 0)
+                                .map(|dt| dt.and_utc().timestamp())
                         } else {
                             s.parse::<i64>().ok()
                         }
@@ -1018,15 +1088,19 @@ fn extract_timestamp_range_from_sql(sql: &str) -> (Option<i64>, Option<i64>) {
         let abs_idx = search_pos + idx;
         let left_raw = &lower[search_pos..abs_idx];
         let right = &sql[abs_idx + 2..];
-        
-        let is_time_col = left_raw.contains("timestamp") || left_raw.contains("created_at") || left_raw.contains("day");
+
+        let is_time_col = left_raw.contains("timestamp")
+            || left_raw.contains("created_at")
+            || left_raw.contains("day");
         if is_time_col {
             if let Some(val) = extract_val(right) {
                 let ts = match val {
                     Value::Number(n) => n.as_i64(),
                     Value::String(s) => {
                         if let Ok(naive_date) = chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
-                            naive_date.and_hms_opt(23, 59, 59).map(|dt| dt.and_utc().timestamp())
+                            naive_date
+                                .and_hms_opt(23, 59, 59)
+                                .map(|dt| dt.and_utc().timestamp())
                         } else {
                             s.parse::<i64>().ok()
                         }
@@ -1054,15 +1128,21 @@ fn truncate_timestamp(ts_ms_or_sec: i64, interval: &str) -> i64 {
 
     let dt = chrono::Utc.timestamp_opt(ts_sec, 0).unwrap();
     let truncated_dt = match interval.to_lowercase().as_str() {
-        "minute" => {
-            dt.with_second(0).and_then(|t| t.with_nanosecond(0)).unwrap_or(dt)
-        }
-        "hour" => {
-            dt.with_minute(0).and_then(|t| t.with_second(0)).and_then(|t| t.with_nanosecond(0)).unwrap_or(dt)
-        }
-        "day" => {
-            dt.with_hour(0).and_then(|t| t.with_minute(0)).and_then(|t| t.with_second(0)).and_then(|t| t.with_nanosecond(0)).unwrap_or(dt)
-        }
+        "minute" => dt
+            .with_second(0)
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(dt),
+        "hour" => dt
+            .with_minute(0)
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(dt),
+        "day" => dt
+            .with_hour(0)
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(dt),
         "week" => {
             let days_from_monday = match dt.weekday() {
                 chrono::Weekday::Mon => 0,
@@ -1074,15 +1154,29 @@ fn truncate_timestamp(ts_ms_or_sec: i64, interval: &str) -> i64 {
                 chrono::Weekday::Sun => 6,
             };
             let truncated = dt - chrono::Duration::days(days_from_monday);
-            truncated.with_hour(0).and_then(|t| t.with_minute(0)).and_then(|t| t.with_second(0)).and_then(|t| t.with_nanosecond(0)).unwrap_or(dt)
+            truncated
+                .with_hour(0)
+                .and_then(|t| t.with_minute(0))
+                .and_then(|t| t.with_second(0))
+                .and_then(|t| t.with_nanosecond(0))
+                .unwrap_or(dt)
         }
-        "month" => {
-            dt.with_day(1).and_then(|t| t.with_hour(0)).and_then(|t| t.with_minute(0)).and_then(|t| t.with_second(0)).and_then(|t| t.with_nanosecond(0)).unwrap_or(dt)
-        }
-        "year" => {
-            dt.with_month(1).and_then(|t| t.with_day(1)).and_then(|t| t.with_hour(0)).and_then(|t| t.with_minute(0)).and_then(|t| t.with_second(0)).and_then(|t| t.with_nanosecond(0)).unwrap_or(dt)
-        }
-        _ => dt
+        "month" => dt
+            .with_day(1)
+            .and_then(|t| t.with_hour(0))
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(dt),
+        "year" => dt
+            .with_month(1)
+            .and_then(|t| t.with_day(1))
+            .and_then(|t| t.with_hour(0))
+            .and_then(|t| t.with_minute(0))
+            .and_then(|t| t.with_second(0))
+            .and_then(|t| t.with_nanosecond(0))
+            .unwrap_or(dt),
+        _ => dt,
     };
 
     if ts_ms_or_sec > 100000000000 {
@@ -1175,33 +1269,27 @@ fn coerce_value(val: &Value, col: &str, attr_types: &HashMap<String, AttrType>) 
     let attr_type = attr_types.get(col);
 
     match attr_type {
-        Some(AttrType::Epoch) => {
-            match val {
-                Value::Number(_) => val.clone(),
-                Value::String(s) => s.parse::<i64>().map(Value::from).unwrap_or(val.clone()),
-                _ => val.clone(),
-            }
-        }
-        Some(AttrType::Number) | Some(AttrType::Decimal) => {
-            match val {
-                Value::Number(_) => val.clone(),
-                Value::String(s) => {
-                    if let Ok(n) = s.parse::<f64>() {
-                        Value::from(n)
-                    } else {
-                        val.clone()
-                    }
+        Some(AttrType::Epoch) => match val {
+            Value::Number(_) => val.clone(),
+            Value::String(s) => s.parse::<i64>().map(Value::from).unwrap_or(val.clone()),
+            _ => val.clone(),
+        },
+        Some(AttrType::Number) | Some(AttrType::Decimal) => match val {
+            Value::Number(_) => val.clone(),
+            Value::String(s) => {
+                if let Ok(n) = s.parse::<f64>() {
+                    Value::from(n)
+                } else {
+                    val.clone()
                 }
-                _ => val.clone(),
             }
-        }
-        Some(AttrType::Boolean) => {
-            match val {
-                Value::Bool(_) => val.clone(),
-                Value::String(s) => Value::Bool(s.eq_ignore_ascii_case("true")),
-                _ => val.clone(),
-            }
-        }
+            _ => val.clone(),
+        },
+        Some(AttrType::Boolean) => match val {
+            Value::Bool(_) => val.clone(),
+            Value::String(s) => Value::Bool(s.eq_ignore_ascii_case("true")),
+            _ => val.clone(),
+        },
         _ => val.clone(),
     }
 }
@@ -1233,31 +1321,49 @@ fn parse_cte_queries(sql: &str) -> Option<(HashMap<String, String>, String)> {
     let n = chars.len();
 
     let mut i = 0;
-    while i < n && chars[i].is_whitespace() { i += 1; }
-    if i + 4 <= n && chars[i..i+4].iter().collect::<String>().to_lowercase() == "with" {
+    while i < n && chars[i].is_whitespace() {
+        i += 1;
+    }
+    if i + 4 <= n && chars[i..i + 4].iter().collect::<String>().to_lowercase() == "with" {
         i += 4;
     } else {
         return None;
     }
 
     loop {
-        while i < n && (chars[i].is_whitespace() || chars[i] == ',') { i += 1; }
-        if i >= n { break; }
+        while i < n && (chars[i].is_whitespace() || chars[i] == ',') {
+            i += 1;
+        }
+        if i >= n {
+            break;
+        }
 
         let name_start = i;
-        while i < n && (chars[i].is_alphanumeric() || chars[i] == '_') { i += 1; }
-        let cte_name = chars[name_start..i].iter().collect::<String>().trim().to_string();
-        if cte_name.is_empty() { break; }
+        while i < n && (chars[i].is_alphanumeric() || chars[i] == '_') {
+            i += 1;
+        }
+        let cte_name = chars[name_start..i]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_string();
+        if cte_name.is_empty() {
+            break;
+        }
 
-        while i < n && chars[i].is_whitespace() { i += 1; }
+        while i < n && chars[i].is_whitespace() {
+            i += 1;
+        }
 
-        if i + 2 <= n && chars[i..i+2].iter().collect::<String>().to_lowercase() == "as" {
+        if i + 2 <= n && chars[i..i + 2].iter().collect::<String>().to_lowercase() == "as" {
             i += 2;
         } else {
             break;
         }
 
-        while i < n && chars[i].is_whitespace() { i += 1; }
+        while i < n && chars[i].is_whitespace() {
+            i += 1;
+        }
 
         if i < n && chars[i] == '(' {
             i += 1;
@@ -1272,7 +1378,11 @@ fn parse_cte_queries(sql: &str) -> Option<(HashMap<String, String>, String)> {
                 i += 1;
             }
             if depth == 0 {
-                let subquery = chars[subquery_start..i-1].iter().collect::<String>().trim().to_string();
+                let subquery = chars[subquery_start..i - 1]
+                    .iter()
+                    .collect::<String>()
+                    .trim()
+                    .to_string();
                 ctes.insert(cte_name, subquery);
             } else {
                 break;
@@ -1281,7 +1391,9 @@ fn parse_cte_queries(sql: &str) -> Option<(HashMap<String, String>, String)> {
             break;
         }
 
-        while i < n && chars[i].is_whitespace() { i += 1; }
+        while i < n && chars[i].is_whitespace() {
+            i += 1;
+        }
         if i < n && chars[i] == ',' {
             i += 1;
         } else {
@@ -1304,10 +1416,17 @@ fn evaluate_final_expression(
     let cleaned = expr.replace('"', "").replace('\'', "").trim().to_string();
 
     // Detección de fórmula z_score: (c.field - smart_0.mean_field) / NULLIF(smart_0.std_field, 0)
-    if cleaned.contains("z_score") || (cleaned.contains('-') && cleaned.contains('/') && cleaned.contains("mean_") && cleaned.contains("std_")) {
+    if cleaned.contains("z_score")
+        || (cleaned.contains('-')
+            && cleaned.contains('/')
+            && cleaned.contains("mean_")
+            && cleaned.contains("std_"))
+    {
         let smart_name = if let Some(s_idx) = cleaned.find("smart_") {
-            let end_idx = cleaned[s_idx..].find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(cleaned[s_idx..].len());
-            cleaned[s_idx..s_idx+end_idx].to_string()
+            let end_idx = cleaned[s_idx..]
+                .find(|c: char| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(cleaned[s_idx..].len());
+            cleaned[s_idx..s_idx + end_idx].to_string()
         } else {
             "smart_0".to_string()
         };
@@ -1327,14 +1446,20 @@ fn evaluate_final_expression(
                         if let Some(s_row) = s_list.get(0) {
                             let mean_key = format!("mean_{}", key);
                             let std_key = format!("std_{}", key);
-                            mean_val = s_row.get(&mean_key).and_then(|v| match v {
-                                Value::Number(n) => n.as_f64(),
-                                _ => None,
-                            }).unwrap_or(0.0);
-                            std_val = s_row.get(&std_key).and_then(|v| match v {
-                                Value::Number(n) => n.as_f64(),
-                                _ => None,
-                            }).unwrap_or(0.0);
+                            mean_val = s_row
+                                .get(&mean_key)
+                                .and_then(|v| match v {
+                                    Value::Number(n) => n.as_f64(),
+                                    _ => None,
+                                })
+                                .unwrap_or(0.0);
+                            std_val = s_row
+                                .get(&std_key)
+                                .and_then(|v| match v {
+                                    Value::Number(n) => n.as_f64(),
+                                    _ => None,
+                                })
+                                .unwrap_or(0.0);
                         }
                     }
                     break;
@@ -1357,10 +1482,16 @@ fn evaluate_final_expression(
         ("current_data".to_string(), clean_cte_field(&cleaned, "c."))
     } else if cleaned.contains("prev_") {
         let prev_name = extract_cte_name(&cleaned, "prev_");
-        (prev_name.clone(), clean_cte_field(&cleaned, &format!("{}.", prev_name)))
+        (
+            prev_name.clone(),
+            clean_cte_field(&cleaned, &format!("{}.", prev_name)),
+        )
     } else if cleaned.contains("smart_") {
         let smart_name = extract_cte_name(&cleaned, "smart_");
-        (smart_name.clone(), clean_cte_field(&cleaned, &format!("{}.", smart_name)))
+        (
+            smart_name.clone(),
+            clean_cte_field(&cleaned, &format!("{}.", smart_name)),
+        )
     } else {
         ("current_data".to_string(), cleaned.clone())
     };
@@ -1400,7 +1531,8 @@ fn clean_cte_field(expr: &str, prefix: &str) -> String {
     if let Some(idx) = expr.find(prefix) {
         let start = idx + prefix.len();
         let rest = &expr[start..];
-        let field: String = rest.chars()
+        let field: String = rest
+            .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '_')
             .collect();
         field
@@ -1412,7 +1544,8 @@ fn clean_cte_field(expr: &str, prefix: &str) -> String {
 fn extract_cte_name(expr: &str, prefix: &str) -> String {
     if let Some(idx) = expr.find(prefix) {
         let rest = &expr[idx..];
-        let name: String = rest.chars()
+        let name: String = rest
+            .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '_')
             .collect();
         name
@@ -1429,12 +1562,12 @@ fn get_key_date_range(key: &str) -> Option<(i64, i64)> {
         let m_str = parts[n - 4];
         let d_str = parts[n - 3];
         let h_str = parts[n - 2];
-        
+
         let year: i32 = y_str.parse().ok()?;
         let month: u32 = m_str.parse().ok()?;
         let day: u32 = d_str.parse().ok()?;
         let hour: u32 = h_str.parse().ok()?;
-        
+
         if month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour <= 23 {
             use chrono::{TimeZone, Utc};
             if let Some(dt) = Utc.with_ymd_and_hms(year, month, day, hour, 0, 0).single() {

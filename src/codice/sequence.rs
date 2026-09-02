@@ -19,9 +19,9 @@ const SEQ_SUFFIX: &str = "_seq";
 /// Equivale al mapa `:auto_generate` del JSON del Códice.
 #[derive(Debug, Clone)]
 pub struct SeqAttrConfig {
-    pub name:             String,
-    pub prefix:           String,
-    pub padding:          usize,
+    pub name: String,
+    pub prefix: String,
+    pub padding: usize,
     pub scope_resolution: ScopeResolution,
 }
 
@@ -37,7 +37,7 @@ impl ScopeResolution {
     pub fn from_str(s: &str) -> Self {
         match s {
             "nearest_registered" => ScopeResolution::NearestRegistered,
-            _                    => ScopeResolution::Exact,
+            _ => ScopeResolution::Exact,
         }
     }
 }
@@ -78,8 +78,8 @@ const SEQ_REGISTRY_TABLE: &str = "metri-sequence-registry";
 /// Retorna: Ok(String) ej: "WO-L-K92MXA-0043" | Err(DomainError)
 /// [PORTED_FROM: (next! db-conn tenant-guard attr-config scope-field tenant-id payload)]
 pub async fn next(
-    ddb:       &DynamoClient,
-    config:    &SeqAttrConfig,
+    ddb: &DynamoClient,
+    config: &SeqAttrConfig,
     scope_tag: Option<&str>,
     tenant_id: &str,
 ) -> Result<String, DomainError> {
@@ -99,7 +99,7 @@ pub async fn next(
             // FALLBACK: intentar código global
             // [PORTED_FROM: (let [global-code (build-sequence-code tenant-id field-name nil)])]
             let global_code = build_sequence_code(tenant_id, &config.name, None);
-            let global_val  = read_sequence(ddb, &global_code).await.unwrap_or(0);
+            let global_val = read_sequence(ddb, &global_code).await.unwrap_or(0);
             warn!(
                 "[Sequence] nearest_registered fallback: '{}' → '{}'",
                 seq_code, global_code
@@ -116,7 +116,15 @@ pub async fn next(
     // La condición attribute_not_exists(current_value) OR current_value = base_val
     // garantiza ACID (no lost-update bajo concurrencia).
     // [PORTED_FROM: unique:identity de Datahike → idempotencia de sequence_code]
-    write_sequence(ddb, &final_code, tenant_id, &config.prefix, config.padding, new_val).await?;
+    write_sequence(
+        ddb,
+        &final_code,
+        tenant_id,
+        &config.prefix,
+        config.padding,
+        new_val,
+    )
+    .await?;
 
     // 5. Formatear resultado
     let generated = format_code(&config.prefix, config.padding, new_val);
@@ -131,16 +139,13 @@ pub async fn next(
 /// Retorna None si el contador no existe aún.
 async fn read_sequence(ddb: &DynamoClient, seq_code: &str) -> Option<u64> {
     match ddb.get_item(SEQ_REGISTRY_TABLE, seq_code, None).await {
-        Ok(Some(item)) => {
-            item.get("current_value")
-                .and_then(|v| {
-                    if let aws_sdk_dynamodb::types::AttributeValue::N(n) = v {
-                        n.parse::<u64>().ok()
-                    } else {
-                        None
-                    }
-                })
-        }
+        Ok(Some(item)) => item.get("current_value").and_then(|v| {
+            if let aws_sdk_dynamodb::types::AttributeValue::N(n) = v {
+                n.parse::<u64>().ok()
+            } else {
+                None
+            }
+        }),
         _ => None,
     }
 }
@@ -148,32 +153,40 @@ async fn read_sequence(ddb: &DynamoClient, seq_code: &str) -> Option<u64> {
 /// Escribe el nuevo valor al sequence_registry (UPSERT atómico).
 /// [PORTED_FROM: (write-sequence! tenant-guard db-conn tenant-id sequence-code prefix padding new-value scope-tag)]
 async fn write_sequence(
-    ddb:       &DynamoClient,
-    seq_code:  &str,
+    ddb: &DynamoClient,
+    seq_code: &str,
     tenant_id: &str,
-    prefix:    &str,
-    padding:   usize,
-    new_val:   u64,
+    prefix: &str,
+    padding: usize,
+    new_val: u64,
 ) -> Result<(), DomainError> {
     use aws_sdk_dynamodb::types::AttributeValue;
     use std::collections::HashMap;
 
     let mut item = HashMap::new();
-    item.insert("PK".to_string(),            AttributeValue::S(seq_code.to_string()));
-    item.insert("tenant_id".to_string(),     AttributeValue::S(tenant_id.to_string()));
-    item.insert("prefix".to_string(),        AttributeValue::S(prefix.to_string()));
-    item.insert("padding".to_string(),       AttributeValue::N(padding.to_string()));
-    item.insert("current_value".to_string(), AttributeValue::N(new_val.to_string()));
+    item.insert("PK".to_string(), AttributeValue::S(seq_code.to_string()));
+    item.insert(
+        "tenant_id".to_string(),
+        AttributeValue::S(tenant_id.to_string()),
+    );
+    item.insert("prefix".to_string(), AttributeValue::S(prefix.to_string()));
+    item.insert(
+        "padding".to_string(),
+        AttributeValue::N(padding.to_string()),
+    );
+    item.insert(
+        "current_value".to_string(),
+        AttributeValue::N(new_val.to_string()),
+    );
 
-    ddb.put_item(SEQ_REGISTRY_TABLE, item)
-        .await
-        .map_err(|e| DomainError::eav(
+    ddb.put_item(SEQ_REGISTRY_TABLE, item).await.map_err(|e| {
+        DomainError::eav(
             ErrorCode::Eav001,
             format!("Sequence write falló para '{seq_code}': {e:?}"),
-        ))
+        )
+    })
 }
 
 #[cfg(test)]
 #[path = "tests/sequence_tests.rs"]
 mod tests;
-

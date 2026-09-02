@@ -1,9 +1,9 @@
 // eav/index/aevt.rs — GSI-AEVT: Atributo-Entidad-Valor-TX
 // Blueprint: Metri EAV §II.3
 
-use aws_sdk_dynamodb::types::{AttributeValue, Put};
 use crate::eav::types::datom::Datom;
 use crate::eav::types::encoding::build_aevt_sk;
+use aws_sdk_dynamodb::types::{AttributeValue, Put};
 
 /// Construye el Put para el GSI-AEVT con soporte de sharding.
 /// shard=0 → sin sharding; shard>0 → PK sufijo "#N"
@@ -18,10 +18,14 @@ pub fn build_aevt_item(datom: &Datom, entity_type: &str, shard: u8) -> Result<Pu
 
     let mut item = std::collections::HashMap::new();
     item.insert("AEVT_PK".to_string(), AttributeValue::S(pk));
-    item.insert("AEVT_SK".to_string(), AttributeValue::B(
-        aws_sdk_dynamodb::primitives::Blob::new(sk)
-    ));
-    item.insert("entity_id".to_string(), AttributeValue::S(datom.entity_id.clone()));
+    item.insert(
+        "AEVT_SK".to_string(),
+        AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(sk)),
+    );
+    item.insert(
+        "entity_id".to_string(),
+        AttributeValue::S(datom.entity_id.clone()),
+    );
     item.insert("tx".to_string(), AttributeValue::N(datom.tx_id.to_string()));
     item.insert("op".to_string(), AttributeValue::Bool(datom.op));
 

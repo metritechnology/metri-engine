@@ -1,7 +1,7 @@
 pub mod descriptor;
-pub mod registry;
 pub mod migration;
+pub mod registry;
 
-pub use descriptor::{AttributeDescriptor, Cardinality, UniqueStrategy, AttrStatus, ValueType};
-pub use registry::AttributeRegistry;
+pub use descriptor::{AttrStatus, AttributeDescriptor, Cardinality, UniqueStrategy, ValueType};
 pub use migration::{diff_registries, BackfillStrategy, RegistryMigration};
+pub use registry::AttributeRegistry;

@@ -69,9 +69,9 @@ impl IEventBus for EventBridgeClient {
     async fn put_event(
         &self,
         event_bus_name: &str,
-        source:         &str,
-        detail_type:    &str,
-        detail:         Value,
+        source: &str,
+        detail_type: &str,
+        detail: Value,
     ) -> Result<String, DomainError> {
         let detail_json = serde_json::to_string(&detail).unwrap_or_default();
 
@@ -114,6 +114,9 @@ impl IEventBus for EventBridgeClient {
             }
         }
 
-        Err(DomainError::infra(ErrorCode::Infra004, "EventBridge: sin event_id en respuesta"))
+        Err(DomainError::infra(
+            ErrorCode::Infra004,
+            "EventBridge: sin event_id en respuesta",
+        ))
     }
 }

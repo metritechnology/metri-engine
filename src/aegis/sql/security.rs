@@ -9,19 +9,23 @@ use serde_json::Value;
 pub fn ast_contains_tenant(ast_ir: &Value) -> bool {
     fn scan(node: &Value) -> bool {
         if let Some(arr) = node.as_array() {
-            if arr.is_empty() { return false; }
+            if arr.is_empty() {
+                return false;
+            }
             if let Some(op_str) = arr[0].as_str() {
                 match op_str {
                     "=" => {
                         if let Some(field_str) = arr.get(1).and_then(|v| v.as_str()) {
-                            return field_str == "entity/tenant-id" 
-                                || field_str == "tenant/id" 
+                            return field_str == "entity/tenant-id"
+                                || field_str == "tenant/id"
                                 || field_str.contains("tenant");
                         }
                     }
                     "and" | "or" => {
                         for child in arr.iter().skip(1) {
-                            if scan(child) { return true; }
+                            if scan(child) {
+                                return true;
+                            }
                         }
                     }
                     "not" => {

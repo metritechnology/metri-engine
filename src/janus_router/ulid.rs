@@ -12,9 +12,9 @@
 
 use std::sync::Mutex;
 
-use ulid::Ulid;
 use once_cell::sync::Lazy;
 use tracing::warn;
+use ulid::Ulid;
 
 // Último ULID generado — para garantía de orden monotónico.
 // [PORTED_FROM: UlidCreator/getMonotonicUlid() — JVM thread-safe via internal counter]

@@ -1,9 +1,9 @@
+use crate::aegis::formula::errors::FormulaError;
+use crate::aegis::formula::evaluator::FormulaEvaluator;
+use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::lexer::tokenize;
 use crate::aegis::formula::parser::to_rpn;
-use crate::aegis::formula::evaluator::FormulaEvaluator;
 use crate::aegis::formula::resolver::VariableResolver;
-use crate::aegis::formula::functions_registry::FunctionRegistry;
-use crate::aegis::formula::errors::FormulaError;
 use std::collections::HashMap;
 
 struct MockResolver {
@@ -23,7 +23,9 @@ fn test_evaluate_basic_arithmetic() {
     let rpn = to_rpn(tokens, &reg).unwrap();
     let evaluator = FormulaEvaluator::new(rpn);
 
-    let resolver = MockResolver { vars: HashMap::new() };
+    let resolver = MockResolver {
+        vars: HashMap::new(),
+    };
     let result = evaluator.evaluate(&resolver, &reg).unwrap();
     assert_eq!(result, 9.0);
 }
@@ -67,7 +69,9 @@ fn test_evaluate_division_by_zero() {
     let rpn = to_rpn(tokens, &reg).unwrap();
     let evaluator = FormulaEvaluator::new(rpn);
 
-    let resolver = MockResolver { vars: HashMap::new() };
+    let resolver = MockResolver {
+        vars: HashMap::new(),
+    };
     let result = evaluator.evaluate(&resolver, &reg).unwrap();
     assert!(result.is_nan());
 }
@@ -79,7 +83,9 @@ fn test_evaluate_nested_functions() {
     let rpn = to_rpn(tokens, &reg).unwrap();
     let evaluator = FormulaEvaluator::new(rpn);
 
-    let resolver = MockResolver { vars: HashMap::new() };
+    let resolver = MockResolver {
+        vars: HashMap::new(),
+    };
     let result = evaluator.evaluate(&resolver, &reg).unwrap();
     assert_eq!(result, 6.3); // SQRT(25) = 5. 5 * 1.25 = 6.25. ROUND(6.25, 1) = 6.3
 }
@@ -87,7 +93,7 @@ fn test_evaluate_nested_functions() {
 #[test]
 fn test_debug_failing_cases() {
     let reg = FunctionRegistry::standard();
-    
+
     let mut vars = HashMap::new();
     vars.insert("health_score".to_string(), 12.0);
     vars.insert("current_meter_reading".to_string(), 100.0);
@@ -99,7 +105,7 @@ fn test_debug_failing_cases() {
     let evaluator = FormulaEvaluator::new(rpn);
     let result = evaluator.evaluate(&resolver, &reg);
     println!("DEBUG EVAL: '{}' -> {:?}", formula, result);
-    
+
     let formula2 = "ROUND(12.4)";
     let tokens2 = tokenize(formula2).unwrap();
     let rpn2 = to_rpn(tokens2, &reg).unwrap();

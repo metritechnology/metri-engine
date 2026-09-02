@@ -16,9 +16,9 @@ use tracing::{debug, error, info, warn};
 
 use crate::domain::error_catalog;
 use crate::domain::errors::DomainError;
-use aws_sdk_eventbridge::types::PutEventsRequestEntry;
-use crate::janus_router::router::IWriteChannel;
 use crate::iop::core::IopContext;
+use crate::janus_router::router::IWriteChannel;
+use aws_sdk_eventbridge::types::PutEventsRequestEntry;
 
 // ── Severidad de fallo ────────────────────────────────────────────────────────
 
@@ -36,17 +36,20 @@ impl FaultSeverity {
     /// Parsea desde el string del catálogo ("info" | "warning" | "error" | "fatal").
     pub fn from_catalog_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "info"    => FaultSeverity::Info,
-            "error"   => FaultSeverity::Error,
-            "fatal"   => FaultSeverity::Fatal,
-            _         => FaultSeverity::Warning, // default seguro
+            "info" => FaultSeverity::Info,
+            "error" => FaultSeverity::Error,
+            "fatal" => FaultSeverity::Fatal,
+            _ => FaultSeverity::Warning, // default seguro
         }
     }
 
     /// Determina si la severidad requiere notificación al Fault Bus.
     /// [PORTED_FROM: (contains? #{:warning :error :fatal} severity)]
     pub fn requires_notification(&self) -> bool {
-        matches!(self, FaultSeverity::Warning | FaultSeverity::Error | FaultSeverity::Fatal)
+        matches!(
+            self,
+            FaultSeverity::Warning | FaultSeverity::Error | FaultSeverity::Fatal
+        )
     }
 }
 
@@ -73,17 +76,24 @@ pub struct EventBridgeNotifier {
 impl EventBridgeNotifier {
     pub async fn new(bus_name: impl Into<String>) -> Self {
         let bus_name = bus_name.into();
-        let region_provider = aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
+        let region_provider =
+            aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
         let config = aws_config::from_env().region(region_provider).load().await;
 
         let client = if let Ok(endpoint_url) = std::env::var("AWS_ENDPOINT_URL") {
-            info!("[Sherlog] Usando endpoint override de AWS_ENDPOINT_URL: {}", endpoint_url);
+            info!(
+                "[Sherlog] Usando endpoint override de AWS_ENDPOINT_URL: {}",
+                endpoint_url
+            );
             let eb_config = aws_sdk_eventbridge::config::Builder::from(&config)
                 .endpoint_url(endpoint_url)
                 .build();
             aws_sdk_eventbridge::Client::from_conf(eb_config)
         } else if let Ok(endpoint_url) = std::env::var("EVENTBRIDGE_ENDPOINT") {
-            info!("[Sherlog] Usando endpoint override de EVENTBRIDGE_ENDPOINT: {}", endpoint_url);
+            info!(
+                "[Sherlog] Usando endpoint override de EVENTBRIDGE_ENDPOINT: {}",
+                endpoint_url
+            );
             let eb_config = aws_sdk_eventbridge::config::Builder::from(&config)
                 .endpoint_url(endpoint_url)
                 .build();
@@ -116,7 +126,9 @@ impl IFaultNotifier for EventBridgeNotifier {
             .detail(error_dto.to_string())
             .build();
 
-        let res = self.client.put_events()
+        let res = self
+            .client
+            .put_events()
             .entries(entry)
             .send()
             .await
@@ -124,16 +136,26 @@ impl IFaultNotifier for EventBridgeNotifier {
                 let msg = format!("{e:?}");
                 DomainError::infra(
                     crate::domain::errors::ErrorCode::Infra004,
-                    format!("EventBridge PutEvents call failed on bus '{}': {msg}", self.bus_name)
+                    format!(
+                        "EventBridge PutEvents call failed on bus '{}': {msg}",
+                        self.bus_name
+                    ),
                 )
             })?;
 
         if res.failed_entry_count() > 0 {
-            let error_entries = res.entries().iter().filter(|entry| entry.error_code().is_some()).collect::<Vec<_>>();
-            warn!("[Sherlog] EventBridge dispatch has failed entries: {:?}", error_entries);
+            let error_entries = res
+                .entries()
+                .iter()
+                .filter(|entry| entry.error_code().is_some())
+                .collect::<Vec<_>>();
+            warn!(
+                "[Sherlog] EventBridge dispatch has failed entries: {:?}",
+                error_entries
+            );
             return Err(DomainError::infra(
                 crate::domain::errors::ErrorCode::Infra004,
-                format!("EventBridge dispatch failed: {:?}", error_entries)
+                format!("EventBridge dispatch failed: {:?}", error_entries),
             ));
         }
 
@@ -155,7 +177,11 @@ pub struct NoopFaultNotifier;
 
 #[async_trait::async_trait]
 impl IFaultNotifier for NoopFaultNotifier {
-    async fn notify(&self, _error_dto: &Value, severity: &FaultSeverity) -> Result<(), DomainError> {
+    async fn notify(
+        &self,
+        _error_dto: &Value,
+        severity: &FaultSeverity,
+    ) -> Result<(), DomainError> {
         debug!("[Sherlog::Noop] Fault descartado (no-op) | severity={severity:?}");
         Ok(())
     }
@@ -174,11 +200,11 @@ impl IFaultNotifier for NoopFaultNotifier {
 ///   3. Si :info → solo log
 ///   4. Si :warning | :error | :fatal → log + notify al bus + persistencia OLAP
 pub async fn process_fault(
-    notifier:     &dyn IFaultNotifier,
+    notifier: &dyn IFaultNotifier,
     olap_channel: &dyn IWriteChannel,
-    error:        &DomainError,
-    error_dto:    &Value,
-    entity_type:  Option<String>,
+    error: &DomainError,
+    error_dto: &Value,
+    entity_type: Option<String>,
 ) {
     let code_str = error.code.canonical_code();
 
@@ -219,21 +245,53 @@ pub async fn process_fault(
     // Persistencia en canal OLAP (domain_fault)
     let severity_str = match severity {
         FaultSeverity::Warning => "WARNING",
-        FaultSeverity::Error   => "ERROR",
-        FaultSeverity::Fatal   => "FATAL",
-        FaultSeverity::Info    => "WARNING", // Fallback seguro
+        FaultSeverity::Error => "ERROR",
+        FaultSeverity::Fatal => "FATAL",
+        FaultSeverity::Info => "WARNING", // Fallback seguro
     };
 
     let error_inner = error_dto.get("error");
-    let trace_id = error_inner.and_then(|e| e.get("trace_id")).and_then(|t| t.as_str()).unwrap_or("").to_string();
-    let tenant_id = error_inner.and_then(|e| e.get("tenant_id")).and_then(|t| t.as_str()).unwrap_or("").to_string();
-    let user_id = error_inner.and_then(|e| e.get("user_id")).and_then(|u| u.as_str()).map(|s| s.to_string());
-    let error_code = error_inner.and_then(|e| e.get("code")).and_then(|c| c.as_str()).unwrap_or(code_str).to_string();
-    let stage = error_inner.and_then(|e| e.get("stage")).and_then(|s| s.as_str()).unwrap_or(&error.stage).to_string();
-    let component = error_inner.and_then(|e| e.get("component")).and_then(|c| c.as_str()).unwrap_or("metri-engine").to_string();
-    let retryable = error_inner.and_then(|e| e.get("retryable")).and_then(|r| r.as_bool()).unwrap_or(error.retryable);
-    let occurred_at = error_inner.and_then(|e| e.get("timestamp")).and_then(|t| t.as_i64()).unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-    let context = error_inner.and_then(|e| e.get("context")).cloned().unwrap_or(Value::Null);
+    let trace_id = error_inner
+        .and_then(|e| e.get("trace_id"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string();
+    let tenant_id = error_inner
+        .and_then(|e| e.get("tenant_id"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string();
+    let user_id = error_inner
+        .and_then(|e| e.get("user_id"))
+        .and_then(|u| u.as_str())
+        .map(|s| s.to_string());
+    let error_code = error_inner
+        .and_then(|e| e.get("code"))
+        .and_then(|c| c.as_str())
+        .unwrap_or(code_str)
+        .to_string();
+    let stage = error_inner
+        .and_then(|e| e.get("stage"))
+        .and_then(|s| s.as_str())
+        .unwrap_or(&error.stage)
+        .to_string();
+    let component = error_inner
+        .and_then(|e| e.get("component"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("metri-engine")
+        .to_string();
+    let retryable = error_inner
+        .and_then(|e| e.get("retryable"))
+        .and_then(|r| r.as_bool())
+        .unwrap_or(error.retryable);
+    let occurred_at = error_inner
+        .and_then(|e| e.get("timestamp"))
+        .and_then(|t| t.as_i64())
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    let context = error_inner
+        .and_then(|e| e.get("context"))
+        .cloned()
+        .unwrap_or(Value::Null);
 
     let mut fault_record = serde_json::Map::new();
     fault_record.insert("trace_id".to_string(), Value::String(trace_id));
@@ -242,7 +300,10 @@ pub async fn process_fault(
         fault_record.insert("user_id".to_string(), Value::String(uid));
     }
     fault_record.insert("error_code".to_string(), Value::String(error_code));
-    fault_record.insert("severity".to_string(), Value::String(severity_str.to_string()));
+    fault_record.insert(
+        "severity".to_string(),
+        Value::String(severity_str.to_string()),
+    );
     fault_record.insert("stage".to_string(), Value::String(stage));
     fault_record.insert("component".to_string(), Value::String(component));
     if let Some(et) = entity_type {
@@ -253,11 +314,17 @@ pub async fn process_fault(
     fault_record.insert("context".to_string(), context);
 
     let mut req_map = serde_json::Map::new();
-    req_map.insert("data".to_string(), Value::Array(vec![Value::Object(fault_record)]));
+    req_map.insert(
+        "data".to_string(),
+        Value::Array(vec![Value::Object(fault_record)]),
+    );
 
     let fault_ctx = IopContext::new(
         tenant_id,
-        error_inner.and_then(|e| e.get("user_id")).and_then(|u| u.as_str()).unwrap_or("system"),
+        error_inner
+            .and_then(|e| e.get("user_id"))
+            .and_then(|u| u.as_str())
+            .unwrap_or("system"),
         "domain_fault",
         "BULK_CREATE",
         req_map,

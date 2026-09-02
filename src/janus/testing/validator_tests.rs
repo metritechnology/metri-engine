@@ -1,4 +1,4 @@
-use crate::janus::validator::{validate_tenant, validate_query_request};
+use crate::janus::validator::{validate_query_request, validate_tenant};
 use serde_json::json;
 
 #[test]

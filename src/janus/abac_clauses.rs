@@ -21,12 +21,20 @@ pub fn ownership_fields(entity: &str, schema: &Value) -> OwnershipFields {
 
     if let Some(attrs) = schema.get("attributes").and_then(|v| v.as_array()) {
         for attr in attrs {
-            if attr.get("is_owner").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if attr
+                .get("is_owner")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 if let Some(name) = attr.get("name").and_then(|v| v.as_str()) {
                     owner_field = Some(format!("{entity}/{name}"));
                 }
             }
-            if attr.get("is_assignee").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if attr
+                .get("is_assignee")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 if let Some(name) = attr.get("name").and_then(|v| v.as_str()) {
                     assignee_field = Some(format!("{entity}/{name}"));
                 }
@@ -67,7 +75,11 @@ pub fn build_abac_node(
     let mut location_restricted = true;
 
     for boundary in boundaries {
-        let scope = boundary.get("query-scope").or_else(|| boundary.get("query_scope")).and_then(|v| v.as_str()).unwrap_or("NONE");
+        let scope = boundary
+            .get("query-scope")
+            .or_else(|| boundary.get("query_scope"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("NONE");
         if scope != "NONE" {
             valid_scopes_count += 1;
             match scope {
@@ -78,7 +90,11 @@ pub fn build_abac_node(
                 _ => {}
             }
 
-            if let Some(locs) = boundary.get("permitted-locations").or_else(|| boundary.get("permitted_locations")).and_then(|v| v.as_array()) {
+            if let Some(locs) = boundary
+                .get("permitted-locations")
+                .or_else(|| boundary.get("permitted_locations"))
+                .and_then(|v| v.as_array())
+            {
                 if locs.is_empty() {
                     location_restricted = false;
                 } else {
@@ -97,7 +113,7 @@ pub fn build_abac_node(
     if valid_scopes_count == 0 {
         return Err(DomainError::janus(
             ErrorCode::Janus403,
-            format!("Scope NONE — no grant for domain: {entity}")
+            format!("Scope NONE — no grant for domain: {entity}"),
         ));
     }
 
@@ -113,7 +129,10 @@ pub fn build_abac_node(
 
     let mut loc_node = None;
     if location_restricted && !all_permitted_locations.is_empty() {
-        let locs_val: Vec<Value> = all_permitted_locations.into_iter().map(Value::String).collect();
+        let locs_val: Vec<Value> = all_permitted_locations
+            .into_iter()
+            .map(Value::String)
+            .collect();
         loc_node = Some(json!(["in", format!("{entity}/location_id"), locs_val]));
     }
 
@@ -130,20 +149,18 @@ pub fn build_abac_node(
                 scope_node = Some(json!(["=", ass, user_id]));
             }
         }
-        "OWN_OR_ASSIGNED" => {
-            match (owner_field, assignee_field) {
-                (Some(own), Some(ass)) => {
-                    scope_node = Some(json!(["or", ["=", own, user_id], ["=", ass, user_id]]));
-                }
-                (Some(own), None) => {
-                    scope_node = Some(json!(["=", own, user_id]));
-                }
-                (None, Some(ass)) => {
-                    scope_node = Some(json!(["=", ass, user_id]));
-                }
-                _ => {}
+        "OWN_OR_ASSIGNED" => match (owner_field, assignee_field) {
+            (Some(own), Some(ass)) => {
+                scope_node = Some(json!(["or", ["=", own, user_id], ["=", ass, user_id]]));
             }
-        }
+            (Some(own), None) => {
+                scope_node = Some(json!(["=", own, user_id]));
+            }
+            (None, Some(ass)) => {
+                scope_node = Some(json!(["=", ass, user_id]));
+            }
+            _ => {}
+        },
         _ => {}
     }
 

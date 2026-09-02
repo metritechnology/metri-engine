@@ -8,13 +8,11 @@
 // Este módulo es el reemplazo directo de la corrupción de blobs de Datahike.
 // Cada atributo es un datom independiente — sin contención bajo concurrencia.
 
+use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde_json;
 
-use aws_sdk_dynamodb::types::{
-    AttributeValue, Put, TransactWriteItem,
-};
+use aws_sdk_dynamodb::types::{AttributeValue, Put, TransactWriteItem};
 use tracing::{info, warn};
 use ulid::Ulid;
 
@@ -22,7 +20,7 @@ use crate::codice::CodeRegistry;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::{
     datom::{Datom, DatomValue},
-    encoding::{build_eavt_sk, build_aevt_sk, build_avet_sk, build_vaet_sk},
+    encoding::{build_aevt_sk, build_avet_sk, build_eavt_sk, build_vaet_sk},
     value_type::ValueType,
 };
 use crate::infrastructure::dynamodb::DynamoClient;
@@ -31,11 +29,11 @@ use crate::infrastructure::dynamodb::DynamoClient;
 /// Equivale al `TransactPayload` implícito en el pipeline IOP de Clojure.
 #[derive(Debug, Clone)]
 pub struct TransactPayload {
-    pub tenant_id:   String,
-    pub entity_id:   Option<String>, // None = nuevo (se genera ULID)
+    pub tenant_id: String,
+    pub entity_id: Option<String>, // None = nuevo (se genera ULID)
     pub entity_type: String,
-    pub attrs:       HashMap<String, DatomValue>, // nombre_attr → valor nuevo
-    pub op:          TransactOp,
+    pub attrs: HashMap<String, DatomValue>, // nombre_attr → valor nuevo
+    pub op: TransactOp,
 }
 
 /// Operación de la transacción.
@@ -53,8 +51,8 @@ pub enum TransactOp {
 #[derive(Debug, Clone)]
 pub struct TransactResult {
     pub entity_id: String,
-    pub tx_id:     u64,
-    pub datoms:    usize, // número de datoms escritos
+    pub tx_id: u64,
+    pub datoms: usize, // número de datoms escritos
     pub outbox_count: usize,
 }
 
@@ -62,8 +60,8 @@ pub struct TransactResult {
 /// Reemplaza d/transact de Datahike con TransactWriteItems de DynamoDB.
 #[derive(Clone)]
 pub struct EavWriter {
-    ddb:      Arc<DynamoClient>,
-    table:    String,
+    ddb: Arc<DynamoClient>,
+    table: String,
     /// Planificadores de restricciones, inyectados.
     ///
     /// El escritor compone items; los planificadores saben de invariantes.
@@ -74,10 +72,7 @@ pub struct EavWriter {
 }
 
 impl EavWriter {
-    pub fn new(
-        ddb:      Arc<DynamoClient>,
-        table:    impl Into<String>,
-    ) -> Self {
+    pub fn new(ddb: Arc<DynamoClient>, table: impl Into<String>) -> Self {
         Self::with_planners(
             ddb,
             table,
@@ -87,8 +82,8 @@ impl EavWriter {
 
     /// Compone el escritor con planificadores explícitos.
     pub fn with_planners(
-        ddb:      Arc<DynamoClient>,
-        table:    impl Into<String>,
+        ddb: Arc<DynamoClient>,
+        table: impl Into<String>,
         planners: Arc<Vec<Box<dyn crate::eav::writer::constraints::ConstraintPlanner>>>,
     ) -> Self {
         EavWriter {
@@ -133,10 +128,7 @@ impl EavWriter {
         crate::quota::QuotaLedger::new(self.ddb.clone(), self.table.clone())
     }
 
-    pub async fn transact(
-        &self,
-        payload: TransactPayload,
-    ) -> Result<TransactResult, DomainError> {
+    pub async fn transact(&self, payload: TransactPayload) -> Result<TransactResult, DomainError> {
         self.transact_with_projections(payload, Vec::new()).await
     }
 
@@ -151,11 +143,14 @@ impl EavWriter {
         projections: Vec<crate::janus_router::saga::SagaProjection>,
     ) -> Result<TransactResult, DomainError> {
         // 1. Verificar entity_type en registry
-        crate::codice::global().get_model(&payload.entity_type)
-            .ok_or_else(|| DomainError::eav(
-                ErrorCode::Eav004,
-                format!("entity_type '{}' no en registry", payload.entity_type),
-            ))?;
+        crate::codice::global()
+            .get_model(&payload.entity_type)
+            .ok_or_else(|| {
+                DomainError::eav(
+                    ErrorCode::Eav004,
+                    format!("entity_type '{}' no en registry", payload.entity_type),
+                )
+            })?;
 
         // 2. Generar TX_ID — ULID epoch ms garantiza monotonía
         let tx_id = Ulid::new().timestamp_ms();
@@ -163,7 +158,7 @@ impl EavWriter {
         // 3. Generar entity_id si es creación
         let entity_id = match &payload.entity_id {
             Some(id) => id.clone(),
-            None     => Ulid::new().to_string(),
+            None => Ulid::new().to_string(),
         };
 
         // 4. Construir datoms y FTS requests
@@ -171,7 +166,8 @@ impl EavWriter {
         let mut fts_write_requests = Vec::new();
 
         let active_attrs = if payload.op == TransactOp::Update || payload.op == TransactOp::Delete {
-            self.get_active_attributes(&payload.tenant_id, &entity_id).await?
+            self.get_active_attributes(&payload.tenant_id, &entity_id)
+                .await?
         } else {
             std::collections::HashMap::new()
         };
@@ -192,10 +188,15 @@ impl EavWriter {
             for (attr_name, new_value) in &payload.attrs {
                 let attr_desc = crate::codice::global()
                     .get_attribute(&payload.entity_type, attr_name)
-                    .ok_or_else(|| DomainError::eav(
-                        ErrorCode::Eav004,
-                        format!("Atributo '{attr_name}' no en registry para '{}'", payload.entity_type),
-                    ))?;
+                    .ok_or_else(|| {
+                        DomainError::eav(
+                            ErrorCode::Eav004,
+                            format!(
+                                "Atributo '{attr_name}' no en registry para '{}'",
+                                payload.entity_type
+                            ),
+                        )
+                    })?;
 
                 // Para UPDATE: añadir retract del valor anterior
                 if payload.op == TransactOp::Update {
@@ -221,13 +222,13 @@ impl EavWriter {
                     new_value.clone(),
                     tx_id,
                 );
-                
+
                 // Generar FTS si el atributo lo requiere
                 if attr_desc.fts {
                     let reqs = crate::eav::fts::trigram::build_fts_items(&assert, attr_desc);
                     fts_write_requests.extend(reqs);
                 }
-                
+
                 datoms.push(assert);
             }
 
@@ -290,10 +291,15 @@ impl EavWriter {
             for (attr_name, val) in &proj.attrs {
                 let attr_desc = crate::codice::global()
                     .get_attribute(&proj.entity_type, attr_name)
-                    .ok_or_else(|| DomainError::eav(
-                        ErrorCode::Eav004,
-                        format!("Atributo '{attr_name}' no en registry para '{}'", proj.entity_type),
-                    ))?;
+                    .ok_or_else(|| {
+                        DomainError::eav(
+                            ErrorCode::Eav004,
+                            format!(
+                                "Atributo '{attr_name}' no en registry para '{}'",
+                                proj.entity_type
+                            ),
+                        )
+                    })?;
                 datoms.push(Datom::assert(
                     &payload.tenant_id,
                     &proj.entity_id,
@@ -340,7 +346,7 @@ impl EavWriter {
 
         // 5. Construir TransactWriteItems para la capa ACID
         let mut write_items = self.build_write_items(&datoms)?;
-        let datom_count  = datoms.len();
+        let datom_count = datoms.len();
 
         // 5b. Items de reclamación de las restricciones declaradas.
         //
@@ -368,7 +374,9 @@ impl EavWriter {
                 if !claims.is_empty() {
                     tracing::debug!(
                         "[EAV] {} items de restricción para {}#{}",
-                        claims.len(), payload.entity_type, entity_id
+                        claims.len(),
+                        payload.entity_type,
+                        entity_id
                     );
                     write_items.extend(claims);
                 }
@@ -418,7 +426,11 @@ impl EavWriter {
         if let Ok(mut cache) = crate::eav::reader::query::AEVT_SCAN_CACHE.write() {
             let key = (payload.tenant_id.clone(), payload.entity_type.clone());
             cache.remove(&key);
-            tracing::debug!("AEVT_SCAN_CACHE INVALIDATED for tenant={}, type={}", payload.tenant_id, payload.entity_type);
+            tracing::debug!(
+                "AEVT_SCAN_CACHE INVALIDATED for tenant={}, type={}",
+                payload.tenant_id,
+                payload.entity_type
+            );
         }
 
         // 8. Esperar a que terminen los FTS (no bloquean el ACID pero deben terminar antes de responder)
@@ -444,11 +456,14 @@ impl EavWriter {
         payload: TransactPayload,
     ) -> Result<TransactResult, DomainError> {
         // 1. Verificar entity_type en registry
-        crate::codice::global().get_model(&payload.entity_type)
-            .ok_or_else(|| DomainError::eav(
-                ErrorCode::Eav004,
-                format!("entity_type '{}' no en registry", payload.entity_type),
-            ))?;
+        crate::codice::global()
+            .get_model(&payload.entity_type)
+            .ok_or_else(|| {
+                DomainError::eav(
+                    ErrorCode::Eav004,
+                    format!("entity_type '{}' no en registry", payload.entity_type),
+                )
+            })?;
 
         // 2. Generar TX_ID
         let tx_id = Ulid::new().timestamp_ms();
@@ -456,7 +471,7 @@ impl EavWriter {
         // 3. Generar entity_id si es creación
         let entity_id = match &payload.entity_id {
             Some(id) => id.clone(),
-            None     => Ulid::new().to_string(),
+            None => Ulid::new().to_string(),
         };
 
         // 4. Construir datoms y FTS requests
@@ -464,7 +479,8 @@ impl EavWriter {
         let mut fts_write_requests = Vec::new();
 
         let active_attrs = if payload.op == TransactOp::Update || payload.op == TransactOp::Delete {
-            self.get_active_attributes(&payload.tenant_id, &entity_id).await?
+            self.get_active_attributes(&payload.tenant_id, &entity_id)
+                .await?
         } else {
             std::collections::HashMap::new()
         };
@@ -485,10 +501,15 @@ impl EavWriter {
             for (attr_name, new_value) in &payload.attrs {
                 let attr_desc = crate::codice::global()
                     .get_attribute(&payload.entity_type, attr_name)
-                    .ok_or_else(|| DomainError::eav(
-                        ErrorCode::Eav004,
-                        format!("Atributo '{attr_name}' no en registry para '{}'", payload.entity_type),
-                    ))?;
+                    .ok_or_else(|| {
+                        DomainError::eav(
+                            ErrorCode::Eav004,
+                            format!(
+                                "Atributo '{attr_name}' no en registry para '{}'",
+                                payload.entity_type
+                            ),
+                        )
+                    })?;
 
                 // Para UPDATE: añadir retract del valor anterior
                 if payload.op == TransactOp::Update {
@@ -615,10 +636,7 @@ impl EavWriter {
     /// EAVT = tabla principal, AEVT+AVET+VAET = GSIs separados.
     ///
     /// Blueprint: §III — "Single Table Design con 4 GSIs canónicos"
-    fn build_write_items(
-        &self,
-        datoms: &[Datom],
-    ) -> Result<Vec<TransactWriteItem>, DomainError> {
+    fn build_write_items(&self, datoms: &[Datom]) -> Result<Vec<TransactWriteItem>, DomainError> {
         let mut items = Vec::with_capacity(datoms.len() * 4);
 
         for datom in datoms {
@@ -632,25 +650,43 @@ impl EavWriter {
             eavt_item.insert("SK".to_string(), av_binary(eavt_sk));
             // GSI-AEVT projection keys
             eavt_item.insert("ap".to_string(), AttributeValue::S(datom.aevt_pk()));
-            eavt_item.insert("as".to_string(), av_binary(build_aevt_sk(&datom.entity_id, datom.tx_id)));
+            eavt_item.insert(
+                "as".to_string(),
+                av_binary(build_aevt_sk(&datom.entity_id, datom.tx_id)),
+            );
             // GSI-AVET projection keys (solo si el tipo es indexable)
             if datom.value.value_type().is_avet_indexable() {
                 eavt_item.insert("vp".to_string(), AttributeValue::S(datom.avet_pk()));
-                eavt_item.insert("vs".to_string(), av_binary(build_avet_sk(&datom.value, &datom.entity_id)));
+                eavt_item.insert(
+                    "vs".to_string(),
+                    av_binary(build_avet_sk(&datom.value, &datom.entity_id)),
+                );
             }
             // GSI-VAET (solo para Reference)
             if let Some(vaet_pk) = datom.vaet_pk() {
                 eavt_item.insert("rp".to_string(), AttributeValue::S(vaet_pk));
-                eavt_item.insert("rs".to_string(), av_binary(build_vaet_sk(datom.attr_id, &datom.entity_id)));
+                eavt_item.insert(
+                    "rs".to_string(),
+                    av_binary(build_vaet_sk(datom.attr_id, &datom.entity_id)),
+                );
             }
 
-            items.push(TransactWriteItem::builder()
-                .put(Put::builder()
-                    .table_name(&self.table)
-                    .set_item(Some(eavt_item))
-                    .build()
-                    .map_err(|e| DomainError::eav(ErrorCode::Eav001, format!("Put builder error: {e}")))?)
-                .build());
+            items.push(
+                TransactWriteItem::builder()
+                    .put(
+                        Put::builder()
+                            .table_name(&self.table)
+                            .set_item(Some(eavt_item))
+                            .build()
+                            .map_err(|e| {
+                                DomainError::eav(
+                                    ErrorCode::Eav001,
+                                    format!("Put builder error: {e}"),
+                                )
+                            })?,
+                    )
+                    .build(),
+            );
         }
 
         Ok(items)
@@ -679,9 +715,10 @@ impl EavWriter {
                 map.insert("v".to_string(), AttributeValue::N(eid.to_string()));
             }
             DatomValue::Array(arr) => {
-                map.insert("v".to_string(), AttributeValue::S(
-                    serde_json::to_string(arr).unwrap_or_default()
-                ));
+                map.insert(
+                    "v".to_string(),
+                    AttributeValue::S(serde_json::to_string(arr).unwrap_or_default()),
+                );
             }
             DatomValue::Bytes(b) => {
                 map.insert("v".to_string(), av_binary(b.clone()));
@@ -690,9 +727,7 @@ impl EavWriter {
                 map.insert("v".to_string(), AttributeValue::N(n.to_string()));
             }
             DatomValue::Geo { lat, lon } => {
-                map.insert("v".to_string(), AttributeValue::S(
-                    format!("{lat},{lon}")
-                ));
+                map.insert("v".to_string(), AttributeValue::S(format!("{lat},{lon}")));
             }
             DatomValue::Null => {
                 map.insert("v".to_string(), AttributeValue::Null(true));
@@ -714,7 +749,8 @@ impl EavWriter {
         attr_names.insert("#pk".to_string(), "PK".to_string());
         attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
 
-        let raw_items = self.ddb
+        let raw_items = self
+            .ddb
             .query(
                 &self.table,
                 None,
@@ -725,7 +761,9 @@ impl EavWriter {
                 None,
             )
             .await
-            .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("delete pull failed: {e:?}")))?;
+            .map_err(|e| {
+                DomainError::eav(ErrorCode::Eav002, format!("delete pull failed: {e:?}"))
+            })?;
 
         let mut active: HashMap<String, (u16, u64, DatomValue)> = HashMap::new();
         for item in raw_items {
@@ -733,7 +771,9 @@ impl EavWriter {
                 Some(AttributeValue::B(blob)) => blob.as_ref(),
                 _ => continue,
             };
-            if sk.len() != 11 { continue; }
+            if sk.len() != 11 {
+                continue;
+            }
             let attr_id = u16::from_be_bytes(sk[0..2].try_into().unwrap());
             let tx_id = u64::from_be_bytes(sk[2..10].try_into().unwrap());
             let op = sk[10] != 0;
@@ -748,7 +788,7 @@ impl EavWriter {
                 _ => match crate::codice::global().get_attr_name(attr_id) {
                     Some(n) => n.to_string(),
                     None => format!("attr_{}", attr_id),
-                }
+                },
             };
 
             let should_update = match active.get(&attr_name) {
@@ -759,16 +799,19 @@ impl EavWriter {
             if should_update {
                 if op {
                     let val = match item.get("v") {
-                        Some(AttributeValue::S(s))    => DatomValue::Str(s.clone()),
-                        Some(AttributeValue::N(n))    => {
+                        Some(AttributeValue::S(s)) => DatomValue::Str(s.clone()),
+                        Some(AttributeValue::N(n)) => {
                             if let Ok(i) = n.parse::<i64>() {
                                 DatomValue::Long(i)
                             } else {
-                                n.parse::<f64>().ok().map(DatomValue::Double).unwrap_or(DatomValue::Null)
+                                n.parse::<f64>()
+                                    .ok()
+                                    .map(DatomValue::Double)
+                                    .unwrap_or(DatomValue::Null)
                             }
                         }
                         Some(AttributeValue::Bool(b)) => DatomValue::Bool(*b),
-                        Some(AttributeValue::B(_))    => DatomValue::Bytes(vec![]),
+                        Some(AttributeValue::B(_)) => DatomValue::Bytes(vec![]),
                         Some(AttributeValue::Null(_)) => DatomValue::Null,
                         _ => DatomValue::Null,
                     };
@@ -779,12 +822,12 @@ impl EavWriter {
             }
         }
 
-        let result = active.into_iter()
+        let result = active
+            .into_iter()
             .map(|(k, (attr_id, _, val))| (k, (attr_id, val)))
             .collect();
         Ok(result)
     }
-
 }
 
 /// Helper: AttributeValue::B desde Vec<u8>
@@ -792,31 +835,50 @@ fn av_binary(bytes: Vec<u8>) -> AttributeValue {
     AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(bytes))
 }
 
-pub(crate) fn datom_map_to_json(map: &std::collections::HashMap<String, crate::eav::types::datom::DatomValue>) -> serde_json::Value {
+pub(crate) fn datom_map_to_json(
+    map: &std::collections::HashMap<String, crate::eav::types::datom::DatomValue>,
+) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
     for (k, v) in map {
         use crate::eav::types::datom::DatomValue;
         let json_val = match v {
             DatomValue::Null => serde_json::Value::Null,
             DatomValue::Bool(b) => serde_json::Value::Bool(*b),
-            DatomValue::Long(n) | DatomValue::Instant(n) => serde_json::Value::Number(serde_json::Number::from(*n)),
-            DatomValue::Double(d) => serde_json::Number::from_f64(*d).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null),
+            DatomValue::Long(n) | DatomValue::Instant(n) => {
+                serde_json::Value::Number(serde_json::Number::from(*n))
+            }
+            DatomValue::Double(d) => serde_json::Number::from_f64(*d)
+                .map(serde_json::Value::Number)
+                .unwrap_or(serde_json::Value::Null),
             DatomValue::Str(s) | DatomValue::Uuid(s) => {
-                if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
-                    serde_json::from_str::<serde_json::Value>(s).unwrap_or_else(|_| serde_json::Value::String(s.clone()))
+                if (s.starts_with('{') && s.ends_with('}'))
+                    || (s.starts_with('[') && s.ends_with(']'))
+                {
+                    serde_json::from_str::<serde_json::Value>(s)
+                        .unwrap_or_else(|_| serde_json::Value::String(s.clone()))
                 } else {
                     serde_json::Value::String(s.clone())
                 }
             }
             DatomValue::Ref(r) => serde_json::Value::String(r.to_string()),
-            DatomValue::Array(arr) => serde_json::Value::Array(arr.iter().map(|s| {
-                if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
-                    serde_json::from_str::<serde_json::Value>(s).unwrap_or_else(|_| serde_json::Value::String(s.clone()))
-                } else {
-                    serde_json::Value::String(s.clone())
-                }
-            }).collect()),
-            DatomValue::Bytes(b) => serde_json::Value::String(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b)),
+            DatomValue::Array(arr) => serde_json::Value::Array(
+                arr.iter()
+                    .map(|s| {
+                        if (s.starts_with('{') && s.ends_with('}'))
+                            || (s.starts_with('[') && s.ends_with(']'))
+                        {
+                            serde_json::from_str::<serde_json::Value>(s)
+                                .unwrap_or_else(|_| serde_json::Value::String(s.clone()))
+                        } else {
+                            serde_json::Value::String(s.clone())
+                        }
+                    })
+                    .collect(),
+            ),
+            DatomValue::Bytes(b) => serde_json::Value::String(base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                b,
+            )),
             DatomValue::BigInt(n) => serde_json::Value::String(n.to_string()),
             DatomValue::Geo { lat, lon } => {
                 let mut geo_obj = serde_json::Map::new();
@@ -844,7 +906,8 @@ impl EavWriter {
         attrs: &HashMap<String, DatomValue>,
         tx_id: u64,
     ) -> Result<Option<Vec<Datom>>, DomainError> {
-        let disable_eda = crate::codice::global().get_model(entity_type)
+        let disable_eda = crate::codice::global()
+            .get_model(entity_type)
             .map(|m| m.disable_eda)
             .unwrap_or(false);
 
@@ -886,10 +949,12 @@ impl EavWriter {
         for (attr_name, val) in outbox_attrs {
             let attr_desc = crate::codice::global()
                 .get_attribute("outbox_event", &attr_name)
-                .ok_or_else(|| DomainError::eav(
-                    ErrorCode::Eav004,
-                    format!("Atributo '{attr_name}' no en registry para 'outbox_event'"),
-                ))?;
+                .ok_or_else(|| {
+                    DomainError::eav(
+                        ErrorCode::Eav004,
+                        format!("Atributo '{attr_name}' no en registry para 'outbox_event'"),
+                    )
+                })?;
             let assert = Datom::assert(
                 tenant_id,
                 &outbox_ulid,

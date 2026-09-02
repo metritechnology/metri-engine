@@ -1,8 +1,12 @@
-use serde_json::{json, Value};
 use crate::codice::global as codice_global;
 use crate::janus::fbs::AnalyticsRequestT;
+use serde_json::{json, Value};
 
-pub fn fbs_filter_value_to_json(value: &crate::janus::fbs::FilterValueT, entity: &str, field_name: &str) -> Value {
+pub fn fbs_filter_value_to_json(
+    value: &crate::janus::fbs::FilterValueT,
+    entity: &str,
+    field_name: &str,
+) -> Value {
     let mut val_map = serde_json::Map::new();
 
     // Check optional/reference fields first
@@ -20,9 +24,10 @@ pub fn fbs_filter_value_to_json(value: &crate::janus::fbs::FilterValueT, entity:
 
     if let Some(ref r) = value.range_values {
         if let Some(ref vals) = r.values {
-            let json_vals: Vec<Value> = vals.iter().map(|item| {
-                fbs_filter_value_to_json(item, entity, field_name)
-            }).collect();
+            let json_vals: Vec<Value> = vals
+                .iter()
+                .map(|item| fbs_filter_value_to_json(item, entity, field_name))
+                .collect();
             val_map.insert("range_values".to_string(), json!({ "values": json_vals }));
             return Value::Object(val_map);
         }
@@ -41,7 +46,10 @@ pub fn fbs_filter_value_to_json(value: &crate::janus::fbs::FilterValueT, entity:
             val_map.insert("timestamp_val".to_string(), json!(value.timestamp_val));
         }
         _ => {
-            if field_name == "created_at" || field_name == "updated_at" || field_name.contains("timestamp") {
+            if field_name == "created_at"
+                || field_name == "updated_at"
+                || field_name.contains("timestamp")
+            {
                 val_map.insert("timestamp_val".to_string(), json!(value.timestamp_val));
             } else {
                 val_map.insert("number_val".to_string(), json!(value.number_val));
@@ -94,7 +102,10 @@ pub fn fbs_filter_node_to_json(node: &crate::janus::fbs::FilterNodeT, entity: &s
         };
         grp_map.insert("conjunction".to_string(), json!(conj_str));
         if let Some(ref nodes) = group.nodes {
-            let json_nodes: Vec<Value> = nodes.iter().map(|n| fbs_filter_node_to_json(n, entity)).collect();
+            let json_nodes: Vec<Value> = nodes
+                .iter()
+                .map(|n| fbs_filter_node_to_json(n, entity))
+                .collect();
             grp_map.insert("nodes".to_string(), Value::Array(json_nodes));
         }
         map.insert("group".to_string(), Value::Object(grp_map));
@@ -187,8 +198,12 @@ pub fn analytics_request_to_json(req: &AnalyticsRequestT) -> Value {
             crate::janus::fbs::TimeFrameContext_TimeFilterType::MONTH_TO_DATE => "MONTH_TO_DATE",
             crate::janus::fbs::TimeFrameContext_TimeFilterType::THIS_QUARTER => "THIS_QUARTER",
             crate::janus::fbs::TimeFrameContext_TimeFilterType::LAST_QUARTER => "LAST_QUARTER",
-            crate::janus::fbs::TimeFrameContext_TimeFilterType::LAST_N_QUARTERS => "LAST_N_QUARTERS",
-            crate::janus::fbs::TimeFrameContext_TimeFilterType::QUARTER_TO_DATE => "QUARTER_TO_DATE",
+            crate::janus::fbs::TimeFrameContext_TimeFilterType::LAST_N_QUARTERS => {
+                "LAST_N_QUARTERS"
+            }
+            crate::janus::fbs::TimeFrameContext_TimeFilterType::QUARTER_TO_DATE => {
+                "QUARTER_TO_DATE"
+            }
             crate::janus::fbs::TimeFrameContext_TimeFilterType::THIS_YEAR => "THIS_YEAR",
             crate::janus::fbs::TimeFrameContext_TimeFilterType::LAST_YEAR => "LAST_YEAR",
             crate::janus::fbs::TimeFrameContext_TimeFilterType::LAST_N_YEARS => "LAST_N_YEARS",
@@ -207,7 +222,10 @@ pub fn analytics_request_to_json(req: &AnalyticsRequestT) -> Value {
         map.insert("time_frame".to_string(), Value::Object(tf_map));
     }
     if let Some(ref filters) = req.filters {
-        let json_filters: Vec<Value> = filters.iter().map(|f| fbs_filter_node_to_json(f, entity)).collect();
+        let json_filters: Vec<Value> = filters
+            .iter()
+            .map(|f| fbs_filter_node_to_json(f, entity))
+            .collect();
         map.insert("filters".to_string(), Value::Array(json_filters));
     }
     map.insert("limit".to_string(), json!(req.limit));
@@ -281,7 +299,10 @@ pub fn analytics_request_to_json(req: &AnalyticsRequestT) -> Value {
         if let Some(ref nid) = hierarchy.current_node_id {
             h_map.insert("current_node_id".to_string(), json!(nid));
         }
-        h_map.insert("inject_has_children".to_string(), json!(hierarchy.inject_has_children));
+        h_map.insert(
+            "inject_has_children".to_string(),
+            json!(hierarchy.inject_has_children),
+        );
         map.insert("hierarchy".to_string(), Value::Object(h_map));
     }
     if let Some(ref st) = req.select_tree {

@@ -3,9 +3,9 @@
 // FASE 1: usa tracing puro para structured logging.
 // FASE 2: integrar opentelemetry-otlp completo con exportador a X-Ray/Grafana.
 
+use opentelemetry::trace::TraceContextExt;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use opentelemetry::trace::TraceContextExt;
 
 /// Inicializa el tracer con JSON structured logging (CloudWatch compatible).
 /// [PORTED_FROM: (init!) + ig/init-key :otel/tracer]

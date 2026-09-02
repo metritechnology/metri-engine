@@ -56,9 +56,14 @@ fn el_reparto_en_particiones_es_estable_y_cabe_en_el_rango() {
     }
 
     // Y reparte: con 500 ids no puede caer todo en una.
-    let distintas: std::collections::HashSet<u8> =
-        (0..500).map(|i| shard_of(&format!("01J9ABCDEF{i}"))).collect();
-    assert!(distintas.len() > 8, "reparto pobre: {} particiones", distintas.len());
+    let distintas: std::collections::HashSet<u8> = (0..500)
+        .map(|i| shard_of(&format!("01J9ABCDEF{i}")))
+        .collect();
+    assert!(
+        distintas.len() > 8,
+        "reparto pobre: {} particiones",
+        distintas.len()
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,12 +75,21 @@ async fn una_reserva_abierta_se_puede_reclamar_una_vez() {
     let store = MemoryReservationStore::new();
     store.open(&reserva("A", 100, ahora() + 90)).await.unwrap();
 
-    let primera = store.claim("tnt_01", "A", Duration::from_secs(30)).await.unwrap();
+    let primera = store
+        .claim("tnt_01", "A", Duration::from_secs(30))
+        .await
+        .unwrap();
     assert!(matches!(primera, ClaimResult::Claimed(_)));
 
     // El segundo llega mientras el lease está vivo.
-    let segunda = store.claim("tnt_01", "A", Duration::from_secs(30)).await.unwrap();
-    assert!(matches!(segunda, ClaimResult::Leased(_)), "pero fue {segunda:?}");
+    let segunda = store
+        .claim("tnt_01", "A", Duration::from_secs(30))
+        .await
+        .unwrap();
+    assert!(
+        matches!(segunda, ClaimResult::Leased(_)),
+        "pero fue {segunda:?}"
+    );
 }
 
 /// Que el lease venza es, por sí solo, que la reserva vuelva a estar libre. No
@@ -86,8 +100,14 @@ async fn un_lease_vencido_la_libera_sin_intervencion() {
     let store = MemoryReservationStore::new();
     store.open(&reserva("A", 100, ahora() + 90)).await.unwrap();
 
-    store.claim("tnt_01", "A", Duration::from_secs(0)).await.unwrap();
-    let otra = store.claim("tnt_01", "A", Duration::from_secs(30)).await.unwrap();
+    store
+        .claim("tnt_01", "A", Duration::from_secs(0))
+        .await
+        .unwrap();
+    let otra = store
+        .claim("tnt_01", "A", Duration::from_secs(30))
+        .await
+        .unwrap();
     assert!(matches!(otra, ClaimResult::Claimed(_)), "pero fue {otra:?}");
 }
 
@@ -98,9 +118,16 @@ async fn un_lease_vencido_la_libera_sin_intervencion() {
 async fn una_reserva_cerrada_dice_por_que() {
     let store = MemoryReservationStore::new();
     store.open(&reserva("A", 100, ahora() + 90)).await.unwrap();
-    store.close("tnt_01", "A", CloseReason::Expired).await.unwrap();
+    store
+        .close("tnt_01", "A", CloseReason::Expired)
+        .await
+        .unwrap();
 
-    match store.claim("tnt_01", "A", Duration::from_secs(30)).await.unwrap() {
+    match store
+        .claim("tnt_01", "A", Duration::from_secs(30))
+        .await
+        .unwrap()
+    {
         ClaimResult::Closed(r, razon) => {
             assert_eq!(razon, CloseReason::Expired);
             assert_eq!(r.estimated, 100, "y con qué se abrió");
@@ -112,7 +139,10 @@ async fn una_reserva_cerrada_dice_por_que() {
 #[tokio::test]
 async fn una_reserva_que_no_existe_se_distingue_de_una_cerrada() {
     let store = MemoryReservationStore::new();
-    let r = store.claim("tnt_01", "fantasma", Duration::from_secs(30)).await.unwrap();
+    let r = store
+        .claim("tnt_01", "fantasma", Duration::from_secs(30))
+        .await
+        .unwrap();
     assert_eq!(r, ClaimResult::NotFound);
 }
 
@@ -122,7 +152,11 @@ async fn el_debito_se_marca_y_se_ve_al_reclamar() {
     store.open(&reserva("A", 100, ahora() + 90)).await.unwrap();
     store.mark_debited("tnt_01", "A").await.unwrap();
 
-    match store.claim("tnt_01", "A", Duration::from_secs(30)).await.unwrap() {
+    match store
+        .claim("tnt_01", "A", Duration::from_secs(30))
+        .await
+        .unwrap()
+    {
         ClaimResult::Claimed(r) => assert!(r.debited),
         otro => panic!("se esperaba reclamada, fue {otro:?}"),
     }
@@ -143,7 +177,10 @@ async fn el_barrido_solo_ve_lo_vencido_y_abierto() {
     store.open(&vencida).await.unwrap();
     store.open(&viva).await.unwrap();
     store.open(&cerrada).await.unwrap();
-    store.close("tnt_01", "cerrada", CloseReason::Settled).await.unwrap();
+    store
+        .close("tnt_01", "cerrada", CloseReason::Settled)
+        .await
+        .unwrap();
 
     let mut encontradas = Vec::new();
     for shard in 0..SWEEP_SHARDS {
@@ -161,7 +198,10 @@ async fn cada_reserva_vive_en_una_sola_particion() {
     let store = MemoryReservationStore::new();
     let ahora = ahora();
     for i in 0..40 {
-        store.open(&reserva(&format!("r{i}"), 10, ahora - 1)).await.unwrap();
+        store
+            .open(&reserva(&format!("r{i}"), 10, ahora - 1))
+            .await
+            .unwrap();
     }
 
     let mut total = 0;

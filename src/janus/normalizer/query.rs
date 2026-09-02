@@ -1,8 +1,8 @@
-use serde_json::{json, Value};
-use crate::janus::normalizer::strategy::NormalizerStrategy;
 use crate::janus::normalizer::helpers::{
-    safe_double, new_query_id, infer_viz_type, derive_semantic_label
+    derive_semantic_label, infer_viz_type, new_query_id, safe_double,
 };
+use crate::janus::normalizer::strategy::NormalizerStrategy;
+use serde_json::{json, Value};
 
 pub struct QueryNormalizer;
 
@@ -19,28 +19,46 @@ impl NormalizerStrategy for QueryNormalizer {
 /// Garantiza :metadata en un chunk de QueryResponse.
 /// [PORTED_FROM: (ensure-metadata chunk)]
 fn ensure_metadata(body: &mut Value) {
-    let Some(obj) = body.as_object_mut() else { return; };
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
     let root_exec_time = obj.get("execution_time_ms").and_then(|v| v.as_i64());
 
     if !obj.contains_key("metadata") {
-        let channel   = obj.get("channel").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let engine    = match channel { "olap" => "olap", "oltp" => "oltp", _ => "unknown" };
-        let total     = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
-        obj.insert("metadata".to_string(), json!({
-            "engine":             engine,
-            "query_id":           new_query_id(),
-            "total_count":        total,
-            "total_queries":      1,
-            "parallelism_factor": 1.0,
-            "cache_hits":         0,
-            "execution_time_ms":  root_exec_time.unwrap_or(0),
-        }));
+        let channel = obj
+            .get("channel")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let engine = match channel {
+            "olap" => "olap",
+            "oltp" => "oltp",
+            _ => "unknown",
+        };
+        let total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+        obj.insert(
+            "metadata".to_string(),
+            json!({
+                "engine":             engine,
+                "query_id":           new_query_id(),
+                "total_count":        total,
+                "total_queries":      1,
+                "parallelism_factor": 1.0,
+                "cache_hits":         0,
+                "execution_time_ms":  root_exec_time.unwrap_or(0),
+            }),
+        );
     } else {
         if let Some(metadata_obj) = obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
             if !metadata_obj.contains_key("execution_time_ms") {
-                metadata_obj.insert("execution_time_ms".to_string(), json!(root_exec_time.unwrap_or(0)));
+                metadata_obj.insert(
+                    "execution_time_ms".to_string(),
+                    json!(root_exec_time.unwrap_or(0)),
+                );
             } else if let Some(exec_time) = root_exec_time {
-                let current_val = metadata_obj.get("execution_time_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+                let current_val = metadata_obj
+                    .get("execution_time_ms")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
                 if current_val == 0 && exec_time > 0 {
                     metadata_obj.insert("execution_time_ms".to_string(), json!(exec_time));
                 }
@@ -52,35 +70,53 @@ fn ensure_metadata(body: &mut Value) {
 /// Garantiza :pagination básica.
 /// [PORTED_FROM: (ensure-pagination chunk)]
 fn ensure_pagination(body: &mut Value) {
-    let Some(obj) = body.as_object_mut() else { return; };
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
     if !obj.contains_key("pagination") {
         let total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
-        obj.insert("pagination".to_string(), json!({
-            "page_size":    0,
-            "has_next":     false,
-            "has_previous": false,
-            "links": [
-                {"rel": "first",   "href": "/query", "method": "POST"},
-                {"rel": "last",    "href": "/query", "method": "POST"},
-            ]
-        }));
+        obj.insert(
+            "pagination".to_string(),
+            json!({
+                "page_size":    0,
+                "has_next":     false,
+                "has_previous": false,
+                "links": [
+                    {"rel": "first",   "href": "/query", "method": "POST"},
+                    {"rel": "last",    "href": "/query", "method": "POST"},
+                ]
+            }),
+        );
     }
 }
 
 /// Garantiza :links de HATEOAS a nivel raíz.
 /// [PORTED_FROM: (ensure-hateoas-links chunk)]
 fn ensure_hateoas_links(body: &mut Value) {
-    let Some(obj) = body.as_object_mut() else { return; };
-    let tenant_id = obj.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
+    let tenant_id = obj
+        .get("tenant_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let base_href = format!("/query?tenant_id={}", tenant_id);
 
     if !obj.contains_key("links") {
         obj.insert("links".to_string(), json!([]));
     }
 
-    let Some(links_arr) = obj.get_mut("links").and_then(|v| v.as_array_mut()) else { return; };
-    let rels: std::collections::HashSet<String> = links_arr.iter()
-        .filter_map(|lnk| lnk.get("rel").and_then(|r| r.as_str()).map(|s| s.to_string()))
+    let Some(links_arr) = obj.get_mut("links").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    let rels: std::collections::HashSet<String> = links_arr
+        .iter()
+        .filter_map(|lnk| {
+            lnk.get("rel")
+                .and_then(|r| r.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
 
     if !rels.contains("self") {
@@ -102,10 +138,17 @@ fn ensure_hateoas_links(body: &mut Value) {
 /// Garantiza :viz_ext en el chunk con el tipo de visualización correcto.
 /// [PORTED_FROM: (ensure-viz-meta chunk)]
 fn ensure_viz_meta(body: &mut Value) {
-    let Some(obj) = body.as_object_mut() else { return; };
-    if obj.contains_key("viz_ext") { return; }
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
+    if obj.contains_key("viz_ext") {
+        return;
+    }
 
-    let output_cast = obj.get("output_cast").and_then(|v| v.as_str()).map(str::to_string);
+    let output_cast = obj
+        .get("output_cast")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     let mut viz_hint = obj.get("viz").and_then(|v| v.as_str()).map(str::to_string);
 
     // Parse JSON viz hint if present
@@ -123,10 +166,18 @@ fn ensure_viz_meta(body: &mut Value) {
         }
     }
 
-    let viz_type    = infer_viz_type(output_cast.as_deref(), viz_hint.as_deref());
+    let viz_type = infer_viz_type(output_cast.as_deref(), viz_hint.as_deref());
 
-    let rows    = obj.get("data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let columns = obj.get("columns").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let rows = obj
+        .get("data")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let columns = obj
+        .get("columns")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let payload: Value = match viz_type {
         "indicator" | "kpi" | "gauge" => {
@@ -140,8 +191,13 @@ fn ensure_viz_meta(body: &mut Value) {
                     if let Some(first_metric) = metrics.first() {
                         if let Some(name) = first_metric.get("name").and_then(|n| n.as_str()) {
                             primary_metric_key = Some(name.to_string());
-                        } else if let Some(attr) = first_metric.get("attribute").and_then(|a| a.as_str()) {
-                            let fn_str = first_metric.get("fn").and_then(|f| f.as_str()).unwrap_or("agg");
+                        } else if let Some(attr) =
+                            first_metric.get("attribute").and_then(|a| a.as_str())
+                        {
+                            let fn_str = first_metric
+                                .get("fn")
+                                .and_then(|f| f.as_str())
+                                .unwrap_or("agg");
                             primary_metric_key = Some(format!("{}_{}", fn_str, attr));
                         }
                     }
@@ -149,8 +205,13 @@ fn ensure_viz_meta(body: &mut Value) {
             }
 
             if primary_metric_key.is_none() {
-                primary_metric_key = columns.iter()
-                    .find(|c| c.get("is_measure").and_then(|v| v.as_bool()).unwrap_or(false))
+                primary_metric_key = columns
+                    .iter()
+                    .find(|c| {
+                        c.get("is_measure")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    })
                     .and_then(|c| c.get("key").and_then(|k| k.as_str()))
                     .map(|s| s.to_string());
             }
@@ -167,10 +228,14 @@ fn ensure_viz_meta(body: &mut Value) {
                 let current_val = current_val.unwrap_or_else(|| {
                     row.as_array()
                         .and_then(|r| r.get(1).or(r.first())) // if [time, value], pick value; else pick first
-                        .or_else(|| row.as_object().and_then(|m| {
-                            // try to pick a numeric value
-                            m.values().find(|v| v.is_number()).or_else(|| m.values().next())
-                        }))
+                        .or_else(|| {
+                            row.as_object().and_then(|m| {
+                                // try to pick a numeric value
+                                m.values()
+                                    .find(|v| v.is_number())
+                                    .or_else(|| m.values().next())
+                            })
+                        })
                         .map(|v| safe_double(v))
                         .unwrap_or(0.0)
                 });
@@ -210,60 +275,93 @@ fn ensure_viz_meta(body: &mut Value) {
             // [PORTED_FROM: :breakdown {:signals {...}}]
             // Key = valor real de la primera columna dimensión (no "slice_N" sintético)
             // Los rows del executor PIE son Object: {"area": "Mecánica", "count": 12}
-            let dim_key = columns.iter()
-                .find(|c| c.get("is_dimension").and_then(|v| v.as_bool()).unwrap_or(false))
+            let dim_key = columns
+                .iter()
+                .find(|c| {
+                    c.get("is_dimension")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
                 .and_then(|c| c.get("key").and_then(|k| k.as_str()))
                 .map(|s| s.to_string());
 
-            let metric_key = columns.iter()
-                .find(|c| c.get("is_measure").and_then(|v| v.as_bool()).unwrap_or(false))
+            let metric_key = columns
+                .iter()
+                .find(|c| {
+                    c.get("is_measure")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                })
                 .and_then(|c| c.get("key").and_then(|k| k.as_str()))
                 .map(|s| s.to_string());
 
-            let signals: serde_json::Map<String, Value> = rows.iter().enumerate().map(|(i, row)| {
-                let key = if let Some(arr) = row.as_array() {
-                    // Array legacy: [dimension, value]
-                    arr.first()
-                        .and_then(|v| v.as_str().map(str::to_string)
-                            .or_else(|| if v.is_null() { None } else { Some(v.to_string()) }))
+            let signals: serde_json::Map<String, Value> = rows
+                .iter()
+                .enumerate()
+                .map(|(i, row)| {
+                    let key = if let Some(arr) = row.as_array() {
+                        // Array legacy: [dimension, value]
+                        arr.first()
+                            .and_then(|v| {
+                                v.as_str().map(str::to_string).or_else(|| {
+                                    if v.is_null() {
+                                        None
+                                    } else {
+                                        Some(v.to_string())
+                                    }
+                                })
+                            })
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or_else(|| format!("slice_{i}"))
+                    } else if let Some(obj) = row.as_object() {
+                        // Object format: {"dim_field": "label", "metric_field": 42}
+                        let k = dim_key
+                            .as_ref()
+                            .and_then(|dk| obj.get(dk))
+                            .or_else(|| obj.iter().find(|(_, v)| v.is_string()).map(|(_, v)| v))
+                            .or_else(|| obj.values().next());
+
+                        k.and_then(|v| {
+                            v.as_str().map(str::to_string).or_else(|| {
+                                if v.is_null() {
+                                    None
+                                } else {
+                                    Some(v.to_string())
+                                }
+                            })
+                        })
                         .filter(|s| !s.is_empty())
                         .unwrap_or_else(|| format!("slice_{i}"))
-                } else if let Some(obj) = row.as_object() {
-                    // Object format: {"dim_field": "label", "metric_field": 42}
-                    let k = dim_key.as_ref()
-                        .and_then(|dk| obj.get(dk))
-                        .or_else(|| obj.iter().find(|(_, v)| v.is_string()).map(|(_, v)| v))
-                        .or_else(|| obj.values().next());
+                    } else {
+                        format!("slice_{i}")
+                    };
 
-                    k.and_then(|v| v.as_str().map(str::to_string)
-                        .or_else(|| if v.is_null() { None } else { Some(v.to_string()) }))
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or_else(|| format!("slice_{i}"))
-                } else {
-                    format!("slice_{i}")
-                };
+                    let val = if let Some(arr) = row.as_array() {
+                        // Array: [dimension, value]
+                        arr.get(1).map(|v| safe_double(v)).unwrap_or(0.0)
+                    } else if let Some(obj) = row.as_object() {
+                        // Object: buscar el primer campo numérico (la métrica)
+                        metric_key
+                            .as_ref()
+                            .and_then(|mk| obj.get(mk))
+                            .or_else(|| obj.values().find(|v| v.is_number()))
+                            .map(|v| safe_double(v))
+                            .unwrap_or(0.0)
+                    } else {
+                        0.0
+                    };
 
-                let val = if let Some(arr) = row.as_array() {
-                    // Array: [dimension, value]
-                    arr.get(1).map(|v| safe_double(v)).unwrap_or(0.0)
-                } else if let Some(obj) = row.as_object() {
-                    // Object: buscar el primer campo numérico (la métrica)
-                    metric_key.as_ref()
-                        .and_then(|mk| obj.get(mk))
-                        .or_else(|| obj.values().find(|v| v.is_number()))
-                        .map(|v| safe_double(v))
-                        .unwrap_or(0.0)
-                } else { 0.0 };
-
-                (key, json!({"value": val}))
-            }).collect();
+                    (key, json!({"value": val}))
+                })
+                .collect();
             json!({"breakdown": {"signals": signals}})
         }
         "line" | "bar" | "area" | "scatter" | "timeseries" => {
             // [PORTED_FROM: (build-chart-decoration chunk)]
             // Construye ChartDecoration con los 10 campos del contrato proto §VizMeta.
             // Fuente de verdad de encoding: columnas derivadas por el executor.
-            let col_names: Vec<_> = columns.iter()
+            let col_names: Vec<_> = columns
+                .iter()
                 .filter_map(|c| c.get("key").and_then(|v| v.as_str()).map(str::to_string))
                 .collect();
             let x_dim = col_names.first().cloned().unwrap_or_default();
@@ -297,13 +395,19 @@ fn ensure_viz_meta(body: &mut Value) {
                     // Sin override explícito: aplicar heurística automática
                     viz_hint.as_deref() == Some("timeseries")
                         || output_cast.as_deref() == Some("TIMESERIES")
-                        || dec.get("fill_gaps").and_then(|v| v.as_bool()).unwrap_or(false)
+                        || dec
+                            .get("fill_gaps")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
                 }
             } else {
                 // Sin JSON hint: heurística automática normal
                 viz_hint.as_deref() == Some("timeseries")
                     || output_cast.as_deref() == Some("TIMESERIES")
-                    || dec.get("fill_gaps").and_then(|v| v.as_bool()).unwrap_or(false)
+                    || dec
+                        .get("fill_gaps")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
             };
 
             let mut chart_meta = json!({
@@ -337,28 +441,37 @@ fn ensure_viz_meta(body: &mut Value) {
             json!({"chart": chart_meta})
         }
         "tree" => {
-            let col_names: Vec<String> = columns.iter()
+            let col_names: Vec<String> = columns
+                .iter()
                 .filter_map(|c| c.get("key").and_then(|v| v.as_str()).map(str::to_string))
                 .collect();
 
             // 1. parent_id_key: prefer hierarchy.parent_field from router body,
             //    fall back to column name convention (parent_*_id), then "parent_id".
-            let parent_key = obj.get("hierarchy")
+            let parent_key = obj
+                .get("hierarchy")
                 .and_then(|h| h.get("parent_field"))
                 .and_then(|v| v.as_str())
                 .map(str::to_string)
                 .unwrap_or_else(|| {
-                    col_names.iter()
+                    col_names
+                        .iter()
                         .find(|c| c.starts_with("parent_") && c.ends_with("_id"))
                         .cloned()
                         .unwrap_or_else(|| "parent_id".to_string())
                 });
 
             // 2. label_key: pick the first of these candidates that exists in columns.
-            let label_key = ["name", "title", "label", "description"].iter()
+            let label_key = ["name", "title", "label", "description"]
+                .iter()
                 .find(|k| col_names.contains(&k.to_string()))
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| col_names.first().cloned().unwrap_or_else(|| "name".to_string()));
+                .unwrap_or_else(|| {
+                    col_names
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "name".to_string())
+                });
 
             // 3. icon_key: only set if the column actually exists in the result set.
             let icon_key = if col_names.contains(&"icon".to_string()) {
@@ -407,7 +520,10 @@ fn ensure_viz_meta(body: &mut Value) {
                             specified_keys.push((name.to_string(), true));
                             has_spec = true;
                         } else {
-                            let attr = m.get("attribute").and_then(|a| a.as_str()).unwrap_or("total");
+                            let attr = m
+                                .get("attribute")
+                                .and_then(|a| a.as_str())
+                                .unwrap_or("total");
                             let fn_str = m.get("fn").and_then(|f| f.as_str()).unwrap_or("agg");
                             specified_keys.push((format!("{}_{}", fn_str, attr), true));
                             has_spec = true;
@@ -417,127 +533,141 @@ fn ensure_viz_meta(body: &mut Value) {
             }
 
             let cols: Vec<Value> = if has_spec {
-                specified_keys.iter().map(|(key, is_m)| {
-                    let raw_col = columns.iter().find(|c| c.get("key").and_then(|v| v.as_str()) == Some(key));
-                    let col_type = raw_col
-                        .and_then(|c| c.get("type").and_then(|v| v.as_str()))
-                        .unwrap_or(if *is_m { "number" } else { "string" });
-                    let is_measure = *is_m || raw_col
-                        .and_then(|c| c.get("is_measure").and_then(|v| v.as_bool()))
-                        .unwrap_or(false);
-                    let metadata = raw_col
-                        .and_then(|c| c.get("metadata").cloned())
-                        .unwrap_or_else(|| json!({}));
+                specified_keys
+                    .iter()
+                    .map(|(key, is_m)| {
+                        let raw_col = columns
+                            .iter()
+                            .find(|c| c.get("key").and_then(|v| v.as_str()) == Some(key));
+                        let col_type = raw_col
+                            .and_then(|c| c.get("type").and_then(|v| v.as_str()))
+                            .unwrap_or(if *is_m { "number" } else { "string" });
+                        let is_measure = *is_m
+                            || raw_col
+                                .and_then(|c| c.get("is_measure").and_then(|v| v.as_bool()))
+                                .unwrap_or(false);
+                        let metadata = raw_col
+                            .and_then(|c| c.get("metadata").cloned())
+                            .unwrap_or_else(|| json!({}));
 
-                    // Find custom label template from dimensions in query_spec
-                    let mut label_template = None;
-                    if let Some(qs) = query_spec {
-                        if let Some(dims) = qs.get("dimensions").and_then(|d| d.as_array()) {
-                            for d in dims {
-                                if d.get("attribute").and_then(|a| a.as_str()) == Some(key) {
-                                    label_template = d.get("label_template").and_then(|t| t.as_str());
-                                    break;
+                        // Find custom label template from dimensions in query_spec
+                        let mut label_template = None;
+                        if let Some(qs) = query_spec {
+                            if let Some(dims) = qs.get("dimensions").and_then(|d| d.as_array()) {
+                                for d in dims {
+                                    if d.get("attribute").and_then(|a| a.as_str()) == Some(key) {
+                                        label_template =
+                                            d.get("label_template").and_then(|t| t.as_str());
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // If label_template is not found, check if it's a metric name
-                    let mut metric_name = None;
-                    if let Some(qs) = query_spec {
-                        if let Some(metrics) = qs.get("metrics").and_then(|m| m.as_array()) {
-                            for m in metrics {
-                                if m.get("name").and_then(|n| n.as_str()) == Some(key) {
-                                    metric_name = Some(key);
-                                    break;
+                        // If label_template is not found, check if it's a metric name
+                        let mut metric_name = None;
+                        if let Some(qs) = query_spec {
+                            if let Some(metrics) = qs.get("metrics").and_then(|m| m.as_array()) {
+                                for m in metrics {
+                                    if m.get("name").and_then(|n| n.as_str()) == Some(key) {
+                                        metric_name = Some(key);
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // Determine label
-                    let label = if let Some(mn) = metric_name {
-                        mn.to_string()
-                    } else {
-                        derive_semantic_label(key, label_template)
-                    };
+                        // Determine label
+                        let label = if let Some(mn) = metric_name {
+                            mn.to_string()
+                        } else {
+                            derive_semantic_label(key, label_template)
+                        };
 
-                    // Alignment: metrics/numerical RIGHT, categorical/temporal LEFT
-                    let align = if col_type == "number" || is_measure {
-                        "RIGHT"
-                    } else {
-                        "LEFT"
-                    };
+                        // Alignment: metrics/numerical RIGHT, categorical/temporal LEFT
+                        let align = if col_type == "number" || is_measure {
+                            "RIGHT"
+                        } else {
+                            "LEFT"
+                        };
 
-                    json!({
-                        "key": key,
-                        "label": label,
-                        "type": col_type,
-                        "align": align,
-                        "sortable": true,
-                        "format": "",
-                        "metadata": metadata,
-                        "entity_ref": entity_ref,
+                        json!({
+                            "key": key,
+                            "label": label,
+                            "type": col_type,
+                            "align": align,
+                            "sortable": true,
+                            "format": "",
+                            "metadata": metadata,
+                            "entity_ref": entity_ref,
+                        })
                     })
-                }).collect()
+                    .collect()
             } else {
-                columns.iter().map(|c| {
-                    let key = c.get("key").and_then(|v| v.as_str()).unwrap_or("");
-                    let col_type = c.get("type").and_then(|v| v.as_str()).unwrap_or("string");
-                    let is_measure = c.get("is_measure").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let metadata = c.get("metadata").cloned().unwrap_or_else(|| json!({}));
+                columns
+                    .iter()
+                    .map(|c| {
+                        let key = c.get("key").and_then(|v| v.as_str()).unwrap_or("");
+                        let col_type = c.get("type").and_then(|v| v.as_str()).unwrap_or("string");
+                        let is_measure = c
+                            .get("is_measure")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let metadata = c.get("metadata").cloned().unwrap_or_else(|| json!({}));
 
-                    // Find custom label template from dimensions in query_spec
-                    let mut label_template = None;
-                    if let Some(qs) = query_spec {
-                        if let Some(dims) = qs.get("dimensions").and_then(|d| d.as_array()) {
-                            for d in dims {
-                                if d.get("attribute").and_then(|a| a.as_str()) == Some(key) {
-                                    label_template = d.get("label_template").and_then(|t| t.as_str());
-                                    break;
+                        // Find custom label template from dimensions in query_spec
+                        let mut label_template = None;
+                        if let Some(qs) = query_spec {
+                            if let Some(dims) = qs.get("dimensions").and_then(|d| d.as_array()) {
+                                for d in dims {
+                                    if d.get("attribute").and_then(|a| a.as_str()) == Some(key) {
+                                        label_template =
+                                            d.get("label_template").and_then(|t| t.as_str());
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // If label_template is not found, check if it's a metric name
-                    let mut metric_name = None;
-                    if let Some(qs) = query_spec {
-                        if let Some(metrics) = qs.get("metrics").and_then(|m| m.as_array()) {
-                            for m in metrics {
-                                if m.get("name").and_then(|n| n.as_str()) == Some(key) {
-                                    metric_name = Some(key);
-                                    break;
+                        // If label_template is not found, check if it's a metric name
+                        let mut metric_name = None;
+                        if let Some(qs) = query_spec {
+                            if let Some(metrics) = qs.get("metrics").and_then(|m| m.as_array()) {
+                                for m in metrics {
+                                    if m.get("name").and_then(|n| n.as_str()) == Some(key) {
+                                        metric_name = Some(key);
+                                        break;
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // Determine label
-                    let label = if let Some(mn) = metric_name {
-                        mn.to_string()
-                    } else {
-                        derive_semantic_label(key, label_template)
-                    };
+                        // Determine label
+                        let label = if let Some(mn) = metric_name {
+                            mn.to_string()
+                        } else {
+                            derive_semantic_label(key, label_template)
+                        };
 
-                    // Alignment: metrics/numerical RIGHT, categorical/temporal LEFT
-                    let align = if col_type == "number" || is_measure {
-                        "RIGHT"
-                    } else {
-                        "LEFT"
-                    };
+                        // Alignment: metrics/numerical RIGHT, categorical/temporal LEFT
+                        let align = if col_type == "number" || is_measure {
+                            "RIGHT"
+                        } else {
+                            "LEFT"
+                        };
 
-                    json!({
-                        "key": key,
-                        "label": label,
-                        "type": col_type,
-                        "align": align,
-                        "sortable": true,
-                        "format": "",
-                        "metadata": metadata,
-                        "entity_ref": entity_ref,
+                        json!({
+                            "key": key,
+                            "label": label,
+                            "type": col_type,
+                            "align": align,
+                            "sortable": true,
+                            "format": "",
+                            "metadata": metadata,
+                            "entity_ref": entity_ref,
+                        })
                     })
-                }).collect()
+                    .collect()
             };
 
             json!({"table": {"columns": cols, "row_actions": [], "global_links": []}})
@@ -545,7 +675,11 @@ fn ensure_viz_meta(body: &mut Value) {
     };
 
     let final_payload = json!({"type": viz_type, "payload": payload});
-    tracing::debug!("DEBUG NORMALIZER: viz_type={}, payload={}", viz_type, final_payload);
+    tracing::debug!(
+        "DEBUG NORMALIZER: viz_type={}, payload={}",
+        viz_type,
+        final_payload
+    );
     obj.insert("viz_ext".to_string(), final_payload);
 }
 
@@ -555,7 +689,9 @@ fn enrich_viz_intelligence(body: &mut Value) {
     let already_has = body
         .pointer("/viz_ext/payload/signal/intelligence")
         .is_some();
-    if already_has { return; }
+    if already_has {
+        return;
+    }
 
     let signal_val = body
         .pointer("/viz_ext/payload/signal/value")
@@ -580,42 +716,64 @@ fn enrich_viz_intelligence(body: &mut Value) {
 
     // SMART stats: z_score e is_anomaly (Z > 2.0 = anomalía gaussiana)
     let first_row = body.pointer("/data/0").cloned();
-    let z_score = first_row.as_ref()
+    let z_score = first_row
+        .as_ref()
         .and_then(|r| r.as_object())
-        .and_then(|obj| obj.iter().find_map(|(k, v)| if k.starts_with("z_score_") { v.as_f64() } else { None }));
+        .and_then(|obj| {
+            obj.iter().find_map(|(k, v)| {
+                if k.starts_with("z_score_") {
+                    v.as_f64()
+                } else {
+                    None
+                }
+            })
+        });
 
     if let Some(curr) = signal_val {
         // Propagate previous_value al signal si no estaba
         if prev_val.is_some() {
             if let Some(obj) = body.pointer_mut("/viz_ext/payload/signal") {
                 if let Some(m) = obj.as_object_mut() {
-                    m.entry("previous_value").or_insert(json!(prev_val.unwrap_or(0.0)));
+                    m.entry("previous_value")
+                        .or_insert(json!(prev_val.unwrap_or(0.0)));
                 }
             }
         }
 
         if let Some(prev) = prev_val {
             let delta = curr - prev;
-            let pct   = if prev == 0.0 {
-                if curr > 0.0 { 100.0 } else if curr < 0.0 { -100.0 } else { 0.0 }
+            let pct = if prev == 0.0 {
+                if curr > 0.0 {
+                    100.0
+                } else if curr < 0.0 {
+                    -100.0
+                } else {
+                    0.0
+                }
             } else {
                 100.0 * delta / prev.abs()
             };
-            let dir = if delta > 0.001 { "up" } else if delta < -0.001 { "down" } else { "neutral" };
+            let dir = if delta > 0.001 {
+                "up"
+            } else if delta < -0.001 {
+                "down"
+            } else {
+                "neutral"
+            };
             let label = format!("{}{:.1}%", if pct > 0.0 { "+" } else { "" }, pct);
             let is_anomaly = z_score.map(|z| z.abs() > 2.0).unwrap_or(false);
 
             if let Some(obj) = body.pointer_mut("/viz_ext/payload/signal") {
                 if let Some(m) = obj.as_object_mut() {
                     let mut intel = serde_json::Map::new();
-                    intel.insert("direction".to_string(),      json!(dir));
-                    intel.insert("percentage".to_string(),     json!(pct));
-                    intel.insert("delta_abs".to_string(),      json!(delta));
+                    intel.insert("direction".to_string(), json!(dir));
+                    intel.insert("percentage".to_string(), json!(pct));
+                    intel.insert("delta_abs".to_string(), json!(delta));
                     intel.insert("previous_value".to_string(), json!(prev));
-                    intel.insert("label".to_string(),          json!(label));
-                    intel.insert("is_anomaly".to_string(),     json!(is_anomaly));
+                    intel.insert("label".to_string(), json!(label));
+                    intel.insert("is_anomaly".to_string(), json!(is_anomaly));
                     if let Some(z) = z_score {
-                        intel.insert("z_score".to_string(),   json!(z));
+                        intel.insert("z_score".to_string(), json!(z));
                     }
                     intel.insert("represents_initial".to_string(), json!(prev == 0.0));
                     m.insert("intelligence".to_string(), Value::Object(intel));

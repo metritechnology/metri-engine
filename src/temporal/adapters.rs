@@ -17,9 +17,9 @@ use serde_json::{json, Value};
 /// Ejemplo: [?e :created_at ?ts1] [>= ?ts1 1735689600000]
 #[derive(Debug, Clone)]
 pub struct DatalogClause {
-    pub binding: String,   // "[?e :created_at ?ts1]"
-    pub lower:   Option<String>, // "[>= ?ts1 <ms>]"
-    pub upper:   Option<String>, // "[<= ?ts1 <ms>]"
+    pub binding: String,       // "[?e :created_at ?ts1]"
+    pub lower: Option<String>, // "[>= ?ts1 <ms>]"
+    pub upper: Option<String>, // "[<= ?ts1 <ms>]"
 }
 
 /// TimeRange × ts_field × counter → DatalogClause para Datahike.
@@ -43,23 +43,31 @@ pub fn to_datalog_clauses(
     }
 
     let var_name = format!("?ts{}", counter);
-    let binding  = format!("[?e :{} {}]", ts_field, var_name);
+    let binding = format!("[?e :{} {}]", ts_field, var_name);
 
-    let lower = time_range.start_ts.map(|s| {
-        format!("[>= {} {}]", var_name, s_to_ms(s))
-    });
-    let upper = time_range.end_ts.map(|e| {
-        format!("[<= {} {}]", var_name, s_to_ms(e))
-    });
+    let lower = time_range
+        .start_ts
+        .map(|s| format!("[>= {} {}]", var_name, s_to_ms(s)));
+    let upper = time_range
+        .end_ts
+        .map(|e| format!("[<= {} {}]", var_name, s_to_ms(e)));
 
-    Some(DatalogClause { binding, lower, upper })
+    Some(DatalogClause {
+        binding,
+        lower,
+        upper,
+    })
 }
 
 /// Serializa DatalogClause a Vec<String> de cláusulas Datalog completas.
 pub fn datalog_clause_to_parts(clause: &DatalogClause) -> Vec<String> {
     let mut parts = vec![clause.binding.clone()];
-    if let Some(l) = &clause.lower { parts.push(l.clone()); }
-    if let Some(u) = &clause.upper { parts.push(u.clone()); }
+    if let Some(l) = &clause.lower {
+        parts.push(l.clone());
+    }
+    if let Some(u) = &clause.upper {
+        parts.push(u.clone());
+    }
     parts
 }
 
@@ -78,14 +86,10 @@ pub fn to_honey_clause(time_range: &TimeRange, col: &str) -> Value {
     let col_v = Value::String(col.to_string());
 
     match (time_range.start_ts, time_range.end_ts) {
-        (Some(s), Some(e)) => json!([
-            "and",
-            [">=", col_v, s],
-            ["<=", col_v.clone(), e]
-        ]),
+        (Some(s), Some(e)) => json!(["and", [">=", col_v, s], ["<=", col_v.clone(), e]]),
         (Some(s), None) => json!([">=", col_v, s]),
         (None, Some(e)) => json!(["<=", col_v, e]),
-        (None, None)    => Value::Null,
+        (None, None) => Value::Null,
     }
 }
 
@@ -122,7 +126,10 @@ mod tests {
 
     #[test]
     fn to_datalog_clauses_both_bounds() {
-        let r = TimeRange { start_ts: Some(1_000), end_ts: Some(2_000) };
+        let r = TimeRange {
+            start_ts: Some(1_000),
+            end_ts: Some(2_000),
+        };
         let c = to_datalog_clauses(&r, "_created_at", 1).unwrap();
         assert!(c.binding.contains("?ts1"));
         assert!(c.lower.as_ref().unwrap().contains("1000000")); // s→ms
@@ -131,20 +138,29 @@ mod tests {
 
     #[test]
     fn to_datalog_clauses_none_when_no_bounds() {
-        let r = TimeRange { start_ts: None, end_ts: None };
+        let r = TimeRange {
+            start_ts: None,
+            end_ts: None,
+        };
         assert!(to_datalog_clauses(&r, "_created_at", 1).is_none());
     }
 
     #[test]
     fn to_honey_clause_both_bounds() {
-        let r = TimeRange { start_ts: Some(1_000), end_ts: Some(2_000) };
+        let r = TimeRange {
+            start_ts: Some(1_000),
+            end_ts: Some(2_000),
+        };
         let v = to_honey_clause(&r, "created_at");
         assert_eq!(v[0], "and");
     }
 
     #[test]
     fn to_honey_clause_null_on_no_bounds() {
-        let r = TimeRange { start_ts: None, end_ts: None };
+        let r = TimeRange {
+            start_ts: None,
+            end_ts: None,
+        };
         assert!(to_honey_clause(&r, "created_at").is_null());
     }
 

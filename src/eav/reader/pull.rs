@@ -14,9 +14,9 @@ use tracing::debug;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::{
     datom::DatomValue,
-    encoding::{eavt_sk_attr_prefix, eavt_sk_as_of},
+    encoding::{eavt_sk_as_of, eavt_sk_attr_prefix},
 };
-use crate::infrastructure::dynamodb::{DynamoClient, av_string, av_number, av_bytes};
+use crate::infrastructure::dynamodb::{av_bytes, av_number, av_string, DynamoClient};
 
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
@@ -31,12 +31,15 @@ pub struct CacheEntry {
 /// Keyed by PK: "T#<tenant_id>#E#<entity_id>"
 pub const MAX_EAV_CACHE_SIZE: usize = 10_000;
 
-pub static EAV_CACHE: Lazy<RwLock<HashMap<String, CacheEntry>>> = Lazy::new(|| {
-    RwLock::new(HashMap::new())
-});
+pub static EAV_CACHE: Lazy<RwLock<HashMap<String, CacheEntry>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// Inserta una entrada en EAV_CACHE asegurando que el número total de entradas no exceda MAX_EAV_CACHE_SIZE.
-pub fn insert_eav_cache_entry(cache: &mut HashMap<String, CacheEntry>, pk: String, entry: CacheEntry) {
+pub fn insert_eav_cache_entry(
+    cache: &mut HashMap<String, CacheEntry>,
+    pk: String,
+    entry: CacheEntry,
+) {
     if cache.len() >= MAX_EAV_CACHE_SIZE && !cache.contains_key(&pk) {
         let to_remove: Vec<String> = cache.keys().take(MAX_EAV_CACHE_SIZE / 5).cloned().collect();
         for k in to_remove {
@@ -54,23 +57,24 @@ pub type EntityMap = HashMap<String, DatomValue>;
 #[derive(Debug)]
 pub struct WarmupItem {
     pub entity_id: String,
-    pub tx_id:     u64,
-    pub op:        bool,
-    pub value:     DatomValue,
+    pub tx_id: u64,
+    pub op: bool,
+    pub value: DatomValue,
 }
 
 #[derive(Clone)]
 pub struct EavReader {
-    pub ddb:   Arc<DynamoClient>,
+    pub ddb: Arc<DynamoClient>,
     pub table: String,
 }
 
 impl EavReader {
     pub fn new(ddb: Arc<DynamoClient>, table: impl Into<String>) -> Self {
-        EavReader { ddb, table: table.into() }
+        EavReader {
+            ddb,
+            table: table.into(),
+        }
     }
-
-
 
     /// Carga el estado actual de una entidad (todos los atributos vigentes).
     /// Equivale a (d/pull db '[*] entity-id) pero sin deserializar el blob.
@@ -81,7 +85,7 @@ impl EavReader {
         &self,
         tenant_id: &str,
         entity_id: &str,
-        attrs:     Option<&[&str]>, // None = todos los atributos
+        attrs: Option<&[&str]>, // None = todos los atributos
     ) -> Result<EntityMap, DomainError> {
         let pk = format!("T#{}#E#{}", tenant_id, entity_id);
 
@@ -89,7 +93,8 @@ impl EavReader {
         if let Ok(cache) = EAV_CACHE.read() {
             if let Some(entry) = cache.get(&pk) {
                 // Las entidades transaccionales críticas de cuota no deben servirse de la caché local para evitar inconsistencias en clúster/Lambda
-                let is_quota = entry.map.contains_key("resource_domain") || entry.map.contains_key("domain_quota/resource_domain");
+                let is_quota = entry.map.contains_key("resource_domain")
+                    || entry.map.contains_key("domain_quota/resource_domain");
 
                 let is_sufficient = if is_quota {
                     false
@@ -97,7 +102,8 @@ impl EavReader {
                     true
                 } else if let Some(filter) = attrs {
                     filter.iter().all(|&attr| {
-                        entry.map.contains_key(attr) || entry.map.keys().any(|k| k.split('/').last() == Some(attr))
+                        entry.map.contains_key(attr)
+                            || entry.map.keys().any(|k| k.split('/').last() == Some(attr))
                     })
                 } else {
                     false
@@ -105,7 +111,9 @@ impl EavReader {
 
                 if is_sufficient {
                     if let Some(filter) = attrs {
-                        let filtered: EntityMap = entry.map.iter()
+                        let filtered: EntityMap = entry
+                            .map
+                            .iter()
                             .filter(|(k, _)| {
                                 let bare = k.split('/').last().unwrap_or(k);
                                 filter.contains(&k.as_str()) || filter.contains(&bare)
@@ -123,25 +131,24 @@ impl EavReader {
         // Query en tabla EAVT — todos los datoms de la entidad, ordenados por SK
         // SK binario: [attr_id:2B][tx_id:8B][op:1B] — orden natural de DynamoDB
         let key_condition = "#pk = :pk".to_string();
-        let mut attr_names  = HashMap::new();
+        let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();
         attr_names.insert("#pk".to_string(), "PK".to_string());
         attr_values.insert(":pk".to_string(), AttributeValue::S(pk.clone()));
 
-        let raw_items = self.ddb
+        let raw_items = self
+            .ddb
             .query(
                 &self.table,
-                None,                   // tabla principal, no GSI
+                None, // tabla principal, no GSI
                 &key_condition,
                 attr_names.clone(),
                 attr_values.clone(),
-                true,                   // ScanIndexForward=true → orden cronológico
+                true, // ScanIndexForward=true → orden cronológico
                 None,
             )
             .await
             .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("pull falló: {e:?}")))?;
-
-
 
         if raw_items.is_empty() {
             return Ok(HashMap::new());
@@ -152,20 +159,26 @@ impl EavReader {
         let full_entity_map = assemble_current_state(raw_items, None);
 
         // Insertar en la cache marcada como completa (excepto para domain_quota)
-        let is_quota = full_entity_map.contains_key("resource_domain") || full_entity_map.contains_key("domain_quota/resource_domain");
+        let is_quota = full_entity_map.contains_key("resource_domain")
+            || full_entity_map.contains_key("domain_quota/resource_domain");
 
         if !is_quota {
             if let Ok(mut cache) = EAV_CACHE.write() {
-                insert_eav_cache_entry(&mut cache, pk.clone(), CacheEntry {
-                    is_complete: true,
-                    map: full_entity_map.clone(),
-                });
+                insert_eav_cache_entry(
+                    &mut cache,
+                    pk.clone(),
+                    CacheEntry {
+                        is_complete: true,
+                        map: full_entity_map.clone(),
+                    },
+                );
             }
         }
 
         // Retornar filtrado si es necesario
         let result_map = if let Some(filter) = attrs {
-            let filtered: EntityMap = full_entity_map.iter()
+            let filtered: EntityMap = full_entity_map
+                .iter()
                 .filter(|(k, _)| {
                     let bare = k.split('/').last().unwrap_or(k);
                     filter.contains(&k.as_str()) || filter.contains(&bare)
@@ -192,17 +205,18 @@ impl EavReader {
         &self,
         tenant_id: &str,
         entity_id: &str,
-        attrs:     Option<&[&str]>,
+        attrs: Option<&[&str]>,
     ) -> Result<EntityMap, DomainError> {
         let pk = format!("T#{}#E#{}", tenant_id, entity_id);
 
         let key_condition = "#pk = :pk".to_string();
-        let mut attr_names  = HashMap::new();
+        let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();
         attr_names.insert("#pk".to_string(), "PK".to_string());
         attr_values.insert(":pk".to_string(), AttributeValue::S(pk.clone()));
 
-        let raw_items = self.ddb
+        let raw_items = self
+            .ddb
             .query(
                 &self.table,
                 None,
@@ -213,7 +227,9 @@ impl EavReader {
                 None,
             )
             .await
-            .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("pull_nocache falló: {e:?}")))?;
+            .map_err(|e| {
+                DomainError::eav(ErrorCode::Eav002, format!("pull_nocache falló: {e:?}"))
+            })?;
 
         if raw_items.is_empty() {
             return Ok(HashMap::new());
@@ -222,7 +238,8 @@ impl EavReader {
         let full_entity_map = assemble_current_state(raw_items, None);
 
         let result_map = if let Some(filter) = attrs {
-            let filtered: EntityMap = full_entity_map.iter()
+            let filtered: EntityMap = full_entity_map
+                .iter()
                 .filter(|(k, _)| {
                     let bare = k.split('/').last().unwrap_or(k);
                     filter.contains(&k.as_str()) || filter.contains(&bare)
@@ -249,8 +266,8 @@ impl EavReader {
         &self,
         tenant_id: &str,
         entity_id: &str,
-        as_of_tx:  u64,
-        attrs:     Option<&[&str]>,
+        as_of_tx: u64,
+        attrs: Option<&[&str]>,
     ) -> Result<EntityMap, DomainError> {
         let pk = format!("T#{}#E#{}", tenant_id, entity_id);
 
@@ -258,7 +275,7 @@ impl EavReader {
         // Para simplicidad en FASE 1: traemos todos y filtramos por tx_id <= as_of_tx
         // FASE 2 optimizará con queries per-atributo con SK range.
         let key_condition = "#pk = :pk AND #sk <= :sk_max".to_string();
-        let mut attr_names  = HashMap::new();
+        let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();
 
         // SK máximo: tx_id = as_of_tx, op = true → filtra todo lo posterior al snapshot
@@ -267,12 +284,14 @@ impl EavReader {
 
         attr_names.insert("#pk".to_string(), "PK".to_string());
         attr_names.insert("#sk".to_string(), "SK".to_string());
-        attr_values.insert(":pk".to_string(),     AttributeValue::S(pk));
-        attr_values.insert(":sk_max".to_string(), AttributeValue::B(
-            aws_sdk_dynamodb::primitives::Blob::new(sk_max)
-        ));
+        attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
+        attr_values.insert(
+            ":sk_max".to_string(),
+            AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(sk_max)),
+        );
 
-        let raw_items = self.ddb
+        let raw_items = self
+            .ddb
             .query(
                 &self.table,
                 None,
@@ -300,13 +319,22 @@ impl EavReader {
         let pk = format!("T#{}#E#{}", tenant_id, entity_id);
 
         let key_condition = "#pk = :pk".to_string();
-        let mut attr_names  = HashMap::new();
+        let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();
         attr_names.insert("#pk".to_string(), "PK".to_string());
         attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
 
-        let raw_items = self.ddb
-            .query(&self.table, None, &key_condition, attr_names, attr_values, true, None)
+        let raw_items = self
+            .ddb
+            .query(
+                &self.table,
+                None,
+                &key_condition,
+                attr_names,
+                attr_values,
+                true,
+                None,
+            )
             .await
             .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("history falló: {e:?}")))?;
 
@@ -317,14 +345,21 @@ impl EavReader {
                     Some(AttributeValue::B(blob)) => blob.as_ref(),
                     _ => return None,
                 };
-                if sk.len() != 11 { return None; }
+                if sk.len() != 11 {
+                    return None;
+                }
                 let attr_id = u16::from_be_bytes(sk[0..2].try_into().unwrap());
                 let tx_id = u64::from_be_bytes(sk[2..10].try_into().unwrap());
                 let op = sk[10] != 0;
 
-                let attr = crate::codice::global().get_attr_name(attr_id).unwrap_or("unknown_attr").to_string();
+                let attr = crate::codice::global()
+                    .get_attr_name(attr_id)
+                    .unwrap_or("unknown_attr")
+                    .to_string();
                 if let Some(filter) = attr_name {
-                    if attr != filter { return None; }
+                    if attr != filter {
+                        return None;
+                    }
                 }
                 let value = extract_datom_value(&item);
                 Some(HistoryEntry {
@@ -389,7 +424,8 @@ impl EavReader {
             }
         }
 
-        let mut join_set: tokio::task::JoinSet<Result<(String, Vec<WarmupItem>), DomainError>> = tokio::task::JoinSet::new();
+        let mut join_set: tokio::task::JoinSet<Result<(String, Vec<WarmupItem>), DomainError>> =
+            tokio::task::JoinSet::new();
         // Usar semáforo para limitar la concurrencia a máximo 4 queries simultáneos,
         // controlando picos de asignación de red y deserialización del SDK.
         let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
@@ -404,14 +440,14 @@ impl EavReader {
                 let _permit = sem_permit.acquire().await.map_err(|e| {
                     DomainError::infra(
                         ErrorCode::Infra001,
-                        format!("Fallo al adquirir permiso del semáforo para {attr_name}: {e:?}")
+                        format!("Fallo al adquirir permiso del semáforo para {attr_name}: {e:?}"),
                     )
                 })?;
 
                 let pk_ap = format!("T#{}#A#{}", tenant_id, attr_name);
 
                 let key_condition = "#ap = :ap".to_string();
-                let mut expr_attr_names  = HashMap::new();
+                let mut expr_attr_names = HashMap::new();
                 let mut expr_attr_values = HashMap::new();
                 expr_attr_names.insert("#ap".to_string(), "ap".to_string());
                 expr_attr_values.insert(":ap".to_string(), AttributeValue::S(pk_ap));
@@ -430,7 +466,7 @@ impl EavReader {
                     .map_err(|e| {
                         DomainError::infra(
                             ErrorCode::Infra001,
-                            format!("GSI-AEVT query falló para {attr_name}: {e:?}")
+                            format!("GSI-AEVT query falló para {attr_name}: {e:?}"),
                         )
                     })?;
 
@@ -441,7 +477,7 @@ impl EavReader {
                         Some(AttributeValue::S(s)) => s,
                         _ => continue,
                     };
-                    
+
                     let entity_id = match pk.split('#').last() {
                         Some(id) => id.to_string(),
                         None => continue,
@@ -451,7 +487,9 @@ impl EavReader {
                         Some(AttributeValue::B(blob)) => blob.as_ref(),
                         _ => continue,
                     };
-                    if sk.len() != 11 { continue; }
+                    if sk.len() != 11 {
+                        continue;
+                    }
                     let tx_id = u64::from_be_bytes(sk[2..10].try_into().unwrap());
                     let op = sk[10] != 0;
 
@@ -499,7 +537,9 @@ impl EavReader {
                 Err(join_err) => {
                     return Err(DomainError::infra(
                         ErrorCode::Infra001,
-                        format!("Error al unir hilo de query paralelo durante warmup: {join_err:?}")
+                        format!(
+                            "Error al unir hilo de query paralelo durante warmup: {join_err:?}"
+                        ),
                     ));
                 }
             }
@@ -519,17 +559,18 @@ impl EavReader {
         let mut cache_write_count = 0;
         if let Ok(mut cache) = EAV_CACHE.write() {
             for (pk, attrs_map) in entity_states {
-                let final_map: EntityMap = attrs_map.into_iter()
-                    .map(|(k, (_, v))| (k, v))
-                    .collect();
-                
-                let is_quota = final_map.contains_key("resource_domain") || final_map.contains_key("domain_quota/resource_domain");
+                let final_map: EntityMap =
+                    attrs_map.into_iter().map(|(k, (_, v))| (k, v)).collect();
+
+                let is_quota = final_map.contains_key("resource_domain")
+                    || final_map.contains_key("domain_quota/resource_domain");
                 if is_quota {
                     continue;
                 }
 
                 if cache.len() >= MAX_EAV_CACHE_SIZE && !cache.contains_key(&pk) {
-                    let to_remove: Vec<String> = cache.keys().take(MAX_EAV_CACHE_SIZE / 5).cloned().collect();
+                    let to_remove: Vec<String> =
+                        cache.keys().take(MAX_EAV_CACHE_SIZE / 5).cloned().collect();
                     for k in to_remove {
                         cache.remove(&k);
                     }
@@ -558,16 +599,16 @@ impl EavReader {
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
     pub attr_name: String,
-    pub value:     Option<DatomValue>,
-    pub tx_id:     u64,
-    pub op:        bool, // true=assert, false=retract
+    pub value: Option<DatomValue>,
+    pub tx_id: u64,
+    pub op: bool, // true=assert, false=retract
 }
 
 /// Ensambla el estado actual de una entidad desde los datoms raw de DynamoDB.
 /// Toma el último datom con op=true por atributo.
 /// [PORTED_FROM: La lógica de pull de Datahike — reconstrucción sin blob]
 fn assemble_current_state(
-    items:      Vec<HashMap<String, AttributeValue>>,
+    items: Vec<HashMap<String, AttributeValue>>,
     attr_filter: Option<&[&str]>,
 ) -> EntityMap {
     // Mapa: attr_name → (tx_id, value) — mantenemos el más reciente con op=true
@@ -578,17 +619,25 @@ fn assemble_current_state(
             Some(AttributeValue::B(blob)) => blob.as_ref(),
             _ => continue,
         };
-        if sk.len() != 11 { continue; }
-        
+        if sk.len() != 11 {
+            continue;
+        }
+
         let attr_id = u16::from_be_bytes(sk[0..2].try_into().unwrap());
         let tx_id = u64::from_be_bytes(sk[2..10].try_into().unwrap());
         let op = sk[10] != 0;
-        
+
         let attr_name = match crate::codice::global().get_attr_name(attr_id) {
             Some(n) => n.to_string(),
             None => format!("attr_{}", attr_id),
         };
-        tracing::debug!("DEBUG PULL ITEM: attr_id={}, attr_name={}, op={}, val={:?}", attr_id, attr_name, op, extract_datom_value(&item));
+        tracing::debug!(
+            "DEBUG PULL ITEM: attr_id={}, attr_name={}, op={}, val={:?}",
+            attr_id,
+            attr_name,
+            op,
+            extract_datom_value(&item)
+        );
 
         // Aplicar filtro de atributos si se especificó
         if let Some(filter) = attr_filter {
@@ -600,7 +649,7 @@ fn assemble_current_state(
 
         // Solo actualizar si este datom es más reciente que el que tenemos
         let should_update = match latest.get(&attr_name) {
-            None              => true,
+            None => true,
             Some((prev_tx, _)) => tx_id > *prev_tx,
         };
 
@@ -626,8 +675,8 @@ fn assemble_current_state(
 /// Extrae el DatomValue del campo `v` de un item DynamoDB.
 fn extract_datom_value(item: &HashMap<String, AttributeValue>) -> Option<DatomValue> {
     match item.get("v")? {
-        AttributeValue::S(s)    => Some(DatomValue::Str(s.clone())),
-        AttributeValue::N(n)    => {
+        AttributeValue::S(s) => Some(DatomValue::Str(s.clone())),
+        AttributeValue::N(n) => {
             // Intentar i64 primero, luego f64
             if let Ok(i) = n.parse::<i64>() {
                 Some(DatomValue::Long(i))
@@ -636,7 +685,7 @@ fn extract_datom_value(item: &HashMap<String, AttributeValue>) -> Option<DatomVa
             }
         }
         AttributeValue::Bool(b) => Some(DatomValue::Bool(*b)),
-        AttributeValue::B(_)    => Some(DatomValue::Bytes(vec![])), // placeholder
+        AttributeValue::B(_) => Some(DatomValue::Bytes(vec![])), // placeholder
         AttributeValue::Null(_) => Some(DatomValue::Null),
         _ => None,
     }

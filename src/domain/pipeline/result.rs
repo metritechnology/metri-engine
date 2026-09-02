@@ -54,4 +54,3 @@ macro_rules! fail {
 #[cfg(test)]
 #[path = "../tests/result_tests.rs"]
 mod tests;
-

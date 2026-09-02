@@ -16,11 +16,11 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 use tracing::{error, info, warn};
 
-use crate::codice::{global as codice_global, validator};
 use crate::codice::registry::AttrType;
+use crate::codice::{global as codice_global, validator};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::datom::DatomValue;
-use crate::eav::writer::{EavWriter, TransactPayload, TransactOp, TransactResult};
+use crate::eav::writer::{EavWriter, TransactOp, TransactPayload, TransactResult};
 use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
 use crate::janus_router::ulid;
@@ -85,9 +85,10 @@ impl OltpChannel {
         model: &crate::codice::registry::EntityModel,
     ) -> Result<Value, DomainError> {
         let entity_type = &ctx.entity_type;
-        let tenant_id   = &ctx.tenant_id;
+        let tenant_id = &ctx.tenant_id;
 
-        let records: Vec<Value> = ctx.request
+        let records: Vec<Value> = ctx
+            .request
             .get("data")
             .and_then(|v| v.as_array())
             .cloned()
@@ -121,7 +122,8 @@ impl OltpChannel {
                         tenant_id.clone(),
                         true,
                         true, // skip_uniqueness: bulk CREATE skips per-row AVET reads
-                    ).await?;
+                    )
+                    .await?;
 
                     let entity_id = if model.is_system {
                         extract_entity_id(&raw_record).unwrap_or_else(|| ulid::generate())
@@ -201,10 +203,11 @@ impl OltpChannel {
         op: TransactOp,
     ) -> Result<Value, DomainError> {
         let entity_type = &ctx.entity_type;
-        let tenant_id   = &ctx.tenant_id;
-        let operation   = ctx.operation.as_str();
+        let tenant_id = &ctx.tenant_id;
+        let operation = ctx.operation.as_str();
 
-        let payload = ctx.request
+        let payload = ctx
+            .request
             .get("payload")
             .cloned()
             .unwrap_or(Value::Object(serde_json::Map::new()));
@@ -213,7 +216,8 @@ impl OltpChannel {
             HashMap::new()
         } else {
             let is_create = op == TransactOp::Create;
-            self.prepare_and_validate_payload(payload.clone(), model, tenant_id, is_create).await?
+            self.prepare_and_validate_payload(payload.clone(), model, tenant_id, is_create)
+                .await?
         };
 
         let entity_id = match op {
@@ -238,11 +242,11 @@ impl OltpChannel {
         };
 
         let transact = TransactPayload {
-            tenant_id:   tenant_id.clone(),
+            tenant_id: tenant_id.clone(),
             entity_type: entity_type.clone(),
-            entity_id:   Some(entity_id.clone()),
-            op:          op.clone(),
-            attrs:       validated,
+            entity_id: Some(entity_id.clone()),
+            op: op.clone(),
+            attrs: validated,
         };
 
         // Proyección de sagas: sólo en CREATE y sólo si la madre declara el mapping.
@@ -255,7 +259,9 @@ impl OltpChannel {
                 &payload,
                 &entity_id,
                 &ctx.user_id,
-            ).await {
+            )
+            .await
+            {
                 Ok(p) => {
                     if !p.is_empty() {
                         info!(
@@ -278,7 +284,11 @@ impl OltpChannel {
             Vec::new()
         };
 
-        match self.writer.transact_with_projections(transact, projections).await {
+        match self
+            .writer
+            .transact_with_projections(transact, projections)
+            .await
+        {
             Ok(result) => {
                 info!(
                     entity_id = %result.entity_id,
@@ -289,7 +299,8 @@ impl OltpChannel {
                 );
 
                 // Emite evento de dominio a EventBridge asíncronamente
-                let bus_name = std::env::var("EVENTBRIDGE_BUS_NAME").unwrap_or_else(|_| "metri-events".to_string());
+                let bus_name = std::env::var("EVENTBRIDGE_BUS_NAME")
+                    .unwrap_or_else(|_| "metri-events".to_string());
                 let source = "metri.engine".to_string();
                 let detail_type = if entity_type == "tenant" && op == TransactOp::Create {
                     "system.tenant.created".to_string()
@@ -305,8 +316,14 @@ impl OltpChannel {
 
                 let mut detail_map = serde_json::Map::new();
                 detail_map.insert("tenant_id".to_string(), Value::String(event_tenant_id));
-                detail_map.insert("entity_type".to_string(), Value::String(entity_type.clone()));
-                detail_map.insert("entity_id".to_string(), Value::String(result.entity_id.clone()));
+                detail_map.insert(
+                    "entity_type".to_string(),
+                    Value::String(entity_type.clone()),
+                );
+                detail_map.insert(
+                    "entity_id".to_string(),
+                    Value::String(result.entity_id.clone()),
+                );
                 detail_map.insert("op".to_string(), Value::String(operation.to_string()));
                 if let Value::Object(ref p_map) = payload {
                     for (k, v) in p_map {
@@ -359,7 +376,9 @@ impl OltpChannel {
 
         if is_create {
             if let Ok(Value::Object(map)) = serde_json::to_value(&coerced) {
-                if let Ok(injected) = crate::codice::generator::inject(writer.client(), &model, &tenant_id, map).await {
+                if let Ok(injected) =
+                    crate::codice::generator::inject(writer.client(), &model, &tenant_id, map).await
+                {
                     if let Ok(val) = serde_json::to_value(injected) {
                         coerced = val;
                     }
@@ -378,10 +397,17 @@ impl OltpChannel {
 
             for attr in &model.attributes {
                 if let Some(unique_type) = attr.unique.as_deref() {
-                    if unique_type == "tenant" || unique_type == "identity" || unique_type == "value" || unique_type == "tenant_scoped" {
+                    if unique_type == "tenant"
+                        || unique_type == "identity"
+                        || unique_type == "value"
+                        || unique_type == "tenant_scoped"
+                    {
                         if let Some(val) = coerced.get(&attr.name) {
                             if !val.is_null() {
-                                let datom_val = match crate::codice::validator::map_to_datom_value(val, &attr.attr_type) {
+                                let datom_val = match crate::codice::validator::map_to_datom_value(
+                                    val,
+                                    &attr.attr_type,
+                                ) {
                                     Ok(v) => v,
                                     Err(_) => continue,
                                 };
@@ -398,7 +424,9 @@ impl OltpChannel {
                                     value: datom_val,
                                 };
 
-                                if let Ok(existing_ids) = query_executor.execute_native_plan(&plan).await {
+                                if let Ok(existing_ids) =
+                                    query_executor.execute_native_plan(&plan).await
+                                {
                                     let is_duplicate = if is_create {
                                         !existing_ids.is_empty()
                                     } else {
@@ -437,7 +465,8 @@ impl OltpChannel {
             tenant_id.to_string(),
             is_create,
             false, // skip_uniqueness: individual operations always check uniqueness
-        ).await
+        )
+        .await
     }
 }
 
@@ -447,8 +476,8 @@ impl OltpChannel {
 fn parse_op(op: &str) -> Result<TransactOp, DomainError> {
     match op.to_uppercase().as_str() {
         "CREATE" | "BULK_CREATE" | "UPSERT" => Ok(TransactOp::Create),
-        "UPDATE"                 => Ok(TransactOp::Update),
-        "DELETE"                 => Ok(TransactOp::Delete),
+        "UPDATE" => Ok(TransactOp::Update),
+        "DELETE" => Ok(TransactOp::Delete),
         other => Err(DomainError::janus(
             ErrorCode::JanusVal001,
             format!("Operación no soportada por OLTP: '{other}'"),
@@ -468,7 +497,9 @@ pub(crate) fn extract_entity_id(payload: &Value) -> Option<String> {
 ///
 /// [PORTED_FROM: (defn- coerce-payload [payload model])]
 fn coerce_payload(record: Value, model: &crate::codice::registry::EntityModel) -> Value {
-    let Some(obj) = record.as_object() else { return record; };
+    let Some(obj) = record.as_object() else {
+        return record;
+    };
     let mut out = obj.clone();
 
     for attr in &model.attributes {
@@ -485,8 +516,8 @@ fn coerce_payload(record: Value, model: &crate::codice::registry::EntityModel) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use crate::codice::registry::EntityModel;
+    use serde_json::json;
 
     #[test]
     fn test_extract_entity_id_fallback_to_ulid_when_invalid() {
@@ -503,8 +534,8 @@ mod tests {
             write_path_locked: false,
             is_system: true,
             disable_eda: false,
-        shadow_sagas_mapping: None,
-        constraints: vec![],
+            shadow_sagas_mapping: None,
+            constraints: vec![],
         };
 
         let normal_model = EntityModel {
@@ -520,8 +551,8 @@ mod tests {
             write_path_locked: false,
             is_system: false,
             disable_eda: false,
-        shadow_sagas_mapping: None,
-        constraints: vec![],
+            shadow_sagas_mapping: None,
+            constraints: vec![],
         };
 
         // Case 1: System model permits custom human-readable ID

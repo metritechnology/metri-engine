@@ -1,4 +1,4 @@
-use crate::janus::normalizer::{normalize_response, normalize_chunk, helpers, ResponseType};
+use crate::janus::normalizer::{helpers, normalize_chunk, normalize_response, ResponseType};
 use serde_json::json;
 
 #[test]
@@ -58,32 +58,61 @@ fn kpi_with_time_shift_produces_full_intelligence_signal() {
 
     let result = normalize_chunk(&body);
 
-    let signal_val = result.pointer("/viz_ext/payload/signal/value")
+    let signal_val = result
+        .pointer("/viz_ext/payload/signal/value")
         .and_then(|v| v.as_f64())
         .expect("signal.value debe existir");
-    assert!((signal_val - 15.0).abs() < 0.01, "signal.value debe ser 15.0, got {signal_val}");
+    assert!(
+        (signal_val - 15.0).abs() < 0.01,
+        "signal.value debe ser 15.0, got {signal_val}"
+    );
 
-    let prev_val = result.pointer("/viz_ext/payload/signal/previous_value")
+    let prev_val = result
+        .pointer("/viz_ext/payload/signal/previous_value")
         .and_then(|v| v.as_f64())
         .expect("signal.previous_value debe existir");
-    assert!((prev_val - 10.0).abs() < 0.01, "previous_value debe ser 10.0, got {prev_val}");
+    assert!(
+        (prev_val - 10.0).abs() < 0.01,
+        "previous_value debe ser 10.0, got {prev_val}"
+    );
 
-    let intel = result.pointer("/viz_ext/payload/signal/intelligence")
+    let intel = result
+        .pointer("/viz_ext/payload/signal/intelligence")
         .expect("IntelligenceSignal debe existir");
 
     assert_eq!(intel["direction"], json!("up"), "direction debe ser 'up'");
 
-    let pct = intel["percentage"].as_f64().expect("percentage debe ser número");
-    assert!((pct - 50.0).abs() < 0.01, "percentage debe ser 50.0, got {pct}");
+    let pct = intel["percentage"]
+        .as_f64()
+        .expect("percentage debe ser número");
+    assert!(
+        (pct - 50.0).abs() < 0.01,
+        "percentage debe ser 50.0, got {pct}"
+    );
 
-    let delta = intel["delta_abs"].as_f64().expect("delta_abs debe ser número");
-    assert!((delta - 5.0).abs() < 0.01, "delta_abs debe ser 5.0, got {delta}");
+    let delta = intel["delta_abs"]
+        .as_f64()
+        .expect("delta_abs debe ser número");
+    assert!(
+        (delta - 5.0).abs() < 0.01,
+        "delta_abs debe ser 5.0, got {delta}"
+    );
 
     let label = intel["label"].as_str().expect("label debe ser string");
-    assert!(label.contains("50"), "label debe contener '50', got '{label}'");
-    assert!(label.starts_with('+'), "label debe empezar con '+', got '{label}'");
+    assert!(
+        label.contains("50"),
+        "label debe contener '50', got '{label}'"
+    );
+    assert!(
+        label.starts_with('+'),
+        "label debe empezar con '+', got '{label}'"
+    );
 
-    assert_eq!(intel["is_anomaly"], json!(false), "is_anomaly debe ser false sin SMART");
+    assert_eq!(
+        intel["is_anomaly"],
+        json!(false),
+        "is_anomaly debe ser false sin SMART"
+    );
 }
 
 // ── KPI con BENCHMARK → IntelligenceSignal vs target fijo ─────────────────
@@ -107,12 +136,22 @@ fn kpi_with_benchmark_produces_intelligence_signal() {
 
     let result = normalize_chunk(&body);
 
-    let intel = result.pointer("/viz_ext/payload/signal/intelligence")
+    let intel = result
+        .pointer("/viz_ext/payload/signal/intelligence")
         .expect("IntelligenceSignal debe existir");
 
-    assert_eq!(intel["direction"], json!("down"), "direction debe ser 'down'");
-    let pct = intel["percentage"].as_f64().expect("percentage debe ser número");
-    assert!((pct + 20.0).abs() < 0.01, "percentage debe ser -20.0, got {pct}");
+    assert_eq!(
+        intel["direction"],
+        json!("down"),
+        "direction debe ser 'down'"
+    );
+    let pct = intel["percentage"]
+        .as_f64()
+        .expect("percentage debe ser número");
+    assert!(
+        (pct + 20.0).abs() < 0.01,
+        "percentage debe ser -20.0, got {pct}"
+    );
     assert_eq!(intel["is_anomaly"], json!(false));
 }
 
@@ -139,13 +178,19 @@ fn kpi_with_smart_anomaly_sets_is_anomaly_true() {
 
     let result = normalize_chunk(&body);
 
-    let intel = result.pointer("/viz_ext/payload/signal/intelligence")
+    let intel = result
+        .pointer("/viz_ext/payload/signal/intelligence")
         .expect("IntelligenceSignal debe existir");
 
-    assert_eq!(intel["is_anomaly"], json!(true),
-        "is_anomaly debe ser true para z_score > 2.0");
+    assert_eq!(
+        intel["is_anomaly"],
+        json!(true),
+        "is_anomaly debe ser true para z_score > 2.0"
+    );
 
-    let z = intel["z_score"].as_f64().expect("z_score debe estar en intelligence");
+    let z = intel["z_score"]
+        .as_f64()
+        .expect("z_score debe estar en intelligence");
     assert!(z > 2.0, "z_score debe ser > 2.0, got {z}");
 
     assert_eq!(intel["represents_initial"], json!(false));
@@ -168,14 +213,20 @@ fn kpi_without_comparisons_has_valid_signal_no_intelligence() {
 
     let result = normalize_chunk(&body);
 
-    let val = result.pointer("/viz_ext/payload/signal/value")
+    let val = result
+        .pointer("/viz_ext/payload/signal/value")
         .and_then(|v| v.as_f64())
         .expect("signal.value debe existir");
-    assert!((val - 42.0).abs() < 0.01, "signal.value debe ser 42.0, got {val}");
+    assert!(
+        (val - 42.0).abs() < 0.01,
+        "signal.value debe ser 42.0, got {val}"
+    );
 
     let intel = result.pointer("/viz_ext/payload/signal/intelligence");
-    assert!(intel.is_none(),
-        "IntelligenceSignal NO debe existir sin previous_value");
+    assert!(
+        intel.is_none(),
+        "IntelligenceSignal NO debe existir sin previous_value"
+    );
 }
 
 // ── KPI down trend: valor actual menor que previo ──────────────────────────
@@ -197,14 +248,18 @@ fn kpi_down_trend_direction_and_negative_pct() {
     });
 
     let result = normalize_chunk(&body);
-    let intel = result.pointer("/viz_ext/payload/signal/intelligence")
+    let intel = result
+        .pointer("/viz_ext/payload/signal/intelligence")
         .expect("IntelligenceSignal debe existir");
 
     assert_eq!(intel["direction"], json!("down"));
     let pct = intel["percentage"].as_f64().unwrap();
     assert!((pct + 20.0).abs() < 0.01, "pct debe ser -20.0, got {pct}");
     let delta = intel["delta_abs"].as_f64().unwrap();
-    assert!((delta + 20.0).abs() < 0.01, "delta_abs debe ser -20.0, got {delta}");
+    assert!(
+        (delta + 20.0).abs() < 0.01,
+        "delta_abs debe ser -20.0, got {delta}"
+    );
 }
 
 // ── ChartDecoration Contract Tests ─────────────────────────────────────────────
@@ -224,18 +279,41 @@ fn chart_bar_has_safe_defaults() {
     });
 
     let result = normalize_chunk(&body);
-    let chart = result.pointer("/viz_ext/payload/chart")
+    let chart = result
+        .pointer("/viz_ext/payload/chart")
         .expect("ChartDecoration debe existir para viz=bar");
 
-    assert_eq!(chart["x_dimension"], json!("period"),
-        "x_dimension debe ser la primera columna 'period'");
-    assert_eq!(chart["y_dimensions"], json!(["sum_cost"]),
-        "y_dimensions debe contener 'sum_cost'");
+    assert_eq!(
+        chart["x_dimension"],
+        json!("period"),
+        "x_dimension debe ser la primera columna 'period'"
+    );
+    assert_eq!(
+        chart["y_dimensions"],
+        json!(["sum_cost"]),
+        "y_dimensions debe contener 'sum_cost'"
+    );
 
-    assert_eq!(chart["show_legend"],  json!(true),  "show_legend default debe ser true");
-    assert_eq!(chart["show_tooltip"], json!(true),  "show_tooltip default debe ser true");
-    assert_eq!(chart["stacked"], json!(false), "stacked default debe ser false");
-    assert_eq!(chart["smooth"],  json!(false), "smooth default debe ser false");
+    assert_eq!(
+        chart["show_legend"],
+        json!(true),
+        "show_legend default debe ser true"
+    );
+    assert_eq!(
+        chart["show_tooltip"],
+        json!(true),
+        "show_tooltip default debe ser true"
+    );
+    assert_eq!(
+        chart["stacked"],
+        json!(false),
+        "stacked default debe ser false"
+    );
+    assert_eq!(
+        chart["smooth"],
+        json!(false),
+        "smooth default debe ser false"
+    );
 }
 
 #[test]
@@ -254,11 +332,15 @@ fn timeseries_auto_activates_fill_gaps() {
     });
 
     let result = normalize_chunk(&body);
-    let chart = result.pointer("/viz_ext/payload/chart")
+    let chart = result
+        .pointer("/viz_ext/payload/chart")
         .expect("ChartDecoration debe existir para viz=line");
 
-    assert_eq!(chart["fill_gaps"], json!(true),
-        "fill_gaps debe ser true para TIMESERIES output_cast");
+    assert_eq!(
+        chart["fill_gaps"],
+        json!(true),
+        "fill_gaps debe ser true para TIMESERIES output_cast"
+    );
     assert_eq!(chart["x_dimension"], json!("bucket"));
     assert_eq!(chart["y_dimensions"], json!(["sum_revenue"]));
 }
@@ -290,23 +372,42 @@ fn chart_decoration_full_override_all_10_fields() {
     });
 
     let result = normalize_chunk(&body);
-    let chart = result.pointer("/viz_ext/payload/chart")
+    let chart = result
+        .pointer("/viz_ext/payload/chart")
         .expect("ChartDecoration debe existir");
 
     assert_eq!(chart["x_dimension"], json!("fecha"));
     assert_eq!(chart["y_dimensions"], json!(["produccion", "consumo"]));
 
-    assert_eq!(chart["color_scheme"],  json!("industrial_blue"), "color_scheme debe propagarse");
-    assert_eq!(chart["show_legend"],   json!(false), "show_legend override debe ser false");
-    assert_eq!(chart["show_tooltip"],  json!(false), "show_tooltip override debe ser false");
-    assert_eq!(chart["title"],         json!("Reporte de Producción"), "title debe propagarse");
+    assert_eq!(
+        chart["color_scheme"],
+        json!("industrial_blue"),
+        "color_scheme debe propagarse"
+    );
+    assert_eq!(
+        chart["show_legend"],
+        json!(false),
+        "show_legend override debe ser false"
+    );
+    assert_eq!(
+        chart["show_tooltip"],
+        json!(false),
+        "show_tooltip override debe ser false"
+    );
+    assert_eq!(
+        chart["title"],
+        json!("Reporte de Producción"),
+        "title debe propagarse"
+    );
 
     assert_eq!(chart["stacked"], json!(true), "stacked debe ser true");
-    assert_eq!(chart["smooth"],  json!(true), "smooth debe ser true");
+    assert_eq!(chart["smooth"], json!(true), "smooth debe ser true");
 
-    assert_eq!(chart["label_template"],
+    assert_eq!(
+        chart["label_template"],
         json!("{{fecha}}: {{produccion}} unidades"),
-        "label_template debe llegar intacto con placeholders Mustache sin interpolar");
+        "label_template debe llegar intacto con placeholders Mustache sin interpolar"
+    );
 
     assert_eq!(chart["fill_gaps"], json!(true), "fill_gaps debe ser true");
 }
@@ -328,13 +429,30 @@ fn area_chart_stacked_and_smooth_hooks() {
     });
 
     let result = normalize_chunk(&body);
-    let chart = result.pointer("/viz_ext/payload/chart")
+    let chart = result
+        .pointer("/viz_ext/payload/chart")
         .expect("ChartDecoration para viz=area");
 
-    assert_eq!(chart["stacked"], json!(true), "stacked debe ser true para area chart");
-    assert_eq!(chart["smooth"],  json!(true), "smooth debe ser true para area chart");
-    assert_eq!(chart["show_legend"],  json!(true),  "show_legend mantiene default true");
-    assert_eq!(chart["show_tooltip"], json!(true), "show_tooltip mantiene default true");
+    assert_eq!(
+        chart["stacked"],
+        json!(true),
+        "stacked debe ser true para area chart"
+    );
+    assert_eq!(
+        chart["smooth"],
+        json!(true),
+        "smooth debe ser true para area chart"
+    );
+    assert_eq!(
+        chart["show_legend"],
+        json!(true),
+        "show_legend mantiene default true"
+    );
+    assert_eq!(
+        chart["show_tooltip"],
+        json!(true),
+        "show_tooltip mantiene default true"
+    );
 }
 
 #[test]
@@ -354,13 +472,17 @@ fn scatter_chart_label_template_reaches_frontend_intact() {
     });
 
     let result = normalize_chunk(&body);
-    let chart = result.pointer("/viz_ext/payload/chart")
+    let chart = result
+        .pointer("/viz_ext/payload/chart")
         .expect("ChartDecoration para viz=scatter");
 
-    let lt = chart["label_template"].as_str()
+    let lt = chart["label_template"]
+        .as_str()
         .expect("label_template debe ser string");
-    assert_eq!(lt, "{{asset_name}} - {{total_cost}} USD",
-        "label_template debe llegar intacto con placeholders Mustache sin interpolar");
+    assert_eq!(
+        lt, "{{asset_name}} - {{total_cost}} USD",
+        "label_template debe llegar intacto con placeholders Mustache sin interpolar"
+    );
 }
 
 #[test]
@@ -383,11 +505,15 @@ fn pie_generates_breakdown_not_chart_decoration() {
 
     let result = normalize_chunk(&body);
 
-    assert!(result.pointer("/viz_ext/payload/breakdown").is_some(),
-        "breakdown debe existir para viz=pie");
+    assert!(
+        result.pointer("/viz_ext/payload/breakdown").is_some(),
+        "breakdown debe existir para viz=pie"
+    );
 
-    assert!(result.pointer("/viz_ext/payload/chart").is_none(),
-        "ChartDecoration NO debe existir para viz=pie — incompatible con BreakdownSignal");
+    assert!(
+        result.pointer("/viz_ext/payload/chart").is_none(),
+        "ChartDecoration NO debe existir para viz=pie — incompatible con BreakdownSignal"
+    );
 }
 
 #[test]
@@ -408,15 +534,24 @@ fn line_chart_multi_series_3_y_dimensions() {
     });
 
     let result = normalize_chunk(&body);
-    let chart = result.pointer("/viz_ext/payload/chart")
+    let chart = result
+        .pointer("/viz_ext/payload/chart")
         .expect("ChartDecoration para viz=line multi-series");
 
-    assert_eq!(chart["x_dimension"], json!("month"),
-        "x_dimension debe ser 'month' (primera columna)");
+    assert_eq!(
+        chart["x_dimension"],
+        json!("month"),
+        "x_dimension debe ser 'month' (primera columna)"
+    );
 
-    let y_dims = chart["y_dimensions"].as_array()
+    let y_dims = chart["y_dimensions"]
+        .as_array()
         .expect("y_dimensions debe ser array");
-    assert_eq!(y_dims.len(), 3, "debe haber 3 y_dimensions para multi-series");
+    assert_eq!(
+        y_dims.len(),
+        3,
+        "debe haber 3 y_dimensions para multi-series"
+    );
     assert!(y_dims.contains(&json!("sum_revenue")));
     assert!(y_dims.contains(&json!("sum_cost")));
     assert!(y_dims.contains(&json!("margin")));
@@ -453,9 +588,11 @@ fn table_column_enriched_metadata_verification() {
     });
 
     let result = normalize_chunk(&body);
-    let table = result.pointer("/viz_ext/payload/table")
+    let table = result
+        .pointer("/viz_ext/payload/table")
         .expect("table payload debe existir");
-    let columns = table["columns"].as_array()
+    let columns = table["columns"]
+        .as_array()
         .expect("columns debe ser un array");
 
     assert_eq!(columns.len(), 5);

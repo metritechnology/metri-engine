@@ -1,12 +1,12 @@
+use crate::domain::protocols::IQueryEngine;
+use crate::janus::ast_compiler::compile_ast_internal;
+use crate::janus::fbs::AnalyticsRequestT;
+use crate::janus::normalizer::normalize_chunk;
+use crate::janus::router::post_processor;
+use crate::janus::router::translator::analytics_request_to_json;
+use crate::janus::router::{CedarCtx, QueryChunk};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use crate::janus::fbs::AnalyticsRequestT;
-use crate::janus::router::{CedarCtx, QueryChunk};
-use crate::domain::protocols::IQueryEngine;
-use crate::janus::normalizer::normalize_chunk;
-use crate::janus::ast_compiler::compile_ast_internal;
-use crate::janus::router::translator::analytics_request_to_json;
-use crate::janus::router::post_processor;
 
 pub async fn execute_olap_query(
     query_key: &str,
@@ -19,14 +19,14 @@ pub async fn execute_olap_query(
 ) -> Vec<QueryChunk> {
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
     let query_desc_json = analytics_request_to_json(query_map);
-    
+
     let ast_ir = match compile_ast_internal(&query_desc_json, cedar_ctx, schema) {
         Ok(ast) => ast,
         Err(e) => {
             let elapsed_ms = std::cmp::max(start_time.elapsed().as_millis() as i64, 1);
             return vec![QueryChunk {
                 query_key: query_key.to_string(),
-                body:      normalize_chunk(&json!({
+                body: normalize_chunk(&json!({
                     "code":              "JANUS_400",
                     "reason":            e.to_string(),
                     "query_key":         query_key,
@@ -55,8 +55,8 @@ pub async fn execute_olap_query(
         });
         return vec![QueryChunk {
             query_key: query_key.to_string(),
-            body:      normalize_chunk(&body),
-            success:   true,
+            body: normalize_chunk(&body),
+            success: true,
         }];
     }
 
@@ -75,7 +75,9 @@ pub async fn execute_olap_query(
         }];
     }
 
-    let time_range = query_map.time_frame.as_ref()
+    let time_range = query_map
+        .time_frame
+        .as_ref()
         .and_then(|tf| crate::aegis::temporal_bridge::resolve_fbs_time_frame(tf))
         .unwrap_or_else(|| crate::aegis::temporal_bridge::no_time_range());
 
@@ -167,7 +169,11 @@ pub async fn execute_olap_query(
     }
 
     // Post-procesar comparaciones CTE para KPIs y series temporales analíticas
-    let has_comparisons = query_map.comparisons.as_ref().map(|c| !c.is_empty()).unwrap_or(false);
+    let has_comparisons = query_map
+        .comparisons
+        .as_ref()
+        .map(|c| !c.is_empty())
+        .unwrap_or(false);
     if has_comparisons {
         for row_val in &mut raw_rows {
             if let Some(row_obj) = row_val.as_object_mut() {
@@ -192,7 +198,8 @@ pub async fn execute_olap_query(
     let total_count = raw_rows.len() as u64;
     let limit_raw = query_map.limit as usize;
     let fallback_limit = if limit_raw == 0 { 1000 } else { limit_raw };
-    let (offset, limit) = crate::aegis::pagination::decode_cursor(query_map.cursor.as_deref(), fallback_limit);
+    let (offset, limit) =
+        crate::aegis::pagination::decode_cursor(query_map.cursor.as_deref(), fallback_limit);
     let mut processed_rows = crate::aegis::pagination::paginate_rows(raw_rows, offset, limit);
 
     // Apply label templates and hierarchy from post_processor
@@ -200,7 +207,12 @@ pub async fn execute_olap_query(
     let metrics = query_map.metrics.as_deref().unwrap_or(&[]);
     let output_cast_i = query_map.output_cast.0;
 
-    post_processor::apply_label_templates(&mut processed_rows, dimensions, output_cast_i, &query_map.viz);
+    post_processor::apply_label_templates(
+        &mut processed_rows,
+        dimensions,
+        output_cast_i,
+        &query_map.viz,
+    );
     post_processor::inject_hierarchy_children(&mut processed_rows, query_map.hierarchy.as_deref());
 
     let columns = post_processor::derive_columns(&processed_rows, dimensions, metrics);
@@ -236,7 +248,8 @@ pub async fn execute_olap_query(
             obj.insert("viz".to_string(), json!(viz));
         }
 
-        let pagination_meta = crate::aegis::pagination::build_pagination(offset, limit, total_count as usize);
+        let pagination_meta =
+            crate::aegis::pagination::build_pagination(offset, limit, total_count as usize);
         if !pagination_meta.is_null() {
             obj.insert("pagination".to_string(), pagination_meta);
         }

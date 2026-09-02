@@ -5,16 +5,20 @@
 
 use serde_json::{json, Value};
 
-use crate::domain::errors::DomainError;
 use crate::codice::registry::EntityModel;
-use crate::otel::tracer::{current_trace_id, current_span_id};
+use crate::domain::errors::DomainError;
+use crate::otel::tracer::{current_span_id, current_trace_id};
 
 /// Sanitiza el contexto del error eliminando campos sensibles del schema.
 /// [PORTED_FROM: (sanitize-context context schema)]
 /// Lee el flag :sensitive directamente del Códice — semántica exacta al Clojure.
 fn sanitize_context(context: Value, model: Option<&EntityModel>) -> Value {
-    let Some(model) = model else { return context; };
-    let Some(obj) = context.as_object() else { return context; };
+    let Some(model) = model else {
+        return context;
+    };
+    let Some(obj) = context.as_object() else {
+        return context;
+    };
 
     // Campos marcados como sensitive:true en el Códice JSON.
     // [PORTED_FROM: (->> (:attributes schema) (filter :sensitive) (map (comp keyword :name)) set)]
@@ -44,20 +48,20 @@ fn sanitize_context(context: Value, model: Option<&EntityModel>) -> Value {
 ///
 /// [PORTED_FROM: (build-error-dto error-map ctx schema)]
 pub fn build_error_dto(
-    error:    &DomainError,
+    error: &DomainError,
     tenant_id: &str,
-    user_id:  &str,
-    context:  Option<Value>,
-    model:    Option<&EntityModel>,
+    user_id: &str,
+    context: Option<Value>,
+    model: Option<&EntityModel>,
 ) -> Value {
-    let trace_id     = current_trace_id();
-    let span_id      = current_span_id();
-    let correlation  = format!("REQ-{}", &trace_id[..8.min(trace_id.len())]);
-    let error_code   = error.code.canonical_code().to_string();
-    let description  = error.to_string();
-    let stage        = error.stage.clone();
-    let retryable    = error.retryable;
-    let timestamp    = chrono::Utc::now().timestamp_millis();
+    let trace_id = current_trace_id();
+    let span_id = current_span_id();
+    let correlation = format!("REQ-{}", &trace_id[..8.min(trace_id.len())]);
+    let error_code = error.code.canonical_code().to_string();
+    let description = error.to_string();
+    let stage = error.stage.clone();
+    let retryable = error.retryable;
+    let timestamp = chrono::Utc::now().timestamp_millis();
 
     let sanitized_ctx = context
         .map(|c| sanitize_context(c, model))

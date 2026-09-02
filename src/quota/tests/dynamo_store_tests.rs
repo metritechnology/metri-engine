@@ -8,7 +8,9 @@
 
 use super::*;
 
-use crate::quota::reservations::{ClaimResult, CloseReason, Reservation, ReservationStore, SWEEP_SHARDS};
+use crate::quota::reservations::{
+    ClaimResult, CloseReason, Reservation, ReservationStore, SWEEP_SHARDS,
+};
 
 const TABLA: &str = "metri-quota-local";
 
@@ -39,7 +41,12 @@ fn nueva(tenant: &str, estimated: i64, expires_at: i64) -> Reservation {
 /// Busca una reserva concreta recorriendo todas las particiones.
 async fn buscar(s: &DynamoReservationStore, id: &str, now: i64) -> bool {
     for shard in 0..SWEEP_SHARDS {
-        if s.sweep(shard, now, 100).await.unwrap().iter().any(|r| r.id == id) {
+        if s.sweep(shard, now, 100)
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.id == id)
+        {
             return true;
         }
     }
@@ -55,7 +62,11 @@ async fn el_ciclo_completo_de_una_reserva() {
     s.open(&r).await.unwrap();
     s.mark_debited(&r.tenant_id, &r.id).await.unwrap();
 
-    match s.claim(&r.tenant_id, &r.id, Duration::from_secs(30)).await.unwrap() {
+    match s
+        .claim(&r.tenant_id, &r.id, Duration::from_secs(30))
+        .await
+        .unwrap()
+    {
         ClaimResult::Claimed(leida) => {
             assert_eq!(leida.estimated, 400);
             assert_eq!(leida.quota_id, "q_test");
@@ -64,9 +75,15 @@ async fn el_ciclo_completo_de_una_reserva() {
         otro => panic!("se esperaba reclamada, fue {otro:?}"),
     }
 
-    s.close(&r.tenant_id, &r.id, CloseReason::Settled).await.unwrap();
+    s.close(&r.tenant_id, &r.id, CloseReason::Settled)
+        .await
+        .unwrap();
 
-    match s.claim(&r.tenant_id, &r.id, Duration::from_secs(30)).await.unwrap() {
+    match s
+        .claim(&r.tenant_id, &r.id, Duration::from_secs(30))
+        .await
+        .unwrap()
+    {
         ClaimResult::Closed(_, razon) => assert_eq!(razon, CloseReason::Settled),
         otro => panic!("se esperaba cerrada, fue {otro:?}"),
     }
@@ -103,9 +120,17 @@ async fn un_lease_de_cero_la_deja_libre_al_instante() {
     let r = nueva("tnt_test", 400, ahora() + 90);
     s.open(&r).await.unwrap();
 
-    s.claim(&r.tenant_id, &r.id, Duration::from_secs(0)).await.unwrap();
-    let segunda = s.claim(&r.tenant_id, &r.id, Duration::from_secs(30)).await.unwrap();
-    assert!(matches!(segunda, ClaimResult::Claimed(_)), "fue {segunda:?}");
+    s.claim(&r.tenant_id, &r.id, Duration::from_secs(0))
+        .await
+        .unwrap();
+    let segunda = s
+        .claim(&r.tenant_id, &r.id, Duration::from_secs(30))
+        .await
+        .unwrap();
+    assert!(
+        matches!(segunda, ClaimResult::Claimed(_)),
+        "fue {segunda:?}"
+    );
 }
 
 /// El índice solo contiene lo que falta por cerrar: al cerrar se borran sus
@@ -118,9 +143,14 @@ async fn cerrar_una_reserva_la_saca_del_indice_de_barrido() {
     let vencida = nueva("tnt_test", 400, ahora() - 1);
     s.open(&vencida).await.unwrap();
 
-    assert!(buscar(&s, &vencida.id, ahora()).await, "vencida y abierta: aparece");
+    assert!(
+        buscar(&s, &vencida.id, ahora()).await,
+        "vencida y abierta: aparece"
+    );
 
-    s.close(&vencida.tenant_id, &vencida.id, CloseReason::Expired).await.unwrap();
+    s.close(&vencida.tenant_id, &vencida.id, CloseReason::Expired)
+        .await
+        .unwrap();
     assert!(!buscar(&s, &vencida.id, ahora()).await, "cerrada: ya no");
 }
 
@@ -132,7 +162,10 @@ async fn lo_que_no_ha_vencido_no_sale_en_el_indice() {
     s.open(&viva).await.unwrap();
 
     assert!(!buscar(&s, &viva.id, ahora()).await);
-    assert!(buscar(&s, &viva.id, ahora() + 7200).await, "cuando pase su hora, sí");
+    assert!(
+        buscar(&s, &viva.id, ahora() + 7200).await,
+        "cuando pase su hora, sí"
+    );
 }
 
 #[tokio::test]
@@ -140,7 +173,10 @@ async fn lo_que_no_ha_vencido_no_sale_en_el_indice() {
 async fn una_reserva_inexistente_se_distingue_de_una_cerrada() {
     let s = store().await;
     let inventada = ulid::Ulid::new().to_string();
-    let r = s.claim("tnt_test", &inventada, Duration::from_secs(30)).await.unwrap();
+    let r = s
+        .claim("tnt_test", &inventada, Duration::from_secs(30))
+        .await
+        .unwrap();
     assert_eq!(r, ClaimResult::NotFound);
 }
 
@@ -153,6 +189,9 @@ async fn la_reserva_de_un_tenant_no_aparece_bajo_otro() {
     let r = nueva("tnt_dueño", 400, ahora() + 90);
     s.open(&r).await.unwrap();
 
-    let ajena = s.claim("tnt_otro", &r.id, Duration::from_secs(30)).await.unwrap();
+    let ajena = s
+        .claim("tnt_otro", &r.id, Duration::from_secs(30))
+        .await
+        .unwrap();
     assert_eq!(ajena, ClaimResult::NotFound);
 }

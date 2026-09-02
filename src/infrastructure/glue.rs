@@ -4,8 +4,8 @@
 
 use std::collections::HashSet;
 
-use aws_sdk_glue::Client;
 use aws_sdk_glue::types::{Column, StorageDescriptor, TableInput};
+use aws_sdk_glue::Client;
 use tracing::{error, info, warn};
 
 use crate::codice::{AttrType, CodeRegistry, EngineChannel};
@@ -14,18 +14,18 @@ use crate::codice::{AttrType, CodeRegistry, EngineChannel};
 /// [PORTED_FROM: (def codice->glue-type {...})]
 fn codice_to_glue_type(attr_type: &AttrType) -> &'static str {
     match attr_type {
-        AttrType::Decimal              => "double",
+        AttrType::Decimal => "double",
         AttrType::Epoch | AttrType::Number => "bigint",
-        AttrType::Boolean              => "boolean",
-        AttrType::Json                 => "string",
-        _                              => "string",
+        AttrType::Boolean => "boolean",
+        AttrType::Json => "string",
+        _ => "string",
     }
 }
 
 /// Cliente de sincronización de schemas Glue.
 /// [PORTED_FROM: ig/init-key :infra/glue + sync-all-entity-tables!]
 pub struct GlueSyncClient {
-    client:   Client,
+    client: Client,
     database: String,
 }
 
@@ -33,15 +33,21 @@ impl GlueSyncClient {
     pub async fn new(database: impl Into<String>) -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
-        let db     = database.into();
+        let db = database.into();
         info!("[Glue] cliente activo | database: {db}");
-        GlueSyncClient { client, database: db }
+        GlueSyncClient {
+            client,
+            database: db,
+        }
     }
 
     /// Sincroniza el schema de TODAS las entidades OLAP con Glue.
     /// [PORTED_FROM: (sync-all-entity-tables! client db)]
     pub async fn sync_all_entity_tables(&self, registry: &CodeRegistry) {
-        info!("[Glue Sync] Iniciando sincronización | database: {}", self.database);
+        info!(
+            "[Glue Sync] Iniciando sincronización | database: {}",
+            self.database
+        );
 
         let olap_entities: Vec<String> = registry
             .entity_names()
@@ -68,9 +74,9 @@ impl GlueSyncClient {
     async fn sync_entity_table(
         &self,
         entity_name: &str,
-        registry:    &CodeRegistry,
+        registry: &CodeRegistry,
     ) -> Result<(), String> {
-        let table_name  = entity_name.replace('-', "_");
+        let table_name = entity_name.replace('-', "_");
         let new_columns = self.build_entity_columns(entity_name, registry);
 
         let get_resp = self
@@ -98,11 +104,18 @@ impl GlueSyncClient {
                     new_columns.iter().map(|c| c.name().to_string()).collect();
 
                 if current_cols == new_col_names {
-                    info!("[Glue Sync] '{}' — esquema al día | {} cols", table_name, new_columns.len());
+                    info!(
+                        "[Glue Sync] '{}' — esquema al día | {} cols",
+                        table_name,
+                        new_columns.len()
+                    );
                     return Ok(());
                 }
 
-                info!("[Glue Sync] Actualizando '{table_name}' | {} cols", new_columns.len());
+                info!(
+                    "[Glue Sync] Actualizando '{table_name}' | {} cols",
+                    new_columns.len()
+                );
 
                 // Construir StorageDescriptor y TableInput sin to_builder()
                 let sd = StorageDescriptor::builder()
@@ -137,10 +150,13 @@ impl GlueSyncClient {
         let mut cols: Vec<Column> = [
             Column::builder().name("id").r#type("string").build(),
             Column::builder().name("_tenant").r#type("string").build(),
-            Column::builder().name("created_at").r#type("bigint").build(),
+            Column::builder()
+                .name("created_at")
+                .r#type("bigint")
+                .build(),
         ]
         .into_iter()
-        .flatten()  // flatten Result<Column, _> → Column
+        .flatten() // flatten Result<Column, _> → Column
         .collect();
 
         if let Some(attrs) = registry.get_attributes(entity_name) {

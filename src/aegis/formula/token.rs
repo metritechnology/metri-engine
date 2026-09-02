@@ -4,13 +4,13 @@
 /// Operadores aritméticos binarios y unario.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operator {
-    Add,    // +    precedencia 1
-    Sub,    // -    precedencia 1
-    Mul,    // *    precedencia 2
-    Div,    // /    precedencia 2
-    Mod,    // %    precedencia 2
-    Power,  // ^    precedencia 3
-    Neg,    // -    precedencia 4 (unario)
+    Add,   // +    precedencia 1
+    Sub,   // -    precedencia 1
+    Mul,   // *    precedencia 2
+    Div,   // /    precedencia 2
+    Mod,   // %    precedencia 2
+    Power, // ^    precedencia 3
+    Neg,   // -    precedencia 4 (unario)
 }
 
 impl Operator {
@@ -31,11 +31,11 @@ impl Operator {
 /// Token atómico de una fórmula parseada.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-    Literal(f64),                    // 100, 3.14
-    Variable(String),                // "asset/revenue", "cost"
-    Operator(Operator),              // +, -, *, /, %
-    Function(String, usize),         // ("NULLIF", 2)
-    ParenOpen,                       // (
-    ParenClose,                      // )
-    Comma,                           // ,
+    Literal(f64),            // 100, 3.14
+    Variable(String),        // "asset/revenue", "cost"
+    Operator(Operator),      // +, -, *, /, %
+    Function(String, usize), // ("NULLIF", 2)
+    ParenOpen,               // (
+    ParenClose,              // )
+    Comma,                   // ,
 }

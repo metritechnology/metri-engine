@@ -22,7 +22,7 @@ pub fn run<Ctx>(steps: &[Step<Ctx>], ctx: Ctx) -> Result<Ctx, DomainError> {
     steps.iter().fold(Ok(ctx), |acc, step| {
         match acc {
             Ok(current_ctx) => step(current_ctx),
-            Err(e)          => Err(e), // cortocircuito — propagar sin ejecutar
+            Err(e) => Err(e), // cortocircuito — propagar sin ejecutar
         }
     })
 }
@@ -30,13 +30,22 @@ pub fn run<Ctx>(steps: &[Step<Ctx>], ctx: Ctx) -> Result<Ctx, DomainError> {
 /// Versión async del pipeline para steps que requieren I/O.
 /// [PORTED_FROM: (run steps ctx) — extensión async para Rust]
 pub async fn run_async<Ctx: Send>(
-    steps: &[Box<dyn Fn(Ctx) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Ctx, DomainError>> + Send>> + Send + Sync>],
+    steps: &[Box<
+        dyn Fn(
+                Ctx,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<Ctx, DomainError>> + Send>,
+            > + Send
+            + Sync,
+    >],
     ctx: Ctx,
 ) -> Result<Ctx, DomainError> {
     let mut current = Ok(ctx);
     for step in steps {
         match current {
-            Ok(c)  => { current = step(c).await; }
+            Ok(c) => {
+                current = step(c).await;
+            }
             Err(e) => return Err(e), // cortocircuito
         }
     }
@@ -46,4 +55,3 @@ pub async fn run_async<Ctx: Send>(
 #[cfg(test)]
 #[path = "tests/pipeline_tests.rs"]
 mod tests;
-

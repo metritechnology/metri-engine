@@ -1,6 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    
+
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
@@ -18,7 +18,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .status()?;
 
     if !status.success() {
-        return Err("Error compilando janus_ir_ast.fbs con flatc. Asegúrate de tener flatc instalado.".into());
+        return Err(
+            "Error compilando janus_ir_ast.fbs con flatc. Asegúrate de tener flatc instalado."
+                .into(),
+        );
     }
 
     Ok(())

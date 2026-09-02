@@ -9,10 +9,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use constant_time_eq::constant_time_eq;
 use tracing::{debug, info, warn};
 
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -24,19 +24,15 @@ type HmacSha256 = Hmac<Sha256>;
 /// HMACTokenStore — verificación local sub-0.1ms, revocación en DynamoDB.
 /// [PORTED_FROM: (defrecord HMACTokenStore [secret ddb-client table-name])]
 pub struct HmacTokenStore {
-    secret:     Vec<u8>,         // HMAC-SHA256 secret
-    ddb:        Arc<DynamoClient>,
-    table_name: String,          // tabla de blacklist (REVOKED#<jti>)
+    secret: Vec<u8>, // HMAC-SHA256 secret
+    ddb: Arc<DynamoClient>,
+    table_name: String, // tabla de blacklist (REVOKED#<jti>)
 }
 
 impl HmacTokenStore {
     /// Constructor. El secret viene de Secrets Manager o variable de entorno.
     /// [PORTED_FROM: ig/init-key :infra/session-store]
-    pub fn new(
-        secret:     Vec<u8>,
-        ddb:        Arc<DynamoClient>,
-        table_name: impl Into<String>,
-    ) -> Self {
+    pub fn new(secret: Vec<u8>, ddb: Arc<DynamoClient>, table_name: impl Into<String>) -> Self {
         info!("[HMAC] Session store activo — verificación local, sin red");
         HmacTokenStore {
             secret,
@@ -88,8 +84,8 @@ impl HmacTokenStore {
 
         Some(Session {
             tenant_id: claims["tid"].as_str()?.to_string(),
-            user_id:   claims["uid"].as_str()?.to_string(),
-            jti:       claims["jti"].as_str()?.to_string(),
+            user_id: claims["uid"].as_str()?.to_string(),
+            jti: claims["jti"].as_str()?.to_string(),
             exp,
         })
     }
@@ -98,9 +94,13 @@ impl HmacTokenStore {
     /// [PORTED_FROM: (blacklisted? ddb-client table-name jti)]
     async fn is_blacklisted(&self, jti: &str) -> bool {
         let pk = format!("REVOKED#{jti}");
-        match self.ddb.get_item(&self.table_name, &pk, Some(b"REVOKED")).await {
-            Ok(Some(_)) => true,  // encontrado → revocado
-            Ok(None)    => false, // no encontrado → válido
+        match self
+            .ddb
+            .get_item(&self.table_name, &pk, Some(b"REVOKED"))
+            .await
+        {
+            Ok(Some(_)) => true, // encontrado → revocado
+            Ok(None) => false,   // no encontrado → válido
             Err(e) => {
                 warn!("[HMAC] Error verificando blacklist: {e:?}");
                 false // fail-open en error de infra (disponibilidad > seguridad)
@@ -117,7 +117,7 @@ impl ISessionStore for HmacTokenStore {
         // 1. Verificación local de firma — sin red, < 0.1ms
         let claims = match self.verify_signature(token) {
             Some(c) => c,
-            None    => return Ok(None),
+            None => return Ok(None),
         };
 
         // 2. Blacklist check — solo si la firma es válida
@@ -133,7 +133,7 @@ impl ISessionStore for HmacTokenStore {
     /// REVOCAR: añade el jti a la blacklist DynamoDB con TTL.
     /// [PORTED_FROM: (put-session! [_ raw-token _ ttl-seconds])]
     async fn revoke_session(&self, jti: &str, ttl_seconds: u64) -> Result<(), DomainError> {
-        let pk      = format!("REVOKED#{jti}");
+        let pk = format!("REVOKED#{jti}");
         let expires = chrono::Utc::now().timestamp() as u64 + ttl_seconds;
 
         info!("[HMAC] Revocando token, jti: {jti}");
@@ -141,13 +141,18 @@ impl ISessionStore for HmacTokenStore {
         use aws_sdk_dynamodb::types::AttributeValue;
         let mut item = std::collections::HashMap::new();
         item.insert("PK".to_string(), AttributeValue::S(pk));
-        item.insert("SK".to_string(), AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(b"REVOKED".to_vec())));
+        item.insert(
+            "SK".to_string(),
+            AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(b"REVOKED".to_vec())),
+        );
         item.insert("ttl".to_string(), AttributeValue::N(expires.to_string()));
 
         self.ddb
             .put_item(&self.table_name, item)
             .await
-            .map_err(|e| DomainError::infra(ErrorCode::Infra001, format!("Revocación falló: {e:?}")))
+            .map_err(|e| {
+                DomainError::infra(ErrorCode::Infra001, format!("Revocación falló: {e:?}"))
+            })
     }
 
     /// Quita un jti de la blacklist (des-revocar). Idempotente.
@@ -165,11 +170,11 @@ impl ISessionStore for HmacTokenStore {
 /// Emite un token HMAC firmado.
 /// [PORTED_FROM: (issue-token secret {:keys [tenant-id user-id ttl-seconds jti]})]
 pub fn issue_token(
-    secret:      &[u8],
-    tenant_id:   &str,
-    user_id:     &str,
+    secret: &[u8],
+    tenant_id: &str,
+    user_id: &str,
     ttl_seconds: u64,
-    jti:         Option<String>,
+    jti: Option<String>,
 ) -> String {
     let now = chrono::Utc::now().timestamp();
     let jti = jti.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
@@ -183,10 +188,9 @@ pub fn issue_token(
     });
 
     let payload_bytes = payload.to_string().into_bytes();
-    let payload_b64   = URL_SAFE_NO_PAD.encode(&payload_bytes);
+    let payload_b64 = URL_SAFE_NO_PAD.encode(&payload_bytes);
 
-    let mut mac = HmacSha256::new_from_slice(secret)
-        .expect("HMAC key de longitud inválida");
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC key de longitud inválida");
     mac.update(&payload_bytes);
     let sig = mac.finalize().into_bytes();
     let sig_b64 = URL_SAFE_NO_PAD.encode(sig);

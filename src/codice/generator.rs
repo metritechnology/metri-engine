@@ -12,8 +12,8 @@ use serde_json::{Map, Value};
 use tracing::warn;
 
 use crate::codice::base36;
-use crate::codice::sequence::{self, SeqAttrConfig, ScopeResolution};
 use crate::codice::registry::EntityModel;
+use crate::codice::sequence::{self, ScopeResolution, SeqAttrConfig};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::infrastructure::dynamodb::DynamoClient;
 
@@ -33,11 +33,22 @@ fn auto_generate_attrs(model: &EntityModel) -> Vec<(String, AutoGenStrategy)> {
         .iter()
         .filter_map(|attr| {
             if let Some(auto_gen) = &attr.auto_generate {
-                let strategy_str = auto_gen.get("strategy").and_then(|v| v.as_str()).unwrap_or("");
+                let strategy_str = auto_gen
+                    .get("strategy")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 if strategy_str == "stochastic_base36" {
-                    let prefix = auto_gen.get("prefix").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let length = auto_gen.get("length").and_then(|v| v.as_u64()).unwrap_or(7) as usize;
-                    return Some((attr.name.clone(), AutoGenStrategy::StochasticBase36 { prefix, length }));
+                    let prefix = auto_gen
+                        .get("prefix")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let length =
+                        auto_gen.get("length").and_then(|v| v.as_u64()).unwrap_or(7) as usize;
+                    return Some((
+                        attr.name.clone(),
+                        AutoGenStrategy::StochasticBase36 { prefix, length },
+                    ));
                 } else if strategy_str == "sequential" {
                     // Si en un futuro agregamos validación secuencial explícita en JSON
                 }
@@ -48,9 +59,9 @@ fn auto_generate_attrs(model: &EntityModel) -> Vec<(String, AutoGenStrategy)> {
                 Some((
                     attr.name.clone(),
                     AutoGenStrategy::Sequential(SeqAttrConfig {
-                        name:             attr.name.clone(),
-                        prefix:           String::new(),
-                        padding:          4,
+                        name: attr.name.clone(),
+                        prefix: String::new(),
+                        padding: 4,
                         scope_resolution: ScopeResolution::Exact,
                     }),
                 ))
@@ -80,10 +91,10 @@ fn find_scope_field(model: &EntityModel) -> Option<&str> {
 ///
 /// [PORTED_FROM: (inject! db-conn tenant-guard schema tenant-id payload)]
 pub async fn inject(
-    ddb:       &DynamoClient,
-    model:     &EntityModel,
+    ddb: &DynamoClient,
+    model: &EntityModel,
     tenant_id: &str,
-    payload:   Map<String, Value>,
+    payload: Map<String, Value>,
 ) -> Result<Map<String, Value>, DomainError> {
     let attrs_to_gen = auto_generate_attrs(model);
 
@@ -129,4 +140,3 @@ pub async fn inject(
 #[cfg(test)]
 #[path = "tests/generator_tests.rs"]
 mod tests;
-

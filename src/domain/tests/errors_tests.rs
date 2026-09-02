@@ -22,7 +22,7 @@ fn test_domain_error_retryability() {
     // JnsTx001 is retryable
     let err_retryable = DomainError::new(ErrorCode::JnsTx001, "Optimistic lock error");
     assert!(err_retryable.retryable);
-    
+
     // Janus400 is not retryable
     let err_non_retryable = DomainError::new(ErrorCode::Janus400, "Bad input syntax");
     assert!(!err_non_retryable.retryable);
@@ -33,7 +33,7 @@ fn test_domain_error_constructors() {
     let err = DomainError::codice(ErrorCode::Cod001, "Registry parse error")
         .with_stage("custom_stage")
         .with_context(serde_json::json!({"file": "test.json"}));
-        
+
     assert_eq!(err.code, ErrorCode::Cod001);
     assert_eq!(err.stage, "custom_stage");
     assert_eq!(err.detail, "Registry parse error");

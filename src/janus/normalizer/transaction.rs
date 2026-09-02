@@ -1,13 +1,16 @@
-use serde_json::{json, Value};
 use crate::janus::normalizer::strategy::NormalizerStrategy;
+use serde_json::{json, Value};
 
 pub struct TransactionNormalizer;
 
 impl NormalizerStrategy for TransactionNormalizer {
     fn normalize(&self, body: &mut Value, _success: bool) {
-        let Some(obj) = body.as_object_mut() else { return; };
+        let Some(obj) = body.as_object_mut() else {
+            return;
+        };
         // entity_id siempre string
-        let eid = obj.get("entity_id")
+        let eid = obj
+            .get("entity_id")
             .or_else(|| obj.get("entity-id"))
             .or_else(|| obj.get("result").and_then(|r| r.get("entity_id")))
             .or_else(|| obj.get("result").and_then(|r| r.get("entity-id")))

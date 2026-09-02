@@ -21,10 +21,19 @@ fn lifetime_no_caduca() {
 /// el orden en que Aegis devolviera las filas.
 #[test]
 fn el_rango_es_semiabierto() {
-    assert!(covers("2026-08-31_2026-09-30", hoy()), "el día de inicio entra");
+    assert!(
+        covers("2026-08-31_2026-09-30", hoy()),
+        "el día de inicio entra"
+    );
     assert!(covers("2026-08-01_2026-09-01", hoy()));
-    assert!(!covers("2026-08-01_2026-08-31", hoy()), "el día de cierre no entra");
-    assert!(!covers("2026-09-01_2026-10-01", hoy()), "aún no ha empezado");
+    assert!(
+        !covers("2026-08-01_2026-08-31", hoy()),
+        "el día de cierre no entra"
+    );
+    assert!(
+        !covers("2026-09-01_2026-10-01", hoy()),
+        "aún no ha empezado"
+    );
     assert!(!covers("2026-07-01_2026-08-01", hoy()), "ya cerró");
 }
 
@@ -120,7 +129,10 @@ struct OltpFalso {
 
 impl OltpFalso {
     fn con(respuesta: Value) -> Self {
-        OltpFalso { respuesta, consultas: Mutex::new(vec![]) }
+        OltpFalso {
+            respuesta,
+            consultas: Mutex::new(vec![]),
+        }
     }
 }
 
@@ -150,7 +162,10 @@ async fn consulta_por_dominio_y_tipo_de_limite() {
     let consultas = resolver.oltp().consultas.lock().unwrap();
     let ast = &consultas[0];
     assert_eq!(ast["entity"], "domain_quota");
-    assert_eq!(ast["where"][1], json!(["=", "resource_domain", "llm:aws:nova-pro"]));
+    assert_eq!(
+        ast["where"][1],
+        json!(["=", "resource_domain", "llm:aws:nova-pro"])
+    );
     assert_eq!(ast["where"][2], json!(["=", "limit_type", "TOKEN_COUNT"]));
 }
 
@@ -160,7 +175,10 @@ async fn consulta_por_dominio_y_tipo_de_limite() {
 #[tokio::test]
 async fn sin_cuota_configurada_devuelve_none_no_error() {
     let resolver = QuotaResolver::new(OltpFalso::con(json!([])));
-    let spec = resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
+    let spec = resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
     assert!(spec.is_none());
 }
 
@@ -193,7 +211,10 @@ async fn una_cuota_resuelta_no_se_vuelve_a_consultar() {
     let resolver = QuotaResolver::with_ttl(oltp, std::time::Duration::from_secs(30));
 
     for _ in 0..5 {
-        let spec = resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
+        let spec = resolver
+            .active_quota("tnt_01", "asset", "WRITE_COUNT")
+            .await
+            .unwrap();
         assert_eq!(spec.unwrap().id, "q_01");
     }
 
@@ -209,13 +230,32 @@ async fn la_memoria_no_mezcla_tenants_ni_dominios() {
     ]));
     let resolver = QuotaResolver::with_ttl(oltp, std::time::Duration::from_secs(30));
 
-    resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
-    resolver.active_quota("tnt_02", "asset", "WRITE_COUNT").await.unwrap();
-    resolver.active_quota("tnt_01", "work_order", "WRITE_COUNT").await.unwrap();
-    resolver.active_quota("tnt_01", "asset", "READ_COUNT").await.unwrap();
-    resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
+    resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
+    resolver
+        .active_quota("tnt_02", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
+    resolver
+        .active_quota("tnt_01", "work_order", "WRITE_COUNT")
+        .await
+        .unwrap();
+    resolver
+        .active_quota("tnt_01", "asset", "READ_COUNT")
+        .await
+        .unwrap();
+    resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
 
-    assert_eq!(consultas(&resolver), 4, "cuatro claves distintas, la quinta repetía");
+    assert_eq!(
+        consultas(&resolver),
+        4,
+        "cuatro claves distintas, la quinta repetía"
+    );
 }
 
 /// Un tenant sin cuota configurada NO se recuerda: es un tenant que ya está
@@ -228,8 +268,14 @@ async fn la_ausencia_de_cuota_no_se_recuerda() {
         std::time::Duration::from_secs(30),
     );
 
-    resolver.active_quota("tnt_nuevo", "asset", "WRITE_COUNT").await.unwrap();
-    resolver.active_quota("tnt_nuevo", "asset", "WRITE_COUNT").await.unwrap();
+    resolver
+        .active_quota("tnt_nuevo", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
+    resolver
+        .active_quota("tnt_nuevo", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
 
     // Dos por resolución: la del dominio y, al no haber nada, la de la cuota por
     // defecto del tenant (`*`). Esa segunda consulta solo la paga quien iba a
@@ -244,8 +290,14 @@ async fn con_ttl_cero_se_consulta_siempre() {
     ]));
     let resolver = QuotaResolver::with_ttl(oltp, std::time::Duration::ZERO);
 
-    resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
-    resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
+    resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
+    resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
 
     assert_eq!(consultas(&resolver), 2);
 }
@@ -259,9 +311,15 @@ async fn una_entrada_caducada_se_vuelve_a_consultar() {
     ]));
     let resolver = QuotaResolver::with_ttl(oltp, std::time::Duration::from_millis(20));
 
-    resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
+    resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(40)).await;
-    resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap();
+    resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap();
 
     assert_eq!(consultas(&resolver), 2);
 }
@@ -279,16 +337,28 @@ async fn una_entrada_caducada_se_vuelve_a_consultar() {
 fn el_periodo_en_curso_se_calcula_por_estrategia() {
     let hoy = NaiveDate::from_ymd_opt(2026, 8, 31).unwrap();
 
-    assert_eq!(renewed_period("DAILY", hoy).unwrap(), "2026-08-31_2026-09-01");
-    assert_eq!(renewed_period("MONTHLY", hoy).unwrap(), "2026-08-01_2026-09-01");
-    assert_eq!(renewed_period("YEARLY", hoy).unwrap(), "2026-01-01_2027-01-01");
+    assert_eq!(
+        renewed_period("DAILY", hoy).unwrap(),
+        "2026-08-31_2026-09-01"
+    );
+    assert_eq!(
+        renewed_period("MONTHLY", hoy).unwrap(),
+        "2026-08-01_2026-09-01"
+    );
+    assert_eq!(
+        renewed_period("YEARLY", hoy).unwrap(),
+        "2026-01-01_2027-01-01"
+    );
 }
 
 /// Diciembre es el caso que rompe la aritmética ingenua de meses.
 #[test]
 fn el_ciclo_mensual_cruza_el_año() {
     let nochevieja = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
-    assert_eq!(renewed_period("MONTHLY", nochevieja).unwrap(), "2026-12-01_2027-01-01");
+    assert_eq!(
+        renewed_period("MONTHLY", nochevieja).unwrap(),
+        "2026-12-01_2027-01-01"
+    );
 }
 
 /// `FIXED` no renueva: es su definición. Y una estrategia que no se reconoce
@@ -311,10 +381,16 @@ fn una_cuota_mensual_caducada_estrena_ciclo_en_vez_de_bloquear() {
 
     let spec = pick_active(&filas, hoy()).expect("el ciclo se renueva");
 
-    assert_eq!(spec.id, "q_julio", "la configuración sigue siendo la misma fila");
+    assert_eq!(
+        spec.id, "q_julio",
+        "la configuración sigue siendo la misma fila"
+    );
     assert_eq!(spec.period_key, "2026-08-01_2026-09-01");
     assert_eq!(spec.max_limit, 1000, "el techo es el que configuraron");
-    assert_eq!(spec.counter_id, "q_julio#2026-08-01_2026-09-01", "contador propio del ciclo");
+    assert_eq!(
+        spec.counter_id, "q_julio#2026-08-01_2026-09-01",
+        "contador propio del ciclo"
+    );
     assert_eq!(spec.seed_usage, 0, "el consumo de julio no es el de agosto");
 }
 
@@ -399,7 +475,11 @@ impl OltpQueryRunner for OltpPorDominio {
     async fn run_oltp_query(&self, _tenant_id: &str, ast_ir: &Value) -> Result<Value, DomainError> {
         self.consultas.lock().unwrap().push(ast_ir.clone());
         let dominio = ast_ir["where"][1][2].as_str().unwrap_or("").to_string();
-        Ok(self.por_dominio.get(&dominio).cloned().unwrap_or_else(|| json!([])))
+        Ok(self
+            .por_dominio
+            .get(&dominio)
+            .cloned()
+            .unwrap_or_else(|| json!([])))
     }
 }
 
@@ -420,8 +500,14 @@ async fn un_dominio_sin_fila_cae_en_la_cuota_por_defecto() {
         .expect("gobierna la cuota por defecto");
 
     assert_eq!(spec.max_limit, 100000);
-    assert_eq!(spec.counter_id, "q_defecto#form_template", "cada dominio cuenta lo suyo");
-    assert_eq!(spec.seed_usage, 0, "el consumo de la fila `*` no es el de este dominio");
+    assert_eq!(
+        spec.counter_id, "q_defecto#form_template",
+        "cada dominio cuenta lo suyo"
+    );
+    assert_eq!(
+        spec.seed_usage, 0,
+        "el consumo de la fila `*` no es el de este dominio"
+    );
 }
 
 /// La fila propia manda: la cuota por defecto es un respaldo, no un techo que se
@@ -429,16 +515,30 @@ async fn un_dominio_sin_fila_cae_en_la_cuota_por_defecto() {
 #[tokio::test]
 async fn la_fila_propia_gana_a_la_cuota_por_defecto() {
     let oltp = OltpPorDominio::con(vec![
-        ("asset", json!([{"id": "q_asset", "max_limit": 100, "current_usage": 3, "period_key": "LIFETIME"}])),
-        (DEFAULT_QUOTA_DOMAIN, json!([{"id": "q_defecto", "max_limit": 100000, "period_key": "LIFETIME"}])),
+        (
+            "asset",
+            json!([{"id": "q_asset", "max_limit": 100, "current_usage": 3, "period_key": "LIFETIME"}]),
+        ),
+        (
+            DEFAULT_QUOTA_DOMAIN,
+            json!([{"id": "q_defecto", "max_limit": 100000, "period_key": "LIFETIME"}]),
+        ),
     ]);
     let resolver = QuotaResolver::with_ttl(oltp, std::time::Duration::ZERO);
 
-    let spec = resolver.active_quota("tnt_01", "asset", "WRITE_COUNT").await.unwrap().unwrap();
+    let spec = resolver
+        .active_quota("tnt_01", "asset", "WRITE_COUNT")
+        .await
+        .unwrap()
+        .unwrap();
 
     assert_eq!(spec.counter_id, "q_asset");
     assert_eq!(spec.max_limit, 100);
-    assert_eq!(resolver.oltp().consultas.lock().unwrap().len(), 1, "no se consulta el respaldo si no hace falta");
+    assert_eq!(
+        resolver.oltp().consultas.lock().unwrap().len(),
+        1,
+        "no se consulta el respaldo si no hace falta"
+    );
 }
 
 /// Sin fila propia y sin cuota por defecto se sigue rechazando: la política
@@ -446,12 +546,12 @@ async fn la_fila_propia_gana_a_la_cuota_por_defecto() {
 /// configurarla de una vez para todo el catálogo.
 #[tokio::test]
 async fn sin_respaldo_se_sigue_rechazando() {
-    let resolver = QuotaResolver::with_ttl(
-        OltpPorDominio::con(vec![]),
-        std::time::Duration::ZERO,
-    );
+    let resolver = QuotaResolver::with_ttl(OltpPorDominio::con(vec![]), std::time::Duration::ZERO);
 
-    let spec = resolver.active_quota("tnt_01", "form_template", "WRITE_COUNT").await.unwrap();
+    let spec = resolver
+        .active_quota("tnt_01", "form_template", "WRITE_COUNT")
+        .await
+        .unwrap();
 
     assert!(spec.is_none());
 }
@@ -460,12 +560,12 @@ async fn sin_respaldo_se_sigue_rechazando() {
 /// preguntara por `*`, una recursión sin sentido.
 #[tokio::test]
 async fn el_comodin_no_se_respalda_a_si_mismo() {
-    let resolver = QuotaResolver::with_ttl(
-        OltpPorDominio::con(vec![]),
-        std::time::Duration::ZERO,
-    );
+    let resolver = QuotaResolver::with_ttl(OltpPorDominio::con(vec![]), std::time::Duration::ZERO);
 
-    resolver.active_quota("tnt_01", DEFAULT_QUOTA_DOMAIN, "WRITE_COUNT").await.unwrap();
+    resolver
+        .active_quota("tnt_01", DEFAULT_QUOTA_DOMAIN, "WRITE_COUNT")
+        .await
+        .unwrap();
 
     assert_eq!(resolver.oltp().consultas.lock().unwrap().len(), 1);
 }

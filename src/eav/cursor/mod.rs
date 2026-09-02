@@ -1,2 +1,2 @@
 pub mod composite;
-pub use composite::{CompositeCursor, IndexCursorState, fingerprint_query};
+pub use composite::{fingerprint_query, CompositeCursor, IndexCursorState};

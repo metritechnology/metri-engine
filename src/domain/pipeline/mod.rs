@@ -1,2 +1,2 @@
 pub mod result;
-pub use result::{Railway, is_ok, is_error, unwrap_railway};
+pub use result::{is_error, is_ok, unwrap_railway, Railway};

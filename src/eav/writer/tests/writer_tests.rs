@@ -48,7 +48,10 @@ async fn create_escribe_y_el_pull_lo_devuelve() {
     let tenant = tenant_nuevo();
 
     let res = w.transact(payload_nueva(&tenant)).await.expect("Create");
-    assert!(res.datoms >= 2, "Create debe escribir al menos los 2 atributos");
+    assert!(
+        res.datoms >= 2,
+        "Create debe escribir al menos los 2 atributos"
+    );
     assert!(!res.entity_id.is_empty(), "Create genera ULID");
 
     let map = w
@@ -60,7 +63,10 @@ async fn create_escribe_y_el_pull_lo_devuelve() {
         map.get("title"),
         Some(&DatomValue::Str("Bomba hidraulica 3".to_string()))
     );
-    assert_eq!(map.get("status"), Some(&DatomValue::Str("open".to_string())));
+    assert_eq!(
+        map.get("status"),
+        Some(&DatomValue::Str("open".to_string()))
+    );
 }
 
 #[tokio::test]
@@ -154,7 +160,10 @@ async fn bulk_deferred_escribe_y_es_visible() {
         .pull(&tenant, &res.entity_id, None)
         .await
         .expect("Pull tras bulk deferred");
-    assert_eq!(map.get("status"), Some(&DatomValue::Str("open".to_string())));
+    assert_eq!(
+        map.get("status"),
+        Some(&DatomValue::Str("open".to_string()))
+    );
 }
 
 #[tokio::test]

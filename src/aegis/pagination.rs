@@ -9,7 +9,7 @@
 // SRP: módulo exclusivo de paginación — sin dependencias de negocio.
 // Puro: todas las funciones son puras (sin side-effects).
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
 
 /// Decodifica un cursor Base64(offset:limit) en (offset, limit).
@@ -26,8 +26,14 @@ pub fn decode_cursor(cursor: Option<&str>, fallback_limit: usize) -> (usize, usi
     };
 
     let mut parts = decoded.splitn(2, ':');
-    let offset = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
-    let limit  = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(fallback_limit);
+    let offset = parts
+        .next()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0);
+    let limit = parts
+        .next()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(fallback_limit);
     (offset, limit)
 }
 
@@ -43,7 +49,7 @@ pub fn encode_cursor(offset: usize, limit: usize) -> String {
 ///   { page_size, has_next, has_previous, next_cursor?, previous_cursor? }
 /// [PORTED_FROM: (build-pagination {:offset :limit :total})]
 pub fn build_pagination(offset: usize, limit: usize, total: usize) -> Value {
-    let has_next     = (offset + limit) < total;
+    let has_next = (offset + limit) < total;
     let has_previous = offset > 0;
 
     let next_offset = offset + limit;
@@ -71,5 +77,3 @@ pub fn build_pagination(offset: usize, limit: usize, total: usize) -> Value {
 pub fn paginate_rows(rows: Vec<Value>, offset: usize, limit: usize) -> Vec<Value> {
     rows.into_iter().skip(offset).take(limit).collect()
 }
-
-

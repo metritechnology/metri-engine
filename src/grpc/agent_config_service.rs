@@ -5,9 +5,9 @@
 //   2. Resolver locale (es/en) y nivel de detalle (full/compact) para los archivos de prompt.
 //   3. Retornar las rutas de navegación declaradas de forma centralizada.
 
+use serde::Deserialize;
 use tonic::{Request, Response, Status};
 use tracing::{info, warn};
-use serde::Deserialize;
 
 use super::pb::agent_config_service_server::AgentConfigService;
 use super::pb::{
@@ -43,9 +43,12 @@ impl Default for AgentConfigServiceImpl {
 
 impl AgentConfigServiceImpl {
     pub fn new() -> Self {
-        let prompts_dir = std::env::var("PROMPTS_DIR")
-            .unwrap_or_else(|_| "config/prompts".to_string());
-        info!("[AgentConfigService] Inicializando con directorio de prompts: {}", prompts_dir);
+        let prompts_dir =
+            std::env::var("PROMPTS_DIR").unwrap_or_else(|_| "config/prompts".to_string());
+        info!(
+            "[AgentConfigService] Inicializando con directorio de prompts: {}",
+            prompts_dir
+        );
         Self { prompts_dir }
     }
 }
@@ -78,7 +81,10 @@ fn resolve_prompt_text(prompts_dir: &str, name: &str, locale: &str, level: &str)
             if let Ok(content) = std::fs::read_to_string(&fallback_path) {
                 return content;
             }
-            warn!("Archivo de prompt no encontrado para módulo {} (locale: {}, level: {})", name, locale, level);
+            warn!(
+                "Archivo de prompt no encontrado para módulo {} (locale: {}, level: {})",
+                name, locale, level
+            );
             String::new()
         }
     }
@@ -91,8 +97,16 @@ impl AgentConfigService for AgentConfigServiceImpl {
         request: Request<AgentConfigRequest>,
     ) -> Result<Response<AgentConfigResponse>, Status> {
         let req = request.into_inner();
-        let locale = if req.locale.is_empty() { "es" } else { &req.locale };
-        let prompt_level = if req.prompt_level.is_empty() { "full" } else { &req.prompt_level };
+        let locale = if req.locale.is_empty() {
+            "es"
+        } else {
+            &req.locale
+        };
+        let prompt_level = if req.prompt_level.is_empty() {
+            "full"
+        } else {
+            &req.prompt_level
+        };
 
         info!(
             locale = %locale,
@@ -115,7 +129,7 @@ impl AgentConfigService for AgentConfigServiceImpl {
         let config_path = std::path::Path::new(&self.prompts_dir).join("config.json");
         let modules_config_raw = std::fs::read_to_string(&config_path)
             .map_err(|e| Status::internal(format!("Error leyendo prompts config.json: {}", e)))?;
-        
+
         let raw_modules: Vec<RawModule> = serde_json::from_str(&modules_config_raw)
             .map_err(|e| Status::internal(format!("Error de parseo en config.json: {}", e)))?;
 
@@ -123,7 +137,8 @@ impl AgentConfigService for AgentConfigServiceImpl {
         for rm in raw_modules {
             let text = resolve_prompt_text(&self.prompts_dir, &rm.name, locale, prompt_level);
             // navigation, form_autofill y deletions se consideran módulos core
-            let is_core = rm.name == "navigation" || rm.name == "form_autofill" || rm.name == "deletions";
+            let is_core =
+                rm.name == "navigation" || rm.name == "form_autofill" || rm.name == "deletions";
             modules.push(AgentModuleConfig {
                 name: rm.name,
                 description: rm.description,
@@ -136,11 +151,13 @@ impl AgentConfigService for AgentConfigServiceImpl {
 
         // 3. Cargar rutas de navegación desde navigation_routes.json
         let routes_path = std::path::Path::new(&self.prompts_dir).join("navigation_routes.json");
-        let routes_config_raw = std::fs::read_to_string(&routes_path)
-            .map_err(|e| Status::internal(format!("Error leyendo navigation_routes.json: {}", e)))?;
+        let routes_config_raw = std::fs::read_to_string(&routes_path).map_err(|e| {
+            Status::internal(format!("Error leyendo navigation_routes.json: {}", e))
+        })?;
 
-        let raw_routes: Vec<RawRoute> = serde_json::from_str(&routes_config_raw)
-            .map_err(|e| Status::internal(format!("Error de parseo en navigation_routes.json: {}", e)))?;
+        let raw_routes: Vec<RawRoute> = serde_json::from_str(&routes_config_raw).map_err(|e| {
+            Status::internal(format!("Error de parseo en navigation_routes.json: {}", e))
+        })?;
 
         let routes = raw_routes
             .into_iter()

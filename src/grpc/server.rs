@@ -1,32 +1,34 @@
 // grpc/server.rs — Inicializador del Servidor gRPC Tonic
 // SRP: Configura el servidor HTTP/2 y los interceptores para AWS Lambda.
 
+use http::Method;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tonic::transport::Server;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
-use tower_http::cors::{CorsLayer, Any};
-use http::Method;
 
-use super::service::MetriGrpcService;
+use super::pb::agent_config_service_server::AgentConfigServiceServer;
 use super::pb::metri_service_server::MetriServiceServer;
 use super::pb::quota_service_server::QuotaServiceServer;
-use super::pb::agent_config_service_server::AgentConfigServiceServer;
-
+use super::service::MetriGrpcService;
 
 pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = std::env::var("GRPC_PORT").unwrap_or_else(|_| "9090".to_string());
     let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
 
     info!("Iniciando gRPC Server (Tonic-Web) en {}...", addr);
-    
+
     // Lee la tabla EAV y el prefijo OLAP desde env vars (alineado con template.yaml)
-    let eav_table    = std::env::var("EAV_TABLE_NAME").unwrap_or_else(|_| "metri-eav-local".to_string());
-    let olap_prefix  = std::env::var("KINESIS_STREAM_PREFIX").unwrap_or_else(|_| "metri-olap-stream".to_string());
+    let eav_table =
+        std::env::var("EAV_TABLE_NAME").unwrap_or_else(|_| "metri-eav-local".to_string());
+    let olap_prefix =
+        std::env::var("KINESIS_STREAM_PREFIX").unwrap_or_else(|_| "metri-olap-stream".to_string());
 
     let ddb_client = Arc::new(crate::infrastructure::dynamodb::DynamoClient::new(&eav_table).await);
-    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), &eav_table);
-    let pull_read  = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), &eav_table);
+    let query_exec =
+        crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), &eav_table);
+    let pull_read = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), &eav_table);
 
     // El consumo de cuota vive en un contador atómico, fuera del log de datoms.
     // Superponerlo al leer `domain_quota` es lo que permite que el camino de
@@ -35,49 +37,84 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         crate::quota::QuotaLedger::new(Arc::clone(&ddb_client), &eav_table),
     );
     let oltp_exec = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone())
-        .with_overlay(Arc::new(crate::quota::QuotaUsageOverlay::new(Arc::clone(&quota_counter))));
+        .with_overlay(Arc::new(crate::quota::QuotaUsageOverlay::new(Arc::clone(
+            &quota_counter,
+        ))));
 
     // ── Write Path — channel registry ────────────────────────────────────────
     // OLTP: EavWriter → TransactWriteItems DynamoDB (tabla: EAV_TABLE_NAME)
-    let eav_writer   = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), &eav_table);
-    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> =
-        Arc::new(crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()));
+    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), &eav_table);
+    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
+        crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
+    );
 
     // OLAP: Real or Stub Firehose client injection
-    let stream_writer: Arc<dyn crate::domain::protocols::IStreamWriter> = if std::env::var("KINESIS_MODE").unwrap_or_default() == "stub" {
-        info!("[Server] KinesisFirehoseWriter inicializado en MODO STUB (StubStreamWriter)");
-        Arc::new(crate::infrastructure::kinesis::StubStreamWriter::new())
-    } else {
-        Arc::new(crate::infrastructure::kinesis::KinesisFirehoseWriter::new().await)
-    };
-    let olap_channel: Arc<dyn crate::janus_router::router::IWriteChannel> =
-        Arc::new(crate::janus_router::olap_channel::OlapChannel::new(&olap_prefix, stream_writer));
-
+    let stream_writer: Arc<dyn crate::domain::protocols::IStreamWriter> =
+        if std::env::var("KINESIS_MODE").unwrap_or_default() == "stub" {
+            info!("[Server] KinesisFirehoseWriter inicializado en MODO STUB (StubStreamWriter)");
+            Arc::new(crate::infrastructure::kinesis::StubStreamWriter::new())
+        } else {
+            Arc::new(crate::infrastructure::kinesis::KinesisFirehoseWriter::new().await)
+        };
+    let olap_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
+        crate::janus_router::olap_channel::OlapChannel::new(&olap_prefix, stream_writer),
+    );
 
     let mut channel_registry: std::collections::HashMap<
         crate::codice::registry::EngineChannel,
         Arc<dyn crate::janus_router::router::IWriteChannel>,
     > = std::collections::HashMap::new();
-    channel_registry.insert(crate::codice::registry::EngineChannel::Oltp, Arc::clone(&oltp_channel));
-    channel_registry.insert(crate::codice::registry::EngineChannel::Olap, Arc::clone(&olap_channel));
+    channel_registry.insert(
+        crate::codice::registry::EngineChannel::Oltp,
+        Arc::clone(&oltp_channel),
+    );
+    channel_registry.insert(
+        crate::codice::registry::EngineChannel::Olap,
+        Arc::clone(&olap_channel),
+    );
 
-    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(channel_registry));
+    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(
+        channel_registry,
+    ));
 
     // ── Interceptors y Pipeline ──────────────────────────────────────────────
-    let audit_interceptor = Arc::new(crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(&olap_channel)));
+    let audit_interceptor = Arc::new(
+        crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
+            &olap_channel,
+        )),
+    );
 
-    let athena_engine: Option<Arc<dyn crate::domain::protocols::IQueryEngine>> = if std::env::var("ATHENA_MODE").unwrap_or_default() == "stub" {
-        let lake_bucket = std::env::var("AWS_S3_LAKE_BUCKET").unwrap_or_else(|_| "metri-lake-local".to_string());
-        info!("[Server] IQueryEngine inicializado en MODO LOCAL (LocalS3QueryEngine) | bucket: {}", lake_bucket);
-        let engine = crate::infrastructure::local_s3_query_engine::LocalS3QueryEngine::new(lake_bucket).await;
+    let athena_engine: Option<Arc<dyn crate::domain::protocols::IQueryEngine>> = if std::env::var(
+        "ATHENA_MODE",
+    )
+    .unwrap_or_default()
+        == "stub"
+    {
+        let lake_bucket =
+            std::env::var("AWS_S3_LAKE_BUCKET").unwrap_or_else(|_| "metri-lake-local".to_string());
+        info!(
+            "[Server] IQueryEngine inicializado en MODO LOCAL (LocalS3QueryEngine) | bucket: {}",
+            lake_bucket
+        );
+        let engine =
+            crate::infrastructure::local_s3_query_engine::LocalS3QueryEngine::new(lake_bucket)
+                .await;
         Some(Arc::new(engine) as Arc<dyn crate::domain::protocols::IQueryEngine>)
     } else {
-        let workgroup = std::env::var("ATHENA_WORKGROUP").unwrap_or_else(|_| "metri-analytics".to_string());
-        let s3_bucket = std::env::var("AWS_S3_LAKE_BUCKET").unwrap_or_else(|_| "metri-lake-982592308819-us-east-1".to_string());
+        let workgroup =
+            std::env::var("ATHENA_WORKGROUP").unwrap_or_else(|_| "metri-analytics".to_string());
+        let s3_bucket = std::env::var("AWS_S3_LAKE_BUCKET")
+            .unwrap_or_else(|_| "metri-lake-982592308819-us-east-1".to_string());
         let output_location = format!("s3://{s3_bucket}/athena-results/");
-        let database = std::env::var("GLUE_DATABASE_NAME").unwrap_or_else(|_| "metri_olap".to_string());
+        let database =
+            std::env::var("GLUE_DATABASE_NAME").unwrap_or_else(|_| "metri_olap".to_string());
         info!("[Server] Inicializando AthenaQueryEngine con workgroup: {}, database: {}, output_location: {}", workgroup, database, output_location);
-        let engine = crate::infrastructure::athena::AthenaQueryEngine::new(workgroup, output_location, database).await;
+        let engine = crate::infrastructure::athena::AthenaQueryEngine::new(
+            workgroup,
+            output_location,
+            database,
+        )
+        .await;
         Some(Arc::new(engine) as Arc<dyn crate::domain::protocols::IQueryEngine>)
     };
 
@@ -87,7 +124,8 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         info!("[Server] SqsFifoBus inicializado en MODO STUB (StubSqsBus)");
         Arc::new(crate::infrastructure::sqs::StubSqsBus::new())
     } else {
-        let queue_url = std::env::var("OUTBOX_QUEUE_URL").unwrap_or_else(|_| "http://localhost:9324/000000000000/metri-outbox.fifo".to_string());
+        let queue_url = std::env::var("OUTBOX_QUEUE_URL")
+            .unwrap_or_else(|_| "http://localhost:9324/000000000000/metri-outbox.fifo".to_string());
         info!("[Server] Inicializando SqsFifoBus con queue: {}", queue_url);
         Arc::new(crate::infrastructure::sqs::SqsFifoBus::new(queue_url).await)
     };
@@ -103,7 +141,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
     // Zero-Trust Session Store and Principal Cache initialization
     let env_str = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
     let is_prod = env_str == "production" || env_str == "prod" || env_str == "staging";
-    
+
     let hmac_secret_str = if is_prod {
         let secret = match std::env::var("HMAC_SECRET") {
             Ok(s) => s,
@@ -121,7 +159,8 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         }
         secret
     } else {
-        std::env::var("HMAC_SECRET").unwrap_or_else(|_| "secret-key-development-metri-256-bits!!!".to_string())
+        std::env::var("HMAC_SECRET")
+            .unwrap_or_else(|_| "secret-key-development-metri-256-bits!!!".to_string())
     };
 
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
@@ -133,24 +172,36 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
 
     // ── Sherlog / EventBridge Notifier ───────────────────────────────────────
     let eb_mode = std::env::var("EVENTBRIDGE_MODE").unwrap_or_default();
-    let fault_bus_name = std::env::var("FAULT_BUS_NAME").unwrap_or_else(|_| "metri-faults".to_string());
+    let fault_bus_name =
+        std::env::var("FAULT_BUS_NAME").unwrap_or_else(|_| "metri-faults".to_string());
 
     let fault_notifier: Arc<dyn crate::iop::sherlog::IFaultNotifier> = if eb_mode == "stub" {
         info!("[Server] EventBridgeNotifier inicializado en MODO STUB (NoopFaultNotifier)");
         Arc::new(crate::iop::sherlog::NoopFaultNotifier)
     } else {
-        info!("[Server] Inicializando real EventBridgeNotifier para bus: {}", fault_bus_name);
+        info!(
+            "[Server] Inicializando real EventBridgeNotifier para bus: {}",
+            fault_bus_name
+        );
         Arc::new(crate::iop::sherlog::EventBridgeNotifier::new(fault_bus_name).await)
     };
 
     let s3_mode = std::env::var("S3_MODE").unwrap_or_default();
-    let export_bucket = std::env::var("AWS_S3_EXPORT_BUCKET").unwrap_or_else(|_| "metri-csv-exports-982592308819-us-east-1".to_string());
-    
-    let export_storage: Option<Arc<dyn crate::domain::protocols::IExportStorage>> = if s3_mode == "stub" {
+    let export_bucket = std::env::var("AWS_S3_EXPORT_BUCKET")
+        .unwrap_or_else(|_| "metri-csv-exports-982592308819-us-east-1".to_string());
+
+    let export_storage: Option<Arc<dyn crate::domain::protocols::IExportStorage>> = if s3_mode
+        == "stub"
+    {
         info!("[Server] ExportStorage inicializado en MODO STUB (StubExportStorage)");
-        Some(Arc::new(crate::infrastructure::s3_export::StubExportStorage::new()))
+        Some(Arc::new(
+            crate::infrastructure::s3_export::StubExportStorage::new(),
+        ))
     } else {
-        info!("[Server] Inicializando real S3ExportStorage para bucket: {}", export_bucket);
+        info!(
+            "[Server] Inicializando real S3ExportStorage para bucket: {}",
+            export_bucket
+        );
         let storage = crate::infrastructure::s3_export::S3ExportStorage::new(export_bucket).await;
         Some(Arc::new(storage) as Arc<dyn crate::domain::protocols::IExportStorage>)
     };
@@ -187,11 +238,13 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
     // `memory` sirve para un despliegue de una sola réplica o para desarrollo
     // sin la tabla creada; con más de una réplica es incorrecto, porque cada
     // proceso solo vería sus propios tickets.
-    let quota_table = std::env::var("QUOTA_TABLE")
-        .unwrap_or_else(|_| "metri-quota-local".to_string());
+    let quota_table =
+        std::env::var("QUOTA_TABLE").unwrap_or_else(|_| "metri-quota-local".to_string());
     let reservation_store: Arc<dyn crate::quota::ReservationStore> =
         if std::env::var("QUOTA_RESERVATION_STORE").unwrap_or_default() == "memory" {
-            tracing::warn!("[Server] Reservas de cuota EN MEMORIA — no válido con más de una réplica");
+            tracing::warn!(
+                "[Server] Reservas de cuota EN MEMORIA — no válido con más de una réplica"
+            );
             Arc::new(crate::quota::MemoryReservationStore::new())
         } else {
             Arc::new(crate::quota::DynamoReservationStore::new(
@@ -210,7 +263,8 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
 
     // ── AgentConfigService (Prompt Dependency Injection) ─────────────────────
     let config_grpc_impl = super::agent_config_service::AgentConfigServiceImpl::new();
-    let config_service_raw = AgentConfigServiceServer::with_interceptor(config_grpc_impl, auth_interceptor);
+    let config_service_raw =
+        AgentConfigServiceServer::with_interceptor(config_grpc_impl, auth_interceptor);
     let config_web_service = tonic_web::enable(config_service_raw);
 
     // FASE 10: Habilitar gRPC Server Reflection para testing (grpcurl)
@@ -223,8 +277,6 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
     if let Err(e) = super::bootstrap::check_and_bootstrap_master(&oltp_exec, &oltp_channel).await {
         tracing::error!("Fallo crítico al inicializar el bootstrap máster: {:?}", e);
     }
-
-
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -242,7 +294,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         .add_service(config_web_service)
         .serve_with_shutdown(addr, shutdown_signal())
         .await?;
-    
+
     info!("gRPC Server detenido de forma limpia (graceful shutdown completado)");
     Ok(())
 }

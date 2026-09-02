@@ -9,7 +9,7 @@
 //   "YYYY"          → "year=2024"
 //   + sustitución dinámica de {atributo} → atributo=valor (sanitizado)
 
-use chrono::{DateTime, Utc, TimeZone};
+use chrono::{DateTime, TimeZone, Utc};
 
 /// Pre-evalúa la parte estática de la estrategia (fechas UTC) una sola vez por batch.
 ///
@@ -17,21 +17,25 @@ use chrono::{DateTime, Utc, TimeZone};
 pub fn pre_evaluate_date_strategy(strategy: Option<&str>, timestamp_ms: i64) -> String {
     let base = strategy.unwrap_or("YYYY-MM-DD");
 
-    let dt: DateTime<Utc> = Utc.timestamp_millis_opt(timestamp_ms)
+    let dt: DateTime<Utc> = Utc
+        .timestamp_millis_opt(timestamp_ms)
         .single()
         .unwrap_or_else(Utc::now);
 
     let yyyy = format!("{:04}", dt.format("%Y"));
-    let mm   = format!("{:02}", dt.format("%m"));
-    let dd   = format!("{:02}", dt.format("%d"));
-    let hh   = format!("{:02}", dt.format("%H"));
+    let mm = format!("{:02}", dt.format("%m"));
+    let dd = format!("{:02}", dt.format("%d"));
+    let hh = format!("{:02}", dt.format("%H"));
 
     // Reemplazos en orden — de más específico a menos específico.
     // [PORTED_FROM: (->> base-strategy (str/replace "YYYY-MM-DD/HH" ...) ...)]
-    base.replace("YYYY-MM-DD/HH", &format!("year={yyyy}/month={mm}/day={dd}/hour={hh}"))
-        .replace("YYYY-MM-DD", &format!("year={yyyy}/month={mm}/day={dd}"))
-        .replace("YYYY-MM",    &format!("year={yyyy}/month={mm}"))
-        .replace("YYYY",       &format!("year={yyyy}"))
+    base.replace(
+        "YYYY-MM-DD/HH",
+        &format!("year={yyyy}/month={mm}/day={dd}/hour={hh}"),
+    )
+    .replace("YYYY-MM-DD", &format!("year={yyyy}/month={mm}/day={dd}"))
+    .replace("YYYY-MM", &format!("year={yyyy}/month={mm}"))
+    .replace("YYYY", &format!("year={yyyy}"))
 }
 
 /// Evalúa solo los atributos dinámicos del registro sobre la estrategia pre-calculada.
@@ -50,15 +54,25 @@ pub fn build_dynamic_path(date_strategy: &str, record: &serde_json::Value) -> St
             let raw = record
                 .get(key)
                 .and_then(|v| {
-                    if v.is_string() { Some(v.as_str().unwrap().to_string()) }
-                    else             { Some(v.to_string()) }
+                    if v.is_string() {
+                        Some(v.as_str().unwrap().to_string())
+                    } else {
+                        Some(v.to_string())
+                    }
                 })
                 .unwrap_or_else(|| "UNKNOWN".to_string());
 
             // Sanitización: solo [a-zA-Z0-9\-_]
             // [PORTED_FROM: (str/replace raw-val #"[^a-zA-Z0-9\-_]" "_")]
-            let safe: String = raw.chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            let safe: String = raw
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' || c == '_' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
                 .collect();
 
             format!("{key}={safe}")
@@ -84,7 +98,10 @@ mod tests {
     fn date_strategy_hourly() {
         let ts = 1705310200000_i64;
         let path = pre_evaluate_date_strategy(Some("YYYY-MM-DD/HH"), ts);
-        assert!(path.starts_with("year=2024/month=01/day=15/hour="), "{path}");
+        assert!(
+            path.starts_with("year=2024/month=01/day=15/hour="),
+            "{path}"
+        );
     }
 
     #[test]
@@ -95,9 +112,18 @@ mod tests {
         // (los '/' del template estático son separadores intencionales de Hive)
         assert!(!path.contains(".."), "Path traversal no permitido: {path}");
         // Verificar que los valores sanitizados no contienen '/' (solo los separadores estáticos pueden)
-        let tenant_segment = path.split('/').find(|s| s.starts_with("tenant=")).unwrap_or("");
-        assert!(!tenant_segment.contains('/'), "Slash en valor de tenant no permitido: {tenant_segment}");
-        assert!(path.contains("tenant=acme____evil"), "El valor debe estar sanitizado: {path}");
+        let tenant_segment = path
+            .split('/')
+            .find(|s| s.starts_with("tenant="))
+            .unwrap_or("");
+        assert!(
+            !tenant_segment.contains('/'),
+            "Slash en valor de tenant no permitido: {tenant_segment}"
+        );
+        assert!(
+            path.contains("tenant=acme____evil"),
+            "El valor debe estar sanitizado: {path}"
+        );
     }
 
     #[test]

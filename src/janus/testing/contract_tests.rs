@@ -1,11 +1,11 @@
+use crate::aegis::oltp::compiler::compile_native_plan_fbs;
+use crate::janus::ast_compiler::compile_ast_fbs;
+use crate::janus::fbs;
+use crate::janus::plan_selector::{select_plan_fbs, EavQueryPlan};
+use crate::janus::router::CedarCtx;
 use insta::assert_debug_snapshot;
 use proptest::prelude::*;
 use serde_json::json;
-use crate::janus::fbs;
-use crate::janus::ast_compiler::compile_ast_fbs;
-use crate::janus::plan_selector::{select_plan_fbs, EavQueryPlan};
-use crate::janus::router::CedarCtx;
-use crate::aegis::oltp::compiler::compile_native_plan_fbs;
 
 // --- SNAPSHOT TESTS (Golden Master) ---
 
@@ -13,7 +13,7 @@ use crate::aegis::oltp::compiler::compile_native_plan_fbs;
 fn test_snapshot_point_lookup_contract() {
     let mut req = fbs::AnalyticsRequestT::default();
     req.entity = Some("asset".to_string());
-    
+
     // Simular un request con entity/ulid explícito
     let filter = fbs::FilterNodeT {
         criteria: Some(Box::new(fbs::FilterCriteriaT {
@@ -40,10 +40,10 @@ fn test_snapshot_point_lookup_contract() {
 
     // 1. Compilar AST (Añade ABAC y Tenant Isolation)
     let compiled_ast = compile_ast_fbs(&req, &cedar_ctx, &json!({})).expect("Debe compilar");
-    
+
     // 2. Select Plan
     let plan = select_plan_fbs(&compiled_ast);
-    
+
     // 3. Native Plan Compile
     let native_plan = compile_native_plan_fbs(&compiled_ast, "tenant_999");
 
@@ -56,7 +56,7 @@ fn test_snapshot_fts_search_contract() {
     let mut req = fbs::AnalyticsRequestT::default();
     req.entity = Some("work_order".to_string());
     req.search = Some("bomba hidraulica".to_string());
-    
+
     let cedar_ctx = CedarCtx {
         tenant_id: "tenant_999".to_string(),
         user_id: "user_1".to_string(),
@@ -90,7 +90,7 @@ proptest! {
     ) {
         let mut req = fbs::AnalyticsRequestT::default();
         req.entity = Some("test_entity".to_string());
-        
+
         let filter = fbs::FilterNodeT {
             criteria: Some(Box::new(fbs::FilterCriteriaT {
                 field: Some(field),
@@ -117,7 +117,7 @@ proptest! {
         // Property: Never panic, always return a Result and a valid EavQueryPlan
         let compiled_result = compile_ast_fbs(&req, &cedar_ctx, &json!({}));
         prop_assert!(compiled_result.is_ok());
-        
+
         let compiled = compiled_result.unwrap();
         let _plan = select_plan_fbs(&compiled);
     }
@@ -126,11 +126,11 @@ proptest! {
 // --- MEGA-BATCH PERFORMANCE BENCHMARK ---
 #[test]
 fn test_mega_batch_performance() {
-    use std::time::Instant;
-    use crate::grpc::pb::QueryRequest;
     use crate::grpc::pb::AnalyticsRequest as PbAnalyticsRequest;
     use crate::grpc::pb::MetricDefinition;
+    use crate::grpc::pb::QueryRequest;
     use crate::grpc::translator;
+    use std::time::Instant;
 
     // 1. Simular un dashboard Mega-Batch con 100 widgets
     let num_widgets = 100;
@@ -140,14 +140,12 @@ fn test_mega_batch_performance() {
         let widget_req = PbAnalyticsRequest {
             tenant_id: "tnt_prod".to_string(),
             entity: "work_order".to_string(),
-            metrics: vec![
-                MetricDefinition {
-                    attribute: "cost".to_string(),
-                    aggregation: 2, // SUM
-                    name: "total_cost".to_string(),
-                    ..Default::default()
-                }
-            ],
+            metrics: vec![MetricDefinition {
+                attribute: "cost".to_string(),
+                aggregation: 2, // SUM
+                name: "total_cost".to_string(),
+                ..Default::default()
+            }],
             limit: 100,
             output_cast: 1, // KPI
             ..Default::default()
@@ -181,7 +179,8 @@ fn test_mega_batch_performance() {
 
     let start_compilation = Instant::now();
     for (_key, fbs_req) in fbs_map.iter() {
-        let compiled_ast = compile_ast_fbs(fbs_req, &cedar_ctx, &schema).expect("AST Compilation failed");
+        let compiled_ast =
+            compile_ast_fbs(fbs_req, &cedar_ctx, &schema).expect("AST Compilation failed");
         let _plan = select_plan_fbs(&compiled_ast);
         let _native_plan = compile_native_plan_fbs(&compiled_ast, "tnt_test");
     }
@@ -189,22 +188,33 @@ fn test_mega_batch_performance() {
 
     println!("Mega-Batch ({} queries) Performance:", num_widgets);
     println!(" - Protobuf to FBS Translation: {:?}", translation_duration);
-    println!(" - AST Compilation & Plan Selection: {:?}", compilation_duration);
-    println!(" - Total CPU Overhead: {:?}", translation_duration + compilation_duration);
-    
+    println!(
+        " - AST Compilation & Plan Selection: {:?}",
+        compilation_duration
+    );
+    println!(
+        " - Total CPU Overhead: {:?}",
+        translation_duration + compilation_duration
+    );
+
     // Assert que el overhead para 100 widgets sea sub-milisegundo (o muy bajo)
     // En una máquina normal, esto debería ser del orden de microsegundos a <10ms.
-    assert!(translation_duration.as_millis() < 10, "Traducción demoró mucho");
-    assert!(compilation_duration.as_millis() < 10, "Compilación demoró mucho");
+    assert!(
+        translation_duration.as_millis() < 10,
+        "Traducción demoró mucho"
+    );
+    assert!(
+        compilation_duration.as_millis() < 10,
+        "Compilación demoró mucho"
+    );
 }
 
 // --- TEST 100 CASOS AISLADOS + 1 MEGA-BATCH ---
 #[test]
 fn test_100_isolated_cases_and_megabatch() {
     use crate::grpc::pb::{
-        QueryRequest, AnalyticsRequest as PbAnalyticsRequest, MetricDefinition,
-        TimeFrameContext, FilterNode, FilterCriteria, FilterOperator,
-        FilterValue, DimensionDefinition
+        AnalyticsRequest as PbAnalyticsRequest, DimensionDefinition, FilterCriteria, FilterNode,
+        FilterOperator, FilterValue, MetricDefinition, QueryRequest, TimeFrameContext,
     };
     use crate::grpc::translator;
 
@@ -212,8 +222,8 @@ fn test_100_isolated_cases_and_megabatch() {
     let mut isolated_cases = Vec::new();
 
     let output_casts = [1, 2, 3, 4, 5, 6]; // 1:KPI, 2:TABLE, 3:TIMESERIES(Line/Area), 4:PIE, 5:BUBBLE/TREE, 6:CSV
-    let aggregations = [1, 2, 3, 4, 5];    // 1:SUM, 2:AVG, 3:COUNT, 4:MIN, 5:MAX
-    let time_filters = [1, 2, 5, 7];       // 1:CUSTOM, 2:TODAY, 5:LAST_MINUTES, 7:LAST_DAYS
+    let aggregations = [1, 2, 3, 4, 5]; // 1:SUM, 2:AVG, 3:COUNT, 4:MIN, 5:MAX
+    let time_filters = [1, 2, 5, 7]; // 1:CUSTOM, 2:TODAY, 5:LAST_MINUTES, 7:LAST_DAYS
     let filter_ops = [
         FilterOperator::Eq as i32,
         FilterOperator::Gt as i32,
@@ -258,26 +268,38 @@ fn test_100_isolated_cases_and_megabatch() {
                     // Filtros y Comparaciones
                     if f_op == FilterOperator::Eq as i32 || f_op == FilterOperator::Gt as i32 {
                         req.filters = vec![FilterNode {
-                            node: Some(crate::grpc::pb::filter_node::Node::Criteria(FilterCriteria {
-                                field: "category".to_string(),
-                                op_ref: f_op,
-                                value: Some(FilterValue {
-                                    kind: Some(crate::grpc::pb::filter_value::Kind::StringVal("urgent".to_string())),
-                                }),
-                            })),
+                            node: Some(crate::grpc::pb::filter_node::Node::Criteria(
+                                FilterCriteria {
+                                    field: "category".to_string(),
+                                    op_ref: f_op,
+                                    value: Some(FilterValue {
+                                        kind: Some(crate::grpc::pb::filter_value::Kind::StringVal(
+                                            "urgent".to_string(),
+                                        )),
+                                    }),
+                                },
+                            )),
                         }];
                     }
 
                     isolated_cases.push(req);
                     id_counter += 1;
 
-                    if id_counter >= 100 { break; }
+                    if id_counter >= 100 {
+                        break;
+                    }
                 }
-                if id_counter >= 100 { break; }
+                if id_counter >= 100 {
+                    break;
+                }
             }
-            if id_counter >= 100 { break; }
+            if id_counter >= 100 {
+                break;
+            }
         }
-        if id_counter >= 100 { break; }
+        if id_counter >= 100 {
+            break;
+        }
     }
 
     // Contexto y Esquema compartido
@@ -296,19 +318,20 @@ fn test_100_isolated_cases_and_megabatch() {
     for (i, case) in isolated_cases.iter().enumerate() {
         let mut queries = std::collections::HashMap::new();
         queries.insert("isolated_widget".to_string(), case.clone());
-        
+
         let request = QueryRequest {
             tenant_id: "tnt_prod".to_string(),
             queries,
             ..Default::default()
         };
 
-        let fbs_map = translator::query_request_to_queries_map(&request).expect("Translation failed");
+        let fbs_map =
+            translator::query_request_to_queries_map(&request).expect("Translation failed");
         let fbs_req = fbs_map.get("isolated_widget").unwrap();
 
         let compiled_ast = compile_ast_fbs(fbs_req, &cedar_ctx, &schema)
             .unwrap_or_else(|e| panic!("AST Compilation failed for isolated case {}: {:?}", i, e));
-        
+
         let _plan = select_plan_fbs(&compiled_ast);
         success_count += 1;
     }
@@ -327,12 +350,17 @@ fn test_100_isolated_cases_and_megabatch() {
         ..Default::default()
     };
 
-    let fbs_map = translator::query_request_to_queries_map(&request).expect("Megabatch Translation failed");
+    let fbs_map =
+        translator::query_request_to_queries_map(&request).expect("Megabatch Translation failed");
     assert_eq!(fbs_map.len(), 100);
 
     for (widget_id, fbs_req) in fbs_map.iter() {
-        let compiled_ast = compile_ast_fbs(fbs_req, &cedar_ctx, &schema)
-            .unwrap_or_else(|e| panic!("Megabatch AST Compilation failed for {}: {:?}", widget_id, e));
+        let compiled_ast = compile_ast_fbs(fbs_req, &cedar_ctx, &schema).unwrap_or_else(|e| {
+            panic!(
+                "Megabatch AST Compilation failed for {}: {:?}",
+                widget_id, e
+            )
+        });
         let _plan = select_plan_fbs(&compiled_ast);
     }
 
@@ -361,8 +389,17 @@ fn test_tenant_ast_compilation() {
     };
     let compiled_sys = compile_ast_fbs(&req, &system_ctx, &schema).expect("Debe compilar");
     // Verify that tenant_id is NOT in the filters (no tenant isolation filter for system tenant querying tenant)
-    let sys_has_tenant_filter = compiled_sys.filters.as_ref()
-        .map(|filters| filters.iter().any(|f| f.criteria.as_ref().map(|c| c.field.as_deref() == Some("tenant_id")).unwrap_or(false)))
+    let sys_has_tenant_filter = compiled_sys
+        .filters
+        .as_ref()
+        .map(|filters| {
+            filters.iter().any(|f| {
+                f.criteria
+                    .as_ref()
+                    .map(|c| c.field.as_deref() == Some("tenant_id"))
+                    .unwrap_or(false)
+            })
+        })
         .unwrap_or(false);
     assert!(!sys_has_tenant_filter);
 
@@ -377,12 +414,30 @@ fn test_tenant_ast_compilation() {
     };
     let compiled_reg = compile_ast_fbs(&req, &regular_ctx, &schema).expect("Debe compilar");
     // Verify that entity/ulid = "tnt_01" is in the filters
-    let reg_tenant_filter = compiled_reg.filters.as_ref()
-        .and_then(|filters| filters.iter().find(|f| f.criteria.as_ref().map(|c| c.field.as_deref() == Some("entity/ulid")).unwrap_or(false)))
+    let reg_tenant_filter = compiled_reg
+        .filters
+        .as_ref()
+        .and_then(|filters| {
+            filters.iter().find(|f| {
+                f.criteria
+                    .as_ref()
+                    .map(|c| c.field.as_deref() == Some("entity/ulid"))
+                    .unwrap_or(false)
+            })
+        })
         .expect("Debe existir el filtro por entity/ulid para no-system users");
-    
+
     assert_eq!(
-        reg_tenant_filter.criteria.as_ref().unwrap().value.as_ref().unwrap().string_val.as_deref().unwrap(),
+        reg_tenant_filter
+            .criteria
+            .as_ref()
+            .unwrap()
+            .value
+            .as_ref()
+            .unwrap()
+            .string_val
+            .as_deref()
+            .unwrap(),
         "tnt_01"
     );
 }
@@ -400,8 +455,8 @@ fn test_tenant_ast_compilation() {
 #[cfg(test)]
 mod viz_goldens {
     use super::*;
-    use crate::grpc::pb::{DimensionDefinition, MetricDefinition};
     use crate::grpc::pb::{AnalyticsRequest as PbAnalyticsRequest, QueryRequest};
+    use crate::grpc::pb::{DimensionDefinition, MetricDefinition};
     use crate::grpc::translator;
 
     fn golden_ctx() -> CedarCtx {
@@ -440,105 +495,135 @@ mod viz_goldens {
         };
     }
 
-    golden!(kpi, "kpi_plan", "kpi_native", PbAnalyticsRequest {
-        entity: "asset".to_string(),
-        metrics: vec![MetricDefinition {
-            attribute: "id".to_string(),
-            aggregation: 1, // COUNT
-            name: "total_assets".to_string(),
-            ..Default::default()
-        }],
-        output_cast: 1, // KPI
-        limit: 100,
-        ..Default::default()
-    });
-
-    golden!(timeseries, "timeseries_plan", "timeseries_native", PbAnalyticsRequest {
-        entity: "meter_reading".to_string(),
-        metrics: vec![MetricDefinition {
-            attribute: "reading_value".to_string(),
-            aggregation: 2, // SUM
-            name: "consumo".to_string(),
-            interval: "day".to_string(),
-            ..Default::default()
-        }],
-        dimensions: vec![DimensionDefinition {
-            attribute: "timestamp".to_string(),
-            interval: "day".to_string(),
-            ..Default::default()
-        }],
-        output_cast: 2, // TIMESERIES
-        ..Default::default()
-    });
-
-    golden!(table, "table_plan", "table_native", PbAnalyticsRequest {
-        entity: "work_order".to_string(),
-        metrics: vec![MetricDefinition {
-            attribute: "id".to_string(),
-            aggregation: 1, // COUNT
-            name: "ordenes".to_string(),
-            ..Default::default()
-        }],
-        dimensions: vec![DimensionDefinition {
-            attribute: "status".to_string(),
-            ..Default::default()
-        }],
-        output_cast: 3, // TABLE
-        limit: 50,
-        ..Default::default()
-    });
-
-    golden!(pie, "pie_plan", "pie_native", PbAnalyticsRequest {
-        entity: "work_order".to_string(),
-        metrics: vec![MetricDefinition {
-            attribute: "cost".to_string(),
-            aggregation: 2, // SUM
-            name: "costo_por_categoria".to_string(),
-            ..Default::default()
-        }],
-        dimensions: vec![DimensionDefinition {
-            attribute: "category".to_string(),
-            ..Default::default()
-        }],
-        output_cast: 4, // PIE
-        ..Default::default()
-    });
-
-    golden!(bubble, "bubble_plan", "bubble_native", PbAnalyticsRequest {
-        entity: "meter_reading".to_string(),
-        metrics: vec![
-            MetricDefinition {
-                attribute: "reading_value".to_string(),
-                aggregation: 3, // AVG
-                name: "promedio".to_string(),
+    golden!(
+        kpi,
+        "kpi_plan",
+        "kpi_native",
+        PbAnalyticsRequest {
+            entity: "asset".to_string(),
+            metrics: vec![MetricDefinition {
+                attribute: "id".to_string(),
+                aggregation: 1, // COUNT
+                name: "total_assets".to_string(),
                 ..Default::default()
-            },
-            MetricDefinition {
-                attribute: "reading_value".to_string(),
-                aggregation: 12, // CORRELATION
-                secondary_attribute: "timestamp".to_string(),
-                name: "correlacion".to_string(),
-                ..Default::default()
-            },
-        ],
-        output_cast: 5, // BUBBLE
-        ..Default::default()
-    });
+            }],
+            output_cast: 1, // KPI
+            limit: 100,
+            ..Default::default()
+        }
+    );
 
-    golden!(csv_export, "csv_export_plan", "csv_export_native", PbAnalyticsRequest {
-        entity: "work_order".to_string(),
-        metrics: vec![MetricDefinition {
-            attribute: "id".to_string(),
-            aggregation: 1, // COUNT
-            name: "ordenes".to_string(),
+    golden!(
+        timeseries,
+        "timeseries_plan",
+        "timeseries_native",
+        PbAnalyticsRequest {
+            entity: "meter_reading".to_string(),
+            metrics: vec![MetricDefinition {
+                attribute: "reading_value".to_string(),
+                aggregation: 2, // SUM
+                name: "consumo".to_string(),
+                interval: "day".to_string(),
+                ..Default::default()
+            }],
+            dimensions: vec![DimensionDefinition {
+                attribute: "timestamp".to_string(),
+                interval: "day".to_string(),
+                ..Default::default()
+            }],
+            output_cast: 2, // TIMESERIES
             ..Default::default()
-        }],
-        dimensions: vec![DimensionDefinition {
-            attribute: "priority".to_string(),
+        }
+    );
+
+    golden!(
+        table,
+        "table_plan",
+        "table_native",
+        PbAnalyticsRequest {
+            entity: "work_order".to_string(),
+            metrics: vec![MetricDefinition {
+                attribute: "id".to_string(),
+                aggregation: 1, // COUNT
+                name: "ordenes".to_string(),
+                ..Default::default()
+            }],
+            dimensions: vec![DimensionDefinition {
+                attribute: "status".to_string(),
+                ..Default::default()
+            }],
+            output_cast: 3, // TABLE
+            limit: 50,
             ..Default::default()
-        }],
-        output_cast: 6, // CSV_EXPORT
-        limit: 100,
-        ..Default::default()
-    });
+        }
+    );
+
+    golden!(
+        pie,
+        "pie_plan",
+        "pie_native",
+        PbAnalyticsRequest {
+            entity: "work_order".to_string(),
+            metrics: vec![MetricDefinition {
+                attribute: "cost".to_string(),
+                aggregation: 2, // SUM
+                name: "costo_por_categoria".to_string(),
+                ..Default::default()
+            }],
+            dimensions: vec![DimensionDefinition {
+                attribute: "category".to_string(),
+                ..Default::default()
+            }],
+            output_cast: 4, // PIE
+            ..Default::default()
+        }
+    );
+
+    golden!(
+        bubble,
+        "bubble_plan",
+        "bubble_native",
+        PbAnalyticsRequest {
+            entity: "meter_reading".to_string(),
+            metrics: vec![
+                MetricDefinition {
+                    attribute: "reading_value".to_string(),
+                    aggregation: 3, // AVG
+                    name: "promedio".to_string(),
+                    ..Default::default()
+                },
+                MetricDefinition {
+                    attribute: "reading_value".to_string(),
+                    aggregation: 12, // CORRELATION
+                    secondary_attribute: "timestamp".to_string(),
+                    name: "correlacion".to_string(),
+                    ..Default::default()
+                },
+            ],
+            output_cast: 5, // BUBBLE
+            ..Default::default()
+        }
+    );
+
+    golden!(
+        csv_export,
+        "csv_export_plan",
+        "csv_export_native",
+        PbAnalyticsRequest {
+            entity: "work_order".to_string(),
+            metrics: vec![MetricDefinition {
+                attribute: "id".to_string(),
+                aggregation: 1, // COUNT
+                name: "ordenes".to_string(),
+                ..Default::default()
+            }],
+            dimensions: vec![DimensionDefinition {
+                attribute: "priority".to_string(),
+                ..Default::default()
+            }],
+            output_cast: 6, // CSV_EXPORT
+            limit: 100,
+            ..Default::default()
+        }
+    );
 }

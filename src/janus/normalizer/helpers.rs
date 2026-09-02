@@ -7,8 +7,8 @@ pub fn safe_double(v: &Value) -> f64 {
     match v {
         Value::Number(n) => n.as_f64().unwrap_or(0.0),
         Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
-        Value::Null      => 0.0,
-        _                => 0.0,
+        Value::Null => 0.0,
+        _ => 0.0,
     }
 }
 
@@ -26,15 +26,23 @@ pub fn ensure_status(body: &mut Value, success: bool) {
         if success {
             obj.insert("status".to_string(), json!({"success": true}));
         } else {
-            let error_code   = obj.get("code").and_then(|v| v.as_str()).unwrap_or("INTERNAL_ERROR");
-            let error_message = obj.get("reason").and_then(|v| v.as_str())
+            let error_code = obj
+                .get("code")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INTERNAL_ERROR");
+            let error_message = obj
+                .get("reason")
+                .and_then(|v| v.as_str())
                 .or_else(|| obj.get("detail").and_then(|v| v.as_str()))
                 .unwrap_or("Error interno");
-            obj.insert("status".to_string(), json!({
-                "success":       false,
-                "error_code":    error_code,
-                "error_message": error_message,
-            }));
+            obj.insert(
+                "status".to_string(),
+                json!({
+                    "success":       false,
+                    "error_code":    error_code,
+                    "error_message": error_message,
+                }),
+            );
         }
     }
 }
@@ -42,29 +50,31 @@ pub fn ensure_status(body: &mut Value, success: bool) {
 /// Infiere el tipo de visualización desde output_cast o viz_hint.
 /// [PORTED_FROM: (infer-viz-type output-cast viz-hint)]
 pub fn infer_viz_type(output_cast: Option<&str>, viz_hint: Option<&str>) -> &'static str {
-    if let Some(hint) = viz_hint { return hint_to_static(hint); }
+    if let Some(hint) = viz_hint {
+        return hint_to_static(hint);
+    }
     match output_cast {
-        Some("KPI")        => "indicator",
-        Some("PIE")        => "pie",
+        Some("KPI") => "indicator",
+        Some("PIE") => "pie",
         Some("TIMESERIES") => "line",
-        Some("BUBBLE")     => "scatter",
-        Some("TABLE")      => "table",
+        Some("BUBBLE") => "scatter",
+        Some("TABLE") => "table",
         Some("CSV_EXPORT") => "table",
-        _                  => "table",
+        _ => "table",
     }
 }
 
 pub fn hint_to_static(hint: &str) -> &'static str {
     match hint {
         "indicator" | "kpi" | "gauge" => "indicator",
-        "pie" | "donut"               => "pie",
-        "line"                        => "line",
-        "bar"                         => "bar",
-        "area"                        => "area",
-        "scatter"                     => "scatter",
-        "timeseries"                  => "line",
-        "tree"                        => "tree",
-        _                             => "table",
+        "pie" | "donut" => "pie",
+        "line" => "line",
+        "bar" => "bar",
+        "area" => "area",
+        "scatter" => "scatter",
+        "timeseries" => "line",
+        "tree" => "tree",
+        _ => "table",
     }
 }
 

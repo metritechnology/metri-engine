@@ -6,9 +6,7 @@
 //   - CUSTOM_RANGE del proto llega en epoch-MILISEGUNDOS → usar ms_to_s antes de procesar.
 //   - shift_by_calendar usa chrono → bisiesto-safe, DST-aware.
 
-use chrono::{
-    DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Weekday,
-};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Weekday};
 use chrono_tz::Tz;
 
 // ── Constantes de Escala ──────────────────────────────────────────────────────
@@ -81,13 +79,13 @@ impl std::str::FromStr for CalUnit {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s.to_lowercase().as_str() {
-            "minute"  => Self::Minute,
-            "hour"    => Self::Hour,
-            "week"    => Self::Week,
-            "month"   => Self::Month,
+            "minute" => Self::Minute,
+            "hour" => Self::Hour,
+            "week" => Self::Week,
+            "month" => Self::Month,
             "quarter" => Self::Quarter,
-            "year"    => Self::Year,
-            _         => Self::Day,
+            "year" => Self::Year,
+            _ => Self::Day,
         })
     }
 }
@@ -101,13 +99,13 @@ pub fn shift_by_calendar(epoch_secs: i64, amount: i64, unit: CalUnit, tz: &str) 
     let dt = epoch_to_zdt(epoch_secs, tz_parsed);
 
     let shifted = match unit {
-        CalUnit::Minute  => dt + Duration::minutes(amount),
-        CalUnit::Hour    => dt + Duration::hours(amount),
-        CalUnit::Day     => dt + Duration::days(amount),
-        CalUnit::Week    => dt + Duration::weeks(amount),
-        CalUnit::Month   => shift_months(dt, amount),
+        CalUnit::Minute => dt + Duration::minutes(amount),
+        CalUnit::Hour => dt + Duration::hours(amount),
+        CalUnit::Day => dt + Duration::days(amount),
+        CalUnit::Week => dt + Duration::weeks(amount),
+        CalUnit::Month => shift_months(dt, amount),
         CalUnit::Quarter => shift_months(dt, amount * 3),
-        CalUnit::Year    => shift_years(dt, amount),
+        CalUnit::Year => shift_years(dt, amount),
     };
 
     shifted.timestamp()
@@ -115,9 +113,9 @@ pub fn shift_by_calendar(epoch_secs: i64, amount: i64, unit: CalUnit, tz: &str) 
 
 fn shift_months(dt: DateTime<Tz>, months: i64) -> DateTime<Tz> {
     let total_months = dt.month0() as i64 + months;
-    let year_delta   = total_months.div_euclid(12);
-    let new_month    = (total_months.rem_euclid(12) + 1) as u32;
-    let new_year     = dt.year() + year_delta as i32;
+    let year_delta = total_months.div_euclid(12);
+    let new_month = (total_months.rem_euclid(12) + 1) as u32;
+    let new_year = dt.year() + year_delta as i32;
 
     // Clamp day al máximo del mes destino (ej. 31 enero → 28/29 febrero)
     let max_day = days_in_month(new_year, new_month);
@@ -165,7 +163,7 @@ pub fn truncate_to_unit(epoch_secs: i64, unit: CalUnit, tz: &str) -> i64 {
     match unit {
         // Truncados aritméticos sin chrono (UTC-safe para minutos/horas)
         CalUnit::Minute => (epoch_secs / 60) * 60,
-        CalUnit::Hour   => (epoch_secs / 3600) * 3600,
+        CalUnit::Hour => (epoch_secs / 3600) * 3600,
 
         // Truncados de calendario — requieren ZonedDateTime para DST-correctness
         _ => {
@@ -223,14 +221,15 @@ pub fn parse_athena_ts(s: &str) -> Option<i64> {
     let s = s.trim().trim_end_matches(" UTC").trim();
 
     // Intento 1: epoch numérico como string
-    if let Ok(n) = s.parse::<i64>() { return Some(n); }
-    if let Ok(f) = s.parse::<f64>() { return Some(f as i64); }
+    if let Ok(n) = s.parse::<i64>() {
+        return Some(n);
+    }
+    if let Ok(f) = s.parse::<f64>() {
+        return Some(f as i64);
+    }
 
     // Intento 2: LocalDateTime con diferentes precisiones de subsegundo
-    let datetime_fmts = [
-        "%Y-%m-%d %H:%M:%S%.f",
-        "%Y-%m-%d %H:%M:%S",
-    ];
+    let datetime_fmts = ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%d %H:%M:%S"];
     for fmt in &datetime_fmts {
         if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
             return Some(ndt.and_utc().timestamp());
@@ -251,14 +250,14 @@ pub fn parse_athena_ts(s: &str) -> Option<i64> {
 #[derive(Debug, Clone, Copy)]
 pub struct TimeRange {
     pub start_ts: Option<i64>,
-    pub end_ts:   Option<i64>,
+    pub end_ts: Option<i64>,
 }
 
 /// Resultado de un cálculo de período de comparación.
 #[derive(Debug, Clone, Copy)]
 pub struct ComparisonPeriod {
     pub prev_start: i64,
-    pub prev_end:   i64,
+    pub prev_end: i64,
 }
 
 /// Desplaza el par {start_ts, end_ts} (epoch-s) hacia el pasado por `amount` unidades de `unit`.
@@ -267,7 +266,7 @@ pub fn shift_period(range: &TimeRange, amount: i64, unit: CalUnit, tz: &str) -> 
     let now = chrono::Utc::now().timestamp();
     ComparisonPeriod {
         prev_start: shift_by_calendar(range.start_ts.unwrap_or(0), -amount, unit, tz),
-        prev_end:   shift_by_calendar(range.end_ts.unwrap_or(now), -amount, unit, tz),
+        prev_end: shift_by_calendar(range.end_ts.unwrap_or(now), -amount, unit, tz),
     }
 }
 

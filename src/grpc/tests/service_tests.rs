@@ -57,7 +57,9 @@ async fn test_map_chunk_to_response_field_level_security() {
     assert_eq!(cols_with_bff[1].key, "password_hash");
 
     // The values list should also contain both the username and password_hash
-    if let Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(row_list)) = &q1_res.data.as_ref().unwrap().payload_strategy {
+    if let Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(row_list)) =
+        &q1_res.data.as_ref().unwrap().payload_strategy
+    {
         assert_eq!(row_list.iter.len(), 1);
         let vals = &row_list.iter[0].values;
         assert_eq!(vals.len(), 2);
@@ -87,7 +89,9 @@ async fn test_map_chunk_to_response_field_level_security() {
     assert_eq!(cols_no_bff[0].key, "username");
 
     // The values list should contain ONLY 'username'
-    if let Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(row_list)) = &q1_res_no_bff.data.as_ref().unwrap().payload_strategy {
+    if let Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(row_list)) =
+        &q1_res_no_bff.data.as_ref().unwrap().payload_strategy
+    {
         assert_eq!(row_list.iter.len(), 1);
         let vals = &row_list.iter[0].values;
         assert_eq!(vals.len(), 1);
@@ -104,55 +108,87 @@ async fn test_map_chunk_to_response_field_level_security() {
 
 #[tokio::test]
 async fn test_group_cycle_prevention() {
-    use std::sync::Arc;
-    use std::collections::HashMap;
-    use crate::eav::reader::pull::{EAV_CACHE, CacheEntry};
+    use crate::eav::reader::pull::{CacheEntry, EAV_CACHE};
     use crate::eav::types::datom::DatomValue;
+    use std::collections::HashMap;
+    use std::sync::Arc;
 
     std::env::set_var("METRI_TEST_MODE", "1");
 
     // 1. Prepare EAV records maps for groups to create a path: A -> B -> C
     let mut group_a = HashMap::new();
-    group_a.insert("parent_user_group_id".to_string(), DatomValue::Str("group_b".to_string()));
+    group_a.insert(
+        "parent_user_group_id".to_string(),
+        DatomValue::Str("group_b".to_string()),
+    );
 
     let mut group_b = HashMap::new();
-    group_b.insert("parent_user_group_id".to_string(), DatomValue::Str("group_c".to_string()));
+    group_b.insert(
+        "parent_user_group_id".to_string(),
+        DatomValue::Str("group_c".to_string()),
+    );
 
     let group_c = HashMap::new();
 
     {
         let mut cache = EAV_CACHE.write().unwrap();
-        cache.insert("T#tnt_01#E#group_a".to_string(), CacheEntry {
-            is_complete: true,
-            map: group_a,
-        });
-        cache.insert("T#tnt_01#E#group_b".to_string(), CacheEntry {
-            is_complete: true,
-            map: group_b,
-        });
-        cache.insert("T#tnt_01#E#group_c".to_string(), CacheEntry {
-            is_complete: true,
-            map: group_c,
-        });
+        cache.insert(
+            "T#tnt_01#E#group_a".to_string(),
+            CacheEntry {
+                is_complete: true,
+                map: group_a,
+            },
+        );
+        cache.insert(
+            "T#tnt_01#E#group_b".to_string(),
+            CacheEntry {
+                is_complete: true,
+                map: group_b,
+            },
+        );
+        cache.insert(
+            "T#tnt_01#E#group_c".to_string(),
+            CacheEntry {
+                is_complete: true,
+                map: group_c,
+            },
+        );
     }
 
     // 2. Instantiate MetriGrpcService
-    let ddb_client = Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
-    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let pull_read  = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_exec  = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
+    let ddb_client =
+        Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
+    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(
+        Arc::clone(&ddb_client),
+        "metri-eav-local",
+    );
+    let pull_read =
+        crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_exec = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
 
-    let eav_writer   = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> =
-        Arc::new(crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()));
+    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
+        crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
+    );
 
     let mut channel_registry = std::collections::HashMap::new();
-    channel_registry.insert(crate::codice::registry::EngineChannel::Oltp, Arc::clone(&oltp_channel));
-    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(channel_registry));
+    channel_registry.insert(
+        crate::codice::registry::EngineChannel::Oltp,
+        Arc::clone(&oltp_channel),
+    );
+    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(
+        channel_registry,
+    ));
 
-    let audit_interceptor = Arc::new(crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(&oltp_channel)));
+    let audit_interceptor = Arc::new(
+        crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
+            &oltp_channel,
+        )),
+    );
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
-        "secret-key-development-metri-256-bits!!!".to_string().into_bytes(),
+        "secret-key-development-metri-256-bits!!!"
+            .to_string()
+            .into_bytes(),
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
@@ -217,18 +253,23 @@ async fn test_group_cycle_prevention() {
 
 #[tokio::test]
 async fn test_cache_invalidation_pubsub() {
+    use crate::cedar::authorizer::{
+        InMemoryPrincipalCache, InvalidationMsg, PrincipalCache, PrincipalData, INVALIDATION_TX,
+    };
+    use crate::eav::reader::pull::{CacheEntry, EAV_CACHE};
     use std::collections::HashMap;
-    use crate::eav::reader::pull::{EAV_CACHE, CacheEntry};
-    use crate::cedar::authorizer::{PrincipalCache, InMemoryPrincipalCache, InvalidationMsg, INVALIDATION_TX, PrincipalData};
 
     // Populate EAV_CACHE
     let entry_key = "T#tnt_inval_01#E#usr_inval_001".to_string();
     {
         let mut cache = EAV_CACHE.write().unwrap();
-        cache.insert(entry_key.clone(), CacheEntry {
-            is_complete: true,
-            map: HashMap::new(),
-        });
+        cache.insert(
+            entry_key.clone(),
+            CacheEntry {
+                is_complete: true,
+                map: HashMap::new(),
+            },
+        );
     }
 
     // Populate PrincipalCache
@@ -247,7 +288,10 @@ async fn test_cache_invalidation_pubsub() {
         group_allowed_assets: vec![],
         groups: std::collections::HashSet::new(),
     };
-    cache.store_principal("usr_inval_001", principal).await.unwrap();
+    cache
+        .store_principal("usr_inval_001", principal)
+        .await
+        .unwrap();
 
     // Assert they are present
     {
@@ -282,20 +326,35 @@ async fn test_batch_transaction_granular_security() {
     std::env::set_var("METRI_TEST_MODE", "1");
 
     // Instantiate MetriGrpcService
-    let ddb_client = Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
-    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let pull_read  = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_exec  = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
+    let ddb_client =
+        Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
+    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(
+        Arc::clone(&ddb_client),
+        "metri-eav-local",
+    );
+    let pull_read =
+        crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_exec = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
 
-    let eav_writer   = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> =
-        Arc::new(crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()));
+    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
+        crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
+    );
 
     let mut channel_registry = std::collections::HashMap::new();
-    channel_registry.insert(crate::codice::registry::EngineChannel::Oltp, Arc::clone(&oltp_channel));
-    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(channel_registry));
+    channel_registry.insert(
+        crate::codice::registry::EngineChannel::Oltp,
+        Arc::clone(&oltp_channel),
+    );
+    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(
+        channel_registry,
+    ));
 
-    let audit_interceptor = Arc::new(crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(&oltp_channel)));
+    let audit_interceptor = Arc::new(
+        crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
+            &oltp_channel,
+        )),
+    );
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
         "secret-key".to_string().into_bytes(),
         Arc::clone(&ddb_client),
@@ -336,20 +395,29 @@ async fn test_batch_transaction_granular_security() {
         tenant_id: "tnt_01".to_string(),
         entity_type: "tenant".to_string(),
         entity_id: "".to_string(), // bulk/batch inside array payload
-        action: 2, // UPDATE
+        action: 2,                 // UPDATE
         payload: Some(translator::value_to_struct(&payload)),
         suppress_events: false,
     };
 
     let mut grpc_req = tonic::Request::new(req);
-    grpc_req.metadata_mut().insert("test-tenant", "tnt_01".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", "usr_001".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_01".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_001".parse().unwrap());
 
     let res = service.transact(grpc_req).await;
-    assert!(res.is_err(), "Expected error for mixed transaction items due to tenant mismatch");
+    assert!(
+        res.is_err(),
+        "Expected error for mixed transaction items due to tenant mismatch"
+    );
     let err = res.err().unwrap();
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
-    assert!(err.message().contains("Auth403: Cannot mutate other tenant"));
+    assert!(err
+        .message()
+        .contains("Auth403: Cannot mutate other tenant"));
 }
 
 #[tokio::test]
@@ -358,24 +426,49 @@ async fn test_invalid_role_grant_format() {
 
     std::env::set_var("METRI_TEST_MODE", "1");
 
-    let ddb_client = Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
-    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let pull_read  = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_exec  = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
-    let eav_writer   = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()));
+    let ddb_client =
+        Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
+    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(
+        Arc::clone(&ddb_client),
+        "metri-eav-local",
+    );
+    let pull_read =
+        crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_exec = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
+    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
+        crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
+    );
 
     let mut channel_registry = std::collections::HashMap::new();
-    channel_registry.insert(crate::codice::registry::EngineChannel::Oltp, Arc::clone(&oltp_channel));
-    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(channel_registry));
-    let audit_interceptor = Arc::new(crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(&oltp_channel)));
+    channel_registry.insert(
+        crate::codice::registry::EngineChannel::Oltp,
+        Arc::clone(&oltp_channel),
+    );
+    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(
+        channel_registry,
+    ));
+    let audit_interceptor = Arc::new(
+        crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
+            &oltp_channel,
+        )),
+    );
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
-        "secret-key".to_string().into_bytes(), ddb_client, "table".to_string()
+        "secret-key".to_string().into_bytes(),
+        ddb_client,
+        "table".to_string(),
     ));
     let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
 
     let service = MetriGrpcService::new(
-        oltp_exec, eav_writer, janus_router, audit_interceptor, None, None, valkey_store, principal_cache,
+        oltp_exec,
+        eav_writer,
+        janus_router,
+        audit_interceptor,
+        None,
+        None,
+        valkey_store,
+        principal_cache,
         Arc::new(crate::iop::sherlog::NoopFaultNotifier),
         Arc::clone(&oltp_channel),
         None,
@@ -411,10 +504,16 @@ async fn test_invalid_role_grant_format() {
             suppress_events: false,
         };
         let mut grpc_req = tonic::Request::new(req);
-        grpc_req.metadata_mut().insert("test-tenant", "tnt_01".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-tenant", "tnt_01".parse().unwrap());
 
         let res = service.transact(grpc_req).await;
-        assert!(res.is_err(), "Expected error for invalid grant: {:?}", payload);
+        assert!(
+            res.is_err(),
+            "Expected error for invalid grant: {:?}",
+            payload
+        );
         let err = res.err().unwrap();
         assert_eq!(err.code(), tonic::Code::InvalidArgument);
         assert!(err.message().contains("Invalid grant format"));
@@ -434,7 +533,9 @@ async fn test_invalid_role_grant_format() {
         suppress_events: false,
     };
     let mut grpc_req = tonic::Request::new(req);
-    grpc_req.metadata_mut().insert("test-tenant", "tnt_01".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_01".parse().unwrap());
     // Should compile and run, failing on EAV writing or event router since those are not mocked here,
     // but it should NOT return InvalidArgument "Invalid grant format".
     let res = service.transact(grpc_req).await;
@@ -445,26 +546,46 @@ async fn test_invalid_role_grant_format() {
 
 #[tokio::test]
 async fn test_tenant_and_quota_master_crud_gates() {
-    use std::sync::Arc;
     use crate::cedar::authorizer::PrincipalCache;
+    use std::sync::Arc;
 
     std::env::set_var("METRI_TEST_MODE", "1");
     std::env::set_var("HMAC_SECRET", "secret-key-development-metri-256-bits!!!");
 
     // Instantiate MetriGrpcService
-    let ddb_client = Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
-    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let pull_read  = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_exec  = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
-    let eav_writer   = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
-    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()));
+    let ddb_client =
+        Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
+    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(
+        Arc::clone(&ddb_client),
+        "metri-eav-local",
+    );
+    let pull_read =
+        crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_exec = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
+    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
+        crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
+    );
 
     let mut channel_registry = std::collections::HashMap::new();
-    channel_registry.insert(crate::codice::registry::EngineChannel::Oltp, Arc::clone(&oltp_channel));
-    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(channel_registry));
-    let audit_interceptor = Arc::new(crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(&oltp_channel)));
+    channel_registry.insert(
+        crate::codice::registry::EngineChannel::Oltp,
+        Arc::clone(&oltp_channel),
+    );
+    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(
+        channel_registry,
+    ));
+    let audit_interceptor = Arc::new(
+        crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
+            &oltp_channel,
+        )),
+    );
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
-        "secret-key-development-metri-256-bits!!!".to_string().into_bytes(), Arc::clone(&ddb_client), "metri-eav-local".to_string()
+        "secret-key-development-metri-256-bits!!!"
+            .to_string()
+            .into_bytes(),
+        Arc::clone(&ddb_client),
+        "metri-eav-local".to_string(),
     ));
     let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
 
@@ -476,30 +597,29 @@ async fn test_tenant_and_quota_master_crud_gates() {
         user_type: "INTERNAL".to_string(),
         company_id: String::new(),
         roles: ["regular-role".to_string()].into_iter().collect(),
-        roles_boundaries: vec![
-            crate::cedar::authorizer::RoleBoundary {
-                role_id: "regular-role".to_string(),
-                grants: vec![
-                    serde_json::json!({
-                        "domain": "*",
-                        "actions": ["VIEW", "CREATE", "UPDATE", "DELETE"],
-                        "scope": "ALL"
-                    })
-                ],
-                permitted_locations: vec![],
-                permitted_assets: vec![],
-            }
-        ],
+        roles_boundaries: vec![crate::cedar::authorizer::RoleBoundary {
+            role_id: "regular-role".to_string(),
+            grants: vec![serde_json::json!({
+                "domain": "*",
+                "actions": ["VIEW", "CREATE", "UPDATE", "DELETE"],
+                "scope": "ALL"
+            })],
+            permitted_locations: vec![],
+            permitted_assets: vec![],
+        }],
         time_restrictions: vec![],
         group_allowed_locations: vec![],
         group_allowed_assets: vec![],
         groups: std::collections::HashSet::new(),
     };
-    principal_cache.store_principal("usr_regular", regular_principal).await.unwrap();
+    principal_cache
+        .store_principal("usr_regular", regular_principal)
+        .await
+        .unwrap();
 
     // Helper token generator
     fn generate_test_token(tenant_id: &str, user_id: &str) -> String {
-        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
         type HmacSha256 = Hmac<Sha256>;
@@ -514,7 +634,7 @@ async fn test_tenant_and_quota_master_crud_gates() {
         });
         let payload_bytes = serde_json::to_vec(&claims).unwrap();
         let payload_b64 = URL_SAFE_NO_PAD.encode(&payload_bytes);
-        
+
         let hmac_secret = std::env::var("HMAC_SECRET")
             .unwrap_or_else(|_| "secret-key-development-metri-256-bits!!!".to_string());
         let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes()).unwrap();
@@ -526,7 +646,14 @@ async fn test_tenant_and_quota_master_crud_gates() {
     }
 
     let service = MetriGrpcService::new(
-        oltp_exec, eav_writer, janus_router, audit_interceptor, None, None, valkey_store, principal_cache,
+        oltp_exec,
+        eav_writer,
+        janus_router,
+        audit_interceptor,
+        None,
+        None,
+        valkey_store,
+        principal_cache,
         Arc::new(crate::iop::sherlog::NoopFaultNotifier),
         Arc::clone(&oltp_channel),
         None,
@@ -545,15 +672,23 @@ async fn test_tenant_and_quota_master_crud_gates() {
         suppress_events: false,
     };
     let mut grpc_req = tonic::Request::new(req);
-    grpc_req.metadata_mut().insert("test-tenant", "tnt_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", "usr_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-roles", "regular-role".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-roles", "regular-role".parse().unwrap());
 
     let res = service.transact(grpc_req).await;
     assert!(res.is_err());
     let err = res.err().unwrap();
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
-    assert!(err.message().contains("Only master tenant users can mutate tenant"));
+    assert!(err
+        .message()
+        .contains("Only master tenant users can mutate tenant"));
 
     // 2. Mutate 'domain_quota' as non-master user -> Expect PermissionDenied (Auth403)
     let payload = serde_json::json!({
@@ -568,15 +703,23 @@ async fn test_tenant_and_quota_master_crud_gates() {
         suppress_events: false,
     };
     let mut grpc_req = tonic::Request::new(req);
-    grpc_req.metadata_mut().insert("test-tenant", "tnt_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", "usr_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-roles", "regular-role".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-roles", "regular-role".parse().unwrap());
 
     let res = service.transact(grpc_req).await;
     assert!(res.is_err());
     let err = res.err().unwrap();
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
-    assert!(err.message().contains("Only master tenant users can mutate domain_quota"));
+    assert!(err
+        .message()
+        .contains("Only master tenant users can mutate domain_quota"));
 
     // 3. Mutate 'tenant' as master user -> Expect success (or at least EAV error, not gate block)
     let payload = serde_json::json!({
@@ -591,14 +734,25 @@ async fn test_tenant_and_quota_master_crud_gates() {
         suppress_events: false,
     };
     let mut grpc_req = tonic::Request::new(req);
-    grpc_req.metadata_mut().insert("test-tenant", "system".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", "usr_master".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-roles", "role_super_master".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "system".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_master".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-roles", "role_super_master".parse().unwrap());
 
     let res = service.transact(grpc_req).await;
     if let Err(err) = &res {
         // Gate is passed, it should not fail with PermissionDenied "Only master tenant users can mutate"
-        assert_ne!(err.code(), tonic::Code::PermissionDenied, "Gate should let master user pass: {:?}", err);
+        assert_ne!(
+            err.code(),
+            tonic::Code::PermissionDenied,
+            "Gate should let master user pass: {:?}",
+            err
+        );
     }
 
     // 4. Query 'tenant' as non-master user -> Expect PermissionDenied
@@ -606,33 +760,52 @@ async fn test_tenant_and_quota_master_crud_gates() {
         tenant_id: "tnt_regular".to_string(),
         queries: {
             let mut m = std::collections::HashMap::new();
-            m.insert("q1".to_string(), crate::grpc::pb::AnalyticsRequest {
-                tenant_id: "tnt_regular".to_string(),
-                entity: "tenant".to_string(),
-                ..Default::default()
-            });
+            m.insert(
+                "q1".to_string(),
+                crate::grpc::pb::AnalyticsRequest {
+                    tenant_id: "tnt_regular".to_string(),
+                    entity: "tenant".to_string(),
+                    ..Default::default()
+                },
+            );
             m
         },
         ..Default::default()
     };
     let mut grpc_req = tonic::Request::new(q_req);
-    grpc_req.metadata_mut().insert("test-tenant", "tnt_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", "usr_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-roles", "regular-role".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-roles", "regular-role".parse().unwrap());
     let token = generate_test_token("tnt_regular", "usr_regular");
-    grpc_req.metadata_mut().insert("authorization", token.parse().unwrap());
-    grpc_req.extensions_mut().insert(crate::grpc::interceptors::AuthenticatedSession {
-        tenant_id: "tnt_regular".to_string(),
-        user_id: "usr_regular".to_string(),
-        jti: "test-jti".to_string(),
-    });
+    grpc_req
+        .metadata_mut()
+        .insert("authorization", token.parse().unwrap());
+    grpc_req
+        .extensions_mut()
+        .insert(crate::grpc::interceptors::AuthenticatedSession {
+            tenant_id: "tnt_regular".to_string(),
+            user_id: "usr_regular".to_string(),
+            jti: "test-jti".to_string(),
+        });
 
     let res = service.query(grpc_req).await;
     assert!(res.is_err());
     let err = res.err().unwrap();
-    println!("DEBUG QUERY ERROR: code={:?}, message={}", err.code(), err.message());
+    println!(
+        "DEBUG QUERY ERROR: code={:?}, message={}",
+        err.code(),
+        err.message()
+    );
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
-    assert!(err.message().contains("Only master tenant users can read tenants or quotas"));
+    assert!(err
+        .message()
+        .contains("Only master tenant users can read tenants or quotas"));
 
     // 5. Explore 'domain_quota' as non-master user -> Expect PermissionDenied
     let exp_req = crate::grpc::pb::ExploreRequest {
@@ -642,22 +815,34 @@ async fn test_tenant_and_quota_master_crud_gates() {
         limit: 10,
     };
     let mut grpc_req = tonic::Request::new(exp_req);
-    grpc_req.metadata_mut().insert("test-tenant", "tnt_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", "usr_regular".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-roles", "regular-role".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-roles", "regular-role".parse().unwrap());
     let token = generate_test_token("tnt_regular", "usr_regular");
-    grpc_req.metadata_mut().insert("authorization", token.parse().unwrap());
-    grpc_req.extensions_mut().insert(crate::grpc::interceptors::AuthenticatedSession {
-        tenant_id: "tnt_regular".to_string(),
-        user_id: "usr_regular".to_string(),
-        jti: "test-jti".to_string(),
-    });
+    grpc_req
+        .metadata_mut()
+        .insert("authorization", token.parse().unwrap());
+    grpc_req
+        .extensions_mut()
+        .insert(crate::grpc::interceptors::AuthenticatedSession {
+            tenant_id: "tnt_regular".to_string(),
+            user_id: "usr_regular".to_string(),
+            jti: "test-jti".to_string(),
+        });
 
     let res = service.explore(grpc_req).await;
     assert!(res.is_err());
     let err = res.err().unwrap();
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
-    assert!(err.message().contains("Only master tenant users can explore"));
+    assert!(err
+        .message()
+        .contains("Only master tenant users can explore"));
 }
 
 #[tokio::test]
@@ -709,11 +894,14 @@ async fn test_map_chunk_to_response_csv_export_s3() {
     let export_storage: Arc<dyn IExportStorage> = Arc::new(StubExportStorage::new());
 
     // 1. Scenario: > 5000 rows (S3 export triggered)
-    let resp = map_chunk_to_response(chunk.clone(), false, Some(&export_storage), "tnt_export").await;
+    let resp =
+        map_chunk_to_response(chunk.clone(), false, Some(&export_storage), "tnt_export").await;
     assert!(resp.status.unwrap().success);
     let q_res = resp.batch_results.get("export_query").unwrap();
-    
-    if let Some(crate::grpc::pb::row_set::PayloadStrategy::PresignedCsvUrl(url)) = &q_res.data.as_ref().unwrap().payload_strategy {
+
+    if let Some(crate::grpc::pb::row_set::PayloadStrategy::PresignedCsvUrl(url)) =
+        &q_res.data.as_ref().unwrap().payload_strategy
+    {
         assert!(url.contains("metri-mock-exports.s3.amazonaws.com/exports/mock_file_"));
     } else {
         panic!("Expected PresignedCsvUrl payload strategy for > 5000 rows");
@@ -730,24 +918,26 @@ async fn test_map_chunk_to_response_csv_export_s3() {
         body: small_body,
     };
 
-    let resp_small = map_chunk_to_response(small_chunk, false, Some(&export_storage), "tnt_export").await;
+    let resp_small =
+        map_chunk_to_response(small_chunk, false, Some(&export_storage), "tnt_export").await;
     assert!(resp_small.status.unwrap().success);
     let q_res_small = resp_small.batch_results.get("export_query").unwrap();
-    
-    if let Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(rows)) = &q_res_small.data.as_ref().unwrap().payload_strategy {
+
+    if let Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(rows)) =
+        &q_res_small.data.as_ref().unwrap().payload_strategy
+    {
         assert_eq!(rows.iter.len(), 100);
     } else {
         panic!("Expected RowsJson payload strategy for <= 5000 rows");
     }
 }
 
-
 // ── ListEntities ─────────────────────────────────────────────────────────────
 
 fn list_test_registry() -> crate::codice::registry::CodeRegistry {
     let dir = std::path::Path::new("config/models");
-    let (registry, _rules) = crate::codice::CodeRegistry::build(dir)
-        .expect("config/models debe compilar");
+    let (registry, _rules) =
+        crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
     registry
 }
 
@@ -758,7 +948,9 @@ fn list_filters_acepta_status_aunque_no_declare_index() {
     // porque el camino de escritura decide por ValueType. Validar por el flag
     // rechazaría justo la consulta que necesita el reconciliador.
     let reg = list_test_registry();
-    let model = reg.get_model("scheduled_job").expect("scheduled_job en el Códice");
+    let model = reg
+        .get_model("scheduled_job")
+        .expect("scheduled_job en el Códice");
     assert!(
         crate::grpc::service::validate_list_filters(model, &["status"]).is_ok(),
         "status debe aceptarse como filtro"
@@ -780,14 +972,17 @@ fn list_filters_rechaza_tipos_no_indexables() {
     // encubierto: mejor rechazarlo que servirlo caro y en silencio.
     let reg = list_test_registry();
     let model = reg.get_model("scheduled_job").unwrap();
-    let arrays: Vec<&str> = model.attributes.iter()
+    let arrays: Vec<&str> = model
+        .attributes
+        .iter()
         .filter(|a| matches!(a.attr_type, crate::codice::registry::AttrType::Array))
         .map(|a| a.name.as_str())
         .collect();
     for name in arrays {
         assert!(
             crate::grpc::service::validate_list_filters(model, &[name]).is_err(),
-            "'{}' es Array y no debe admitirse como filtro", name
+            "'{}' es Array y no debe admitirse como filtro",
+            name
         );
     }
 }
@@ -796,9 +991,9 @@ fn list_filters_rechaza_tipos_no_indexables() {
 fn list_filters_acepta_varios_a_la_vez() {
     let reg = list_test_registry();
     let model = reg.get_model("scheduled_job").unwrap();
-    assert!(crate::grpc::service::validate_list_filters(
-        model, &["status", "trigger_type"]
-    ).is_ok());
+    assert!(
+        crate::grpc::service::validate_list_filters(model, &["status", "trigger_type"]).is_ok()
+    );
 }
 
 #[test]
@@ -827,5 +1022,8 @@ fn sort_and_truncate_es_determinista() {
     let mut b = vec!["k".into(), "a".into(), "z".into(), "m".into()];
     crate::grpc::service::sort_and_truncate(&mut a, 2);
     crate::grpc::service::sort_and_truncate(&mut b, 2);
-    assert_eq!(a, b, "el mismo conjunto en otro orden debe recortarse igual");
+    assert_eq!(
+        a, b,
+        "el mismo conjunto en otro orden debe recortarse igual"
+    );
 }

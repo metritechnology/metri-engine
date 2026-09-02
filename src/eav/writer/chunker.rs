@@ -14,7 +14,7 @@ pub enum ChunkStrategy {
     /// Más de 100 items — separamos core (ACID) de secundarios (eventual).
     DegradedConsistency {
         /// Items críticos: datoms EAVT + checks de unicidad + outbox event.
-        core_items:      Vec<TransactWriteItem>,
+        core_items: Vec<TransactWriteItem>,
         /// Items eventualmente consistentes: FTS trigrams + VAET masivos.
         secondary_items: Vec<TransactWriteItem>,
     },
@@ -42,8 +42,11 @@ pub fn plan_chunks(items: Vec<TransactWriteItem>) -> ChunkStrategy {
                 secondary.push(item);
             }
             (core, secondary)
-        }
+        },
     );
 
-    ChunkStrategy::DegradedConsistency { core_items: core, secondary_items: secondary }
+    ChunkStrategy::DegradedConsistency {
+        core_items: core,
+        secondary_items: secondary,
+    }
 }

@@ -81,10 +81,15 @@ impl QuotaCounter for FakeCounter {
         let mut usage = self.usage.lock().unwrap();
         let actual = *usage.get(quota_id).unwrap_or(&seed);
         if actual >= max_limit {
-            return Ok(DebitOutcome::Exhausted { current_usage: actual, limit: max_limit });
+            return Ok(DebitOutcome::Exhausted {
+                current_usage: actual,
+                limit: max_limit,
+            });
         }
         usage.insert(quota_id.to_string(), actual + amount);
-        Ok(DebitOutcome::Debited { new_usage: actual + amount })
+        Ok(DebitOutcome::Debited {
+            new_usage: actual + amount,
+        })
     }
 
     async fn settle(

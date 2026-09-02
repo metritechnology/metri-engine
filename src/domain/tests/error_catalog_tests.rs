@@ -20,8 +20,8 @@ fn http_status_lookup() {
 #[test]
 fn retryable_flag() {
     let catalog = ErrorCatalog::load("config/errors/error_catalog.toml").unwrap();
-    assert!(catalog.is_retryable("EAV_TX_003"));   // ConcurrentModification → retry
-    assert!(!catalog.is_retryable("JANUS_400"));   // Bad request → no retry
+    assert!(catalog.is_retryable("EAV_TX_003")); // ConcurrentModification → retry
+    assert!(!catalog.is_retryable("JANUS_400")); // Bad request → no retry
 }
 
 #[test]

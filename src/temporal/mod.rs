@@ -11,7 +11,7 @@
 //   adapters   → to_datalog_clauses (Datahike), to_honey_clause (Athena),
 //                to_bucket_fn (TIMESERIES in-memory)
 
+pub mod adapters;
+pub mod comparison;
 pub mod core;
 pub mod time_frame;
-pub mod comparison;
-pub mod adapters;

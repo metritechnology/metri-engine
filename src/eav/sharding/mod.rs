@@ -1,2 +1,2 @@
 pub mod shard;
-pub use shard::{shard_key, scatter_pks};
+pub use shard::{scatter_pks, shard_key};

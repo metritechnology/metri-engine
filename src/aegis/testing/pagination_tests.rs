@@ -20,7 +20,10 @@ fn build_pagination_first_page() {
     assert_eq!(pag["has_next"], json!(true));
     assert_eq!(pag["has_previous"], json!(false));
     assert!(pag["next_cursor"].is_string());
-    assert!(pag.get("previous_cursor").map(|v| v.is_null()).unwrap_or(true));
+    assert!(pag
+        .get("previous_cursor")
+        .map(|v| v.is_null())
+        .unwrap_or(true));
 }
 
 #[test]

@@ -9,13 +9,13 @@ fn substring_match() {
 #[test]
 fn fuzzy_one_error() {
     assert!(fuzzy_match("Chiller A-01", "Chiler")); // dl=1
-    assert!(fuzzy_match("Rack Server", "Rak"));     // dl=1 token 'rack'
+    assert!(fuzzy_match("Rack Server", "Rak")); // dl=1 token 'rack'
 }
 
 #[test]
 fn fuzzy_transposition() {
     // Damerau-Levenshtein soporta transposiciones (dl=1)
-    assert!(fuzzy_match("Bomba", "Bobma")); 
+    assert!(fuzzy_match("Bomba", "Bobma"));
 }
 
 #[test]

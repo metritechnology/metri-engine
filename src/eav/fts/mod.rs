@@ -1,2 +1,2 @@
-pub mod trigram;
 pub mod searcher;
+pub mod trigram;

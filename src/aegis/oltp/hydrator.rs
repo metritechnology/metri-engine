@@ -1,11 +1,11 @@
 // aegis/oltp/hydrator.rs
 // SRP: Encapsular hidratación de entidades (EAV → JSON Rows in-memory), control de cache y calentamiento selectivo.
 
+use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::sync::RwLock;
-use once_cell::sync::Lazy;
-use tracing::{info, debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::domain::errors::DomainError;
 use crate::eav::reader::pull::{EavReader, EAV_CACHE};
@@ -13,13 +13,10 @@ use crate::eav::types::datom::DatomValue;
 
 pub const MAX_WARMED_TENANTS_SIZE: usize = 1_000;
 
-pub static WARMED_TENANTS: Lazy<RwLock<std::collections::HashMap<String, HashSet<String>>>> = Lazy::new(|| {
-    RwLock::new(std::collections::HashMap::new())
-});
+pub static WARMED_TENANTS: Lazy<RwLock<std::collections::HashMap<String, HashSet<String>>>> =
+    Lazy::new(|| RwLock::new(std::collections::HashMap::new()));
 
-pub static WARMUP_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| {
-    tokio::sync::Mutex::new(())
-});
+pub static WARMUP_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
 #[derive(Clone)]
 pub struct OltpEntityHydrator {
@@ -45,7 +42,8 @@ impl OltpEntityHydrator {
 
             let missing_attrs: Vec<String> = if let Ok(warmed) = WARMED_TENANTS.read() {
                 if let Some(warmed_attrs) = warmed.get(&cache_key) {
-                    resolved_attrs.iter()
+                    resolved_attrs
+                        .iter()
                         .filter(|attr| !warmed_attrs.contains(*attr))
                         .cloned()
                         .collect()
@@ -68,7 +66,8 @@ impl OltpEntityHydrator {
                 let _guard = WARMUP_LOCK.lock().await;
                 let missing_attrs_lock: Vec<String> = if let Ok(warmed) = WARMED_TENANTS.read() {
                     if let Some(warmed_attrs) = warmed.get(&cache_key) {
-                        missing_attrs.iter()
+                        missing_attrs
+                            .iter()
                             .filter(|attr| !warmed_attrs.contains(*attr))
                             .cloned()
                             .collect()
@@ -87,16 +86,26 @@ impl OltpEntityHydrator {
                         missing_attrs_lock
                     );
 
-                    if let Err(e) = self.pull_reader.warm_cache_for_tenant(
-                        tenant_id,
-                        Some(entity_type),
-                        Some(&missing_attrs_lock)
-                    ).await {
+                    if let Err(e) = self
+                        .pull_reader
+                        .warm_cache_for_tenant(
+                            tenant_id,
+                            Some(entity_type),
+                            Some(&missing_attrs_lock),
+                        )
+                        .await
+                    {
                         warn!("[Aegis OLTP FBS] Error calentando caché selectiva incremental para tenant {} y entidad {}: {:?}", tenant_id, entity_type, e);
                     } else {
                         if let Ok(mut warmed) = WARMED_TENANTS.write() {
-                            if warmed.len() >= MAX_WARMED_TENANTS_SIZE && !warmed.contains_key(&cache_key) {
-                                let to_remove: Vec<String> = warmed.keys().take(MAX_WARMED_TENANTS_SIZE / 5).cloned().collect();
+                            if warmed.len() >= MAX_WARMED_TENANTS_SIZE
+                                && !warmed.contains_key(&cache_key)
+                            {
+                                let to_remove: Vec<String> = warmed
+                                    .keys()
+                                    .take(MAX_WARMED_TENANTS_SIZE / 5)
+                                    .cloned()
+                                    .collect();
                                 for k in to_remove {
                                     warmed.remove(&k);
                                 }
@@ -128,7 +137,8 @@ impl OltpEntityHydrator {
         F: Fn(&Value) -> bool + Send + Sync,
     {
         let tenant_id_str = tenant_id.to_string();
-        let sel_opt_owned: Option<Vec<String>> = sel_opt.map(|s| s.iter().map(|&x| x.to_string()).collect());
+        let sel_opt_owned: Option<Vec<String>> =
+            sel_opt.map(|s| s.iter().map(|&x| x.to_string()).collect());
 
         let total_candidates = entity_ids.len();
         let limit_to_spawn = std::cmp::min(total_candidates, max_hydrations);
@@ -178,7 +188,11 @@ impl OltpEntityHydrator {
         // 2. Fallback asíncrono para Cache Misses utilizando JoinSet concurrente
         if !misses.is_empty() && collected_rows.len() < target_break {
             debug!("[Aegis OLTP Hydrator] Cache miss para {} de {} candidatos. Hydrating concurrently.", misses.len(), limit_to_spawn);
-            let mut join_set: tokio::task::JoinSet<(usize, String, Result<crate::eav::reader::pull::EntityMap, DomainError>)> = tokio::task::JoinSet::new();
+            let mut join_set: tokio::task::JoinSet<(
+                usize,
+                String,
+                Result<crate::eav::reader::pull::EntityMap, DomainError>,
+            )> = tokio::task::JoinSet::new();
             let concurrency_limit = 100;
             let mut idx_to_spawn = 0;
 
@@ -191,7 +205,8 @@ impl OltpEntityHydrator {
                     let sel = sel_opt_owned.clone();
 
                     join_set.spawn(async move {
-                        let sel_refs: Option<Vec<&str>> = sel.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
+                        let sel_refs: Option<Vec<&str>> =
+                            sel.as_ref().map(|v| v.iter().map(|s| s.as_str()).collect());
                         let sel_opt_ref = sel_refs.as_ref().map(|v| v.as_slice());
                         let res = reader.pull(&tenant, &entity_id, sel_opt_ref).await;
                         (original_idx, entity_id, res)
@@ -218,7 +233,9 @@ impl OltpEntityHydrator {
                                     }
                                 }
                             } else {
-                                warn!("[Aegis OLTP Hydrator] pull vacío para entity_id={entity_id}");
+                                warn!(
+                                    "[Aegis OLTP Hydrator] pull vacío para entity_id={entity_id}"
+                                );
                             }
                         }
                         Ok((_original_idx, entity_id, Err(e))) => {
@@ -254,7 +271,7 @@ pub fn entity_map_to_json(map: std::collections::HashMap<String, DatomValue>) ->
     let mut row = serde_json::Map::new();
     for (k, v) in map {
         let json_val = match v {
-            DatomValue::Str(s)         => {
+            DatomValue::Str(s) => {
                 if let Some(registry) = crate::codice::registry::global_opt() {
                     let parts: Vec<&str> = k.split('/').collect();
                     if parts.len() == 2 {
@@ -270,7 +287,9 @@ pub fn entity_map_to_json(map: std::collections::HashMap<String, DatomValue>) ->
                             json!(s)
                         }
                     } else {
-                        if (s.starts_with('{') && s.ends_with('}')) || (s.starts_with('[') && s.ends_with(']')) {
+                        if (s.starts_with('{') && s.ends_with('}'))
+                            || (s.starts_with('[') && s.ends_with(']'))
+                        {
                             serde_json::from_str::<Value>(&s).unwrap_or_else(|_| json!(s))
                         } else {
                             json!(s)
@@ -280,17 +299,17 @@ pub fn entity_map_to_json(map: std::collections::HashMap<String, DatomValue>) ->
                     json!(s)
                 }
             }
-            DatomValue::Uuid(s)        => json!(s),
-            DatomValue::Long(n)        => json!(n),
-            DatomValue::Instant(n)     => json!(n),
-            DatomValue::Double(d)      => json!(d),
-            DatomValue::Bool(b)        => json!(b),
-            DatomValue::BigInt(n)      => json!(n),
-            DatomValue::Ref(r)         => json!(r),
-            DatomValue::Array(arr)     => json!(arr),
+            DatomValue::Uuid(s) => json!(s),
+            DatomValue::Long(n) => json!(n),
+            DatomValue::Instant(n) => json!(n),
+            DatomValue::Double(d) => json!(d),
+            DatomValue::Bool(b) => json!(b),
+            DatomValue::BigInt(n) => json!(n),
+            DatomValue::Ref(r) => json!(r),
+            DatomValue::Array(arr) => json!(arr),
             DatomValue::Geo { lat, lon } => json!({"lat": lat, "lon": lon}),
-            DatomValue::Null           => Value::Null,
-            DatomValue::Bytes(_)       => json!("_binary_"),
+            DatomValue::Null => Value::Null,
+            DatomValue::Bytes(_) => json!("_binary_"),
         };
         if k.contains('/') {
             let bare_key = k.split('/').last().unwrap_or(&k).to_string();

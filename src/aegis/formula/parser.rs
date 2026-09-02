@@ -1,9 +1,9 @@
 // aegis/formula/parser.rs — Convierte tokens infix a cola RPN (Reverse Polish Notation).
 // SRP: Solo reordena tokens. No tokeniza, no evalúa, no compila a SQL.
 
-use crate::aegis::formula::token::{Token, Operator};
-use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::errors::FormulaError;
+use crate::aegis::formula::functions_registry::FunctionRegistry;
+use crate::aegis::formula::token::{Operator, Token};
 
 /// Convierte una secuencia de tokens infix a Reverse Polish Notation (RPN)
 /// usando el algoritmo Shunting-Yard.
@@ -18,10 +18,7 @@ use crate::aegis::formula::errors::FormulaError;
 /// - `FormulaError::UnknownFunction` si una función no está registrada.
 /// - `FormulaError::NestingTooDeep` si la profundidad de paréntesis excede 32.
 /// - `FormulaError::FunctionNestingTooDeep` si la profundidad de funciones excede 16.
-pub fn to_rpn(
-    tokens: Vec<Token>,
-    registry: &FunctionRegistry,
-) -> Result<Vec<Token>, FormulaError> {
+pub fn to_rpn(tokens: Vec<Token>, registry: &FunctionRegistry) -> Result<Vec<Token>, FormulaError> {
     let mut output: Vec<Token> = Vec::new();
     let mut op_stack: Vec<Token> = Vec::new();
     let mut arity_stack: Vec<usize> = Vec::new(); // Track function arity
@@ -34,7 +31,9 @@ pub fn to_rpn(
                 output.push(token);
                 // Si estamos dentro de una función y es el primer argumento
                 if let Some(arity) = arity_stack.last_mut() {
-                    if *arity == 0 { *arity = 1; }
+                    if *arity == 0 {
+                        *arity = 1;
+                    }
                 }
             }
             Token::Function(name, _) => {
@@ -42,11 +41,16 @@ pub fn to_rpn(
                     return Err(FormulaError::UnknownFunction { name: name.clone() });
                 }
                 if let Some(arity) = arity_stack.last_mut() {
-                    if *arity == 0 { *arity = 1; }
+                    if *arity == 0 {
+                        *arity = 1;
+                    }
                 }
                 func_depth += 1;
                 if func_depth > 16 {
-                    return Err(FormulaError::FunctionNestingTooDeep { depth: func_depth, max: 16 });
+                    return Err(FormulaError::FunctionNestingTooDeep {
+                        depth: func_depth,
+                        max: 16,
+                    });
                 }
                 op_stack.push(token.clone());
                 arity_stack.push(0);
@@ -54,7 +58,9 @@ pub fn to_rpn(
             Token::Comma => {
                 // Flush operadores hasta el paréntesis de la función o coma
                 while let Some(top) = op_stack.last() {
-                    if matches!(top, Token::ParenOpen) { break; }
+                    if matches!(top, Token::ParenOpen) {
+                        break;
+                    }
                     output.push(op_stack.pop().unwrap());
                 }
                 if let Some(arity) = arity_stack.last_mut() {
@@ -64,7 +70,9 @@ pub fn to_rpn(
             Token::Operator(op) => {
                 if matches!(op, Operator::Neg) {
                     if let Some(arity) = arity_stack.last_mut() {
-                        if *arity == 0 { *arity = 1; }
+                        if *arity == 0 {
+                            *arity = 1;
+                        }
                     }
                 }
                 while let Some(Token::Operator(top_op)) = op_stack.last() {
@@ -80,11 +88,16 @@ pub fn to_rpn(
             }
             Token::ParenOpen => {
                 if let Some(arity) = arity_stack.last_mut() {
-                    if *arity == 0 { *arity = 1; }
+                    if *arity == 0 {
+                        *arity = 1;
+                    }
                 }
                 paren_depth += 1;
                 if paren_depth > 32 {
-                    return Err(FormulaError::NestingTooDeep { depth: paren_depth, max: 32 });
+                    return Err(FormulaError::NestingTooDeep {
+                        depth: paren_depth,
+                        max: 32,
+                    });
                 }
                 op_stack.push(token);
             }

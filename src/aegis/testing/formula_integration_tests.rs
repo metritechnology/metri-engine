@@ -1,9 +1,9 @@
 use crate::aegis::formula::compiler_olap::OlapFormulaCompiler;
+use crate::aegis::formula::evaluator::FormulaEvaluator;
+use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::lexer::tokenize;
 use crate::aegis::formula::parser::to_rpn;
-use crate::aegis::formula::evaluator::FormulaEvaluator;
 use crate::aegis::formula::resolver::OltpVariableResolver;
-use crate::aegis::formula::functions_registry::FunctionRegistry;
 use serde_json::json;
 
 #[test]

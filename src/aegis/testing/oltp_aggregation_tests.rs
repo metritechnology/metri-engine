@@ -3,8 +3,12 @@ use serde_json::json;
 
 #[test]
 fn count_star_with_no_attribute() {
-    use crate::janus::fbs::{MetricDefinitionT, AggregationFunction};
-    let rows = vec![json!({"status": "ACTIVE"}), json!({"status": "ACTIVE"}), json!({"status": "INACTIVE"})];
+    use crate::janus::fbs::{AggregationFunction, MetricDefinitionT};
+    let rows = vec![
+        json!({"status": "ACTIVE"}),
+        json!({"status": "ACTIVE"}),
+        json!({"status": "INACTIVE"}),
+    ];
     let metrics = vec![MetricDefinitionT {
         aggregation: AggregationFunction::COUNT,
         name: Some("total".to_string()),
@@ -16,8 +20,12 @@ fn count_star_with_no_attribute() {
 
 #[test]
 fn sum_with_attribute() {
-    use crate::janus::fbs::{MetricDefinitionT, AggregationFunction};
-    let rows = vec![json!({"area": 100.0}), json!({"area": 200.0}), json!({"area": 300.0})];
+    use crate::janus::fbs::{AggregationFunction, MetricDefinitionT};
+    let rows = vec![
+        json!({"area": 100.0}),
+        json!({"area": 200.0}),
+        json!({"area": 300.0}),
+    ];
     let metrics = vec![MetricDefinitionT {
         aggregation: AggregationFunction::SUM,
         attribute: Some("area".to_string()),
@@ -30,7 +38,10 @@ fn sum_with_attribute() {
 
 #[test]
 fn filtered_count() {
-    use crate::janus::fbs::{MetricDefinitionT, AggregationFunction, FilterNodeT, FilterCriteriaT, FilterOperator, FilterValueT};
+    use crate::janus::fbs::{
+        AggregationFunction, FilterCriteriaT, FilterNodeT, FilterOperator, FilterValueT,
+        MetricDefinitionT,
+    };
     let rows = vec![
         json!({"status": "ACTIVE",   "area": 100.0}),
         json!({"status": "ACTIVE",   "area": 200.0}),

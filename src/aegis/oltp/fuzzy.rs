@@ -20,22 +20,24 @@ pub fn fuzzy_threshold(term: &str) -> usize {
     match term.chars().count() {
         0..=2 => 0,
         3..=8 => 1,
-        _     => 2,
+        _ => 2,
     }
 }
 
 /// Remueve los acentos diacríticos del español para búsquedas insensibles a acentos.
 pub fn remove_accents(s: &str) -> String {
-    s.chars().map(|c| match c {
-        'á' | 'Á' => 'a',
-        'é' | 'É' => 'e',
-        'í' | 'Í' => 'i',
-        'ó' | 'Ó' => 'o',
-        'ú' | 'Ú' => 'u',
-        'ü' | 'Ü' => 'u',
-        'ñ' | 'Ñ' => 'n',
-        other => other,
-    }).collect()
+    s.chars()
+        .map(|c| match c {
+            'á' | 'Á' => 'a',
+            'é' | 'É' => 'e',
+            'í' | 'Í' => 'i',
+            'ó' | 'Ó' => 'o',
+            'ú' | 'Ú' => 'u',
+            'ü' | 'Ü' => 'u',
+            'ñ' | 'Ñ' => 'n',
+            other => other,
+        })
+        .collect()
 }
 
 /// Tokeniza un valor en palabras (lowercase y sin acentos) separadas por espacios, guiones, puntos, guiones bajos.
@@ -56,18 +58,22 @@ fn tokenize(s: &str) -> Vec<String> {
 ///   3. Fast Fuzzy path: Trigram intersection score (>= 0.75 de coincidencia)
 ///   4. Deep Fuzzy path: Damerau-Levenshtein distance <= threshold por token
 pub fn fuzzy_match(value: &str, term: &str) -> bool {
-    if value.is_empty() || term.is_empty() { return false; }
+    if value.is_empty() || term.is_empty() {
+        return false;
+    }
 
     let v_lower = remove_accents(&value.to_lowercase());
     let t_lower = remove_accents(&term.to_lowercase());
 
     // Fast path
-    if v_lower.contains(&t_lower) { return true; }
+    if v_lower.contains(&t_lower) {
+        return true;
+    }
 
     // Fast Fuzzy Path via Trigrams (EAV FTS Capability)
     let term_trigrams = generate_trigrams(&t_lower);
     let val_trigrams = generate_trigrams(&v_lower);
-    
+
     if !term_trigrams.is_empty() && !val_trigrams.is_empty() {
         let val_set: HashSet<_> = val_trigrams.iter().collect();
         let matched = term_trigrams.iter().filter(|t| val_set.contains(t)).count();
@@ -79,11 +85,11 @@ pub fn fuzzy_match(value: &str, term: &str) -> bool {
 
     // Deep Fuzzy path via Damerau-Levenshtein (EAV FTS Capability)
     let thresh = fuzzy_threshold(&t_lower);
-    if thresh == 0 { return false; }
+    if thresh == 0 {
+        return false;
+    }
 
     tokenize(value)
         .iter()
         .any(|token| damerau_levenshtein(token, &t_lower) <= thresh)
 }
-
-

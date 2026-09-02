@@ -102,7 +102,12 @@ pub async fn sweep_once(
 
             if r.debited {
                 if let Err(e) = counter
-                    .settle_once(&r.tenant_id, &r.quota_id, -r.estimated, &settlement_key(&r.id))
+                    .settle_once(
+                        &r.tenant_id,
+                        &r.quota_id,
+                        -r.estimated,
+                        &settlement_key(&r.id),
+                    )
                     .await
                 {
                     // Sin cerrar: al vencer el lease vuelve a estar disponible.
@@ -116,7 +121,11 @@ pub async fn sweep_once(
                 }
             }
 
-            let reason = if r.debited { CloseReason::Expired } else { CloseReason::Abandoned };
+            let reason = if r.debited {
+                CloseReason::Expired
+            } else {
+                CloseReason::Abandoned
+            };
             if let Err(e) = store.close(&r.tenant_id, &r.id, reason).await {
                 // El apunte ya se aplicó y quedó marcado. Que el cierre falle
                 // solo significa que la reserva volverá a aparecer vencida; el
@@ -180,9 +189,14 @@ pub fn spawn(store: Arc<dyn ReservationStore>, counter: Arc<dyn QuotaCounter>) {
         loop {
             interval.tick().await;
             let now = chrono::Utc::now().timestamp();
-            let report =
-                sweep_once(store.as_ref(), counter.as_ref(), shard_rotation(), now, SWEEP_LEASE)
-                    .await;
+            let report = sweep_once(
+                store.as_ref(),
+                counter.as_ref(),
+                shard_rotation(),
+                now,
+                SWEEP_LEASE,
+            )
+            .await;
             if report.touched() > 0 {
                 info!(?report, "[QuotaSweeper] Vuelta completada");
             }

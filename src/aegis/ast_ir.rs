@@ -45,78 +45,150 @@ impl WhereNode {
         if v.is_null() {
             return Ok(WhereNode::Empty);
         }
-        let arr = v.as_array().ok_or_else(|| "WHERE node must be an array".to_string())?;
+        let arr = v
+            .as_array()
+            .ok_or_else(|| "WHERE node must be an array".to_string())?;
         if arr.is_empty() {
             return Ok(WhereNode::Empty);
         }
-        let op = arr[0].as_str().ok_or_else(|| "First element of WHERE array must be a string operator".to_string())?;
+        let op = arr[0]
+            .as_str()
+            .ok_or_else(|| "First element of WHERE array must be a string operator".to_string())?;
         match op {
             "=" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("= operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("= operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Eq(col, val))
             }
             "not=" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("not= operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("not= operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::NotEq(col, val))
             }
             ">" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("> operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("> operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Gt(col, val))
             }
             "<" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("< operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("< operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Lt(col, val))
             }
             ">=" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or(">= operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or(">= operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Gte(col, val))
             }
             "<=" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("<= operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("<= operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Lte(col, val))
             }
             "in" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("in operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("in operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::In(col, val))
             }
             "not-in" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("not-in operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("not-in operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::NotIn(col, val))
             }
             "between" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("between operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("between operator requires column name")?
+                    .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Between(col, val))
             }
             "matches" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("matches operator requires column name")?.to_string();
-                let pattern = arr.get(2).and_then(|v| v.as_str()).ok_or("matches operator requires pattern string")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("matches operator requires column name")?
+                    .to_string();
+                let pattern = arr
+                    .get(2)
+                    .and_then(|v| v.as_str())
+                    .ok_or("matches operator requires pattern string")?
+                    .to_string();
                 Ok(WhereNode::Matches(col, pattern))
             }
             "like" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("like operator requires column name")?.to_string();
-                let pattern = arr.get(2).and_then(|v| v.as_str()).ok_or("like operator requires pattern string")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("like operator requires column name")?
+                    .to_string();
+                let pattern = arr
+                    .get(2)
+                    .and_then(|v| v.as_str())
+                    .ok_or("like operator requires pattern string")?
+                    .to_string();
                 Ok(WhereNode::Like(col, pattern))
             }
             "contains" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("contains operator requires column name")?.to_string();
-                let val = arr.get(2).and_then(|v| v.as_str()).ok_or("contains operator requires search string")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("contains operator requires column name")?
+                    .to_string();
+                let val = arr
+                    .get(2)
+                    .and_then(|v| v.as_str())
+                    .ok_or("contains operator requires search string")?
+                    .to_string();
                 Ok(WhereNode::Contains(col, val))
             }
             "is-null" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("is-null operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("is-null operator requires column name")?
+                    .to_string();
                 Ok(WhereNode::IsNull(col))
             }
             "is-not-null" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("is-not-null operator requires column name")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("is-not-null operator requires column name")?
+                    .to_string();
                 Ok(WhereNode::IsNotNull(col))
             }
             "and" => {
@@ -138,18 +210,39 @@ impl WhereNode {
                 Ok(WhereNode::Not(Box::new(Self::from_value(child)?)))
             }
             "fuzzy" => {
-                let col = arr.get(1).and_then(|v| v.as_str()).ok_or("fuzzy operator requires column name")?.to_string();
-                let term = arr.get(2).and_then(|v| v.as_str()).ok_or("fuzzy operator requires search term")?.to_string();
+                let col = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("fuzzy operator requires column name")?
+                    .to_string();
+                let term = arr
+                    .get(2)
+                    .and_then(|v| v.as_str())
+                    .ok_or("fuzzy operator requires search term")?
+                    .to_string();
                 Ok(WhereNode::Fuzzy(col, term))
             }
             "fts" => {
-                let term = arr.get(1).and_then(|v| v.as_str()).ok_or("fts operator requires search term")?.to_string();
+                let term = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("fts operator requires search term")?
+                    .to_string();
                 Ok(WhereNode::Fts(term))
             }
             "ref-filter" => {
-                let ref_field = arr.get(1).and_then(|v| v.as_str()).ok_or("ref-filter operator requires reference field")?.to_string();
-                let inner = arr.get(2).ok_or("ref-filter operator requires inner condition")?;
-                Ok(WhereNode::RefFilter(ref_field, Box::new(Self::from_value(inner)?)))
+                let ref_field = arr
+                    .get(1)
+                    .and_then(|v| v.as_str())
+                    .ok_or("ref-filter operator requires reference field")?
+                    .to_string();
+                let inner = arr
+                    .get(2)
+                    .ok_or("ref-filter operator requires inner condition")?;
+                Ok(WhereNode::RefFilter(
+                    ref_field,
+                    Box::new(Self::from_value(inner)?),
+                ))
             }
             other => Err(format!("Unsupported WHERE operator: {other}")),
         }
@@ -246,15 +339,17 @@ pub struct AstIr {
 
 impl AstIr {
     pub fn from_value(v: &Value) -> Result<Self, String> {
-        let entity = v.get("entity")
+        let entity = v
+            .get("entity")
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing 'entity' field in AST".to_string())?
             .to_string();
-            
-        let output_cast_str = v.get("output_cast")
+
+        let output_cast_str = v
+            .get("output_cast")
             .and_then(|v| v.as_str())
             .unwrap_or("KPI");
-            
+
         let output_cast = match output_cast_str.to_uppercase().as_str() {
             "KPI" => OutputCast::KPI,
             "TIMESERIES" => OutputCast::TIMESERIES,
@@ -270,10 +365,9 @@ impl AstIr {
             None => None,
         };
 
-        let select = v.get("select")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter().filter_map(|item| {
+        let select = v.get("select").and_then(|v| v.as_array()).map(|arr| {
+            arr.iter()
+                .filter_map(|item| {
                     if let Some(s) = item.as_str() {
                         Some(s.to_string())
                     } else if let Some(obj) = item.as_object() {
@@ -281,35 +375,43 @@ impl AstIr {
                     } else {
                         None
                     }
-                }).collect()
-            });
+                })
+                .collect()
+        });
 
-        let group_by: Option<Vec<Dimension>> = v.get("group_by")
+        let group_by: Option<Vec<Dimension>> = v
+            .get("group_by")
             .or_else(|| v.get("dimensions"))
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let order_by: Option<Vec<OrderByExpr>> = v.get("order_by")
+        let order_by: Option<Vec<OrderByExpr>> = v
+            .get("order_by")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let metrics: Option<Vec<MetricDef>> = v.get("metrics")
+        let metrics: Option<Vec<MetricDef>> = v
+            .get("metrics")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let measures: Option<Vec<MeasureDef>> = v.get("measures")
+        let measures: Option<Vec<MeasureDef>> = v
+            .get("measures")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let semantic_measures: Option<Vec<SemanticMeasureDef>> = v.get("semantic_measures")
+        let semantic_measures: Option<Vec<SemanticMeasureDef>> = v
+            .get("semantic_measures")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let comparisons: Option<Vec<ComparisonDef>> = v.get("comparisons")
+        let comparisons: Option<Vec<ComparisonDef>> = v
+            .get("comparisons")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let hierarchy: Option<HierarchyDef> = v.get("hierarchy")
+        let hierarchy: Option<HierarchyDef> = v
+            .get("hierarchy")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let limit = v.get("limit")
-            .and_then(|v| v.as_u64());
+        let limit = v.get("limit").and_then(|v| v.as_u64());
 
-        let schema: Option<SchemaInfo> = v.get("schema")
+        let schema: Option<SchemaInfo> = v
+            .get("schema")
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
         Ok(Self {

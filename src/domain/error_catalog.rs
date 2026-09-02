@@ -16,27 +16,27 @@ use tracing::info;
 /// Una entrada del catálogo de errores.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ErrorEntry {
-    pub code:             String,
-    pub family:           String,
-    pub stage:            String,
-    pub severity:         String,
-    pub http_status:      u16,
-    pub grpc_status:      String,
-    pub description:      String,
+    pub code: String,
+    pub family: String,
+    pub stage: String,
+    pub severity: String,
+    pub http_status: u16,
+    pub grpc_status: String,
+    pub description: String,
     pub context_required: Vec<String>,
-    pub retryable:        bool,
+    pub retryable: bool,
 }
 
 /// Catálogo completo — cargado una sola vez en bootstrap.
 #[derive(Debug, Deserialize)]
 struct ErrorCatalogRaw {
-    pub version:   String,
-    pub errors:    Vec<ErrorEntry>,
+    pub version: String,
+    pub errors: Vec<ErrorEntry>,
 }
 
 pub struct ErrorCatalog {
     pub version: String,
-    by_code:     HashMap<String, ErrorEntry>,
+    by_code: HashMap<String, ErrorEntry>,
 }
 
 impl std::fmt::Debug for ErrorCatalog {
@@ -59,7 +59,8 @@ impl ErrorCatalog {
             .map_err(|e| format!("ErrorCatalog: TOML parse failed: {e}"))?;
 
         let entry_count = raw.errors.len();
-        let by_code: HashMap<String, ErrorEntry> = raw.errors
+        let by_code: HashMap<String, ErrorEntry> = raw
+            .errors
             .into_iter()
             .map(|e| (e.code.clone(), e))
             .collect();
@@ -70,7 +71,10 @@ impl ErrorCatalog {
             "[ErrorCatalog] Catálogo cargado"
         );
 
-        Ok(ErrorCatalog { version: raw.version, by_code })
+        Ok(ErrorCatalog {
+            version: raw.version,
+            by_code,
+        })
     }
 
     /// Lookup O(1) por código de error.
@@ -106,12 +110,16 @@ pub fn init_global(catalog: ErrorCatalog) {
             panic!("ErrorCatalog: missing definition for canonical code '{canon}' corresponding to ErrorCode::{code:?}");
         }
     }
-    GLOBAL_CATALOG.set(catalog).expect("ErrorCatalog already initialized");
+    GLOBAL_CATALOG
+        .set(catalog)
+        .expect("ErrorCatalog already initialized");
 }
 
 /// Accede al catálogo global (panic si no fue inicializado).
 pub fn global() -> &'static ErrorCatalog {
-    GLOBAL_CATALOG.get().expect("ErrorCatalog not initialized — call init_global() in bootstrap")
+    GLOBAL_CATALOG
+        .get()
+        .expect("ErrorCatalog not initialized — call init_global() in bootstrap")
 }
 
 /// Versión safe para contextos donde el catálogo puede no estar disponible.
@@ -122,4 +130,3 @@ pub fn try_global() -> Option<&'static ErrorCatalog> {
 #[cfg(test)]
 #[path = "tests/error_catalog_tests.rs"]
 mod tests;
-

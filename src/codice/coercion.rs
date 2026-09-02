@@ -1,8 +1,8 @@
 // codice/coercion.rs — Motor centralizado de coerción de tipos para Códice.
 // SRP: Maneja conversiones y normalizaciones seguras de strings/tipos en payloads.
 
-use serde_json::Value;
 use crate::codice::registry::AttrType;
+use serde_json::Value;
 
 /// Coerce un valor JSON individual basándose en su tipo de atributo del Códice.
 /// Retorna Some(nuevo_valor) si se requiere coerción y fue exitosa, o None.
@@ -24,9 +24,9 @@ pub fn coerce_value(val: &Value, attr_type: &AttrType) -> Option<Value> {
         AttrType::Boolean => {
             if let Value::String(s) = val {
                 match s.to_lowercase().as_str() {
-                    "true"  => Some(Value::Bool(true)),
+                    "true" => Some(Value::Bool(true)),
                     "false" => Some(Value::Bool(false)),
-                    _       => None,
+                    _ => None,
                 }
             } else {
                 None
@@ -39,4 +39,3 @@ pub fn coerce_value(val: &Value, attr_type: &AttrType) -> Option<Value> {
 #[cfg(test)]
 #[path = "tests/coercion_tests.rs"]
 mod tests;
-

@@ -87,7 +87,9 @@ pub(crate) fn format_value(v: Option<&Value>) -> String {
 /// Retorna:  'Pump A - 45.2 KW'
 /// [PORTED_FROM: (interpolate template row)]
 pub fn interpolate(template: &str, row: &Value) -> Option<String> {
-    if template.trim().is_empty() { return None; }
+    if template.trim().is_empty() {
+        return None;
+    }
 
     let result = PLACEHOLDER_PATTERN.replace_all(template, |caps: &regex::Captures| {
         let field_str = caps[1].trim();
@@ -103,7 +105,9 @@ pub fn interpolate(template: &str, row: &Value) -> Option<String> {
 /// [PORTED_FROM: (interpolate-rows rows template)]
 #[allow(dead_code)]
 pub fn interpolate_rows(rows: &mut [Value], template: &str) {
-    if template.trim().is_empty() { return; }
+    if template.trim().is_empty() {
+        return;
+    }
 
     for row in rows.iter_mut() {
         if let Some(lbl) = interpolate(template, row) {
@@ -118,9 +122,12 @@ pub fn interpolate_rows(rows: &mut [Value], template: &str) {
 /// [PORTED_FROM: (extract-fields template)]
 #[allow(dead_code)]
 pub fn extract_fields(template: &str) -> Vec<String> {
-    if template.trim().is_empty() { return vec![]; }
-    
-    PLACEHOLDER_PATTERN.captures_iter(template)
+    if template.trim().is_empty() {
+        return vec![];
+    }
+
+    PLACEHOLDER_PATTERN
+        .captures_iter(template)
         .map(|caps| caps[1].trim().to_string())
         .collect()
 }
@@ -142,16 +149,26 @@ mod tests {
         });
 
         // Test normal keys
-        assert_eq!(interpolate("{{asset/name}}", &row), Some("Pump Alpha".to_string()));
+        assert_eq!(
+            interpolate("{{asset/name}}", &row),
+            Some("Pump Alpha".to_string())
+        );
         assert_eq!(interpolate("{{status}}", &row), Some("ACTIVE".to_string()));
 
         // Test dotted path keys (canonical)
-        assert_eq!(interpolate("{{location_id.name}}", &row), Some("Warehouse A".to_string()));
-        assert_eq!(interpolate("{{location_id.id}}", &row), Some("loc-123".to_string()));
+        assert_eq!(
+            interpolate("{{location_id.name}}", &row),
+            Some("Warehouse A".to_string())
+        );
+        assert_eq!(
+            interpolate("{{location_id.id}}", &row),
+            Some("loc-123".to_string())
+        );
 
         // Test dotted path keys (aliased/fallback via coerce_key)
-        assert_eq!(interpolate("{{location_id.name}} - {{status}}", &row), Some("Warehouse A - ACTIVE".to_string()));
+        assert_eq!(
+            interpolate("{{location_id.name}} - {{status}}", &row),
+            Some("Warehouse A - ACTIVE".to_string())
+        );
     }
 }
-
-

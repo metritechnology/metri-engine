@@ -27,11 +27,11 @@ impl ActionType {
     /// Serialización para el stream Kinesis (columna `action_type`).
     pub fn as_str(&self) -> &'static str {
         match self {
-            ActionType::Write          => "WRITE",
-            ActionType::AccessDenied   => "ACCESS_DENIED",
+            ActionType::Write => "WRITE",
+            ActionType::AccessDenied => "ACCESS_DENIED",
             ActionType::QuotaExhausted => "QUOTA_EXHAUSTED",
-            ActionType::WriteError     => "WRITE_ERROR",
-            ActionType::Unknown        => "UNKNOWN",
+            ActionType::WriteError => "WRITE_ERROR",
+            ActionType::Unknown => "UNKNOWN",
         }
     }
 }
@@ -53,14 +53,13 @@ pub fn derive_action_type(succeeded: bool, error_stage: Option<&str>) -> ActionT
     }
 
     match error_stage {
-        Some("cedar") | Some("auth")  => ActionType::AccessDenied,
-        Some("quota")                  => ActionType::QuotaExhausted,
-        Some("janus")                  => ActionType::WriteError,
-        _                              => ActionType::Unknown,
+        Some("cedar") | Some("auth") => ActionType::AccessDenied,
+        Some("quota") => ActionType::QuotaExhausted,
+        Some("janus") => ActionType::WriteError,
+        _ => ActionType::Unknown,
     }
 }
 
 #[cfg(test)]
 #[path = "../tests/action_type_tests.rs"]
 mod tests;
-

@@ -16,7 +16,10 @@ pub fn apply_label_templates(
         } else {
             viz_str.clone()
         };
-        matches!(viz_type.as_str(), "bar" | "line" | "area" | "scatter" | "timeseries")
+        matches!(
+            viz_type.as_str(),
+            "bar" | "line" | "area" | "scatter" | "timeseries"
+        )
     } else {
         false
     };
@@ -81,17 +84,26 @@ pub fn derive_columns(
     dimensions: &[crate::janus::fbs::DimensionDefinitionT],
     metrics: &[crate::janus::fbs::MetricDefinitionT],
 ) -> Vec<Value> {
-    let dim_attrs: Vec<String> = dimensions.iter()
-        .filter_map(|d| d.attribute.clone()).collect();
-    let metric_aliases: Vec<String> = metrics.iter()
+    let dim_attrs: Vec<String> = dimensions
+        .iter()
+        .filter_map(|d| d.attribute.clone())
+        .collect();
+    let metric_aliases: Vec<String> = metrics
+        .iter()
         .map(|m| {
             m.name.clone().unwrap_or_else(|| {
                 let agg = match m.aggregation.0 {
-                    1 => "count", 2 => "sum", 3 => "avg", 4 => "min", 5 => "max", _ => "agg",
+                    1 => "count",
+                    2 => "sum",
+                    3 => "avg",
+                    4 => "min",
+                    5 => "max",
+                    _ => "agg",
                 };
                 format!("{}_{}", agg, m.attribute.as_deref().unwrap_or("total"))
             })
-        }).collect();
+        })
+        .collect();
     crate::aegis::oltp::aggregation::derive_columns(rows, &dim_attrs, &metric_aliases)
 }
 

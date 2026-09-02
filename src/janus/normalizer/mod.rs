@@ -1,15 +1,15 @@
-pub mod helpers;
-pub mod strategy;
-pub mod query;
 pub mod bulk;
-pub mod transaction;
 pub mod discovery;
 pub mod explore;
+pub mod helpers;
 pub mod match_rules;
+pub mod query;
+pub mod strategy;
+pub mod transaction;
 
-use serde_json::{json, Value};
-use self::strategy::NormalizerStrategy;
 use self::helpers::{ensure_status, infer_viz_type};
+use self::strategy::NormalizerStrategy;
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseType {
@@ -29,16 +29,26 @@ impl ResponseType {
     pub fn infer(body: &Value) -> Self {
         let obj = match body.as_object() {
             Some(o) => o,
-            None    => return ResponseType::Default,
+            None => return ResponseType::Default,
         };
-        if obj.contains_key("ingested_count") || obj.contains_key("outbox_count") ||
-                  obj.get("result").and_then(|r| r.get("ingested_count")).is_some() {
+        if obj.contains_key("ingested_count")
+            || obj.contains_key("outbox_count")
+            || obj
+                .get("result")
+                .and_then(|r| r.get("ingested_count"))
+                .is_some()
+        {
             ResponseType::Bulk
-        } else if obj.contains_key("entity_id") || obj.contains_key("entity-id") ||
-                  obj.get("result").and_then(|r| r.get("entity_id")).is_some() ||
-                  obj.get("result").and_then(|r| r.get("entity-id")).is_some() {
+        } else if obj.contains_key("entity_id")
+            || obj.contains_key("entity-id")
+            || obj.get("result").and_then(|r| r.get("entity_id")).is_some()
+            || obj.get("result").and_then(|r| r.get("entity-id")).is_some()
+        {
             ResponseType::Transaction
-        } else if obj.contains_key("data") || obj.contains_key("viz-ext") || obj.contains_key("query_key") {
+        } else if obj.contains_key("data")
+            || obj.contains_key("viz-ext")
+            || obj.contains_key("query_key")
+        {
             ResponseType::Query
         } else if obj.contains_key("schemas") {
             ResponseType::Discovery
@@ -65,7 +75,10 @@ pub fn normalize_response(body: &Value, response_type: ResponseType) -> Value {
         body = json!({"raw": body});
     }
 
-    let success = !body.as_object().map(|o| o.contains_key("code")).unwrap_or(false);
+    let success = !body
+        .as_object()
+        .map(|o| o.contains_key("code"))
+        .unwrap_or(false);
 
     // SOLID: Dispatch to dedicated strategies
     match response_type {

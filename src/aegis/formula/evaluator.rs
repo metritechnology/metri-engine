@@ -2,10 +2,10 @@
 // ISP: Solo expone evaluate(). No conoce parseo ni compilación SQL.
 // DIP: Depende de traits (VariableResolver, FormulaFunction), NO de implementaciones concretas.
 
-use crate::aegis::formula::token::{Token, Operator};
-use crate::aegis::formula::resolver::VariableResolver;
-use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::errors::FormulaError;
+use crate::aegis::formula::functions_registry::FunctionRegistry;
+use crate::aegis::formula::resolver::VariableResolver;
+use crate::aegis::formula::token::{Operator, Token};
 
 pub struct FormulaEvaluator {
     rpn_tokens: Vec<Token>,
@@ -36,8 +36,7 @@ impl FormulaEvaluator {
 
                 Token::Operator(op) => {
                     if matches!(op, Operator::Neg) {
-                        let operand = stack.pop()
-                            .ok_or(FormulaError::EmptyFormula)?;
+                        let operand = stack.pop().ok_or(FormulaError::EmptyFormula)?;
                         stack.push(-operand);
                     } else {
                         let right = stack.pop().ok_or(FormulaError::EmptyFormula)?;
@@ -47,10 +46,18 @@ impl FormulaEvaluator {
                             Operator::Sub => left - right,
                             Operator::Mul => left * right,
                             Operator::Div => {
-                                if right == 0.0 { f64::NAN } else { left / right }
+                                if right == 0.0 {
+                                    f64::NAN
+                                } else {
+                                    left / right
+                                }
                             }
                             Operator::Mod => {
-                                if right == 0.0 { f64::NAN } else { left % right }
+                                if right == 0.0 {
+                                    f64::NAN
+                                } else {
+                                    left % right
+                                }
                             }
                             Operator::Power => left.powf(right),
                             Operator::Neg => unreachable!(),
@@ -60,10 +67,9 @@ impl FormulaEvaluator {
                 }
 
                 Token::Function(name, arity) => {
-                    let func = functions.get(name)
-                        .ok_or_else(|| FormulaError::UnknownFunction {
-                            name: name.clone()
-                        })?;
+                    let func = functions
+                        .get(name)
+                        .ok_or_else(|| FormulaError::UnknownFunction { name: name.clone() })?;
 
                     // Validar aridad si la función no es variádica
                     if let Some(expected) = func.arity() {

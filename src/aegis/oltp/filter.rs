@@ -5,8 +5,8 @@
 use serde_json::Value;
 use tracing::warn;
 
-use crate::janus::fbs::{FilterNodeT, FilterOperator};
 use crate::aegis::oltp::fuzzy::{fuzzy_match, remove_accents};
+use crate::janus::fbs::{FilterNodeT, FilterOperator};
 
 /// Evalúa un FilterNodeT sobre un row JSON. Retorna true si el row pasa.
 ///
@@ -30,65 +30,127 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
         }
 
         if bare_field == "status" {
-            println!("[DEBUG FILTER] field={}, bare_field={}, row_val={:?}, row={}", field, bare_field, row_val, row);
+            println!(
+                "[DEBUG FILTER] field={}, bare_field={}, row_val={:?}, row={}",
+                field, bare_field, row_val, row
+            );
         }
 
         let op = crit.op_ref;
         let fv = crit.value.as_deref();
 
         match op {
-            FilterOperator::EQ => {
-                match (row_val, fv) {
-                    (Some(Value::String(s)), Some(fv)) if fv.string_val.is_some() =>
-                        s == fv.string_val.as_deref().unwrap_or(""),
-                    (Some(Value::Number(n)), Some(fv)) => {
-                        let rv = n.as_f64().unwrap_or(0.0);
-                        let fval = if fv.timestamp_val != 0 { fv.timestamp_val as f64 } else { fv.number_val };
-                        rv == fval
-                    }
-                    (Some(Value::Bool(b)), Some(fv)) =>
-                        *b == fv.bool_val,
-                    _ => false,
+            FilterOperator::EQ => match (row_val, fv) {
+                (Some(Value::String(s)), Some(fv)) if fv.string_val.is_some() => {
+                    s == fv.string_val.as_deref().unwrap_or("")
                 }
-            }
-            FilterOperator::NEQ => !eval_filter_node(row, &FilterNodeT {
-                criteria: Some(Box::new(crate::janus::fbs::FilterCriteriaT {
-                    field: crit.field.clone(),
-                    value: crit.value.clone(),
-                    op_ref: FilterOperator::EQ,
-                })),
-                group: None,
-            }),
+                (Some(Value::Number(n)), Some(fv)) => {
+                    let rv = n.as_f64().unwrap_or(0.0);
+                    let fval = if fv.timestamp_val != 0 {
+                        fv.timestamp_val as f64
+                    } else {
+                        fv.number_val
+                    };
+                    rv == fval
+                }
+                (Some(Value::Bool(b)), Some(fv)) => *b == fv.bool_val,
+                _ => false,
+            },
+            FilterOperator::NEQ => !eval_filter_node(
+                row,
+                &FilterNodeT {
+                    criteria: Some(Box::new(crate::janus::fbs::FilterCriteriaT {
+                        field: crit.field.clone(),
+                        value: crit.value.clone(),
+                        op_ref: FilterOperator::EQ,
+                    })),
+                    group: None,
+                },
+            ),
             FilterOperator::GT => {
-                let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::NEG_INFINITY);
-                let fval = fv.map(|v| if v.timestamp_val != 0 { v.timestamp_val as f64 } else { v.number_val }).unwrap_or(0.0);
+                let rv = row_val
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(f64::NEG_INFINITY);
+                let fval = fv
+                    .map(|v| {
+                        if v.timestamp_val != 0 {
+                            v.timestamp_val as f64
+                        } else {
+                            v.number_val
+                        }
+                    })
+                    .unwrap_or(0.0);
                 rv > fval
             }
             FilterOperator::GTE => {
-                let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::NEG_INFINITY);
-                let fval = fv.map(|v| if v.timestamp_val != 0 { v.timestamp_val as f64 } else { v.number_val }).unwrap_or(0.0);
+                let rv = row_val
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(f64::NEG_INFINITY);
+                let fval = fv
+                    .map(|v| {
+                        if v.timestamp_val != 0 {
+                            v.timestamp_val as f64
+                        } else {
+                            v.number_val
+                        }
+                    })
+                    .unwrap_or(0.0);
                 rv >= fval
             }
             FilterOperator::LT => {
                 let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::INFINITY);
-                let fval = fv.map(|v| if v.timestamp_val != 0 { v.timestamp_val as f64 } else { v.number_val }).unwrap_or(0.0);
+                let fval = fv
+                    .map(|v| {
+                        if v.timestamp_val != 0 {
+                            v.timestamp_val as f64
+                        } else {
+                            v.number_val
+                        }
+                    })
+                    .unwrap_or(0.0);
                 rv < fval
             }
             FilterOperator::LTE => {
                 let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::INFINITY);
-                let fval = fv.map(|v| if v.timestamp_val != 0 { v.timestamp_val as f64 } else { v.number_val }).unwrap_or(0.0);
+                let fval = fv
+                    .map(|v| {
+                        if v.timestamp_val != 0 {
+                            v.timestamp_val as f64
+                        } else {
+                            v.number_val
+                        }
+                    })
+                    .unwrap_or(0.0);
                 rv <= fval
             }
             FilterOperator::IS_NULL => row_val.map(|v| v.is_null()).unwrap_or(true),
             FilterOperator::IS_NOT_NULL => row_val.map(|v| !v.is_null()).unwrap_or(false),
             FilterOperator::CONTAINS => {
-                let rv = remove_accents(&row_val.and_then(|v| v.as_str()).unwrap_or("").to_lowercase());
-                let pattern = remove_accents(&fv.and_then(|v| v.string_val.as_deref()).unwrap_or("").to_lowercase());
+                let rv = remove_accents(
+                    &row_val
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_lowercase(),
+                );
+                let pattern = remove_accents(
+                    &fv.and_then(|v| v.string_val.as_deref())
+                        .unwrap_or("")
+                        .to_lowercase(),
+                );
                 rv.contains(&pattern)
             }
             FilterOperator::LIKE => {
-                let rv = remove_accents(&row_val.and_then(|v| v.as_str()).unwrap_or("").to_lowercase());
-                let pattern = remove_accents(&fv.and_then(|v| v.string_val.as_deref()).unwrap_or("").to_lowercase());
+                let rv = remove_accents(
+                    &row_val
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_lowercase(),
+                );
+                let pattern = remove_accents(
+                    &fv.and_then(|v| v.string_val.as_deref())
+                        .unwrap_or("")
+                        .to_lowercase(),
+                );
                 // Convertir % a wildcard básico
                 let regex_pat = pattern.replace('%', ".*").replace('_', ".");
                 regex::Regex::new(&format!("^{regex_pat}$"))
@@ -134,14 +196,22 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
                             if values.len() >= 2 {
                                 let lo_val = &values[0];
                                 let hi_val = &values[1];
-                                
+
                                 let rv = row_val.and_then(|v| v.as_f64()).unwrap_or(f64::NAN);
                                 if !rv.is_nan() {
-                                    let lo = if lo_val.timestamp_val != 0 { lo_val.timestamp_val as f64 } else { lo_val.number_val };
-                                    let hi = if hi_val.timestamp_val != 0 { hi_val.timestamp_val as f64 } else { hi_val.number_val };
+                                    let lo = if lo_val.timestamp_val != 0 {
+                                        lo_val.timestamp_val as f64
+                                    } else {
+                                        lo_val.number_val
+                                    };
+                                    let hi = if hi_val.timestamp_val != 0 {
+                                        hi_val.timestamp_val as f64
+                                    } else {
+                                        hi_val.number_val
+                                    };
                                     return rv >= lo && rv <= hi;
                                 }
-                                
+
                                 let rv_str = row_val.and_then(|v| v.as_str()).unwrap_or("");
                                 if !rv_str.is_empty() {
                                     let lo_str = lo_val.string_val.as_deref().unwrap_or("");
@@ -160,7 +230,10 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
                 fuzzy_match(rv, term)
             }
             _ => {
-                warn!("[Aegis Agg] Operador de filtro no soportado in-memory: {:?}", op);
+                warn!(
+                    "[Aegis Agg] Operador de filtro no soportado in-memory: {:?}",
+                    op
+                );
                 true // pass-through defensivo
             }
         }
@@ -169,11 +242,13 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
         let conjunction = group.conjunction.0;
         let nodes = group.nodes.as_deref().unwrap_or(&[]);
 
-        if nodes.is_empty() { return true; }
+        if nodes.is_empty() {
+            return true;
+        }
 
         match conjunction {
-            1 => nodes.iter().all(|n| eval_filter_node(row, n)),  // AND
-            2 => nodes.iter().any(|n| eval_filter_node(row, n)),  // OR
+            1 => nodes.iter().all(|n| eval_filter_node(row, n)), // AND
+            2 => nodes.iter().any(|n| eval_filter_node(row, n)), // OR
             _ => true,
         }
     } else {

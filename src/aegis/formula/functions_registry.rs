@@ -1,8 +1,8 @@
 // aegis/formula/functions_registry.rs — Registro dinámico de funciones.
 // OCP: Nuevas funciones se REGISTRAN sin modificar el evaluador ni el parser.
 
-use std::collections::HashMap;
 use crate::aegis::formula::functions::FormulaFunction;
+use std::collections::HashMap;
 
 pub struct FunctionRegistry {
     functions: HashMap<String, Box<dyn FormulaFunction>>,
@@ -12,7 +12,9 @@ impl FunctionRegistry {
     /// Crea el registro con todas las funciones estándar del catálogo.
     pub fn standard() -> Self {
         use crate::aegis::formula::functions::*;
-        let mut reg = Self { functions: HashMap::new() };
+        let mut reg = Self {
+            functions: HashMap::new(),
+        };
         reg.register(Box::new(AbsFunction));
         reg.register(Box::new(RoundFunction));
         reg.register(Box::new(CeilFunction));

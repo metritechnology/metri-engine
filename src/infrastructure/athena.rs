@@ -21,31 +21,38 @@ use crate::domain::protocols::{IQueryEngine, QueryResults};
 /// Motor de consultas Athena.
 /// [PORTED_FROM: (defrecord AthenaQueryEngine [^AthenaClient client workgroup output-location])]
 pub struct AthenaQueryEngine {
-    client:          Client,
-    workgroup:       String,
+    client: Client,
+    workgroup: String,
     output_location: String,
-    database:        String,
+    database: String,
 }
 
 impl AthenaQueryEngine {
     /// Constructor desde configuración del entorno.
     /// [PORTED_FROM: ig/init-key :infra/athena]
     pub async fn new(
-        workgroup:       impl Into<String>,
+        workgroup: impl Into<String>,
         output_location: impl Into<String>,
-        database:        impl Into<String>,
+        database: impl Into<String>,
     ) -> Self {
-        let region_provider = aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
+        let region_provider =
+            aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
         let config = aws_config::from_env().region(region_provider).load().await;
 
         let client = if let Ok(endpoint_url) = std::env::var("AWS_ENDPOINT_URL") {
-            info!("[Athena] Usando endpoint override de AWS_ENDPOINT_URL: {}", endpoint_url);
+            info!(
+                "[Athena] Usando endpoint override de AWS_ENDPOINT_URL: {}",
+                endpoint_url
+            );
             let athena_config = aws_sdk_athena::config::Builder::from(&config)
                 .endpoint_url(endpoint_url)
                 .build();
             Client::from_conf(athena_config)
         } else if let Ok(endpoint_url) = std::env::var("ATHENA_ENDPOINT") {
-            info!("[Athena] Usando endpoint override de ATHENA_ENDPOINT: {}", endpoint_url);
+            info!(
+                "[Athena] Usando endpoint override de ATHENA_ENDPOINT: {}",
+                endpoint_url
+            );
             let athena_config = aws_sdk_athena::config::Builder::from(&config)
                 .endpoint_url(endpoint_url)
                 .build();
@@ -58,9 +65,9 @@ impl AthenaQueryEngine {
         info!("[Athena] cliente activo | workgroup: {wg}");
         AthenaQueryEngine {
             client,
-            workgroup:       wg,
+            workgroup: wg,
             output_location: output_location.into(),
-            database:        database.into(),
+            database: database.into(),
         }
     }
 }
@@ -70,7 +77,11 @@ impl IQueryEngine for AthenaQueryEngine {
     /// Inicia una query asíncrona y retorna el execution_id.
     /// [PORTED_FROM: (start-query! [_ sql database])]
     async fn start_query(&self, sql: &str, database: &str) -> Result<String, DomainError> {
-        let db = if database.is_empty() { &self.database } else { database };
+        let db = if database.is_empty() {
+            &self.database
+        } else {
+            database
+        };
 
         let resp = self
             .client
@@ -89,10 +100,13 @@ impl IQueryEngine for AthenaQueryEngine {
             .work_group(&self.workgroup)
             .send()
             .await
-            .map_err(|e| DomainError::aegis(ErrorCode::Aeg002, format!("Athena start_query falló: {e}")))?;
+            .map_err(|e| {
+                DomainError::aegis(ErrorCode::Aeg002, format!("Athena start_query falló: {e}"))
+            })?;
 
-        let execution_id = resp.query_execution_id
-            .ok_or_else(|| DomainError::aegis(ErrorCode::Aeg002, "Sin execution_id en respuesta Athena"))?;
+        let execution_id = resp.query_execution_id.ok_or_else(|| {
+            DomainError::aegis(ErrorCode::Aeg002, "Sin execution_id en respuesta Athena")
+        })?;
 
         Ok(execution_id)
     }
@@ -157,9 +171,12 @@ impl IQueryEngine for AthenaQueryEngine {
             .query_execution_id(execution_id)
             .send()
             .await
-            .map_err(|e| DomainError::aegis(ErrorCode::Aeg004, format!("get_query_results falló: {e}")))?;
+            .map_err(|e| {
+                DomainError::aegis(ErrorCode::Aeg004, format!("get_query_results falló: {e}"))
+            })?;
 
-        let result_set = results_resp.result_set
+        let result_set = results_resp
+            .result_set
             .ok_or_else(|| DomainError::aegis(ErrorCode::Aeg004, "Sin result_set en respuesta"))?;
 
         // Extraer nombres de columnas desde el header (primera fila)
@@ -170,13 +187,9 @@ impl IQueryEngine for AthenaQueryEngine {
             .map(|m| m.column_info())
             .unwrap_or_default();
 
-        let columns: Vec<String> = col_infos.iter()
-            .map(|c| c.name().to_string())
-            .collect();
+        let columns: Vec<String> = col_infos.iter().map(|c| c.name().to_string()).collect();
 
-        let col_types: Vec<&str> = col_infos.iter()
-            .map(|c| c.r#type())
-            .collect();
+        let col_types: Vec<&str> = col_infos.iter().map(|c| c.r#type()).collect();
 
         // Parsear filas omitiendo el header (primera fila de Athena = header)
         // [PORTED_FROM: (rest (.rows rs))]
@@ -210,22 +223,22 @@ fn coerce_athena_value(raw: &str, col_type: &str) -> Value {
     }
     match col_type.to_lowercase().as_str() {
         // Enteros
-        "integer" | "int" | "tinyint" | "smallint" | "bigint" => {
-            raw.parse::<i64>().map(Value::from).unwrap_or_else(|_| Value::String(raw.to_string()))
-        }
+        "integer" | "int" | "tinyint" | "smallint" | "bigint" => raw
+            .parse::<i64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| Value::String(raw.to_string())),
         // Decimales
-        "double" | "float" | "real" | "decimal" | "numeric" => {
-            raw.parse::<f64>().map(Value::from).unwrap_or_else(|_| Value::String(raw.to_string()))
-        }
+        "double" | "float" | "real" | "decimal" | "numeric" => raw
+            .parse::<f64>()
+            .map(Value::from)
+            .unwrap_or_else(|_| Value::String(raw.to_string())),
         // Boolean
         "boolean" => Value::Bool(raw.eq_ignore_ascii_case("true")),
         // Timestamps → epoch segundos (entero)
         // [PORTED_FROM: (temporal/parse-athena-ts s)]
-        "timestamp" | "date" => {
-            parse_athena_timestamp(raw)
-                .map(Value::from)
-                .unwrap_or_else(|| Value::String(raw.to_string()))
-        }
+        "timestamp" | "date" => parse_athena_timestamp(raw)
+            .map(Value::from)
+            .unwrap_or_else(|| Value::String(raw.to_string())),
         // Strings
         _ => Value::String(raw.to_string()),
     }

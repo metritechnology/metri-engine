@@ -2,12 +2,12 @@
 // SRP: Validador estructural y semántico de payloads JSON contra los modelos Códice.
 // Reemplaza la funcionalidad de `malli.clj` y `api.clj` (`validate-payload`) de Clojure.
 
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 use tracing::{error, info, warn};
 
+use crate::codice::registry::{AttrType, EntityModel};
 use crate::domain::errors::{DomainError, ErrorCode};
-use crate::codice::registry::{EntityModel, AttrType};
 use crate::eav::types::datom::DatomValue;
 
 /// Valida un payload JSON contra el modelo de la entidad y convierte los valores a DatomValue.
@@ -20,7 +20,10 @@ pub fn validate_payload(
     let obj = payload.as_object().ok_or_else(|| {
         DomainError::codice(
             ErrorCode::Cod001,
-            format!("Payload para '{}' no es un objeto JSON válido", model.entity),
+            format!(
+                "Payload para '{}' no es un objeto JSON válido",
+                model.entity
+            ),
         )
     })?;
 
@@ -29,12 +32,14 @@ pub fn validate_payload(
 
     for attr_desc in &model.attributes {
         let attr_name = &attr_desc.name;
-        
+
         match obj.get(attr_name) {
             Some(val) => {
                 if !val.is_null() {
                     // X-01: Validar enum options
-                    if matches!(attr_desc.attr_type, AttrType::Enum) && !attr_desc.options.is_empty() {
+                    if matches!(attr_desc.attr_type, AttrType::Enum)
+                        && !attr_desc.options.is_empty()
+                    {
                         if let Some(s) = val.as_str() {
                             if !attr_desc.options.iter().any(|o| o == s) {
                                 violations.push(format!(
@@ -58,7 +63,10 @@ pub fn validate_payload(
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("Expresión regular inválida en modelo para campo '{}': {}", attr_name, e);
+                                    warn!(
+                                        "Expresión regular inválida en modelo para campo '{}': {}",
+                                        attr_name, e
+                                    );
                                 }
                             }
                         }
@@ -85,7 +93,11 @@ pub fn validate_payload(
     }
 
     if !violations.is_empty() {
-        warn!("[Codice Validator] {} violaciones para la entidad {}", violations.len(), model.entity);
+        warn!(
+            "[Codice Validator] {} violaciones para la entidad {}",
+            violations.len(),
+            model.entity
+        );
         return Err(DomainError::codice(
             ErrorCode::Cod001,
             format!("Violaciones de validación: {}", violations.join(" | ")),
@@ -97,11 +109,10 @@ pub fn validate_payload(
 
 pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValue, String> {
     match attr_type {
-        AttrType::String | AttrType::Enum => {
-            val.as_str()
-                .map(|s| DatomValue::Str(s.to_string()))
-                .ok_or_else(|| "Debe ser un texto (string)".to_string())
-        }
+        AttrType::String | AttrType::Enum => val
+            .as_str()
+            .map(|s| DatomValue::Str(s.to_string()))
+            .ok_or_else(|| "Debe ser un texto (string)".to_string()),
         AttrType::Number | AttrType::Decimal => {
             if matches!(attr_type, AttrType::Number) {
                 if let Some(i) = val.as_i64() {
@@ -132,11 +143,10 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
                 Err("Debe ser un número entero (epoch ms)".to_string())
             }
         }
-        AttrType::Boolean => {
-            val.as_bool()
-                .map(DatomValue::Bool)
-                .ok_or_else(|| "Debe ser un booleano (true/false)".to_string())
-        }
+        AttrType::Boolean => val
+            .as_bool()
+            .map(DatomValue::Bool)
+            .ok_or_else(|| "Debe ser un booleano (true/false)".to_string()),
         AttrType::Array => {
             if let Some(arr) = val.as_array() {
                 let mut vec = Vec::new();
@@ -166,27 +176,23 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
             } else {
                 val.as_str()
                     .map(|s| DatomValue::Str(s.to_string()))
-                    .ok_or_else(|| "Referencia debe ser un string o un arreglo de strings".to_string())
+                    .ok_or_else(|| {
+                        "Referencia debe ser un string o un arreglo de strings".to_string()
+                    })
             }
         }
-        AttrType::Uuid => {
-            val.as_str()
-                .map(|s| DatomValue::Uuid(s.to_string()))
-                .ok_or_else(|| "Debe ser un UUID válido".to_string())
-        }
+        AttrType::Uuid => val
+            .as_str()
+            .map(|s| DatomValue::Uuid(s.to_string()))
+            .ok_or_else(|| "Debe ser un UUID válido".to_string()),
         AttrType::Bytes => {
             Err("Mapeo de Bytes no implementado directamente desde JSON".to_string())
         }
-        AttrType::Json => {
-            Ok(DatomValue::Str(val.to_string()))
-        }
-        AttrType::Unknown(u) => {
-            Err(format!("Tipo desconocido en esquema: {}", u))
-        }
+        AttrType::Json => Ok(DatomValue::Str(val.to_string())),
+        AttrType::Unknown(u) => Err(format!("Tipo desconocido en esquema: {}", u)),
     }
 }
 
 #[cfg(test)]
 #[path = "tests/validator_tests.rs"]
 mod tests;
-

@@ -93,7 +93,9 @@ impl QuotaUsageOverlay {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        if period_key.is_empty() || crate::quota::resolver::covers(period_key, chrono::Utc::now().date_naive()) {
+        if period_key.is_empty()
+            || crate::quota::resolver::covers(period_key, chrono::Utc::now().date_naive())
+        {
             return Some(id.to_string());
         }
 
@@ -104,7 +106,12 @@ impl QuotaUsageOverlay {
             .unwrap_or("");
 
         match crate::quota::resolver::renewed_period(estrategia, chrono::Utc::now().date_naive()) {
-            Some(actual) if period_key.split('_').next().is_some_and(|i| i < actual.as_str()) => {
+            Some(actual)
+                if period_key
+                    .split('_')
+                    .next()
+                    .is_some_and(|i| i < actual.as_str()) =>
+            {
                 Some(format!("{id}#{actual}"))
             }
             _ => Some(id.to_string()),
@@ -145,8 +152,12 @@ impl RowOverlay for QuotaUsageOverlay {
         };
 
         for row in rows.iter_mut() {
-            let Some(key) = Self::usage_key(row) else { continue };
-            let Some(id) = Self::counter_id(row) else { continue };
+            let Some(key) = Self::usage_key(row) else {
+                continue;
+            };
+            let Some(id) = Self::counter_id(row) else {
+                continue;
+            };
             // Sin contador todavía: el valor guardado es el bueno, es el que
             // `try_debit` usará como semilla.
             let Some(uso) = usos.get(&id) else { continue };

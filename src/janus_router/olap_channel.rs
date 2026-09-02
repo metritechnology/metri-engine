@@ -17,9 +17,9 @@
 // La coerción de tipos usa AttrType del Códice para garantizar que los campos
 // numéricos (epoch/number/decimal) sean nativos al serializarse en Parquet/Iceberg.
 
-use serde_json::{json, Value};
-use tracing::{info, warn, error};
 use chrono::Utc;
+use serde_json::{json, Value};
+use tracing::{error, info, warn};
 
 use crate::codice::global as codice_global;
 use crate::codice::registry::AttrType;
@@ -28,8 +28,8 @@ use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
 use crate::janus_router::ulid;
 
-use std::sync::Arc;
 use crate::domain::protocols::IStreamWriter;
+use std::sync::Arc;
 
 // ── OlapChannel ───────────────────────────────────────────────────────────────
 
@@ -45,7 +45,10 @@ impl OlapChannel {
     pub fn new(stream_prefix: impl Into<String>, stream_writer: Arc<dyn IStreamWriter>) -> Self {
         let stream_prefix = stream_prefix.into();
         info!("[OlapChannel] Columnar Nativo activo | prefix: {stream_prefix}");
-        Self { stream_prefix, stream_writer }
+        Self {
+            stream_prefix,
+            stream_writer,
+        }
     }
 
     /// Nombre del stream Firehose para la entidad.
@@ -64,7 +67,7 @@ impl IWriteChannel for OlapChannel {
     /// [PORTED_FROM: (route [_ ctx] ...)]
     async fn route(&self, ctx: IopContext) -> Result<Value, DomainError> {
         let entity_type = &ctx.entity_type;
-        let tenant_id   = &ctx.tenant_id;
+        let tenant_id = &ctx.tenant_id;
 
         // Guard: rpc Transact (data = nil) → JNS_OLAP_001
         // [PORTED_FROM: (if (nil? data) (errors/error :JNS_OLAP_001 ...))]
@@ -89,11 +92,11 @@ impl IWriteChannel for OlapChannel {
             .unwrap_or_default();
 
         let stream_name = self.stream_name(entity_type);
-        let created_at  = Utc::now().timestamp_millis();
+        let created_at = Utc::now().timestamp_millis();
 
         // Lookup atributos del Códice para coerción de tipos.
         // [PORTED_FROM: (codice/describe-attributes entity-type ctx)]
-        let registry   = codice_global();
+        let registry = codice_global();
         let attributes = registry.get_attributes(entity_type);
 
         info!(
@@ -104,11 +107,11 @@ impl IWriteChannel for OlapChannel {
         );
 
         let mut ingested = 0usize;
-        
+
         // Procesar en chunks de 50 para evitar saturar el pool de conexiones del servidor LocalStack/AWS
         for chunk in records.chunks(50) {
             let mut tasks = Vec::new();
-            
+
             for record in chunk {
                 let record_ulid = ulid::generate();
 
@@ -129,7 +132,9 @@ impl IWriteChannel for OlapChannel {
                 let writer = Arc::clone(&self.stream_writer);
                 let stream_name_clone = stream_name.clone();
                 tasks.push(async move {
-                    writer.put_record(&stream_name_clone, &record_ulid, payload_bytes).await
+                    writer
+                        .put_record(&stream_name_clone, &record_ulid, payload_bytes)
+                        .await
                 });
             }
 
@@ -169,11 +174,15 @@ impl IWriteChannel for OlapChannel {
 ///
 /// [PORTED_FROM: (defn- coerce-numeric-fields [record attributes])]
 fn coerce_numeric_fields(
-    record:     Value,
+    record: Value,
     attributes: Option<&[crate::codice::registry::AttributeDescriptor]>,
 ) -> Value {
-    let Some(attrs) = attributes else { return record; };
-    let Some(obj)   = record.as_object() else { return record; };
+    let Some(attrs) = attributes else {
+        return record;
+    };
+    let Some(obj) = record.as_object() else {
+        return record;
+    };
 
     let mut out = obj.clone();
 
@@ -200,15 +209,15 @@ fn coerce_numeric_fields(
 fn decorate_record(record: Value, tenant_id: &str, created_at: i64, record_ulid: &str) -> Value {
     let mut obj = match record {
         Value::Object(m) => m,
-        other            => {
+        other => {
             let mut m = serde_json::Map::new();
             m.insert("_raw".to_string(), other);
             m
         }
     };
 
-    obj.insert("id".to_string(),         Value::String(record_ulid.to_string()));
-    obj.insert("_tenant".to_string(),    Value::String(tenant_id.to_string()));
+    obj.insert("id".to_string(), Value::String(record_ulid.to_string()));
+    obj.insert("_tenant".to_string(), Value::String(tenant_id.to_string()));
     obj.insert("created_at".to_string(), Value::Number(created_at.into()));
 
     Value::Object(obj)

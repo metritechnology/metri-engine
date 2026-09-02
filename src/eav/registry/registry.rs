@@ -2,17 +2,17 @@
 // AttributeRegistry — O(1) lookup por id o nombre.
 // Blueprint: Metri EAV §MÓDULO 2
 
-use std::collections::HashMap;
 use super::descriptor::AttributeDescriptor;
+use std::collections::HashMap;
 
 /// Registry compilado en bootstrap desde los modelos JSON del Códice.
 /// Inmutable durante el ciclo de vida de la Lambda.
 #[derive(Debug, Clone)]
 pub struct AttributeRegistry {
     /// by_id[attr_id] = descriptor (O(1) lookup)
-    by_id:     Vec<Option<AttributeDescriptor>>,
+    by_id: Vec<Option<AttributeDescriptor>>,
     /// "entity/attr" → attr_id
-    by_name:   HashMap<String, u16>,
+    by_name: HashMap<String, u16>,
     /// "work_order" → [attr_id1, attr_id2, ...]
     by_entity: HashMap<String, Vec<u16>>,
 }
@@ -20,8 +20,8 @@ pub struct AttributeRegistry {
 impl AttributeRegistry {
     pub fn new() -> Self {
         AttributeRegistry {
-            by_id:     vec![None; 65536],
-            by_name:   HashMap::new(),
+            by_id: vec![None; 65536],
+            by_name: HashMap::new(),
             by_entity: HashMap::new(),
         }
     }
@@ -54,15 +54,13 @@ impl AttributeRegistry {
     pub fn attrs_for_entity(&self, entity_type: &str) -> Vec<&AttributeDescriptor> {
         self.by_entity
             .get(entity_type)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.get_by_id(*id))
-                    .collect()
-            })
+            .map(|ids| ids.iter().filter_map(|id| self.get_by_id(*id)).collect())
             .unwrap_or_default()
     }
 }
 
 impl Default for AttributeRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

@@ -1,8 +1,11 @@
-use crate::aegis::oltp::comparison::*;
 use crate::aegis::oltp::aggregation::apply_metrics_fbs;
-use crate::janus::fbs::{MetricDefinitionT, AggregationFunction, AnalyticalComparisonT, AnalyticalComparison_ComparisonType};
+use crate::aegis::oltp::comparison::*;
+use crate::janus::fbs::{
+    AggregationFunction, AnalyticalComparisonT, AnalyticalComparison_ComparisonType,
+    MetricDefinitionT,
+};
 use crate::temporal::core::TimeRange;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 fn make_row(created_at: i64, value: f64) -> Value {
     json!({ "created_at": created_at, "revenue": value })
@@ -40,17 +43,25 @@ fn test_time_shift_relative() {
         make_row(now - 12 * 86400, 80.0), // prev
     ];
     let metric = make_metric("revenue", "sum_revenue");
-    let tf = TimeRange { start_ts: Some(cs), end_ts: Some(ce) };
+    let tf = TimeRange {
+        start_ts: Some(cs),
+        end_ts: Some(ce),
+    };
 
     // Métricas actuales (período principal)
-    let current_rows: Vec<Value> = rows.iter()
+    let current_rows: Vec<Value> = rows
+        .iter()
         .filter(|r| {
             let ts = r["created_at"].as_i64().unwrap_or(0);
             ts >= cs && ts <= ce
         })
-        .cloned().collect();
+        .cloned()
+        .collect();
     let current_m = apply_metrics_fbs(&current_rows, &[metric.clone()]);
-    let current_map = match current_m { Value::Object(m) => m, _ => panic!("expected object") };
+    let current_map = match current_m {
+        Value::Object(m) => m,
+        _ => panic!("expected object"),
+    };
 
     let comp = AnalyticalComparisonT {
         type_: AnalyticalComparison_ComparisonType::TIME_SHIFT_RELATIVE,
@@ -62,10 +73,19 @@ fn test_time_shift_relative() {
 
     let result = run_comparisons(&rows, &[metric], &[comp], Some(&tf), current_map, "UTC");
 
-    assert!(result.contains_key("current_sum_revenue"), "debe tener current_X cuando hay TIME_SHIFT");
-    assert!(result.contains_key("prev_0_sum_revenue"), "debe tener prev_0_X");
+    assert!(
+        result.contains_key("current_sum_revenue"),
+        "debe tener current_X cuando hay TIME_SHIFT"
+    );
+    assert!(
+        result.contains_key("prev_0_sum_revenue"),
+        "debe tener prev_0_X"
+    );
     let prev_sum = result["prev_0_sum_revenue"].as_f64().unwrap_or(0.0);
-    assert!((prev_sum - 200.0).abs() < 0.01, "prev_sum debe ser 50+70+80=200, got {prev_sum}");
+    assert!(
+        (prev_sum - 200.0).abs() < 0.01,
+        "prev_sum debe ser 50+70+80=200, got {prev_sum}"
+    );
 }
 
 #[test]
@@ -79,7 +99,10 @@ fn test_benchmark_inline() {
         ..Default::default()
     };
     let current_m = apply_metrics_fbs(&rows, &[metric.clone()]);
-    let current_map = match current_m { Value::Object(m) => m, _ => panic!() };
+    let current_map = match current_m {
+        Value::Object(m) => m,
+        _ => panic!(),
+    };
     let result = run_comparisons(&rows, &[metric], &[comp], None, current_map, "UTC");
 
     assert!(result.contains_key("benchmark_target"));
@@ -98,10 +121,16 @@ fn test_smart_z_score() {
     rows.push(make_row(now - 86400 / 2, 200.0)); // 1 día ago
 
     let metric = make_metric("revenue", "sum_revenue");
-    let tf = TimeRange { start_ts: Some(now - 86400), end_ts: Some(now) };
+    let tf = TimeRange {
+        start_ts: Some(now - 86400),
+        end_ts: Some(now),
+    };
 
     let current_m = apply_metrics_fbs(&vec![rows.last().unwrap().clone()], &[metric.clone()]);
-    let current_map = match current_m { Value::Object(m) => m, _ => panic!() };
+    let current_map = match current_m {
+        Value::Object(m) => m,
+        _ => panic!(),
+    };
 
     let comp = AnalyticalComparisonT {
         type_: AnalyticalComparison_ComparisonType::SMART,
@@ -113,5 +142,8 @@ fn test_smart_z_score() {
     assert!(result.contains_key("std_sum_revenue"), "debe tener std_X");
     let mean = result["mean_sum_revenue"].as_f64().unwrap_or(0.0);
     // Con 90 rows de 100.0, la media debería ser ~100.0
-    assert!((mean - 100.0).abs() < 1.0, "mean debe ser ~100.0, got {mean}");
+    assert!(
+        (mean - 100.0).abs() < 1.0,
+        "mean debe ser ~100.0, got {mean}"
+    );
 }

@@ -4,10 +4,10 @@
 // En Rust:    aws-sdk-firehose (Firehose se mapea aquí)
 
 use async_trait::async_trait;
-use aws_sdk_firehose::Client;
-use aws_sdk_firehose::types::Record;
 use aws_sdk_firehose::primitives::Blob;
-use tracing::{info, error};
+use aws_sdk_firehose::types::Record;
+use aws_sdk_firehose::Client;
+use tracing::{error, info};
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::IStreamWriter;
@@ -20,17 +20,24 @@ pub struct KinesisFirehoseWriter {
 impl KinesisFirehoseWriter {
     /// [PORTED_FROM: ig/init-key :infra/kinesis]
     pub async fn new() -> Self {
-        let region_provider = aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
+        let region_provider =
+            aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
         let config = aws_config::from_env().region(region_provider).load().await;
 
         let client = if let Ok(endpoint_url) = std::env::var("AWS_ENDPOINT_URL") {
-            info!("[Firehose] Usando endpoint override de AWS_ENDPOINT_URL: {}", endpoint_url);
+            info!(
+                "[Firehose] Usando endpoint override de AWS_ENDPOINT_URL: {}",
+                endpoint_url
+            );
             let firehose_config = aws_sdk_firehose::config::Builder::from(&config)
                 .endpoint_url(endpoint_url)
                 .build();
             Client::from_conf(firehose_config)
         } else if let Ok(endpoint_url) = std::env::var("KINESIS_ENDPOINT") {
-            info!("[Firehose] Usando endpoint override de KINESIS_ENDPOINT: {}", endpoint_url);
+            info!(
+                "[Firehose] Usando endpoint override de KINESIS_ENDPOINT: {}",
+                endpoint_url
+            );
             let firehose_config = aws_sdk_firehose::config::Builder::from(&config)
                 .endpoint_url(endpoint_url)
                 .build();
@@ -51,9 +58,9 @@ impl IStreamWriter for KinesisFirehoseWriter {
     /// [PORTED_FROM: (put-record! [_ stream-name partition-key data])]
     async fn put_record(
         &self,
-        stream_name:   &str,
+        stream_name: &str,
         _partition_key: &str,
-        data:          Vec<u8>,
+        data: Vec<u8>,
     ) -> Result<String, DomainError> {
         // Añadir newline al final — mismo comportamiento que el Clojure
         // [PORTED_FROM: (str (json/generate-string data) "\n")]
@@ -64,7 +71,10 @@ impl IStreamWriter for KinesisFirehoseWriter {
             .data(Blob::new(payload))
             .build()
             .map_err(|e| {
-                DomainError::infra(ErrorCode::Infra005, format!("Failed to build Firehose record: {e:?}"))
+                DomainError::infra(
+                    ErrorCode::Infra005,
+                    format!("Failed to build Firehose record: {e:?}"),
+                )
             })?;
 
         let resp = self
@@ -83,7 +93,10 @@ impl IStreamWriter for KinesisFirehoseWriter {
                 } else {
                     ErrorCode::Infra005
                 };
-                DomainError::infra(code, format!("Firehose PutRecord falló en '{stream_name}': {msg}"))
+                DomainError::infra(
+                    code,
+                    format!("Firehose PutRecord falló en '{stream_name}': {msg}"),
+                )
             })?;
 
         // Retorna record_id como identificador del record
@@ -106,9 +119,9 @@ impl StubStreamWriter {
 impl IStreamWriter for StubStreamWriter {
     async fn put_record(
         &self,
-        stream_name:   &str,
+        stream_name: &str,
         _partition_key: &str,
-        data:          Vec<u8>,
+        data: Vec<u8>,
     ) -> Result<String, DomainError> {
         let payload_str = String::from_utf8_lossy(&data);
         info!(
@@ -157,9 +170,9 @@ impl SpyStreamWriter {
 impl IStreamWriter for SpyStreamWriter {
     async fn put_record(
         &self,
-        stream_name:   &str,
+        stream_name: &str,
         partition_key: &str,
-        data:          Vec<u8>,
+        data: Vec<u8>,
     ) -> Result<String, DomainError> {
         self.captured.lock().unwrap().push(CapturedRecord {
             stream_name: stream_name.to_string(),
@@ -173,5 +186,3 @@ impl IStreamWriter for SpyStreamWriter {
         Ok(format!("spy-record-{}", uuid::Uuid::new_v4()))
     }
 }
-
-

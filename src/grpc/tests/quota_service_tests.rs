@@ -108,12 +108,24 @@ async fn reservar_en_una_replica_y_conciliar_en_otra_cuadra_la_cuenta() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
 
-    let replica_a = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
-    let replica_b = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let replica_a = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
+    let replica_b = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let reserva = reservar(&replica_a, "tnt_01", 400).await;
     assert!(reserva.status.unwrap().success);
-    assert_eq!(counter.usage_of("q_01"), Some(400), "la estimación queda apuntada");
+    assert_eq!(
+        counter.usage_of("q_01"),
+        Some(400),
+        "la estimación queda apuntada"
+    );
 
     let respuesta = replica_b
         .reconcile_tokens(conciliacion_de("tnt_01", &reserva.reservation_id, 100, 50))
@@ -124,7 +136,11 @@ async fn reservar_en_una_replica_y_conciliar_en_otra_cuadra_la_cuenta() {
     assert!(respuesta.status.unwrap().success);
     assert_eq!(respuesta.tokens_consumed, 150);
     assert_eq!(respuesta.tokens_returned, 250);
-    assert_eq!(counter.usage_of("q_01"), Some(150), "solo lo consumido de verdad");
+    assert_eq!(
+        counter.usage_of("q_01"),
+        Some(150),
+        "solo lo consumido de verdad"
+    );
 }
 
 /// Y el barrido posterior no vuelve a tocarla: está cerrada.
@@ -132,7 +148,11 @@ async fn reservar_en_una_replica_y_conciliar_en_otra_cuadra_la_cuenta() {
 async fn tras_conciliar_el_barrido_no_devuelve_nada() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let reserva = reservar(&servicio, "tnt_01", 400).await;
     servicio
@@ -159,7 +179,11 @@ async fn tras_conciliar_el_barrido_no_devuelve_nada() {
 async fn conciliar_dos_veces_no_cambia_la_cuenta() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let reserva = reservar(&servicio, "tnt_01", 400).await;
     servicio
@@ -173,7 +197,11 @@ async fn conciliar_dos_veces_no_cambia_la_cuenta() {
         .into_inner();
 
     assert!(segunda.status.unwrap().success);
-    assert_eq!(counter.usage_of("q_01"), Some(150), "el contador no se movió");
+    assert_eq!(
+        counter.usage_of("q_01"),
+        Some(150),
+        "el contador no se movió"
+    );
 }
 
 /// La conciliación que llega después de que el barrido devolviera la reserva.
@@ -186,7 +214,11 @@ async fn conciliar_dos_veces_no_cambia_la_cuenta() {
 async fn una_conciliacion_tardia_apunta_lo_consumido_tras_el_reintegro() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let reserva = reservar(&servicio, "tnt_01", 400).await;
     assert_eq!(counter.usage_of("q_01"), Some(400));
@@ -213,7 +245,11 @@ async fn una_conciliacion_tardia_apunta_lo_consumido_tras_el_reintegro() {
 
     assert!(respuesta.status.unwrap().success);
     assert_eq!(respuesta.tokens_consumed, 150);
-    assert_eq!(counter.usage_of("q_01"), Some(150), "se apunta lo gastado, ni más ni menos");
+    assert_eq!(
+        counter.usage_of("q_01"),
+        Some(150),
+        "se apunta lo gastado, ni más ni menos"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -227,7 +263,11 @@ async fn una_conciliacion_tardia_apunta_lo_consumido_tras_el_reintegro() {
 async fn una_reserva_cuyo_debito_fallo_se_cierra_sin_devolver() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::at("q_01", 500));
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     counter.break_it("contador caído");
     let fallo = servicio.reserve_tokens(reserva_de("tnt_01", 400)).await;
@@ -266,7 +306,11 @@ async fn la_cuota_agotada_no_deja_reserva_pendiente() {
 
     assert!(!status.success);
     assert_eq!(status.error_code, "QUOTA_EXHAUSTED");
-    assert_eq!(store.open_count(), 0, "el ticket rechazado no queda abierto");
+    assert_eq!(
+        store.open_count(),
+        0,
+        "el ticket rechazado no queda abierto"
+    );
     assert_eq!(counter.usage_of("q_01"), Some(1000));
 }
 
@@ -276,7 +320,11 @@ async fn la_cuota_agotada_no_deja_reserva_pendiente() {
 async fn no_se_concilia_una_reserva_que_nunca_debito() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::at("q_01", 500));
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     counter.break_it("contador caído");
     let _ = servicio.reserve_tokens(reserva_de("tnt_01", 400)).await;
@@ -310,7 +358,11 @@ async fn no_se_concilia_una_reserva_que_nunca_debito() {
 async fn no_se_reserva_a_nombre_de_otro_tenant() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let peticion = con_sesion(
         ReserveTokensRequest {
@@ -333,17 +385,30 @@ async fn no_se_reserva_a_nombre_de_otro_tenant() {
 async fn no_se_concilia_la_reserva_de_otro_tenant() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let reserva = reservar(&servicio, "tnt_01", 400).await;
 
     let err = servicio
-        .reconcile_tokens(conciliacion_de("tnt_atacante", &reserva.reservation_id, 10, 10))
+        .reconcile_tokens(conciliacion_de(
+            "tnt_atacante",
+            &reserva.reservation_id,
+            10,
+            10,
+        ))
         .await
         .unwrap_err();
 
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
-    assert_eq!(counter.usage_of("q_01"), Some(400), "la reserva ajena sigue intacta");
+    assert_eq!(
+        counter.usage_of("q_01"),
+        Some(400),
+        "la reserva ajena sigue intacta"
+    );
 }
 
 /// El BFF y el tenant maestro sí operan en nombre de otros: es como llaman hoy.
@@ -351,7 +416,11 @@ async fn no_se_concilia_la_reserva_de_otro_tenant() {
 async fn una_cuenta_de_sistema_si_puede_reservar_por_otro() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let peticion = con_sesion(
         ReserveTokensRequest {
@@ -363,7 +432,11 @@ async fn una_cuenta_de_sistema_si_puede_reservar_por_otro() {
         "usr_system_bff",
     );
 
-    let respuesta = servicio.reserve_tokens(peticion).await.unwrap().into_inner();
+    let respuesta = servicio
+        .reserve_tokens(peticion)
+        .await
+        .unwrap()
+        .into_inner();
     assert!(respuesta.status.unwrap().success);
 }
 
@@ -371,7 +444,11 @@ async fn una_cuenta_de_sistema_si_puede_reservar_por_otro() {
 async fn sin_sesion_no_se_sirve() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let err = servicio
         .reserve_tokens(Request::new(ReserveTokensRequest {
@@ -394,11 +471,22 @@ async fn sin_sesion_no_se_sirve() {
 async fn una_estimacion_no_positiva_se_rechaza() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     for estimado in [0, -500] {
-        let err = servicio.reserve_tokens(reserva_de("tnt_01", estimado)).await.unwrap_err();
-        assert_eq!(err.code(), tonic::Code::InvalidArgument, "estimado = {estimado}");
+        let err = servicio
+            .reserve_tokens(reserva_de("tnt_01", estimado))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.code(),
+            tonic::Code::InvalidArgument,
+            "estimado = {estimado}"
+        );
     }
     assert_eq!(counter.usage_of("q_01"), None);
 }
@@ -408,7 +496,11 @@ async fn una_estimacion_no_positiva_se_rechaza() {
 async fn un_consumo_negativo_se_rechaza() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let reserva = reservar(&servicio, "tnt_01", 400).await;
     let err = servicio
@@ -430,10 +522,19 @@ async fn un_consumo_negativo_se_rechaza() {
 async fn un_ticket_del_formato_anterior_solo_apunta_lo_consumido() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::at("q_01", 400));
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let respuesta = servicio
-        .reconcile_tokens(conciliacion_de("tnt_01", "q_01:400:tnt_01:uuid-xyz", 100, 50))
+        .reconcile_tokens(conciliacion_de(
+            "tnt_01",
+            "q_01:400:tnt_01:uuid-xyz",
+            100,
+            50,
+        ))
         .await
         .unwrap()
         .into_inner();
@@ -447,7 +548,11 @@ async fn un_ticket_del_formato_anterior_solo_apunta_lo_consumido() {
 async fn un_ticket_ilegible_se_rechaza() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let err = servicio
         .reconcile_tokens(conciliacion_de("tnt_01", "no-es-un-ticket", 10, 10))
@@ -462,7 +567,11 @@ async fn un_ticket_ilegible_se_rechaza() {
 async fn un_ticket_inventado_no_encuentra_reserva() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::new());
-    let servicio = replica(Arc::clone(&store), Arc::clone(&counter), vec![cuota(1000, 0)]);
+    let servicio = replica(
+        Arc::clone(&store),
+        Arc::clone(&counter),
+        vec![cuota(1000, 0)],
+    );
 
     let err = servicio
         .reconcile_tokens(conciliacion_de("tnt_01", "tnt_01:01JINVENTADO", 10, 10))

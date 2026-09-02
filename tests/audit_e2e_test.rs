@@ -1,26 +1,31 @@
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 
-use metri_engine::grpc::service::MetriGrpcService;
-use metri_engine::grpc::pb::metri_service_server::MetriService;
-use metri_engine::grpc::pb::row_set::PayloadStrategy;
-use metri_engine::grpc::pb::{TransactionRequest, QueryRequest, AnalyticsRequest, OperationAction, OutputCastType, QueryResponse, TransactionResponse};
-use metri_engine::grpc::translator;
-use metri_engine::grpc::interceptors::AuthenticatedSession;
-use metri_engine::infrastructure::dynamodb::DynamoClient;
-use metri_engine::eav::reader::query::EavQueryExecutor;
-use metri_engine::eav::reader::pull::EavReader;
 use metri_engine::aegis::oltp::executor::OltpExecutor;
-use metri_engine::eav::writer::EavWriter;
-use metri_engine::janus_router::router::{IWriteChannel, JanusRouter};
-use metri_engine::janus_router::oltp_channel::OltpChannel;
-use metri_engine::janus_router::olap_channel::OlapChannel;
-use metri_engine::infrastructure::kinesis::SpyStreamWriter;
-use metri_engine::infrastructure::audit::interceptor::AuditInterceptorImpl;
-use metri_engine::infrastructure::session_store::{HmacTokenStore, issue_token};
 use metri_engine::cedar::authorizer::InMemoryPrincipalCache;
 use metri_engine::codice::registry::EngineChannel;
-use metri_engine::domain::error_catalog::{try_global, init_global as init_error_catalog, ErrorCatalog};
+use metri_engine::domain::error_catalog::{
+    init_global as init_error_catalog, try_global, ErrorCatalog,
+};
+use metri_engine::eav::reader::pull::EavReader;
+use metri_engine::eav::reader::query::EavQueryExecutor;
+use metri_engine::eav::writer::EavWriter;
+use metri_engine::grpc::interceptors::AuthenticatedSession;
+use metri_engine::grpc::pb::metri_service_server::MetriService;
+use metri_engine::grpc::pb::row_set::PayloadStrategy;
+use metri_engine::grpc::pb::{
+    AnalyticsRequest, OperationAction, OutputCastType, QueryRequest, QueryResponse,
+    TransactionRequest, TransactionResponse,
+};
+use metri_engine::grpc::service::MetriGrpcService;
+use metri_engine::grpc::translator;
+use metri_engine::infrastructure::audit::interceptor::AuditInterceptorImpl;
+use metri_engine::infrastructure::dynamodb::DynamoClient;
+use metri_engine::infrastructure::kinesis::SpyStreamWriter;
+use metri_engine::infrastructure::session_store::{issue_token, HmacTokenStore};
+use metri_engine::janus_router::olap_channel::OlapChannel;
+use metri_engine::janus_router::oltp_channel::OltpChannel;
+use metri_engine::janus_router::router::{IWriteChannel, JanusRouter};
 
 static INIT: std::sync::Once = std::sync::Once::new();
 const HMAC_SECRET: &[u8] = b"secret-key-development-metri-256-bits!!!";
@@ -64,13 +69,14 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
     let table_name = std::env::var("EAV_TABLE").unwrap_or_else(|_| "metri-eav-local".to_string());
     let ddb_client = Arc::new(DynamoClient::new(&table_name).await);
     let query_exec = EavQueryExecutor::new(Arc::clone(&ddb_client), &table_name);
-    let pull_read  = EavReader::new(Arc::clone(&ddb_client), &table_name);
-    let oltp_exec  = OltpExecutor::new(query_exec, pull_read.clone());
+    let pull_read = EavReader::new(Arc::clone(&ddb_client), &table_name);
+    let oltp_exec = OltpExecutor::new(query_exec, pull_read.clone());
     let eav_writer = EavWriter::new(Arc::clone(&ddb_client), &table_name);
     let oltp_channel: Arc<dyn IWriteChannel> = Arc::new(OltpChannel::new(eav_writer.clone()));
 
     let spy_writer = Arc::new(SpyStreamWriter::new());
-    let olap_channel: Arc<dyn IWriteChannel> = Arc::new(OlapChannel::new("metri-olap-stream", spy_writer.clone()));
+    let olap_channel: Arc<dyn IWriteChannel> =
+        Arc::new(OlapChannel::new("metri-olap-stream", spy_writer.clone()));
 
     let mut channel_registry = std::collections::HashMap::new();
     channel_registry.insert(EngineChannel::Oltp, Arc::clone(&oltp_channel));
@@ -100,13 +106,7 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
     );
 
     // Generate a valid HMAC session token for the bypass credentials
-    let token = issue_token(
-        HMAC_SECRET,
-        "system",
-        "usr_system_bff",
-        3600,
-        None,
-    );
+    let token = issue_token(HMAC_SECRET, "system", "usr_system_bff", 3600, None);
 
     (service, spy_writer, token)
 }
@@ -139,21 +139,32 @@ async fn test_audit_interceptor_crud_e2e() {
         payload: Some(translator::value_to_struct(&create_payload)),
         suppress_events: false,
     });
-    req.metadata_mut().insert("authorization", auth_header_val.parse().unwrap());
-    req.metadata_mut().insert("test-tenant", tenant_id.parse().unwrap());
-    req.metadata_mut().insert("test-user", user_id.parse().unwrap());
-    req.metadata_mut().insert("test-roles", "system-bff".parse().unwrap());
+    req.metadata_mut()
+        .insert("authorization", auth_header_val.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-tenant", tenant_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-user", user_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-roles", "system-bff".parse().unwrap());
     req.extensions_mut().insert(AuthenticatedSession {
         tenant_id: tenant_id.to_string(),
         user_id: user_id.to_string(),
         jti: "test-jti".to_string(),
     });
 
-    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> = service.transact(req).await;
+    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> =
+        service.transact(req).await;
     assert!(res.is_ok(), "CREATE transaction failed: {:?}", res.err());
     let tx_resp = res.unwrap().into_inner();
-    let status_obj = tx_resp.status.expect("Status missing from transaction response");
-    assert!(status_obj.success, "CREATE transaction was not successful: {}", status_obj.error_message);
+    let status_obj = tx_resp
+        .status
+        .expect("Status missing from transaction response");
+    assert!(
+        status_obj.success,
+        "CREATE transaction was not successful: {}",
+        status_obj.error_message
+    );
 
     // 2. UPDATE asset
     let update_payload = json!({
@@ -169,21 +180,32 @@ async fn test_audit_interceptor_crud_e2e() {
         payload: Some(translator::value_to_struct(&update_payload)),
         suppress_events: false,
     });
-    req.metadata_mut().insert("authorization", auth_header_val.parse().unwrap());
-    req.metadata_mut().insert("test-tenant", tenant_id.parse().unwrap());
-    req.metadata_mut().insert("test-user", user_id.parse().unwrap());
-    req.metadata_mut().insert("test-roles", "system-bff".parse().unwrap());
+    req.metadata_mut()
+        .insert("authorization", auth_header_val.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-tenant", tenant_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-user", user_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-roles", "system-bff".parse().unwrap());
     req.extensions_mut().insert(AuthenticatedSession {
         tenant_id: tenant_id.to_string(),
         user_id: user_id.to_string(),
         jti: "test-jti".to_string(),
     });
 
-    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> = service.transact(req).await;
+    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> =
+        service.transact(req).await;
     assert!(res.is_ok(), "UPDATE transaction failed: {:?}", res.err());
     let tx_resp = res.unwrap().into_inner();
-    let status_obj = tx_resp.status.expect("Status missing from transaction response");
-    assert!(status_obj.success, "UPDATE transaction was not successful: {}", status_obj.error_message);
+    let status_obj = tx_resp
+        .status
+        .expect("Status missing from transaction response");
+    assert!(
+        status_obj.success,
+        "UPDATE transaction was not successful: {}",
+        status_obj.error_message
+    );
 
     // 3. DELETE asset
     let delete_payload = json!({
@@ -198,28 +220,43 @@ async fn test_audit_interceptor_crud_e2e() {
         payload: Some(translator::value_to_struct(&delete_payload)),
         suppress_events: false,
     });
-    req.metadata_mut().insert("authorization", auth_header_val.parse().unwrap());
-    req.metadata_mut().insert("test-tenant", tenant_id.parse().unwrap());
-    req.metadata_mut().insert("test-user", user_id.parse().unwrap());
-    req.metadata_mut().insert("test-roles", "system-bff".parse().unwrap());
+    req.metadata_mut()
+        .insert("authorization", auth_header_val.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-tenant", tenant_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-user", user_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-roles", "system-bff".parse().unwrap());
     req.extensions_mut().insert(AuthenticatedSession {
         tenant_id: tenant_id.to_string(),
         user_id: user_id.to_string(),
         jti: "test-jti".to_string(),
     });
 
-    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> = service.transact(req).await;
+    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> =
+        service.transact(req).await;
     assert!(res.is_ok(), "DELETE transaction failed: {:?}", res.err());
     let tx_resp = res.unwrap().into_inner();
-    let status_obj = tx_resp.status.expect("Status missing from transaction response");
-    assert!(status_obj.success, "DELETE transaction was not successful: {}", status_obj.error_message);
+    let status_obj = tx_resp
+        .status
+        .expect("Status missing from transaction response");
+    assert!(
+        status_obj.success,
+        "DELETE transaction was not successful: {}",
+        status_obj.error_message
+    );
 
     // Wait for the tokio::spawn fire-and-forget calls inside audit interceptor to finish
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // Drain and assert captured records
     let captured = spy_writer.drain();
-    assert_eq!(captured.len(), 3, "Expected exactly 3 audit records to be captured (CREATE, UPDATE, DELETE)");
+    assert_eq!(
+        captured.len(),
+        3,
+        "Expected exactly 3 audit records to be captured (CREATE, UPDATE, DELETE)"
+    );
 
     for (i, record) in captured.iter().enumerate() {
         assert_eq!(record.stream_name, "metri-olap-stream-audit-log");
@@ -227,24 +264,62 @@ async fn test_audit_interceptor_crud_e2e() {
             .expect("Failed to parse captured record data as JSON");
 
         // Verify system-level fields injected by OlapChannel
-        assert!(data_json.get("id").and_then(|v| v.as_str()).is_some(), "id field missing");
-        assert_eq!(data_json.get("_tenant").and_then(|v| v.as_str()), Some(tenant_id));
-        assert!(data_json.get("created_at").and_then(|v| v.as_i64()).is_some(), "created_at field missing");
+        assert!(
+            data_json.get("id").and_then(|v| v.as_str()).is_some(),
+            "id field missing"
+        );
+        assert_eq!(
+            data_json.get("_tenant").and_then(|v| v.as_str()),
+            Some(tenant_id)
+        );
+        assert!(
+            data_json
+                .get("created_at")
+                .and_then(|v| v.as_i64())
+                .is_some(),
+            "created_at field missing"
+        );
 
         // Verify audit log specific payload fields
-        assert_eq!(data_json.get("action_type").and_then(|v| v.as_str()), Some("WRITE"));
-        assert_eq!(data_json.get("resource_domain").and_then(|v| v.as_str()), Some("asset"));
-        assert_eq!(data_json.get("tenant_id").and_then(|v| v.as_str()), Some(tenant_id));
-        assert_eq!(data_json.get("user_id").and_then(|v| v.as_str()), Some(user_id));
-        assert_eq!(data_json.get("status").and_then(|v| v.as_str()), Some("SUCCESS"));
+        assert_eq!(
+            data_json.get("action_type").and_then(|v| v.as_str()),
+            Some("WRITE")
+        );
+        assert_eq!(
+            data_json.get("resource_domain").and_then(|v| v.as_str()),
+            Some("asset")
+        );
+        assert_eq!(
+            data_json.get("tenant_id").and_then(|v| v.as_str()),
+            Some(tenant_id)
+        );
+        assert_eq!(
+            data_json.get("user_id").and_then(|v| v.as_str()),
+            Some(user_id)
+        );
+        assert_eq!(
+            data_json.get("status").and_then(|v| v.as_str()),
+            Some("SUCCESS")
+        );
 
-        let req_payload = data_json.get("request_payload").expect("request_payload missing");
+        let req_payload = data_json
+            .get("request_payload")
+            .expect("request_payload missing");
         if i == 0 {
-            assert_eq!(req_payload.get("name").and_then(|v| v.as_str()), Some("Bomba Centrifuga Audit E2E"));
+            assert_eq!(
+                req_payload.get("name").and_then(|v| v.as_str()),
+                Some("Bomba Centrifuga Audit E2E")
+            );
         } else if i == 1 {
-            assert_eq!(req_payload.get("name").and_then(|v| v.as_str()), Some("Bomba Centrifuga Actualizada E2E"));
+            assert_eq!(
+                req_payload.get("name").and_then(|v| v.as_str()),
+                Some("Bomba Centrifuga Actualizada E2E")
+            );
         } else if i == 2 {
-            assert_eq!(req_payload.get("id").and_then(|v| v.as_str()), Some(asset_id.as_str()));
+            assert_eq!(
+                req_payload.get("id").and_then(|v| v.as_str()),
+                Some(asset_id.as_str())
+            );
         }
     }
 }
@@ -277,21 +352,30 @@ async fn test_audit_time_travel_history() {
         payload: Some(translator::value_to_struct(&create_payload)),
         suppress_events: false,
     });
-    req.metadata_mut().insert("authorization", auth_header_val.parse().unwrap());
-    req.metadata_mut().insert("test-tenant", tenant_id.parse().unwrap());
-    req.metadata_mut().insert("test-user", user_id.parse().unwrap());
-    req.metadata_mut().insert("test-roles", "system-bff".parse().unwrap());
+    req.metadata_mut()
+        .insert("authorization", auth_header_val.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-tenant", tenant_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-user", user_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-roles", "system-bff".parse().unwrap());
     req.extensions_mut().insert(AuthenticatedSession {
         tenant_id: tenant_id.to_string(),
         user_id: user_id.to_string(),
         jti: "test-jti".to_string(),
     });
 
-    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> = service.transact(req).await;
+    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> =
+        service.transact(req).await;
     assert!(res.is_ok(), "CREATE failed: {:?}", res.err());
     let tx_resp = res.unwrap().into_inner();
     let status_obj = tx_resp.status.expect("Status missing from CREATE response");
-    assert!(status_obj.success, "CREATE was not successful: {}", status_obj.error_message);
+    assert!(
+        status_obj.success,
+        "CREATE was not successful: {}",
+        status_obj.error_message
+    );
 
     // 2. UPDATE asset (change name)
     let update_payload = json!({
@@ -307,21 +391,30 @@ async fn test_audit_time_travel_history() {
         payload: Some(translator::value_to_struct(&update_payload)),
         suppress_events: false,
     });
-    req.metadata_mut().insert("authorization", auth_header_val.parse().unwrap());
-    req.metadata_mut().insert("test-tenant", tenant_id.parse().unwrap());
-    req.metadata_mut().insert("test-user", user_id.parse().unwrap());
-    req.metadata_mut().insert("test-roles", "system-bff".parse().unwrap());
+    req.metadata_mut()
+        .insert("authorization", auth_header_val.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-tenant", tenant_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-user", user_id.parse().unwrap());
+    req.metadata_mut()
+        .insert("test-roles", "system-bff".parse().unwrap());
     req.extensions_mut().insert(AuthenticatedSession {
         tenant_id: tenant_id.to_string(),
         user_id: user_id.to_string(),
         jti: "test-jti".to_string(),
     });
 
-    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> = service.transact(req).await;
+    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> =
+        service.transact(req).await;
     assert!(res.is_ok(), "UPDATE failed: {:?}", res.err());
     let tx_resp = res.unwrap().into_inner();
     let status_obj = tx_resp.status.expect("Status missing from UPDATE response");
-    assert!(status_obj.success, "UPDATE was not successful: {}", status_obj.error_message);
+    assert!(
+        status_obj.success,
+        "UPDATE was not successful: {}",
+        status_obj.error_message
+    );
 
     // 3. Query history timeline with select_tree: { id: <asset_id>, _history: true }
     let query_ast = json!({
@@ -332,16 +425,19 @@ async fn test_audit_time_travel_history() {
         }
     });
 
-    let req_queries = std::collections::HashMap::from([
-        ("asset_history".to_string(), AnalyticsRequest {
+    let req_queries = std::collections::HashMap::from([(
+        "asset_history".to_string(),
+        AnalyticsRequest {
             entity: "asset".to_string(),
             output_cast: OutputCastType::Table as i32,
             viz: "table".to_string(),
             limit: 100,
-            select_tree: Some(translator::value_to_struct(query_ast.get("select_tree").unwrap())),
+            select_tree: Some(translator::value_to_struct(
+                query_ast.get("select_tree").unwrap(),
+            )),
             ..Default::default()
-        })
-    ]);
+        },
+    )]);
 
     let req = QueryRequest {
         tenant_id: tenant_id.to_string(),
@@ -349,17 +445,30 @@ async fn test_audit_time_travel_history() {
         ..Default::default()
     };
     let mut grpc_req = tonic::Request::new(req);
-    grpc_req.metadata_mut().insert("authorization", auth_header_val.parse().unwrap());
-    grpc_req.metadata_mut().insert("test-tenant", tenant_id.parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", user_id.parse().unwrap());
-    grpc_req.metadata_mut().insert("test-roles", "system-bff".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("authorization", auth_header_val.parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", tenant_id.parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", user_id.parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-roles", "system-bff".parse().unwrap());
     grpc_req.extensions_mut().insert(AuthenticatedSession {
         tenant_id: tenant_id.to_string(),
         user_id: user_id.to_string(),
         jti: "test-jti".to_string(),
     });
 
-    let res: Result<tonic::Response<tokio_stream::wrappers::ReceiverStream<Result<QueryResponse, tonic::Status>>>, tonic::Status> = service.query(grpc_req).await;
+    let res: Result<
+        tonic::Response<
+            tokio_stream::wrappers::ReceiverStream<Result<QueryResponse, tonic::Status>>,
+        >,
+        tonic::Status,
+    > = service.query(grpc_req).await;
     assert!(res.is_ok(), "History query failed: {:?}", res.err());
 
     let response = res.unwrap().into_inner();
@@ -372,11 +481,30 @@ async fn test_audit_time_travel_history() {
         }
     }
 
-    assert_eq!(all_results.len(), 1, "Expected exactly 1 batch result for history query");
+    assert_eq!(
+        all_results.len(),
+        1,
+        "Expected exactly 1 batch result for history query"
+    );
     let batch_result = &all_results[0];
-    if !batch_result.status.as_ref().map(|s| s.success).unwrap_or(false) {
-        let err_msg = batch_result.status.as_ref().map(|s| &s.error_message).cloned().unwrap_or_default();
-        let err_code = batch_result.status.as_ref().map(|s| &s.error_code).cloned().unwrap_or_default();
+    if !batch_result
+        .status
+        .as_ref()
+        .map(|s| s.success)
+        .unwrap_or(false)
+    {
+        let err_msg = batch_result
+            .status
+            .as_ref()
+            .map(|s| &s.error_message)
+            .cloned()
+            .unwrap_or_default();
+        let err_code = batch_result
+            .status
+            .as_ref()
+            .map(|s| &s.error_code)
+            .cloned()
+            .unwrap_or_default();
         panic!("Batch result indicates failure: {} ({})", err_msg, err_code);
     }
 
@@ -407,17 +535,17 @@ async fn test_audit_time_travel_history() {
     if let Some(PayloadStrategy::RowsJson(row_list)) = &row_set.payload_strategy {
         for row in &row_list.iter {
             let vals = &row.values;
-            
+
             let attr_name = match vals[attr_name_idx].kind.as_ref() {
                 Some(prost_types::value::Kind::StringValue(s)) => Some(s.as_str()),
                 _ => None,
             };
-            
+
             let value = match vals[value_idx].kind.as_ref() {
                 Some(prost_types::value::Kind::StringValue(s)) => Some(s.as_str()),
                 _ => None,
             };
-            
+
             let op = match vals[op_idx].kind.as_ref() {
                 Some(prost_types::value::Kind::BoolValue(b)) => Some(*b),
                 _ => None,
@@ -436,8 +564,14 @@ async fn test_audit_time_travel_history() {
         panic!("Expected RowsJson payload strategy");
     }
 
-    assert!(found_original, "Should find history entry for original name");
-    assert!(found_modified, "Should find history entry for modified name");
+    assert!(
+        found_original,
+        "Should find history entry for original name"
+    );
+    assert!(
+        found_modified,
+        "Should find history entry for modified name"
+    );
 }
 
 struct Utc;

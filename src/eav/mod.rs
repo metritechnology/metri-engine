@@ -1,10 +1,10 @@
-pub mod types;
-pub mod writer;
+pub mod cursor;
+pub mod fts;
+pub mod hierarchy;
+pub mod index;
 pub mod reader;
 pub mod registry;
-pub mod index;
-pub mod fts;
-pub mod cursor;
-pub mod hierarchy;
 pub mod sharding;
 pub mod telemetry;
+pub mod types;
+pub mod writer;

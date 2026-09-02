@@ -7,15 +7,15 @@
 //
 // Es fire-and-forget, nunca falla el request original.
 
-use std::sync::Arc;
-use serde_json::{json, Value};
-use tracing::{error, info};
 use chrono::Utc;
+use serde_json::{json, Value};
+use std::sync::Arc;
+use tracing::{error, info};
 
-use crate::domain::audit::protocol::IAuditInterceptor;
 use crate::domain::audit::action_type::derive_action_type;
-use crate::janus_router::router::IWriteChannel;
+use crate::domain::audit::protocol::IAuditInterceptor;
 use crate::iop::core::IopContext;
+use crate::janus_router::router::IWriteChannel;
 use crate::janus_router::ulid;
 
 /// Implementación del AuditInterceptor.
@@ -46,16 +46,19 @@ impl IAuditInterceptor for AuditInterceptorImpl {
     /// [PORTED_FROM: (audit! [this request result+])]
     async fn audit(&self, request: &Value, succeeded: bool, error_stage: Option<&str>) {
         let action_type = derive_action_type(succeeded, error_stage);
-        
-        let tenant_id = request.get("tenant_id")
+
+        let tenant_id = request
+            .get("tenant_id")
             .and_then(|v| v.as_str())
             .unwrap_or("UNKNOWN");
-            
-        let user_id = request.get("user_id")
+
+        let user_id = request
+            .get("user_id")
             .and_then(|v| v.as_str())
             .unwrap_or("UNKNOWN");
-            
-        let entity_type = request.get("entity_type")
+
+        let entity_type = request
+            .get("entity_type")
             .and_then(|v| v.as_str())
             .unwrap_or("UNKNOWN");
 
@@ -82,19 +85,16 @@ impl IAuditInterceptor for AuditInterceptorImpl {
         // Creamos un IopContext artificial apuntando a la entidad 'audit_log'
         let mut req_map = serde_json::Map::new();
         req_map.insert("data".to_string(), Value::Array(vec![audit_payload]));
-        
-        let ctx = IopContext::new(
-            tenant_id,
-            user_id,
-            "audit_log",
-            "BULK_CREATE",
-            req_map,
-        );
+
+        let ctx = IopContext::new(tenant_id, user_id, "audit_log", "BULK_CREATE", req_map);
 
         let olap = Arc::clone(&self.olap_channel);
         tokio::spawn(async move {
             if let Err(e) = olap.route(ctx).await {
-                error!("[AuditInterceptor] Falla al escribir en canal OLAP (Kinesis): {:?}", e);
+                error!(
+                    "[AuditInterceptor] Falla al escribir en canal OLAP (Kinesis): {:?}",
+                    e
+                );
                 // FASE 10: sherlog.emit_fault(AUD_001)
             }
         });

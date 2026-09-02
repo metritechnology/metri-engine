@@ -9,12 +9,11 @@ pub mod pb {
     }
 }
 
-pub mod service;
-pub mod eda_service;
-pub mod quota_service;
 pub mod agent_config_service;
-pub mod translator;
-pub mod interceptors;
-pub mod server;
 pub mod bootstrap;
-
+pub mod eda_service;
+pub mod interceptors;
+pub mod quota_service;
+pub mod server;
+pub mod service;
+pub mod translator;

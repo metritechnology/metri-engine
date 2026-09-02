@@ -163,12 +163,8 @@ pub trait ReservationStore: Send + Sync {
     ) -> Result<(), DomainError>;
 
     /// Reservas vencidas de una partición, para el barrido.
-    async fn sweep(
-        &self,
-        shard: u8,
-        now: i64,
-        limit: i32,
-    ) -> Result<Vec<Reservation>, DomainError>;
+    async fn sweep(&self, shard: u8, now: i64, limit: i32)
+        -> Result<Vec<Reservation>, DomainError>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -314,7 +310,10 @@ impl ReservationStore for MemoryReservationStore {
             return Ok(ClaimResult::NotFound);
         };
         if stored.status == ReservationStatus::Closed {
-            return Ok(ClaimResult::Closed(stored.reservation.clone(), stored.close_reason));
+            return Ok(ClaimResult::Closed(
+                stored.reservation.clone(),
+                stored.close_reason,
+            ));
         }
         if stored.lease_until > now {
             return Ok(ClaimResult::Leased(stored.reservation.clone()));
@@ -339,7 +338,12 @@ impl ReservationStore for MemoryReservationStore {
         Ok(())
     }
 
-    async fn sweep(&self, shard: u8, now: i64, limit: i32) -> Result<Vec<Reservation>, DomainError> {
+    async fn sweep(
+        &self,
+        shard: u8,
+        now: i64,
+        limit: i32,
+    ) -> Result<Vec<Reservation>, DomainError> {
         let items = self.items.lock().unwrap();
         Ok(items
             .values()

@@ -24,8 +24,8 @@ fn init_registry() {
         std::panic::set_hook(Box::new(|_| {})); // silencia el ruido del intento fallido
         let _ = std::panic::catch_unwind(|| {
             let dir = std::path::Path::new("config/models");
-            let (registry, _rules) = crate::codice::CodeRegistry::build(dir)
-                .expect("config/models debe compilar");
+            let (registry, _rules) =
+                crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
             crate::codice::init_global(registry);
         });
         std::panic::set_hook(prev);
@@ -36,7 +36,10 @@ fn init_registry() {
 
 fn model(name: &str) -> crate::codice::registry::EntityModel {
     init_registry();
-    crate::codice::global().get_model(name).expect("modelo ausente").clone()
+    crate::codice::global()
+        .get_model(name)
+        .expect("modelo ausente")
+        .clone()
 }
 
 /// Reader real contra DynamoDB stub. Sólo lo consultan los mappings con traversal
@@ -44,7 +47,7 @@ fn model(name: &str) -> crate::codice::registry::EntityModel {
 /// de lectura, que `resolve_source` degrada a "campo ausente".
 async fn reader() -> EavReader {
     let ddb = std::sync::Arc::new(
-        crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-test").await
+        crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-test").await,
     );
     EavReader::new(ddb, "metri-eav-test")
 }
@@ -69,7 +72,8 @@ async fn reminder_proyecta_exact_time_con_fanout() {
     assert_eq!(jobs.len(), 3, "esperados 3 jobs, obtenidos {}", jobs.len());
 
     let base = 1_780_300_800i64; // 2026-06-01T08:00:00Z
-    let mut exprs: Vec<i64> = jobs.iter()
+    let mut exprs: Vec<i64> = jobs
+        .iter()
         .map(|j| match j.attrs.get("trigger_expression").unwrap() {
             DatomValue::Str(s) => s.parse::<i64>().unwrap(),
             other => panic!("trigger_expression inesperado: {other:?}"),
@@ -80,9 +84,13 @@ async fn reminder_proyecta_exact_time_con_fanout() {
     assert_eq!(exprs, vec![base - 1440 * 60, base - 30 * 60, base]);
 
     for j in &jobs {
-        assert!(matches!(j.attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "EXACT_TIME"));
+        assert!(
+            matches!(j.attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "EXACT_TIME")
+        );
         assert!(matches!(j.attrs.get("created_by"), Some(DatomValue::Str(s)) if s == "01ME"));
-        assert!(matches!(j.attrs.get("parent_entity_ref"), Some(DatomValue::Uuid(s)) if s == "01PARENT"));
+        assert!(
+            matches!(j.attrs.get("parent_entity_ref"), Some(DatomValue::Uuid(s)) if s == "01PARENT")
+        );
     }
 }
 
@@ -94,9 +102,12 @@ async fn los_hashes_de_idempotencia_no_colisionan_entre_offsets() {
         "reminder_datetime": "2026-06-01T08:00:00Z",
         "prenotify_minutes_array": [30, 1440]
     });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME").await.unwrap();
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .unwrap();
 
-    let mut hashes: Vec<String> = jobs.iter()
+    let mut hashes: Vec<String> = jobs
+        .iter()
         .map(|j| match j.attrs.get("idempotency_hash").unwrap() {
             DatomValue::Str(s) => s.clone(),
             o => panic!("{o:?}"),
@@ -105,7 +116,11 @@ async fn los_hashes_de_idempotencia_no_colisionan_entre_offsets() {
     hashes.sort();
     let total = hashes.len();
     hashes.dedup();
-    assert_eq!(hashes.len(), total, "dos avisos del mismo padre comparten hash: se deduplicarían entre sí");
+    assert_eq!(
+        hashes.len(),
+        total,
+        "dos avisos del mismo padre comparten hash: se deduplicarían entre sí"
+    );
 }
 
 #[tokio::test]
@@ -117,7 +132,9 @@ async fn mapping_proyecta_rutas_anidadas_en_action_payload() {
         "target_user_id": "01USER",
         "reminder_datetime": "2026-06-01T08:00:00Z"
     });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME").await.unwrap();
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .unwrap();
     assert_eq!(jobs.len(), 1);
 
     // action_payload es json: se almacena serializado
@@ -125,8 +142,11 @@ async fn mapping_proyecta_rutas_anidadas_en_action_payload() {
         DatomValue::Str(s) => serde_json::from_str::<serde_json::Value>(s).unwrap(),
         o => panic!("{o:?}"),
     };
-    assert_eq!(ap["content"]["message_override"], json!("Texto exacto para el operador"),
-               "el mapping debe descender dentro de action_payload: {ap}");
+    assert_eq!(
+        ap["content"]["message_override"],
+        json!("Texto exacto para el operador"),
+        "el mapping debe descender dentro de action_payload: {ap}"
+    );
     assert_eq!(ap["source_entity"], json!("reminder"));
 }
 
@@ -135,15 +155,23 @@ async fn madre_sin_fuente_de_trigger_falla_explicitamente() {
     let m = model("reminder");
     let payload = json!({ "title": "t", "message": "m", "target_user_id": "01U" });
     let err = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME").await;
-    assert!(err.is_err(), "sin reminder_datetime la proyección no puede inventar cuándo disparar");
+    assert!(
+        err.is_err(),
+        "sin reminder_datetime la proyección no puede inventar cuándo disparar"
+    );
 }
 
 #[tokio::test]
 async fn entidad_sin_mapping_no_proyecta_nada() {
     let m = model("work_order");
     let payload = json!({ "title": "x" });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME").await.unwrap();
-    assert!(jobs.is_empty(), "work_order no declara shadow_sagas_mapping");
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .unwrap();
+    assert!(
+        jobs.is_empty(),
+        "work_order no declara shadow_sagas_mapping"
+    );
 }
 
 #[tokio::test]
@@ -155,10 +183,18 @@ async fn preventive_maintenance_deriva_cron_del_atributo_declarado() {
         "iana_timezone": "America/Bogota",
         "next_due_date": 1_780_300_800i64
     });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME").await.unwrap();
-    assert_eq!(jobs.len(), 1, "sin prenotify sólo existe el disparo principal");
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .unwrap();
+    assert_eq!(
+        jobs.len(),
+        1,
+        "sin prenotify sólo existe el disparo principal"
+    );
     assert!(matches!(jobs[0].attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "CRON"));
-    assert!(matches!(jobs[0].attrs.get("trigger_expression"), Some(DatomValue::Str(s)) if s == "0 8 1 */6 *"));
+    assert!(
+        matches!(jobs[0].attrs.get("trigger_expression"), Some(DatomValue::Str(s)) if s == "0 8 1 */6 *")
+    );
 }
 
 #[tokio::test]
@@ -169,10 +205,17 @@ async fn la_condicion_fisica_gana_al_calendario() {
         "cron_expression": "0 8 1 */6 *",
         "meter_based_trigger": { "metric_code": "VIBRATION", "operator": "GT", "threshold": 5000.0 }
     });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME").await.unwrap();
-    assert!(matches!(jobs[0].attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "TELEMETRY"));
-    assert!(matches!(jobs[0].attrs.get("trigger_expression"), Some(DatomValue::Str(s)) if s == "VIBRATION > 5000"),
-            "debe emitir la gramática que exige Schedulers: {:?}", jobs[0].attrs.get("trigger_expression"));
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .unwrap();
+    assert!(
+        matches!(jobs[0].attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "TELEMETRY")
+    );
+    assert!(
+        matches!(jobs[0].attrs.get("trigger_expression"), Some(DatomValue::Str(s)) if s == "VIBRATION > 5000"),
+        "debe emitir la gramática que exige Schedulers: {:?}",
+        jobs[0].attrs.get("trigger_expression")
+    );
 }
 
 #[tokio::test]
@@ -183,8 +226,14 @@ async fn telemetry_omite_las_prenotificaciones() {
         "meter_based_trigger": { "metric_code": "VIBRATION", "operator": "GT", "threshold": 5000.0 },
         "prenotify_before_minutes": [1440, 30]
     });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME").await.unwrap();
-    assert_eq!(jobs.len(), 1, "una condición física no tiene 'antes' que programar");
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .unwrap();
+    assert_eq!(
+        jobs.len(),
+        1,
+        "una condición física no tiene 'antes' que programar"
+    );
 }
 
 #[tokio::test]
@@ -197,11 +246,23 @@ async fn test_preventive_maintenance_saga_projection_extensions() {
         "iana_timezone": "America/Bogota",
         "next_due_date": 1_780_300_800i64
     });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01PM_PARENT", "01USER").await.unwrap();
+    let jobs = build_saga_projections(
+        &reader().await,
+        "tnt_1",
+        &m,
+        &payload,
+        "01PM_PARENT",
+        "01USER",
+    )
+    .await
+    .unwrap();
     assert_eq!(jobs.len(), 1);
 
     // RUT-H2: action_type es RPC_CALL
-    assert_eq!(jobs[0].attrs.get("action_type").unwrap(), &DatomValue::Str("RPC_CALL".to_string()));
+    assert_eq!(
+        jobs[0].attrs.get("action_type").unwrap(),
+        &DatomValue::Str("RPC_CALL".to_string())
+    );
 
     // RUT-H3, RUT-D5 y extensiones __const y __self dentro de action_payload
     let ap = match jobs[0].attrs.get("action_payload").unwrap() {
@@ -211,5 +272,8 @@ async fn test_preventive_maintenance_saga_projection_extensions() {
     assert_eq!(ap["entity_type"], json!("work_order"));
     assert_eq!(ap["content"]["asset_id"], json!("01ASSET"));
     assert_eq!(ap["payload"]["work_order_template_id"], json!("01TEMPLATE"));
-    assert_eq!(ap["payload"]["preventive_maintenance_id"], json!("01PM_PARENT"));
+    assert_eq!(
+        ap["payload"]["preventive_maintenance_id"],
+        json!("01PM_PARENT")
+    );
 }

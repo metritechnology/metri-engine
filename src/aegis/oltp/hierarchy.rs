@@ -10,7 +10,7 @@
 // Para DynamoDB EAV, parent_location_id es un string ULID.
 // Solo el Modo 2 aplica aquí.
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashSet;
 use tracing::debug;
 
@@ -23,12 +23,15 @@ use tracing::debug;
 ///
 /// [PORTED_FROM: (inject-has-children-from-rows rows parent-field-kw)]
 pub fn inject_has_children_from_rows(rows: &mut Vec<Value>, parent_field: &str) {
-    if rows.is_empty() { return; }
+    if rows.is_empty() {
+        return;
+    }
 
     // Paso 1: IDs de todas las entidades referenciadas como padres
     // Probar tanto el campo con namespace como sin namespace
     let bare_parent = parent_field.split('/').last().unwrap_or(parent_field);
-    let parent_ids: HashSet<String> = rows.iter()
+    let parent_ids: HashSet<String> = rows
+        .iter()
         .filter_map(|r| {
             r.get(parent_field)
                 .or_else(|| r.get(bare_parent))
@@ -40,13 +43,15 @@ pub fn inject_has_children_from_rows(rows: &mut Vec<Value>, parent_field: &str) 
 
     debug!(
         "[Hierarchy] {} parent IDs únicos detectados para campo '{}'",
-        parent_ids.len(), parent_field
+        parent_ids.len(),
+        parent_field
     );
 
     // Paso 2: anotar has_children en cada row
     for row in rows.iter_mut() {
         if let Some(obj) = row.as_object_mut() {
-            let id = obj.get("id")
+            let id = obj
+                .get("id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();

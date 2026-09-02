@@ -37,4 +37,3 @@ pub fn generate(prefix: &str, length: usize) -> String {
 #[cfg(test)]
 #[path = "tests/base36_tests.rs"]
 mod tests;
-

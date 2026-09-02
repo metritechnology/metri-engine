@@ -52,7 +52,7 @@ impl JanusRouter {
     /// [PORTED_FROM: (defn route [ctx {:keys [channel-registry]}] ...)]
     pub async fn route(&self, mut ctx: IopContext) -> Result<Value, DomainError> {
         let entity_type = ctx.entity_type.clone();
-        let operation   = ctx.operation.clone();
+        let operation = ctx.operation.clone();
 
         info!(
             entity = %entity_type,
@@ -81,7 +81,10 @@ impl JanusRouter {
 
         // 4. Resolver engine desde el Códice
         let engine = registry.get_engine(&entity_type).ok_or_else(|| {
-            DomainError::janus(ErrorCode::Jns001, format!("Sin engine para '{entity_type}'"))
+            DomainError::janus(
+                ErrorCode::Jns001,
+                format!("Sin engine para '{entity_type}'"),
+            )
         })?;
 
         let channel = self.channel_registry.get(engine).ok_or_else(|| {
@@ -119,7 +122,12 @@ impl JanusRouter {
             validator::validate_entity_type(entity_type)?;
         }
 
-        if !is_bulk && schema_json.get("write_path_locked").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if !is_bulk
+            && schema_json
+                .get("write_path_locked")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        {
             warn!("[JanusRouter] write_path_locked=true | entity: {entity_type}");
             return Err(DomainError::janus(
                 ErrorCode::JnsLock001,
@@ -127,7 +135,11 @@ impl JanusRouter {
             ));
         }
 
-        if schema_json.get("is_system_seeded").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if schema_json
+            .get("is_system_seeded")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             warn!("[JanusRouter] is_system_seeded=true | entity: {entity_type}");
             return Err(DomainError::janus(
                 ErrorCode::JnsSeed001,
@@ -143,7 +155,11 @@ impl JanusRouter {
         ctx.schema = Some(schema_json);
         let tenant_id = ctx.tenant_id.clone();
 
-        if let Some(obj) = ctx.request.get_mut("payload").and_then(|v| v.as_object_mut()) {
+        if let Some(obj) = ctx
+            .request
+            .get_mut("payload")
+            .and_then(|v| v.as_object_mut())
+        {
             obj.insert("tenant_id".to_string(), Value::String(tenant_id.clone()));
         }
 

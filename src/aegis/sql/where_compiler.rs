@@ -120,10 +120,10 @@ pub fn compile_where_node(node: &WhereNode, dialect: &dyn SqlDialect) -> Conditi
             let col_name = col_id_str(col);
             if let Some(arr) = val.as_array() {
                 if arr.len() >= 2 {
-                    Cond::all().add(Expr::col(Alias::new(col_name)).between(
-                        json_to_sea_expr(&arr[0]),
-                        json_to_sea_expr(&arr[1])
-                    ))
+                    Cond::all().add(
+                        Expr::col(Alias::new(col_name))
+                            .between(json_to_sea_expr(&arr[0]), json_to_sea_expr(&arr[1])),
+                    )
                 } else {
                     Cond::all()
                 }
@@ -148,9 +148,7 @@ pub fn compile_where_node(node: &WhereNode, dialect: &dyn SqlDialect) -> Conditi
             let contains_pattern = format!("%{}%", escaped);
             Cond::all().add(Expr::col(Alias::new(col_id_str(col))).like(contains_pattern))
         }
-        WhereNode::IsNull(col) => {
-            Cond::all().add(Expr::col(Alias::new(col_id_str(col))).is_null())
-        }
+        WhereNode::IsNull(col) => Cond::all().add(Expr::col(Alias::new(col_id_str(col))).is_null()),
         WhereNode::IsNotNull(col) => {
             Cond::all().add(Expr::col(Alias::new(col_id_str(col))).is_not_null())
         }
@@ -168,9 +166,7 @@ pub fn compile_where_node(node: &WhereNode, dialect: &dyn SqlDialect) -> Conditi
             }
             cond
         }
-        WhereNode::Not(child) => {
-            Cond::all().not().add(compile_where_node(child, dialect))
-        }
+        WhereNode::Not(child) => Cond::all().not().add(compile_where_node(child, dialect)),
         WhereNode::Fuzzy(col, term) => {
             let col_name = col_id_str(col);
             if let Some(expanded) = expand_term(term) {
@@ -178,29 +174,39 @@ pub fn compile_where_node(node: &WhereNode, dialect: &dyn SqlDialect) -> Conditi
                 if let Some(regex_pat) = expanded.regex_pat {
                     let regex_expr = dialect.format_regexp_like(&lower_col, &regex_pat);
                     Cond::any()
-                        .add(Expr::cust(&format!("{} LIKE '{}'", lower_col, expanded.like_pat.replace('\'', "''"))))
+                        .add(Expr::cust(&format!(
+                            "{} LIKE '{}'",
+                            lower_col,
+                            expanded.like_pat.replace('\'', "''")
+                        )))
                         .add(Expr::cust(&regex_expr))
                 } else {
-                    Cond::all().add(Expr::cust(&format!("{} LIKE '{}'", lower_col, expanded.like_pat.replace('\'', "''"))))
+                    Cond::all().add(Expr::cust(&format!(
+                        "{} LIKE '{}'",
+                        lower_col,
+                        expanded.like_pat.replace('\'', "''")
+                    )))
                 }
             } else {
                 Cond::all()
             }
         }
-        WhereNode::Fts(_term) => {
-            Cond::all()
-        }
+        WhereNode::Fts(_term) => Cond::all(),
         WhereNode::RefFilter(ref_field, inner) => {
             let ref_col = col_id_str(ref_field);
             if let Some(ref_entity) = ref_entity_from_inner(inner) {
                 let inner_cond = compile_where_node(inner, dialect);
                 let ref_tbl = ref_entity.replace('-', "_");
                 let mut select_stmt = sea_query::Query::select();
-                select_stmt.column(Alias::new("id"))
+                select_stmt
+                    .column(Alias::new("id"))
                     .from(Alias::new(&ref_tbl))
                     .cond_where(inner_cond);
                 let subquery_sql = select_stmt.to_string(sea_query::PostgresQueryBuilder);
-                Cond::all().add(Expr::cust(&format!("\"{}\" IN ({})", ref_col, subquery_sql)))
+                Cond::all().add(Expr::cust(&format!(
+                    "\"{}\" IN ({})",
+                    ref_col, subquery_sql
+                )))
             } else {
                 Cond::all().add(Expr::cust("1=0"))
             }

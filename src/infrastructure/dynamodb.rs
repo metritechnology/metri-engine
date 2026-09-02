@@ -10,10 +10,7 @@ use std::collections::HashMap;
 
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_dynamodb::{
-    Client,
-    config::Builder as DdbConfigBuilder,
-    types::AttributeValue,
-    error::SdkError,
+    config::Builder as DdbConfigBuilder, error::SdkError, types::AttributeValue, Client,
 };
 use serde_json::Value;
 use tracing::{info, warn};
@@ -24,7 +21,7 @@ use crate::domain::errors::{DomainError, ErrorCode};
 /// [PORTED_FROM: {:client client :region region}]
 #[derive(Clone)]
 pub struct DynamoClient {
-    pub client:    Client,
+    pub client: Client,
     pub table_eav: String, // tabla principal metri-eav-prod
 }
 
@@ -75,8 +72,8 @@ impl DynamoClient {
     pub async fn get_item(
         &self,
         table_name: &str,
-        pk:         &str,
-        sk:         Option<&[u8]>, // None si tabla no tiene SK
+        pk: &str,
+        sk: Option<&[u8]>, // None si tabla no tiene SK
     ) -> Result<Option<HashMap<String, AttributeValue>>, DomainError> {
         let mut key = HashMap::new();
         key.insert("PK".to_string(), AttributeValue::S(pk.to_string()));
@@ -104,7 +101,7 @@ impl DynamoClient {
     pub async fn put_item(
         &self,
         table_name: &str,
-        item:       HashMap<String, AttributeValue>,
+        item: HashMap<String, AttributeValue>,
     ) -> Result<(), DomainError> {
         self.client
             .put_item()
@@ -128,7 +125,10 @@ impl DynamoClient {
         items: Vec<aws_sdk_dynamodb::types::TransactWriteItem>,
     ) -> Result<(), DomainError> {
         if std::env::var("STUB_DYNAMODB").unwrap_or_default() == "1" {
-            tracing::info!("[DynamoDB] STUB_DYNAMODB=1 -> Simulando escritura exitosa de {} items", items.len());
+            tracing::info!(
+                "[DynamoDB] STUB_DYNAMODB=1 -> Simulando escritura exitosa de {} items",
+                items.len()
+            );
             return Ok(());
         }
 
@@ -151,7 +151,7 @@ impl DynamoClient {
     }
 
     // ── BatchWriteItem ────────────────────────────────────────────────────────
-    
+
     /// Ejecuta escrituras en lote (hasta 25 items).
     /// Usado para índices secundarios (ej. FTS trigrams) con Degraded Consistency.
     pub async fn batch_write_item(
@@ -159,21 +159,24 @@ impl DynamoClient {
         table_name: &str,
         mut requests: Vec<aws_sdk_dynamodb::types::WriteRequest>,
     ) -> Result<(), DomainError> {
-        if requests.is_empty() { return Ok(()); }
-        
+        if requests.is_empty() {
+            return Ok(());
+        }
+
         let mut retries = 0;
         let initial_len = requests.len();
         while !requests.is_empty() && retries < 5 {
             let mut req_map = HashMap::new();
             req_map.insert(table_name.to_string(), requests.clone());
-            
-            let resp = self.client
+
+            let resp = self
+                .client
                 .batch_write_item()
                 .set_request_items(Some(req_map))
                 .send()
                 .await
                 .map_err(|e| map_sdk_error(e, ErrorCode::Infra001, table_name))?;
-                
+
             if let Some(mut unprocessed) = resp.unprocessed_items {
                 if let Some(failed_reqs) = unprocessed.remove(table_name) {
                     if failed_reqs.is_empty() {
@@ -182,15 +185,20 @@ impl DynamoClient {
                     tracing::warn!("BatchWriteItem UnprocessedItems: {}", failed_reqs.len());
                     requests = failed_reqs;
                     retries += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(50 * (2_u64.pow(retries)))).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * (2_u64.pow(retries))))
+                        .await;
                     continue;
                 }
             }
             break;
         }
-        
-        tracing::info!("BatchWriteItem successful for {} items in table {}", initial_len, table_name);
-            
+
+        tracing::info!(
+            "BatchWriteItem successful for {} items in table {}",
+            initial_len,
+            table_name
+        );
+
         Ok(())
     }
 
@@ -200,15 +208,16 @@ impl DynamoClient {
     /// Retorna todos los items (paginados automáticamente).
     pub async fn query(
         &self,
-        table_name:           &str,
-        index_name:           Option<&str>,
-        key_condition:        &str,
-        expr_attr_names:      HashMap<String, String>,
-        expr_attr_values:     HashMap<String, AttributeValue>,
-        scan_index_forward:   bool,
-        limit:                Option<i32>,
+        table_name: &str,
+        index_name: Option<&str>,
+        key_condition: &str,
+        expr_attr_names: HashMap<String, String>,
+        expr_attr_values: HashMap<String, AttributeValue>,
+        scan_index_forward: bool,
+        limit: Option<i32>,
     ) -> Result<Vec<HashMap<String, AttributeValue>>, DomainError> {
-        let mut req = self.client
+        let mut req = self
+            .client
             .query()
             .table_name(table_name)
             .key_condition_expression(key_condition)
@@ -262,8 +271,8 @@ impl DynamoClient {
     pub async fn delete_item(
         &self,
         table_name: &str,
-        pk:         &str,
-        sk:         Option<&[u8]>,
+        pk: &str,
+        sk: Option<&[u8]>,
     ) -> Result<(), DomainError> {
         let mut key = HashMap::new();
         key.insert("PK".to_string(), AttributeValue::S(pk.to_string()));
@@ -290,8 +299,8 @@ impl DynamoClient {
 /// Convierte un SdkError en DomainError.
 /// [PORTED_FROM: (if (:cognitect.anomalies/category resp) (errors/error code {...}))]
 fn map_sdk_error<E: std::fmt::Debug>(
-    err:        SdkError<E>,
-    default:    ErrorCode,
+    err: SdkError<E>,
+    default: ErrorCode,
     table_name: &str,
 ) -> DomainError {
     let msg = format!("{err:?}");
@@ -303,20 +312,35 @@ fn map_sdk_error<E: std::fmt::Debug>(
     } else {
         default
     };
-    DomainError::infra(code, format!("DynamoDB error en tabla '{table_name}': {msg}"))
+    DomainError::infra(
+        code,
+        format!("DynamoDB error en tabla '{table_name}': {msg}"),
+    )
 }
 
 /// Extrae un String de un AttributeValue.
 pub fn av_string(av: &AttributeValue) -> Option<&str> {
-    if let AttributeValue::S(s) = av { Some(s) } else { None }
+    if let AttributeValue::S(s) = av {
+        Some(s)
+    } else {
+        None
+    }
 }
 
 /// Extrae bytes de un AttributeValue binario.
 pub fn av_bytes(av: &AttributeValue) -> Option<&[u8]> {
-    if let AttributeValue::B(b) = av { Some(b.as_ref()) } else { None }
+    if let AttributeValue::B(b) = av {
+        Some(b.as_ref())
+    } else {
+        None
+    }
 }
 
 /// Extrae un número (como String) de un AttributeValue.
 pub fn av_number(av: &AttributeValue) -> Option<&str> {
-    if let AttributeValue::N(n) = av { Some(n) } else { None }
+    if let AttributeValue::N(n) = av {
+        Some(n)
+    } else {
+        None
+    }
 }

@@ -6,7 +6,9 @@
 ///
 /// [Blueprint: §XII.2 — "sufijo de shard al PK: T#tnt#A#entity_type#N"]
 pub fn shard_key(entity_id: &str, total_shards: u8) -> u8 {
-    if total_shards <= 1 { return 0; }
+    if total_shards <= 1 {
+        return 0;
+    }
 
     // FNV-1a hash — extremadamente rápido, sin dependencias externas
     let mut hash: u64 = 0xcbf29ce484222325;

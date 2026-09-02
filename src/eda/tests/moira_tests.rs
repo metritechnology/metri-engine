@@ -1,7 +1,7 @@
 use super::*;
-use std::sync::Mutex;
-use crate::eav::writer::TransactResult;
 use crate::domain::protocols::SqsMessage;
+use crate::eav::writer::TransactResult;
+use std::sync::Mutex;
 
 struct MockPullReader {
     // maps entity_id -> map of attribute -> DatomValue
@@ -58,15 +58,20 @@ struct MockOltpExecutor {
 impl OltpQueryRunner for MockOltpExecutor {
     async fn run_oltp_query(&self, _tenant_id: &str, ast_ir: &Value) -> Result<Value, DomainError> {
         let r = self.rows.lock().unwrap().clone();
-        let status = ast_ir.get("where")
+        let status = ast_ir
+            .get("where")
             .and_then(|w| w.get(1))
             .and_then(|cond| cond.get(2))
             .and_then(|v| v.as_str())
             .unwrap_or("PENDING");
 
-        let filtered: Vec<Value> = r.into_iter()
+        let filtered: Vec<Value> = r
+            .into_iter()
             .filter(|row| {
-                let row_status = row.get("status").and_then(|s| s.as_str()).unwrap_or("PENDING");
+                let row_status = row
+                    .get("status")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("PENDING");
                 row_status == status
             })
             .collect();
@@ -77,16 +82,29 @@ impl OltpQueryRunner for MockOltpExecutor {
 
 #[tokio::test]
 async fn test_moira_emit_no_pending_events() {
-    let pull = Arc::new(MockPullReader { store: Mutex::new(HashMap::new()) });
-    let transacter = MockTransacter { transacts: Mutex::new(vec![]), store: pull.clone() };
-    let oltp = MockOltpExecutor { rows: Mutex::new(vec![]) };
+    let pull = Arc::new(MockPullReader {
+        store: Mutex::new(HashMap::new()),
+    });
+    let transacter = MockTransacter {
+        transacts: Mutex::new(vec![]),
+        store: pull.clone(),
+    };
+    let oltp = MockOltpExecutor {
+        rows: Mutex::new(vec![]),
+    };
     let sqs = Arc::new(crate::infrastructure::sqs::StubSqsBus::new());
 
     let emitter = MoiraEmitterImpl::new(pull, transacter, sqs.clone(), oltp);
-    
-    let ctx = IopContext::new("tnt_01", "usr_01", "outbox_event", "CREATE", serde_json::Map::new());
+
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "outbox_event",
+        "CREATE",
+        serde_json::Map::new(),
+    );
     let res = emitter.emit(ctx).await;
-    
+
     assert!(res.is_ok());
     assert!(sqs.messages.lock().unwrap().is_empty());
 }
@@ -97,35 +115,49 @@ async fn test_moira_emit_success_workflow() {
     let mut attrs = HashMap::new();
     attrs.insert("id".to_string(), DatomValue::Str("evt_01".to_string()));
     attrs.insert("status".to_string(), DatomValue::Str("PENDING".to_string()));
-    attrs.insert("detail_type".to_string(), DatomValue::Str("test_event".to_string()));
+    attrs.insert(
+        "detail_type".to_string(),
+        DatomValue::Str("test_event".to_string()),
+    );
     event_store.insert("evt_01".to_string(), attrs);
 
-    let pull = Arc::new(MockPullReader { store: Mutex::new(event_store) });
-    let transacter = MockTransacter { transacts: Mutex::new(vec![]), store: pull.clone() };
-    
-    let pending_list = vec![
-        json!({
-            "id": "evt_01",
-            "status": "PENDING",
-            "detail_type": "test_event",
-            "created_at": 1000
-        })
-    ];
-    let oltp = MockOltpExecutor { rows: Mutex::new(pending_list) };
+    let pull = Arc::new(MockPullReader {
+        store: Mutex::new(event_store),
+    });
+    let transacter = MockTransacter {
+        transacts: Mutex::new(vec![]),
+        store: pull.clone(),
+    };
+
+    let pending_list = vec![json!({
+        "id": "evt_01",
+        "status": "PENDING",
+        "detail_type": "test_event",
+        "created_at": 1000
+    })];
+    let oltp = MockOltpExecutor {
+        rows: Mutex::new(pending_list),
+    };
     let sqs = Arc::new(crate::infrastructure::sqs::StubSqsBus::new());
 
     let emitter = MoiraEmitterImpl::new(pull.clone(), transacter, sqs.clone(), oltp);
-    
-    let ctx = IopContext::new("tnt_01", "usr_01", "outbox_event", "CREATE", serde_json::Map::new());
+
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "outbox_event",
+        "CREATE",
+        serde_json::Map::new(),
+    );
     let res = emitter.emit(ctx).await;
-    
+
     assert!(res.is_ok());
-    
+
     // SQS should have 1 message
     let msgs = sqs.messages.lock().unwrap();
     assert_eq!(msgs.len(), 1);
     assert!(msgs[0].body.contains("evt_01"));
-    
+
     // Pull should now have status = DELIVERED
     let final_event = pull.store.lock().unwrap().get("evt_01").unwrap().clone();
     if let Some(DatomValue::Str(status)) = final_event.get("status") {
@@ -142,41 +174,62 @@ async fn test_moira_emit_fail_and_backoff() {
     attrs.insert("id".to_string(), DatomValue::Str("evt_01".to_string()));
     attrs.insert("status".to_string(), DatomValue::Str("PENDING".to_string()));
     attrs.insert("retry_count".to_string(), DatomValue::Long(0));
-    attrs.insert("detail_type".to_string(), DatomValue::Str("test_event".to_string()));
+    attrs.insert(
+        "detail_type".to_string(),
+        DatomValue::Str("test_event".to_string()),
+    );
     event_store.insert("evt_01".to_string(), attrs);
 
-    let pull = Arc::new(MockPullReader { store: Mutex::new(event_store) });
-    let transacter = MockTransacter { transacts: Mutex::new(vec![]), store: pull.clone() };
-    
-    let pending_list = vec![
-        json!({
-            "id": "evt_01",
-            "status": "PENDING",
-            "detail_type": "test_event",
-            "created_at": 1000
-        })
-    ];
-    let oltp = MockOltpExecutor { rows: Mutex::new(pending_list) };
-    
+    let pull = Arc::new(MockPullReader {
+        store: Mutex::new(event_store),
+    });
+    let transacter = MockTransacter {
+        transacts: Mutex::new(vec![]),
+        store: pull.clone(),
+    };
+
+    let pending_list = vec![json!({
+        "id": "evt_01",
+        "status": "PENDING",
+        "detail_type": "test_event",
+        "created_at": 1000
+    })];
+    let oltp = MockOltpExecutor {
+        rows: Mutex::new(pending_list),
+    };
+
     // A failing SQS bus that returns error
     struct FailSqsBus;
     #[async_trait]
     impl ISqsBus for FailSqsBus {
         async fn publish(&self, _p: &str, _g: &str, _d: &str) -> Result<String, DomainError> {
-            Err(DomainError::infra(ErrorCode::Infra003, "SQS simulated fail".to_string()))
+            Err(DomainError::infra(
+                ErrorCode::Infra003,
+                "SQS simulated fail".to_string(),
+            ))
         }
-        async fn receive_messages(&self, _m: u32) -> Result<Vec<SqsMessage>, DomainError> { Ok(vec![]) }
-        async fn delete_message(&self, _r: &str) -> Result<(), DomainError> { Ok(()) }
+        async fn receive_messages(&self, _m: u32) -> Result<Vec<SqsMessage>, DomainError> {
+            Ok(vec![])
+        }
+        async fn delete_message(&self, _r: &str) -> Result<(), DomainError> {
+            Ok(())
+        }
     }
     let sqs = Arc::new(FailSqsBus);
 
     let emitter = MoiraEmitterImpl::new(pull.clone(), transacter, sqs, oltp);
-    
-    let ctx = IopContext::new("tnt_01", "usr_01", "outbox_event", "CREATE", serde_json::Map::new());
+
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "outbox_event",
+        "CREATE",
+        serde_json::Map::new(),
+    );
     let res = emitter.emit(ctx).await;
-    
+
     assert!(res.is_ok());
-    
+
     // Event should be marked as FAILED with retry_count = 1
     let final_event = pull.store.lock().unwrap().get("evt_01").unwrap().clone();
     if let Some(DatomValue::Str(status)) = final_event.get("status") {
@@ -194,24 +247,41 @@ async fn test_moira_emit_fail_and_backoff() {
 #[tokio::test]
 async fn test_moira_watchdog_resets_orphans() {
     let mut event_store = HashMap::new();
-    
+
     let mut attrs1 = HashMap::new();
     attrs1.insert("id".to_string(), DatomValue::Str("evt_stuck".to_string()));
-    attrs1.insert("status".to_string(), DatomValue::Str("PROCESSING".to_string()));
+    attrs1.insert(
+        "status".to_string(),
+        DatomValue::Str("PROCESSING".to_string()),
+    );
     attrs1.insert("claimed_at".to_string(), DatomValue::Instant(100)); // Very old
     event_store.insert("evt_stuck".to_string(), attrs1);
 
     let mut attrs2 = HashMap::new();
     attrs2.insert("id".to_string(), DatomValue::Str("evt_fresh".to_string()));
-    attrs2.insert("status".to_string(), DatomValue::Str("PROCESSING".to_string()));
-    attrs2.insert("claimed_at".to_string(), DatomValue::Instant(
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
-    )); // Now
+    attrs2.insert(
+        "status".to_string(),
+        DatomValue::Str("PROCESSING".to_string()),
+    );
+    attrs2.insert(
+        "claimed_at".to_string(),
+        DatomValue::Instant(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64,
+        ),
+    ); // Now
     event_store.insert("evt_fresh".to_string(), attrs2);
 
-    let pull = Arc::new(MockPullReader { store: Mutex::new(event_store) });
-    let transacter = MockTransacter { transacts: Mutex::new(vec![]), store: pull.clone() };
-    
+    let pull = Arc::new(MockPullReader {
+        store: Mutex::new(event_store),
+    });
+    let transacter = MockTransacter {
+        transacts: Mutex::new(vec![]),
+        store: pull.clone(),
+    };
+
     // Oltp returns both candidates
     let candidates = vec![
         json!({
@@ -223,31 +293,46 @@ async fn test_moira_watchdog_resets_orphans() {
             "id": "evt_fresh",
             "status": "PROCESSING",
             "claimed_at": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
-        })
+        }),
     ];
-    let oltp = MockOltpExecutor { rows: Mutex::new(candidates) };
+    let oltp = MockOltpExecutor {
+        rows: Mutex::new(candidates),
+    };
     let sqs = Arc::new(crate::infrastructure::sqs::StubSqsBus::new());
 
     let emitter = MoiraEmitterImpl::new(pull.clone(), transacter, sqs, oltp);
-    
-    let reset_count = emitter.reset_orphaned_processing("tnt_01", 600_000).await.unwrap();
-    
+
+    let reset_count = emitter
+        .reset_orphaned_processing("tnt_01", 600_000)
+        .await
+        .unwrap();
+
     assert_eq!(reset_count, 1);
-    
+
     let store = pull.store.lock().unwrap();
     // stuck event is now PENDING
-    let stuck_status = store.get("evt_stuck").unwrap().get("status").unwrap().clone();
+    let stuck_status = store
+        .get("evt_stuck")
+        .unwrap()
+        .get("status")
+        .unwrap()
+        .clone();
     assert_eq!(stuck_status, DatomValue::Str("PENDING".to_string()));
-    
+
     // fresh event is still PROCESSING
-    let fresh_status = store.get("evt_fresh").unwrap().get("status").unwrap().clone();
+    let fresh_status = store
+        .get("evt_fresh")
+        .unwrap()
+        .get("status")
+        .unwrap()
+        .clone();
     assert_eq!(fresh_status, DatomValue::Str("PROCESSING".to_string()));
 }
 
 #[tokio::test]
 async fn test_moira_emitter_concurrency_10_cases() {
-    use crate::iop::core::IopContext;
     use crate::infrastructure::sqs::StubSqsBus;
+    use crate::iop::core::IopContext;
     use tokio::sync::Mutex as TokioMutex;
 
     // 1. Definición de Stubs livianos e in-memory para EavReader y EavWriter
@@ -269,7 +354,10 @@ async fn test_moira_emitter_concurrency_10_cases() {
                 let mut def = HashMap::new();
                 def.insert("id".to_string(), DatomValue::Str(entity_id.to_string()));
                 def.insert("status".to_string(), DatomValue::Str("PENDING".to_string()));
-                def.insert("detail_type".to_string(), DatomValue::Str("work_order.create".to_string()));
+                def.insert(
+                    "detail_type".to_string(),
+                    DatomValue::Str("work_order.create".to_string()),
+                );
                 def.insert("retry_count".to_string(), DatomValue::Long(0));
                 def.insert("created_at".to_string(), DatomValue::Instant(1622000000000));
                 def
@@ -280,9 +368,15 @@ async fn test_moira_emitter_concurrency_10_cases() {
 
     #[async_trait::async_trait]
     impl EavTransacter for MockEavState {
-        async fn transact(&self, payload: TransactPayload) -> Result<crate::eav::writer::TransactResult, DomainError> {
+        async fn transact(
+            &self,
+            payload: TransactPayload,
+        ) -> Result<crate::eav::writer::TransactResult, DomainError> {
             let mut state = self.events.lock().await;
-            let entity_id = payload.entity_id.clone().unwrap_or_else(|| "mock-entity".to_string());
+            let entity_id = payload
+                .entity_id
+                .clone()
+                .unwrap_or_else(|| "mock-entity".to_string());
             let datom_count = payload.attrs.len();
             if let Some(id) = &payload.entity_id {
                 let entry = state.entry(id.clone()).or_insert_with(HashMap::new);
@@ -301,8 +395,13 @@ async fn test_moira_emitter_concurrency_10_cases() {
 
     #[async_trait::async_trait]
     impl OltpQueryRunner for MockEavState {
-        async fn run_oltp_query(&self, tenant_id: &str, ast_ir: &Value) -> Result<Value, DomainError> {
-            let is_pending = ast_ir.get("where")
+        async fn run_oltp_query(
+            &self,
+            tenant_id: &str,
+            ast_ir: &Value,
+        ) -> Result<Value, DomainError> {
+            let is_pending = ast_ir
+                .get("where")
                 .and_then(|w| w.get(1))
                 .and_then(|cond| cond.get(2))
                 .and_then(|v| v.as_str())
@@ -332,7 +431,7 @@ async fn test_moira_emitter_concurrency_10_cases() {
         events: Arc::new(TokioMutex::new(HashMap::new())),
     };
     let stub_sqs = Arc::new(StubSqsBus::new());
-    
+
     let emitter = Arc::new(MoiraEmitterImpl::new(
         mock_state.clone(),
         mock_state.clone(),
@@ -346,20 +445,17 @@ async fn test_moira_emitter_concurrency_10_cases() {
         let emitter_clone = Arc::clone(&emitter);
         let tenant_id = format!("tnt_{:02}", i);
         let outbox_id = format!("outbox-uuid-{:02}", i);
-        
+
         let mut request_map = serde_json::Map::new();
         request_map.insert("id".to_string(), json!(outbox_id));
         request_map.insert("entity_type".to_string(), json!("work_order"));
         request_map.insert("operation".to_string(), json!("create"));
-        request_map.insert("payload".to_string(), json!({ "cost": 1000 * i, "status": "ACTIVE" }));
-
-        let ctx = IopContext::new(
-            tenant_id,
-            "usr_admin",
-            "work_order",
-            "create",
-            request_map,
+        request_map.insert(
+            "payload".to_string(),
+            json!({ "cost": 1000 * i, "status": "ACTIVE" }),
         );
+
+        let ctx = IopContext::new(tenant_id, "usr_admin", "work_order", "create", request_map);
 
         let handle = tokio::spawn(async move {
             let result = emitter_clone.emit(ctx).await;
@@ -388,7 +484,9 @@ async fn test_moira_emitter_concurrency_10_cases() {
     assert_eq!(sqs_messages.len(), 10);
     for i in 1..=10 {
         let expected_outbox_id = format!("outbox-uuid-{:02}", i);
-        let found = sqs_messages.iter().any(|msg| msg.body.contains(&expected_outbox_id));
+        let found = sqs_messages
+            .iter()
+            .any(|msg| msg.body.contains(&expected_outbox_id));
         assert!(
             found,
             "No se encontró el mensaje SQS correspondiente al outbox_id {}",
@@ -404,13 +502,13 @@ async fn test_moira_emitter_concurrency_10_cases_real() {
         return;
     }
 
-    use crate::iop::core::IopContext;
-    use crate::infrastructure::sqs::SqsFifoBus;
-    use crate::infrastructure::dynamodb::DynamoClient;
-    use crate::eav::reader::pull::EavReader;
-    use crate::eav::writer::{EavWriter, TransactPayload, TransactOp};
     use crate::aegis::oltp::executor::OltpExecutor;
+    use crate::eav::reader::pull::EavReader;
     use crate::eav::reader::query::EavQueryExecutor;
+    use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
+    use crate::infrastructure::dynamodb::DynamoClient;
+    use crate::infrastructure::sqs::SqsFifoBus;
+    use crate::iop::core::IopContext;
 
     // 1. Inicializar Códice si no está inicializado (silenciando la salida de pánico temporalmente)
     let has_registry = {
@@ -437,7 +535,10 @@ async fn test_moira_emitter_concurrency_10_cases_real() {
 
     let eav_table = "metri-eav-local";
     let ddb_client = Arc::new(DynamoClient::new(eav_table).await);
-    assert!(ddb_client.health_check().await, "¡DynamoDB local no está listo!");
+    assert!(
+        ddb_client.health_check().await,
+        "¡DynamoDB local no está listo!"
+    );
 
     let query_exec = EavQueryExecutor::new(Arc::clone(&ddb_client), eav_table);
     let pull_read = Arc::new(EavReader::new(Arc::clone(&ddb_client), eav_table));
@@ -446,7 +547,10 @@ async fn test_moira_emitter_concurrency_10_cases_real() {
 
     let queue_url = "http://localhost:4566/000000000000/metri-outbox.fifo";
     let sqs_bus = Arc::new(SqsFifoBus::new(queue_url).await);
-    assert!(sqs_bus.health_check().await, "¡Localstack SQS no está listo!");
+    assert!(
+        sqs_bus.health_check().await,
+        "¡Localstack SQS no está listo!"
+    );
 
     let emitter = Arc::new(MoiraEmitterImpl::new(
         pull_read.clone(),
@@ -472,10 +576,22 @@ async fn test_moira_emitter_concurrency_10_cases_real() {
         // Seed del evento en la base de datos real
         let mut attrs = HashMap::new();
         attrs.insert("status".to_string(), DatomValue::Str("PENDING".to_string()));
-        attrs.insert("detail_type".to_string(), DatomValue::Str("work_order.create".to_string()));
-        attrs.insert("payload".to_string(), DatomValue::Str(format!("{{\"cost\": {}, \"status\": \"ACTIVE\"}}", 1000 * i)));
+        attrs.insert(
+            "detail_type".to_string(),
+            DatomValue::Str("work_order.create".to_string()),
+        );
+        attrs.insert(
+            "payload".to_string(),
+            DatomValue::Str(format!(
+                "{{\"cost\": {}, \"status\": \"ACTIVE\"}}",
+                1000 * i
+            )),
+        );
         attrs.insert("retry_count".to_string(), DatomValue::Long(0));
-        attrs.insert("created_at".to_string(), DatomValue::Instant(1622000000000 + i as i64));
+        attrs.insert(
+            "created_at".to_string(),
+            DatomValue::Instant(1622000000000 + i as i64),
+        );
 
         let transact = TransactPayload {
             tenant_id: tenant_id.clone(),
@@ -491,15 +607,12 @@ async fn test_moira_emitter_concurrency_10_cases_real() {
         request_map.insert("id".to_string(), json!(outbox_id));
         request_map.insert("entity_type".to_string(), json!("work_order"));
         request_map.insert("operation".to_string(), json!("create"));
-        request_map.insert("payload".to_string(), json!({ "cost": 1000 * i, "status": "ACTIVE" }));
-
-        let ctx = IopContext::new(
-            tenant_id,
-            "usr_admin",
-            "work_order",
-            "create",
-            request_map,
+        request_map.insert(
+            "payload".to_string(),
+            json!({ "cost": 1000 * i, "status": "ACTIVE" }),
         );
+
+        let ctx = IopContext::new(tenant_id, "usr_admin", "work_order", "create", request_map);
 
         let handle = tokio::spawn(async move {
             let result = emitter_clone.emit(ctx).await;
@@ -530,27 +643,42 @@ async fn test_moira_emitter_concurrency_10_cases_real() {
         let outbox_id = format!("outbox-{}-real-{:02}", run_suffix, i);
         let tenant_id = format!("tnt_real_{:02}", i);
         let pulled = pull_read.pull(&tenant_id, &outbox_id, None).await.unwrap();
-        let status = pulled.get("status").expect("Status no encontrado en entidad real");
+        let status = pulled
+            .get("status")
+            .expect("Status no encontrado en entidad real");
         assert_eq!(status, &DatomValue::Str("DELIVERED".to_string()));
     }
 
     // B) Validar que la cola de SQS FIFO recibió los 10 mensajes correspondientes
     let sqs_messages = sqs_bus.receive_messages(10).await.unwrap();
-    assert_eq!(sqs_messages.len(), 10, "¡La cola SQS real no recibió los 10 mensajes!");
+    assert_eq!(
+        sqs_messages.len(),
+        10,
+        "¡La cola SQS real no recibió los 10 mensajes!"
+    );
     for i in 1..=10 {
         let expected_outbox_id = format!("outbox-{}-real-{:02}", run_suffix, i);
-        let found_msg = sqs_messages.iter().find(|msg| msg.body.contains(&expected_outbox_id));
-        assert!(found_msg.is_some(), "¡No se encontró el mensaje SQS real para outbox_id {}!", expected_outbox_id);
+        let found_msg = sqs_messages
+            .iter()
+            .find(|msg| msg.body.contains(&expected_outbox_id));
+        assert!(
+            found_msg.is_some(),
+            "¡No se encontró el mensaje SQS real para outbox_id {}!",
+            expected_outbox_id
+        );
         // Eliminar para dejar limpia la cola
-        sqs_bus.delete_message(&found_msg.unwrap().receipt_handle).await.unwrap();
+        sqs_bus
+            .delete_message(&found_msg.unwrap().receipt_handle)
+            .await
+            .unwrap();
     }
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_seed_production_quotas() {
+    use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
     use crate::infrastructure::dynamodb::DynamoClient;
-    use crate::eav::writer::{EavWriter, TransactPayload, TransactOp};
 
     // 1. Inicializar Códice
     let models_dir = std::path::Path::new("config/models");
@@ -569,10 +697,22 @@ async fn test_seed_production_quotas() {
     println!("Seeding location quota in production...");
     let mut attrs_loc = HashMap::new();
     attrs_loc.insert("tenant_id".to_string(), DatomValue::Ref(0));
-    attrs_loc.insert("resource_domain".to_string(), DatomValue::Str("location".to_string()));
-    attrs_loc.insert("limit_type".to_string(), DatomValue::Str("WRITE_COUNT".to_string()));
-    attrs_loc.insert("reset_strategy".to_string(), DatomValue::Str("FIXED".to_string()));
-    attrs_loc.insert("period_key".to_string(), DatomValue::Str("LIFETIME".to_string()));
+    attrs_loc.insert(
+        "resource_domain".to_string(),
+        DatomValue::Str("location".to_string()),
+    );
+    attrs_loc.insert(
+        "limit_type".to_string(),
+        DatomValue::Str("WRITE_COUNT".to_string()),
+    );
+    attrs_loc.insert(
+        "reset_strategy".to_string(),
+        DatomValue::Str("FIXED".to_string()),
+    );
+    attrs_loc.insert(
+        "period_key".to_string(),
+        DatomValue::Str("LIFETIME".to_string()),
+    );
     attrs_loc.insert("max_limit".to_string(), DatomValue::Long(1000000));
     attrs_loc.insert("current_usage".to_string(), DatomValue::Long(0));
 
@@ -589,10 +729,22 @@ async fn test_seed_production_quotas() {
     println!("Seeding asset quota in production...");
     let mut attrs_asset = HashMap::new();
     attrs_asset.insert("tenant_id".to_string(), DatomValue::Ref(0));
-    attrs_asset.insert("resource_domain".to_string(), DatomValue::Str("asset".to_string()));
-    attrs_asset.insert("limit_type".to_string(), DatomValue::Str("WRITE_COUNT".to_string()));
-    attrs_asset.insert("reset_strategy".to_string(), DatomValue::Str("FIXED".to_string()));
-    attrs_asset.insert("period_key".to_string(), DatomValue::Str("LIFETIME".to_string()));
+    attrs_asset.insert(
+        "resource_domain".to_string(),
+        DatomValue::Str("asset".to_string()),
+    );
+    attrs_asset.insert(
+        "limit_type".to_string(),
+        DatomValue::Str("WRITE_COUNT".to_string()),
+    );
+    attrs_asset.insert(
+        "reset_strategy".to_string(),
+        DatomValue::Str("FIXED".to_string()),
+    );
+    attrs_asset.insert(
+        "period_key".to_string(),
+        DatomValue::Str("LIFETIME".to_string()),
+    );
     attrs_asset.insert("max_limit".to_string(), DatomValue::Long(1000000));
     attrs_asset.insert("current_usage".to_string(), DatomValue::Long(0));
 
@@ -610,11 +762,11 @@ async fn test_seed_production_quotas() {
 #[tokio::test]
 #[ignore]
 async fn test_seed_and_emit_production_outbox_events() {
-    use crate::infrastructure::dynamodb::DynamoClient;
-    use crate::eav::writer::{EavWriter, TransactPayload, TransactOp};
+    use crate::aegis::oltp::executor::OltpExecutor;
     use crate::eav::reader::pull::EavReader;
     use crate::eav::reader::query::EavQueryExecutor;
-    use crate::aegis::oltp::executor::OltpExecutor;
+    use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
+    use crate::infrastructure::dynamodb::DynamoClient;
     use crate::infrastructure::sqs::SqsFifoBus;
     use crate::iop::core::IopContext;
 
@@ -654,16 +806,26 @@ async fn test_seed_and_emit_production_outbox_events() {
         let outbox_id = format!("outbox-prod-{}-{}", run_suffix, i);
         let mut attrs = HashMap::new();
         attrs.insert("status".to_string(), DatomValue::Str("PENDING".to_string()));
-        attrs.insert("detail_type".to_string(), DatomValue::Str("asset.create".to_string()));
+        attrs.insert(
+            "detail_type".to_string(),
+            DatomValue::Str("asset.create".to_string()),
+        );
         attrs.insert("payload".to_string(), DatomValue::Str(format!(
             "{{\"event_type\": \"asset.create\", \"asset_id\": \"{}\", \"status\": \"ACTIVE\", \"timestamp\": {}}}",
             outbox_id,
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()
         )));
         attrs.insert("retry_count".to_string(), DatomValue::Long(0));
-        attrs.insert("created_at".to_string(), DatomValue::Instant(
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64 + i as i64
-        ));
+        attrs.insert(
+            "created_at".to_string(),
+            DatomValue::Instant(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64
+                    + i as i64,
+            ),
+        );
 
         let transact = TransactPayload {
             tenant_id: tenant_id.to_string(),
@@ -702,15 +864,18 @@ async fn test_seed_and_emit_production_outbox_events() {
             println!("  - Event {}: {} status not found!", i, outbox_id);
         }
     }
-    assert_eq!(delivered_count, 10, "Not all events were delivered successfully!");
+    assert_eq!(
+        delivered_count, 10,
+        "Not all events were delivered successfully!"
+    );
     println!("Verification SUCCESS: All 10 events were published to SQS FIFO and marked DELIVERED in production DynamoDB!");
 }
 
 #[tokio::test]
 #[ignore]
 async fn test_seed_rules_and_webhooks_production() {
+    use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
     use crate::infrastructure::dynamodb::DynamoClient;
-    use crate::eav::writer::{EavWriter, TransactPayload, TransactOp};
 
     // 1. Inicializar Códice
     let models_dir = std::path::Path::new("config/models");
@@ -730,13 +895,28 @@ async fn test_seed_rules_and_webhooks_production() {
 
     println!("Seeding event routing rule in production...");
     let mut attrs_rule = HashMap::new();
-    attrs_rule.insert("rule_code".to_string(), DatomValue::Str("BENCHMARK_ASSET_CREATE".to_string()));
-    attrs_rule.insert("description".to_string(), DatomValue::Str("Benchmark asset creation rule".to_string()));
+    attrs_rule.insert(
+        "rule_code".to_string(),
+        DatomValue::Str("BENCHMARK_ASSET_CREATE".to_string()),
+    );
+    attrs_rule.insert(
+        "description".to_string(),
+        DatomValue::Str("Benchmark asset creation rule".to_string()),
+    );
     attrs_rule.insert("is_system_seeded".to_string(), DatomValue::Bool(true));
-    attrs_rule.insert("target_entity_name".to_string(), DatomValue::Str("asset".to_string()));
-    attrs_rule.insert("event_trigger_type".to_string(), DatomValue::Str("CREATE".to_string()));
+    attrs_rule.insert(
+        "target_entity_name".to_string(),
+        DatomValue::Str("asset".to_string()),
+    );
+    attrs_rule.insert(
+        "event_trigger_type".to_string(),
+        DatomValue::Str("CREATE".to_string()),
+    );
     attrs_rule.insert("filter_conditions".to_string(), DatomValue::Array(vec![]));
-    attrs_rule.insert("detail_type_output".to_string(), DatomValue::Str("benchmark.asset.created".to_string()));
+    attrs_rule.insert(
+        "detail_type_output".to_string(),
+        DatomValue::Str("benchmark.asset.created".to_string()),
+    );
 
     let transact_rule = TransactPayload {
         tenant_id: tenant_id.to_string(),
@@ -750,12 +930,30 @@ async fn test_seed_rules_and_webhooks_production() {
 
     println!("Seeding webhook endpoint in production...");
     let mut attrs_webhook = HashMap::new();
-    attrs_webhook.insert("name".to_string(), DatomValue::Str("Webhook Benchmark Target".to_string()));
-    attrs_webhook.insert("target_url".to_string(), DatomValue::Str("https://httpbin.org/post".to_string()));
-    attrs_webhook.insert("http_method".to_string(), DatomValue::Str("POST".to_string()));
-    attrs_webhook.insert("authentication_type".to_string(), DatomValue::Str("NONE".to_string()));
-    attrs_webhook.insert("auth_token".to_string(), DatomValue::Str("my-secret-token".to_string()));
-    attrs_webhook.insert("subscribed_rule_ids".to_string(), DatomValue::Array(vec!["rule-benchmark-asset-create".to_string()]));
+    attrs_webhook.insert(
+        "name".to_string(),
+        DatomValue::Str("Webhook Benchmark Target".to_string()),
+    );
+    attrs_webhook.insert(
+        "target_url".to_string(),
+        DatomValue::Str("https://httpbin.org/post".to_string()),
+    );
+    attrs_webhook.insert(
+        "http_method".to_string(),
+        DatomValue::Str("POST".to_string()),
+    );
+    attrs_webhook.insert(
+        "authentication_type".to_string(),
+        DatomValue::Str("NONE".to_string()),
+    );
+    attrs_webhook.insert(
+        "auth_token".to_string(),
+        DatomValue::Str("my-secret-token".to_string()),
+    );
+    attrs_webhook.insert(
+        "subscribed_rule_ids".to_string(),
+        DatomValue::Array(vec!["rule-benchmark-asset-create".to_string()]),
+    );
     attrs_webhook.insert("is_active".to_string(), DatomValue::Bool(true));
 
     let transact_webhook = TransactPayload {
@@ -772,11 +970,11 @@ async fn test_seed_rules_and_webhooks_production() {
 #[tokio::test]
 #[ignore]
 async fn test_seed_cmms_rules_and_events_production() {
-    use crate::infrastructure::dynamodb::DynamoClient;
-    use crate::eav::writer::{EavWriter, TransactPayload, TransactOp};
+    use crate::aegis::oltp::executor::OltpExecutor;
     use crate::eav::reader::pull::EavReader;
     use crate::eav::reader::query::EavQueryExecutor;
-    use crate::aegis::oltp::executor::OltpExecutor;
+    use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
+    use crate::infrastructure::dynamodb::DynamoClient;
     use crate::infrastructure::sqs::SqsFifoBus;
     use crate::iop::core::IopContext;
 
@@ -846,22 +1044,36 @@ async fn test_seed_cmms_rules_and_events_production() {
     let mut seeded_rule_ids = Vec::new();
     for (id, code, entity, trigger, filter_conds, detail_type, desc) in &rule_cases {
         // Intentar borrar primero la regla si ya existe para asegurar un clean seed
-        let _ = eav_writer.transact(TransactPayload {
-            tenant_id: tenant_id.to_string(),
-            entity_id: Some(id.to_string()),
-            entity_type: "event_routing_rule".to_string(),
-            attrs: HashMap::new(),
-            op: TransactOp::Delete,
-        }).await;
+        let _ = eav_writer
+            .transact(TransactPayload {
+                tenant_id: tenant_id.to_string(),
+                entity_id: Some(id.to_string()),
+                entity_type: "event_routing_rule".to_string(),
+                attrs: HashMap::new(),
+                op: TransactOp::Delete,
+            })
+            .await;
 
         let mut attrs = HashMap::new();
         attrs.insert("rule_code".to_string(), DatomValue::Str(code.to_string()));
         attrs.insert("description".to_string(), DatomValue::Str(desc.to_string()));
         attrs.insert("is_system_seeded".to_string(), DatomValue::Bool(true));
-        attrs.insert("target_entity_name".to_string(), DatomValue::Str(entity.to_string()));
-        attrs.insert("event_trigger_type".to_string(), DatomValue::Str(trigger.to_string()));
-        attrs.insert("filter_conditions".to_string(), DatomValue::Array(filter_conds.clone()));
-        attrs.insert("detail_type_output".to_string(), DatomValue::Str(detail_type.to_string()));
+        attrs.insert(
+            "target_entity_name".to_string(),
+            DatomValue::Str(entity.to_string()),
+        );
+        attrs.insert(
+            "event_trigger_type".to_string(),
+            DatomValue::Str(trigger.to_string()),
+        );
+        attrs.insert(
+            "filter_conditions".to_string(),
+            DatomValue::Array(filter_conds.clone()),
+        );
+        attrs.insert(
+            "detail_type_output".to_string(),
+            DatomValue::Str(detail_type.to_string()),
+        );
 
         let transact_rule = TransactPayload {
             tenant_id: tenant_id.to_string(),
@@ -876,21 +1088,41 @@ async fn test_seed_cmms_rules_and_events_production() {
     }
 
     println!("Seeding webhook endpoint subscribed to all 8 CMMS rules...");
-    let _ = eav_writer.transact(TransactPayload {
-        tenant_id: tenant_id.to_string(),
-        entity_id: Some("webhook-cmms-testing".to_string()),
-        entity_type: "webhook_endpoint".to_string(),
-        attrs: HashMap::new(),
-        op: TransactOp::Delete,
-    }).await;
+    let _ = eav_writer
+        .transact(TransactPayload {
+            tenant_id: tenant_id.to_string(),
+            entity_id: Some("webhook-cmms-testing".to_string()),
+            entity_type: "webhook_endpoint".to_string(),
+            attrs: HashMap::new(),
+            op: TransactOp::Delete,
+        })
+        .await;
 
     let mut attrs_webhook = HashMap::new();
-    attrs_webhook.insert("name".to_string(), DatomValue::Str("Webhook CMMS Testing Target".to_string()));
-    attrs_webhook.insert("target_url".to_string(), DatomValue::Str("https://httpbin.org/post".to_string()));
-    attrs_webhook.insert("http_method".to_string(), DatomValue::Str("POST".to_string()));
-    attrs_webhook.insert("authentication_type".to_string(), DatomValue::Str("NONE".to_string()));
-    attrs_webhook.insert("auth_token".to_string(), DatomValue::Str("my-cmms-secret-token".to_string()));
-    attrs_webhook.insert("subscribed_rule_ids".to_string(), DatomValue::Array(seeded_rule_ids));
+    attrs_webhook.insert(
+        "name".to_string(),
+        DatomValue::Str("Webhook CMMS Testing Target".to_string()),
+    );
+    attrs_webhook.insert(
+        "target_url".to_string(),
+        DatomValue::Str("https://httpbin.org/post".to_string()),
+    );
+    attrs_webhook.insert(
+        "http_method".to_string(),
+        DatomValue::Str("POST".to_string()),
+    );
+    attrs_webhook.insert(
+        "authentication_type".to_string(),
+        DatomValue::Str("NONE".to_string()),
+    );
+    attrs_webhook.insert(
+        "auth_token".to_string(),
+        DatomValue::Str("my-cmms-secret-token".to_string()),
+    );
+    attrs_webhook.insert(
+        "subscribed_rule_ids".to_string(),
+        DatomValue::Array(seeded_rule_ids),
+    );
     attrs_webhook.insert("is_active".to_string(), DatomValue::Bool(true));
 
     let transact_webhook = TransactPayload {
@@ -909,83 +1141,126 @@ async fn test_seed_cmms_rules_and_events_production() {
     let run_suffix = &run_id[..8];
 
     let event_cases = vec![
-        ("LC-01", "location.create", json!({
-            "id": format!("loc-create-{run_suffix}"),
-            "name": "Central Office",
-            "code": "LOC-CO-001",
-            "type": "plant",
-            "address": "123 Main St"
-        })),
-        ("LC-02", "location.update", json!({
-            "id": format!("loc-update-{run_suffix}"),
-            "name": "Central Office Updated",
-            "code": "LOC-CO-001",
-            "type": "plant"
-        })),
-        ("LC-03", "location.delete", json!({
-            "id": format!("loc-delete-{run_suffix}"),
-            "code": "LOC-CO-001"
-        })),
-        ("AS-01", "asset.create", json!({
-            "id": format!("asset-create-{run_suffix}"),
-            "name": "HVAC Compressor 1",
-            "status": "active",
-            "criticality": "A",
-            "manufacturer": "Carrier"
-        })),
-        ("AS-02", "asset.update", json!({
-            "id": format!("asset-status-{run_suffix}"),
-            "name": "HVAC Compressor 1",
-            "status": "maintenance"
-        })),
-        ("WO-01", "work_order.create", json!({
-            "id": format!("wo-create-{run_suffix}"),
-            "title": "Fix HVAC Leaks",
-            "status": "OPEN",
-            "priority": "HIGH",
-            "total_cost_cents": 250000,
-            "currency": "USD"
-        })),
-        ("WO-02", "work_order.update", json!({
-            "id": format!("wo-closed-{run_suffix}"),
-            "title": "Fix HVAC Leaks",
-            "status": "CLOSED",
-            "priority": "HIGH",
-            "total_cost_cents": 4500000,
-            "currency": "USD"
-        })),
-        ("WO-03", "work_order.update", json!({
-            "id": format!("wo-alert-{run_suffix}"),
-            "title": "Major Overhaul",
-            "status": "IN_PROGRESS",
-            "priority": "CRITICAL",
-            "total_cost_cents": 6500000,
-            "currency": "USD"
-        })),
+        (
+            "LC-01",
+            "location.create",
+            json!({
+                "id": format!("loc-create-{run_suffix}"),
+                "name": "Central Office",
+                "code": "LOC-CO-001",
+                "type": "plant",
+                "address": "123 Main St"
+            }),
+        ),
+        (
+            "LC-02",
+            "location.update",
+            json!({
+                "id": format!("loc-update-{run_suffix}"),
+                "name": "Central Office Updated",
+                "code": "LOC-CO-001",
+                "type": "plant"
+            }),
+        ),
+        (
+            "LC-03",
+            "location.delete",
+            json!({
+                "id": format!("loc-delete-{run_suffix}"),
+                "code": "LOC-CO-001"
+            }),
+        ),
+        (
+            "AS-01",
+            "asset.create",
+            json!({
+                "id": format!("asset-create-{run_suffix}"),
+                "name": "HVAC Compressor 1",
+                "status": "active",
+                "criticality": "A",
+                "manufacturer": "Carrier"
+            }),
+        ),
+        (
+            "AS-02",
+            "asset.update",
+            json!({
+                "id": format!("asset-status-{run_suffix}"),
+                "name": "HVAC Compressor 1",
+                "status": "maintenance"
+            }),
+        ),
+        (
+            "WO-01",
+            "work_order.create",
+            json!({
+                "id": format!("wo-create-{run_suffix}"),
+                "title": "Fix HVAC Leaks",
+                "status": "OPEN",
+                "priority": "HIGH",
+                "total_cost_cents": 250000,
+                "currency": "USD"
+            }),
+        ),
+        (
+            "WO-02",
+            "work_order.update",
+            json!({
+                "id": format!("wo-closed-{run_suffix}"),
+                "title": "Fix HVAC Leaks",
+                "status": "CLOSED",
+                "priority": "HIGH",
+                "total_cost_cents": 4500000,
+                "currency": "USD"
+            }),
+        ),
+        (
+            "WO-03",
+            "work_order.update",
+            json!({
+                "id": format!("wo-alert-{run_suffix}"),
+                "title": "Major Overhaul",
+                "status": "IN_PROGRESS",
+                "priority": "CRITICAL",
+                "total_cost_cents": 6500000,
+                "currency": "USD"
+            }),
+        ),
     ];
 
     println!("Seeding 8 outbox events associated with CMMS events in production...");
     let mut seeded_outbox_ids = Vec::new();
     for (case_id, detail_type, payload) in &event_cases {
         let outbox_id = format!("outbox-cmms-{case_id}-{run_suffix}");
-        
+
         // Borrar primero si existe
-        let _ = eav_writer.transact(TransactPayload {
-            tenant_id: tenant_id.to_string(),
-            entity_id: Some(outbox_id.clone()),
-            entity_type: "outbox_event".to_string(),
-            attrs: HashMap::new(),
-            op: TransactOp::Delete,
-        }).await;
+        let _ = eav_writer
+            .transact(TransactPayload {
+                tenant_id: tenant_id.to_string(),
+                entity_id: Some(outbox_id.clone()),
+                entity_type: "outbox_event".to_string(),
+                attrs: HashMap::new(),
+                op: TransactOp::Delete,
+            })
+            .await;
 
         let mut attrs = HashMap::new();
         attrs.insert("status".to_string(), DatomValue::Str("PENDING".to_string()));
-        attrs.insert("detail_type".to_string(), DatomValue::Str(detail_type.to_string()));
+        attrs.insert(
+            "detail_type".to_string(),
+            DatomValue::Str(detail_type.to_string()),
+        );
         attrs.insert("payload".to_string(), DatomValue::Str(payload.to_string()));
         attrs.insert("retry_count".to_string(), DatomValue::Long(0));
-        attrs.insert("created_at".to_string(), DatomValue::Instant(
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64
-        ));
+        attrs.insert(
+            "created_at".to_string(),
+            DatomValue::Instant(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64,
+            ),
+        );
 
         let transact = TransactPayload {
             tenant_id: tenant_id.to_string(),
@@ -1024,6 +1299,9 @@ async fn test_seed_cmms_rules_and_events_production() {
             println!("  - Event {}: status not found!", outbox_id);
         }
     }
-    assert_eq!(delivered_count, 8, "Not all 8 CMMS events were delivered successfully!");
+    assert_eq!(
+        delivered_count, 8,
+        "Not all 8 CMMS events were delivered successfully!"
+    );
     println!("E2E Seeding & Emit Verification SUCCESS: All 8 CMMS events were transacted, published, and marked DELIVERED!");
 }

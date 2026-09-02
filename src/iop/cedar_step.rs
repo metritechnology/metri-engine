@@ -3,17 +3,17 @@
 //
 // Conecta con cedar-policy real y realiza evaluación Zero-Trust.
 
-use std::sync::Arc;
-use std::collections::HashMap;
 use cedar_policy::PolicySet;
+use std::collections::HashMap;
 use std::str::FromStr;
-use tracing::{info, warn, error};
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
+use crate::cedar::authorizer::{intercept, is_master_tenant, CedarAuthorizer, PrincipalCache};
 use crate::domain::errors::{DomainError, ErrorCode};
-use crate::iop::core::{IopContext, IopStep};
-use crate::cedar::authorizer::{CedarAuthorizer, PrincipalCache, intercept, is_master_tenant};
 use crate::domain::protocols::ISessionStore;
 use crate::eav::reader::pull::EavReader;
+use crate::iop::core::{IopContext, IopStep};
 
 /// Wrapper IopStep para el autorizador Cedar (Zero-Trust — Paso 1).
 pub struct CedarAuthorizerStep {
@@ -31,10 +31,10 @@ impl CedarAuthorizerStep {
         cache: Arc<dyn PrincipalCache>,
     ) -> Self {
         info!("[CedarStep] Inicializando con motor real Cedar ABAC (Zero-Trust)");
-        
+
         let policies_src = include_str!("../../docs/architecture/cedar/metri.cedar");
         let policies = PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
-        
+
         let mut policy_cache = HashMap::new();
         // Registrar para roles conocidos y soportados
         policy_cache.insert("admin".to_string(), policies.clone());
@@ -98,12 +98,22 @@ impl CedarAuthorizerStep {
                 dummy_req.metadata_mut().insert("x-metri-action", m_val);
             }
         }
-        if let Some(et_val) = ctx.request.get("x-metri-entity-type").and_then(|v| v.as_str()) {
+        if let Some(et_val) = ctx
+            .request
+            .get("x-metri-entity-type")
+            .and_then(|v| v.as_str())
+        {
             if let Ok(m_val) = et_val.parse() {
-                dummy_req.metadata_mut().insert("x-metri-entity-type", m_val);
+                dummy_req
+                    .metadata_mut()
+                    .insert("x-metri-entity-type", m_val);
             }
         }
-        if let Some(eid_val) = ctx.request.get("x-metri-entity-id").and_then(|v| v.as_str()) {
+        if let Some(eid_val) = ctx
+            .request
+            .get("x-metri-entity-id")
+            .and_then(|v| v.as_str())
+        {
             if let Ok(m_val) = eid_val.parse() {
                 dummy_req.metadata_mut().insert("x-metri-entity-id", m_val);
             }
@@ -122,7 +132,9 @@ impl CedarAuthorizerStep {
         }
         if dummy_req.metadata().get("x-metri-entity-type").is_none() {
             if let Ok(m_val) = ctx.entity_type.parse() {
-                dummy_req.metadata_mut().insert("x-metri-entity-type", m_val);
+                dummy_req
+                    .metadata_mut()
+                    .insert("x-metri-entity-type", m_val);
             }
         }
 
@@ -134,7 +146,8 @@ impl CedarAuthorizerStep {
             self.cache.as_ref(),
             &self.cedar_engine,
             &self.policy_cache,
-        ).await?;
+        )
+        .await?;
 
         // Enriquecer el IopContext con el output verificado e inyectado por Cedar
         if ctx.tenant_id.is_empty() || !is_master_tenant(&cedar_ctx.tenant_id) {
@@ -150,9 +163,12 @@ impl CedarAuthorizerStep {
             ctx.granted_action_keys.clear();
         } else {
             ctx.cross_tenant_scope = "NONE".to_string();
-            ctx.granted_action_keys.insert(format!("{}:VIEW", ctx.entity_type));
-            ctx.granted_action_keys.insert(format!("{}:CREATE", ctx.entity_type));
-            ctx.granted_action_keys.insert(format!("{}:UPDATE", ctx.entity_type));
+            ctx.granted_action_keys
+                .insert(format!("{}:VIEW", ctx.entity_type));
+            ctx.granted_action_keys
+                .insert(format!("{}:CREATE", ctx.entity_type));
+            ctx.granted_action_keys
+                .insert(format!("{}:UPDATE", ctx.entity_type));
         }
 
         info!(
@@ -168,4 +184,3 @@ impl CedarAuthorizerStep {
 #[cfg(test)]
 #[path = "tests/cedar_step_tests.rs"]
 mod tests;
-

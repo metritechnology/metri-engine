@@ -38,7 +38,11 @@ async fn una_reserva_vencida_con_debito_se_devuelve() {
     let report = sweep_once(&store, &counter, todas(), ahora(), Duration::from_secs(30)).await;
 
     assert_eq!(report.refunded, 1);
-    assert_eq!(counter.usage_of("q_01"), Some(60), "devolvió los 40 apuntados");
+    assert_eq!(
+        counter.usage_of("q_01"),
+        Some(60),
+        "devolvió los 40 apuntados"
+    );
     assert_eq!(store.open_count(), 0, "y la cerró");
 }
 
@@ -56,7 +60,11 @@ async fn una_reserva_vencida_sin_debito_no_toca_el_contador() {
 
     assert_eq!(report.abandoned, 1);
     assert_eq!(report.refunded, 0);
-    assert_eq!(counter.usage_of("q_01"), Some(100), "el contador no se movió");
+    assert_eq!(
+        counter.usage_of("q_01"),
+        Some(100),
+        "el contador no se movió"
+    );
     assert_eq!(store.open_count(), 0);
 }
 
@@ -112,7 +120,11 @@ async fn si_el_apunte_falla_la_reserva_sigue_pendiente() {
     let report = sweep_once(&store, &counter, todas(), ahora(), Duration::ZERO).await;
     assert_eq!(report.failed, 1);
     assert_eq!(report.refunded, 0);
-    assert_eq!(store.open_count(), 1, "sigue abierta para el siguiente intento");
+    assert_eq!(
+        store.open_count(),
+        1,
+        "sigue abierta para el siguiente intento"
+    );
 
     // Cuando el contador vuelve, la recoge la siguiente vuelta.
     counter.fix_it();

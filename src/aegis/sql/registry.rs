@@ -1,9 +1,9 @@
 // aegis/sql/registry.rs
 // Registry for dynamic configurations of hybrid/EAV/rollup entities.
 
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Arc;
-use lazy_static::lazy_static;
 
 #[derive(Clone, Debug)]
 pub struct DimensionConfig {

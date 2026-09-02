@@ -1,9 +1,9 @@
 use super::*;
 use crate::iop::core::IopContext;
+use crate::quota::SettleOutcome;
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use serde_json::Value;
-use crate::quota::SettleOutcome;
 
 struct MockOltpExecutor {
     mock_rows: Mutex<Vec<Value>>,
@@ -11,7 +11,11 @@ struct MockOltpExecutor {
 
 #[async_trait::async_trait]
 impl OltpQueryRunner for MockOltpExecutor {
-    async fn run_oltp_query(&self, _tenant_id: &str, _ast_ir: &Value) -> Result<Value, DomainError> {
+    async fn run_oltp_query(
+        &self,
+        _tenant_id: &str,
+        _ast_ir: &Value,
+    ) -> Result<Value, DomainError> {
         let rows = self.mock_rows.lock().unwrap().clone();
         Ok(Value::Array(rows))
     }
@@ -25,46 +29,77 @@ impl OltpQueryRunner for MockOltpExecutor {
 /// diferencia que importa: permite montar el caso en que la LECTURA dice que
 /// hay sitio y el contador ya está lleno.
 struct MockQuotaCounter {
-    usage:    Mutex<Option<i64>>,
+    usage: Mutex<Option<i64>>,
     releases: Mutex<Vec<String>>,
     /// Claves de idempotencia ya consumidas, como la marca de DynamoDB.
     aplicadas: Mutex<HashSet<String>>,
-    caido:    bool,
+    caido: bool,
 }
 
 impl MockQuotaCounter {
     /// Contador todavía sin crear: se sembrará con lo que diga la fila.
     fn nuevo() -> Self {
-        MockQuotaCounter { usage: Mutex::new(None), releases: Mutex::new(vec![]), aplicadas: Mutex::new(HashSet::new()), caido: false }
+        MockQuotaCounter {
+            usage: Mutex::new(None),
+            releases: Mutex::new(vec![]),
+            aplicadas: Mutex::new(HashSet::new()),
+            caido: false,
+        }
     }
     /// Contador ya existente con este consumo real.
     fn en(n: i64) -> Self {
-        MockQuotaCounter { usage: Mutex::new(Some(n)), releases: Mutex::new(vec![]), aplicadas: Mutex::new(HashSet::new()), caido: false }
+        MockQuotaCounter {
+            usage: Mutex::new(Some(n)),
+            releases: Mutex::new(vec![]),
+            aplicadas: Mutex::new(HashSet::new()),
+            caido: false,
+        }
     }
     fn roto() -> Self {
-        MockQuotaCounter { usage: Mutex::new(None), releases: Mutex::new(vec![]), aplicadas: Mutex::new(HashSet::new()), caido: true }
+        MockQuotaCounter {
+            usage: Mutex::new(None),
+            releases: Mutex::new(vec![]),
+            aplicadas: Mutex::new(HashSet::new()),
+            caido: true,
+        }
     }
 }
 
 #[async_trait::async_trait]
 impl QuotaCounter for MockQuotaCounter {
     async fn try_debit(
-        &self, _tenant_id: &str, _quota_id: &str, amount: i64, max_limit: i64, seed: i64,
+        &self,
+        _tenant_id: &str,
+        _quota_id: &str,
+        amount: i64,
+        max_limit: i64,
+        seed: i64,
     ) -> Result<DebitOutcome, DomainError> {
         if self.caido {
-            return Err(DomainError::new(ErrorCode::Infra001, "ledger no disponible"));
+            return Err(DomainError::new(
+                ErrorCode::Infra001,
+                "ledger no disponible",
+            ));
         }
         let mut guard = self.usage.lock().unwrap();
         let actual = guard.unwrap_or(seed);
         if actual >= max_limit {
-            return Ok(DebitOutcome::Exhausted { current_usage: actual, limit: max_limit });
+            return Ok(DebitOutcome::Exhausted {
+                current_usage: actual,
+                limit: max_limit,
+            });
         }
         *guard = Some(actual + amount);
-        Ok(DebitOutcome::Debited { new_usage: actual + amount })
+        Ok(DebitOutcome::Debited {
+            new_usage: actual + amount,
+        })
     }
 
     async fn settle(
-        &self, _tenant_id: &str, quota_id: &str, delta: i64,
+        &self,
+        _tenant_id: &str,
+        quota_id: &str,
+        delta: i64,
     ) -> Result<i64, DomainError> {
         let mut guard = self.usage.lock().unwrap();
         let nuevo = std::cmp::max(0, guard.unwrap_or(0) + delta);
@@ -76,16 +111,25 @@ impl QuotaCounter for MockQuotaCounter {
     }
 
     async fn read_many(
-        &self, _tenant_id: &str, quota_ids: &[String],
+        &self,
+        _tenant_id: &str,
+        quota_ids: &[String],
     ) -> Result<HashMap<String, i64>, DomainError> {
         let usage = *self.usage.lock().unwrap();
-        Ok(quota_ids.iter().filter_map(|id| usage.map(|n| (id.clone(), n))).collect())
+        Ok(quota_ids
+            .iter()
+            .filter_map(|id| usage.map(|n| (id.clone(), n)))
+            .collect())
     }
 
     /// Reproduce la marca de idempotencia: la primera vez aplica, las
     /// siguientes no tocan nada.
     async fn settle_once(
-        &self, tenant_id: &str, quota_id: &str, delta: i64, idem_key: &str,
+        &self,
+        tenant_id: &str,
+        quota_id: &str,
+        delta: i64,
+        idem_key: &str,
     ) -> Result<SettleOutcome, DomainError> {
         {
             let mut aplicadas = self.aplicadas.lock().unwrap();
@@ -100,10 +144,12 @@ impl QuotaCounter for MockQuotaCounter {
 
 #[tokio::test]
 async fn test_quota_guard_bypass_for_non_monitored_operations() {
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![]) };
-    
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![]),
+    };
+
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
-    
+
     let ctx = IopContext::new(
         "tnt_01",
         "usr_01",
@@ -111,20 +157,26 @@ async fn test_quota_guard_bypass_for_non_monitored_operations() {
         "UPDATE",
         serde_json::Map::new(),
     );
-    
+
     let result = step.execute(ctx).await;
     assert!(result.is_ok());
     let res_ctx = result.unwrap();
     assert!(res_ctx.quota_reservation.is_none());
-    assert_eq!(*step.counter.usage.lock().unwrap(), None, "ni se tocó el contador");
+    assert_eq!(
+        *step.counter.usage.lock().unwrap(),
+        None,
+        "ni se tocó el contador"
+    );
 }
 
 #[tokio::test]
 async fn test_quota_guard_missing_quota_returns_error() {
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![]) };
-    
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![]),
+    };
+
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
-    
+
     let ctx = IopContext::new(
         "tnt_01",
         "usr_01",
@@ -132,7 +184,7 @@ async fn test_quota_guard_missing_quota_returns_error() {
         "CREATE",
         serde_json::Map::new(),
     );
-    
+
     let result = step.execute(ctx).await;
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -147,11 +199,13 @@ async fn test_quota_guard_exhausted_quota_returns_error() {
         "current_usage": 10,
         "period_key": "LIFETIME"
     });
-    
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![active_quota]) };
-    
+
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![active_quota]),
+    };
+
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
-    
+
     let ctx = IopContext::new(
         "tnt_01",
         "usr_01",
@@ -159,7 +213,7 @@ async fn test_quota_guard_exhausted_quota_returns_error() {
         "CREATE",
         serde_json::Map::new(),
     );
-    
+
     let result = step.execute(ctx).await;
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -174,11 +228,13 @@ async fn test_quota_guard_successful_quota_debit() {
         "current_usage": 3,
         "period_key": "LIFETIME"
     });
-    
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![active_quota]) };
-    
+
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![active_quota]),
+    };
+
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
-    
+
     let ctx = IopContext::new(
         "tnt_01",
         "usr_01",
@@ -186,11 +242,11 @@ async fn test_quota_guard_successful_quota_debit() {
         "CREATE",
         serde_json::Map::new(),
     );
-    
+
     let result = step.execute(ctx).await;
     assert!(result.is_ok());
     let res_ctx = result.unwrap();
-    
+
     let reservation = res_ctx.quota_reservation.expect("should have reservation");
     assert_eq!(reservation.get("id").unwrap().as_str(), Some("quota_01"));
     assert_eq!(reservation.get("debit").unwrap().as_i64(), Some(1));
@@ -208,21 +264,27 @@ async fn test_quota_guard_successful_quota_debit() {
 #[tokio::test]
 async fn test_quota_guard_dynamic_period_matching() {
     let today = chrono::Utc::now().date_naive();
-    let start_date = (today - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
-    let end_date = (today + chrono::Duration::days(5)).format("%Y-%m-%d").to_string();
+    let start_date = (today - chrono::Duration::days(2))
+        .format("%Y-%m-%d")
+        .to_string();
+    let end_date = (today + chrono::Duration::days(5))
+        .format("%Y-%m-%d")
+        .to_string();
     let period_key = format!("{}_{}", start_date, end_date);
-    
+
     let active_quota = json!({
         "id": "quota_02",
         "max_limit": 100,
         "current_usage": 5,
         "period_key": period_key
     });
-    
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![active_quota]) };
-    
+
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![active_quota]),
+    };
+
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
-    
+
     let ctx = IopContext::new(
         "tnt_01",
         "usr_01",
@@ -230,11 +292,11 @@ async fn test_quota_guard_dynamic_period_matching() {
         "CREATE",
         serde_json::Map::new(),
     );
-    
+
     let result = step.execute(ctx).await;
     assert!(result.is_ok());
     let res_ctx = result.unwrap();
-    
+
     let reservation = res_ctx.quota_reservation.expect("should have reservation");
     assert_eq!(reservation.get("id").unwrap().as_str(), Some("quota_02"));
 }
@@ -242,21 +304,27 @@ async fn test_quota_guard_dynamic_period_matching() {
 #[tokio::test]
 async fn test_quota_guard_expired_period_returns_error() {
     let today = chrono::Utc::now().date_naive();
-    let start_date = (today - chrono::Duration::days(10)).format("%Y-%m-%d").to_string();
-    let end_date = (today - chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+    let start_date = (today - chrono::Duration::days(10))
+        .format("%Y-%m-%d")
+        .to_string();
+    let end_date = (today - chrono::Duration::days(2))
+        .format("%Y-%m-%d")
+        .to_string();
     let period_key = format!("{}_{}", start_date, end_date);
-    
+
     let expired_quota = json!({
         "id": "quota_expired",
         "max_limit": 100,
         "current_usage": 5,
         "period_key": period_key
     });
-    
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![expired_quota]) };
-    
+
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![expired_quota]),
+    };
+
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
-    
+
     let ctx = IopContext::new(
         "tnt_01",
         "usr_01",
@@ -264,7 +332,7 @@ async fn test_quota_guard_expired_period_returns_error() {
         "CREATE",
         serde_json::Map::new(),
     );
-    
+
     let result = step.execute(ctx).await;
     assert!(result.is_err());
 }
@@ -290,17 +358,32 @@ async fn el_contador_manda_sobre_la_lectura_previa() {
         "period_key": "LIFETIME"
     });
 
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![quota_con_sitio_aparente]) };
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![quota_con_sitio_aparente]),
+    };
     // El estado real: lleno.
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::en(10));
 
-    let ctx = IopContext::new("tnt_01", "usr_01", "llm:aws:nova-pro", "CREATE", serde_json::Map::new());
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "llm:aws:nova-pro",
+        "CREATE",
+        serde_json::Map::new(),
+    );
     let result = step.execute(ctx).await;
 
-    assert!(result.is_err(), "la lectura decía que había sitio; el contador manda");
+    assert!(
+        result.is_err(),
+        "la lectura decía que había sitio; el contador manda"
+    );
     assert_eq!(result.unwrap_err().code, ErrorCode::Quota001);
 
-    assert_eq!(*step.counter.usage.lock().unwrap(), Some(10), "el contador no se movió");
+    assert_eq!(
+        *step.counter.usage.lock().unwrap(),
+        Some(10),
+        "el contador no se movió"
+    );
 }
 
 /// El rechazo informa del consumo REAL, no del que traía la lectura.
@@ -313,16 +396,33 @@ async fn el_rechazo_lleva_las_cifras_del_contador() {
     let quota = json!({
         "id": "quota_01", "max_limit": 10, "current_usage": 3, "period_key": "2026-01-01_2027-01-01"
     });
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![quota]) };
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![quota]),
+    };
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::en(10));
 
-    let ctx = IopContext::new("tnt_01", "usr_01", "llm:aws:nova-pro", "CREATE", serde_json::Map::new());
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "llm:aws:nova-pro",
+        "CREATE",
+        serde_json::Map::new(),
+    );
     let err = step.execute(ctx).await.unwrap_err();
 
-    let contexto = err.context.expect("el rechazo por cuota debe llevar contexto");
-    assert_eq!(contexto.get("current_usage").unwrap().as_i64(), Some(10), "no la foto vieja de 3");
+    let contexto = err
+        .context
+        .expect("el rechazo por cuota debe llevar contexto");
+    assert_eq!(
+        contexto.get("current_usage").unwrap().as_i64(),
+        Some(10),
+        "no la foto vieja de 3"
+    );
     assert_eq!(contexto.get("limit").unwrap().as_i64(), Some(10));
-    assert_eq!(contexto.get("resource_domain").unwrap().as_str(), Some("llm:aws:nova-pro"));
+    assert_eq!(
+        contexto.get("resource_domain").unwrap().as_str(),
+        Some("llm:aws:nova-pro")
+    );
 }
 
 /// Si el contador no responde, NO se deja pasar. Es la cuota: ante un fallo del
@@ -330,10 +430,18 @@ async fn el_rechazo_lleva_las_cifras_del_contador() {
 #[tokio::test]
 async fn un_contador_caido_no_deja_pasar() {
     let quota = json!({"id":"quota_01","max_limit":10,"current_usage":3,"period_key":"LIFETIME"});
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![quota]) };
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![quota]),
+    };
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::roto());
 
-    let ctx = IopContext::new("tnt_01", "usr_01", "llm:aws:nova-pro", "CREATE", serde_json::Map::new());
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "llm:aws:nova-pro",
+        "CREATE",
+        serde_json::Map::new(),
+    );
     assert!(step.execute(ctx).await.is_err());
 }
 
@@ -346,28 +454,51 @@ async fn un_contador_caido_no_deja_pasar() {
 #[tokio::test]
 async fn compensar_devuelve_la_unidad_debitada() {
     let quota = json!({"id":"quota_01","max_limit":10,"current_usage":3,"period_key":"LIFETIME"});
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![quota]) };
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![quota]),
+    };
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
 
-    let ctx = IopContext::new("tnt_01", "usr_01", "llm:aws:nova-pro", "CREATE", serde_json::Map::new());
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "llm:aws:nova-pro",
+        "CREATE",
+        serde_json::Map::new(),
+    );
     let res_ctx = step.execute(ctx).await.unwrap();
     assert_eq!(*step.counter.usage.lock().unwrap(), Some(4), "debitó");
 
     // Aquí es donde falla Janus y la escritura nunca ocurre.
     step.compensate(&res_ctx).await;
 
-    assert_eq!(*step.counter.usage.lock().unwrap(), Some(3), "y lo devolvió");
-    assert_eq!(*step.counter.releases.lock().unwrap(), vec!["quota_01".to_string()]);
+    assert_eq!(
+        *step.counter.usage.lock().unwrap(),
+        Some(3),
+        "y lo devolvió"
+    );
+    assert_eq!(
+        *step.counter.releases.lock().unwrap(),
+        vec!["quota_01".to_string()]
+    );
 }
 
 /// Compensar un contexto que nunca reservó no debe tocar nada — es el caso de
 /// los pass-through, que son la mayoría de las peticiones.
 #[tokio::test]
 async fn compensar_sin_reserva_no_hace_nada() {
-    let oltp = MockOltpExecutor { mock_rows: Mutex::new(vec![]) };
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![]),
+    };
     let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
 
-    let ctx = IopContext::new("tnt_01", "usr_01", "asset", "UPDATE", serde_json::Map::new());
+    let ctx = IopContext::new(
+        "tnt_01",
+        "usr_01",
+        "asset",
+        "UPDATE",
+        serde_json::Map::new(),
+    );
     step.compensate(&ctx).await;
 
     assert!(step.counter.releases.lock().unwrap().is_empty());

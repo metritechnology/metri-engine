@@ -27,12 +27,12 @@
 // `quota/resolver.rs`, y este archivo se ocupa solo de la política del pipeline
 // —qué operaciones cuentan, quién queda exento, qué se devuelve al compensar—.
 
-use tracing::{error, info, warn};
 use serde_json::json;
+use tracing::{error, info, warn};
 
+use crate::aegis::oltp::executor::OltpExecutor;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::iop::core::{IopContext, IopStep};
-use crate::aegis::oltp::executor::OltpExecutor;
 use crate::quota::{DebitOutcome, OltpQueryRunner, QuotaCounter, QuotaLedger, QuotaResolver};
 
 /// Wrapper IopStep para el control de cuotas por tenant (Paso 2).
@@ -51,7 +51,10 @@ where
 {
     pub fn new(oltp_executor: E, counter: C) -> Self {
         info!("[QuotaStep] Inicializando QuotaGuardStep con débito atómico sobre el Ledger");
-        Self { resolver: QuotaResolver::new(oltp_executor), counter }
+        Self {
+            resolver: QuotaResolver::new(oltp_executor),
+            counter,
+        }
     }
 }
 
@@ -92,7 +95,9 @@ where
     /// con errores intermitentes de escritura agotaba su plan sin haber creado
     /// nada, y el contador solo bajaba al cambiar de periodo.
     async fn compensate(&self, ctx: &IopContext) {
-        let Some(reservation) = &ctx.quota_reservation else { return };
+        let Some(reservation) = &ctx.quota_reservation else {
+            return;
+        };
 
         let Some(id) = reservation.get("id").and_then(|v| v.as_str()) else {
             error!(
@@ -133,10 +138,10 @@ where
         let op = ctx.operation.to_uppercase();
 
         // ── Fast-path: master tenant, cuenta del sistema o recurso ilimitado → bypass de cuota ──
-        if ctx.is_super_master 
-            || ctx.user_id == "usr_system_bff" 
-            || ctx.user_id == "usr_master" 
-            || crate::cedar::authorizer::SystemSecurityRules::is_quota_exempt(&ctx.entity_type) 
+        if ctx.is_super_master
+            || ctx.user_id == "usr_system_bff"
+            || ctx.user_id == "usr_master"
+            || crate::cedar::authorizer::SystemSecurityRules::is_quota_exempt(&ctx.entity_type)
         {
             info!(
                 tenant = %ctx.tenant_id,
@@ -160,8 +165,8 @@ where
 
         let limit_type = match op.as_str() {
             "CREATE" => "WRITE_COUNT",
-            "GET"    => "READ_COUNT",
-            _        => unreachable!(),
+            "GET" => "READ_COUNT",
+            _ => unreachable!(),
         };
 
         let domain = &ctx.entity_type;
@@ -174,7 +179,8 @@ where
             "[QuotaStep] Consultando cuotas en el Ledger EAV nativo"
         );
 
-        let active_quota = self.resolver
+        let active_quota = self
+            .resolver
             .active_quota(&ctx.tenant_id, domain, limit_type)
             .await?;
 
@@ -192,7 +198,8 @@ where
                         "No quota configured for tenant={} resource_domain={} limit_type={}",
                         ctx.tenant_id, domain, limit_type
                     ),
-                ).with_stage("quota"))
+                )
+                .with_stage("quota"))
             }
             Some(quota) => {
                 let id = quota.id.as_str();
@@ -208,13 +215,17 @@ where
                 // Techo e incremento en una sola escritura condicional. La
                 // lectura de arriba sirve para localizar la cuota y su límite;
                 // NO para decidir. Decidir con ella era la carrera.
-                let outcome = self.counter
+                let outcome = self
+                    .counter
                     // Una unidad: aquí se cuenta por registro creado o leído.
                     .try_debit(&ctx.tenant_id, counter_id, 1, max_limit, current_usage)
                     .await?;
 
                 match outcome {
-                    DebitOutcome::Exhausted { current_usage, limit } => {
+                    DebitOutcome::Exhausted {
+                        current_usage,
+                        limit,
+                    } => {
                         warn!(
                             tenant = %ctx.tenant_id,
                             domain = %domain,

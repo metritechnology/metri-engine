@@ -228,7 +228,10 @@ mod tests {
         let planner = UniqueClaimPlanner::new();
         let m = modelo(vec![]);
 
-        assert!(!planner.applies_to(&m), "un modelo sin constraints no debe entrar al planificador");
+        assert!(
+            !planner.applies_to(&m),
+            "un modelo sin constraints no debe entrar al planificador"
+        );
     }
 
     #[test]
@@ -246,12 +249,33 @@ mod tests {
     fn claves_distintas_producen_huellas_distintas() {
         let attrs_clave = vec!["tenant_id".to_string(), "plugin_id".to_string()];
 
-        let cmms = huella_clave("tenant_plugin", &attrs_clave, &attrs(&[("tenant_id", "t1"), ("plugin_id", "cmms")])).unwrap();
-        let iot = huella_clave("tenant_plugin", &attrs_clave, &attrs(&[("tenant_id", "t1"), ("plugin_id", "iot")])).unwrap();
-        let otro_tenant = huella_clave("tenant_plugin", &attrs_clave, &attrs(&[("tenant_id", "t2"), ("plugin_id", "cmms")])).unwrap();
+        let cmms = huella_clave(
+            "tenant_plugin",
+            &attrs_clave,
+            &attrs(&[("tenant_id", "t1"), ("plugin_id", "cmms")]),
+        )
+        .unwrap();
+        let iot = huella_clave(
+            "tenant_plugin",
+            &attrs_clave,
+            &attrs(&[("tenant_id", "t1"), ("plugin_id", "iot")]),
+        )
+        .unwrap();
+        let otro_tenant = huella_clave(
+            "tenant_plugin",
+            &attrs_clave,
+            &attrs(&[("tenant_id", "t2"), ("plugin_id", "cmms")]),
+        )
+        .unwrap();
 
-        assert_ne!(cmms, iot, "dos módulos del mismo tenant no pueden compartir reclamación");
-        assert_ne!(cmms, otro_tenant, "el mismo módulo en otro tenant es otra clave");
+        assert_ne!(
+            cmms, iot,
+            "dos módulos del mismo tenant no pueden compartir reclamación"
+        );
+        assert_ne!(
+            cmms, otro_tenant,
+            "el mismo módulo en otro tenant es otra clave"
+        );
     }
 
     // El orden de los atributos forma parte de la clave física. Si no se
@@ -261,8 +285,18 @@ mod tests {
     fn el_orden_declarado_forma_parte_de_la_clave() {
         let a = attrs(&[("tenant_id", "t1"), ("plugin_id", "cmms")]);
 
-        let directo = huella_clave("tenant_plugin", &["tenant_id".to_string(), "plugin_id".to_string()], &a).unwrap();
-        let inverso = huella_clave("tenant_plugin", &["plugin_id".to_string(), "tenant_id".to_string()], &a).unwrap();
+        let directo = huella_clave(
+            "tenant_plugin",
+            &["tenant_id".to_string(), "plugin_id".to_string()],
+            &a,
+        )
+        .unwrap();
+        let inverso = huella_clave(
+            "tenant_plugin",
+            &["plugin_id".to_string(), "tenant_id".to_string()],
+            &a,
+        )
+        .unwrap();
 
         assert_ne!(directo, inverso);
     }
@@ -317,7 +351,10 @@ mod tests {
     #[test]
     fn create_planifica_un_item_por_restriccion() {
         let planner = UniqueClaimPlanner::new();
-        let m = modelo(vec![unica(&["tenant_id", "plugin_id"], ConstraintScope::Tenant)]);
+        let m = modelo(vec![unica(
+            &["tenant_id", "plugin_id"],
+            ConstraintScope::Tenant,
+        )]);
         let a = attrs(&[("tenant_id", "t1"), ("plugin_id", "cmms")]);
 
         let ctx = ConstraintContext {
@@ -336,7 +373,10 @@ mod tests {
     #[test]
     fn delete_no_planifica_reclamaciones() {
         let planner = UniqueClaimPlanner::new();
-        let m = modelo(vec![unica(&["tenant_id", "plugin_id"], ConstraintScope::Tenant)]);
+        let m = modelo(vec![unica(
+            &["tenant_id", "plugin_id"],
+            ConstraintScope::Tenant,
+        )]);
         let a = attrs(&[("tenant_id", "t1"), ("plugin_id", "cmms")]);
 
         let ctx = ConstraintContext {
@@ -377,8 +417,15 @@ mod tests {
         };
 
         let clave = pk("t1");
-        assert_eq!(clave, pk("t2"), "una clave global debe ser la misma en cualquier tenant");
-        assert!(clave.starts_with("T#GLOBAL#"), "el ámbito global no lleva tenant: {clave}");
+        assert_eq!(
+            clave,
+            pk("t2"),
+            "una clave global debe ser la misma en cualquier tenant"
+        );
+        assert!(
+            clave.starts_with("T#GLOBAL#"),
+            "el ámbito global no lleva tenant: {clave}"
+        );
     }
 
     #[test]
@@ -388,7 +435,11 @@ mod tests {
             unica(&["tenant_id", "plugin_id"], ConstraintScope::Tenant),
             unica(&["codigo"], ConstraintScope::Tenant),
         ]);
-        let a = attrs(&[("tenant_id", "t1"), ("plugin_id", "cmms"), ("codigo", "A-1")]);
+        let a = attrs(&[
+            ("tenant_id", "t1"),
+            ("plugin_id", "cmms"),
+            ("codigo", "A-1"),
+        ]);
 
         let ctx = ConstraintContext {
             tenant_id: "t1",
