@@ -32,11 +32,9 @@ from typing import Any
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR   = Path(__file__).resolve().parent
-METRI_ROOT   = SCRIPT_DIR.parent.parent
-EDN_CONTRACT = METRI_ROOT / "resources" / "schema" / "janus-ast-ir.edn"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Valores válidos del contrato janus-ast-ir.edn
+# Valores válidos del contrato (proto/metri.proto — fuente única, validada en CI)
 # ─────────────────────────────────────────────────────────────────────────────
 
 VALID_VIZ          = ["KPI", "TIMESERIES", "TABLE", "PIE", "BUBBLE", "CSV_EXPORT"]
@@ -227,8 +225,8 @@ def gen_query_request(queries: dict[str, dict],
 # Validador contra el contrato
 # ─────────────────────────────────────────────────────────────────────────────
 
-def validate(query_req: dict, edn_src: str) -> list[str]:
-    """Valida el QueryRequest contra el contrato janus-ast-ir.edn."""
+def validate(query_req: dict) -> list[str]:
+    """Valida el QueryRequest contra los enums del contrato (proto/metri.proto)."""
     violations: list[str] = []
 
     # Zero-Trust
@@ -243,42 +241,42 @@ def validate(query_req: dict, edn_src: str) -> list[str]:
 
         for m in ar.get("metrics", []):
             agg = m.get("aggregation", "")
-            if agg and f":{agg}" not in edn_src:
+            if agg and agg not in VALID_AGGREGATIONS:
                 violations.append(f"{q_key}:aggregation_invalid:{agg}")
 
         viz = ar.get("viz", "")
-        if viz and f":{viz}" not in edn_src:
+        if viz and viz not in VALID_VIZ:
             violations.append(f"{q_key}:viz_invalid:{viz}")
 
         tf = ar.get("time_frame", {})
         if tf:
             tf_type = tf.get("type", "")
-            if tf_type and f":{tf_type}" not in edn_src:
+            if tf_type and tf_type not in VALID_TIME_FRAMES:
                 violations.append(f"{q_key}:time_frame_invalid:{tf_type}")
 
         for comp in ar.get("comparisons", []):
             ct = comp.get("type", "")
-            if ct and f":{ct}" not in edn_src:
+            if ct and ct not in VALID_COMPARISON_TYPES:
                 violations.append(f"{q_key}:comparison_invalid:{ct}")
 
         for fnode in ar.get("filters", []):
-            _validate_filter_node(fnode, q_key, edn_src, violations)
+            _validate_filter_node(fnode, q_key, violations)
 
     return violations
 
 
-def _validate_filter_node(node: dict, prefix: str, edn_src: str, violations: list) -> None:
+def _validate_filter_node(node: dict, prefix: str, violations: list) -> None:
     if "criteria" in node:
         c  = node["criteria"]
         op = c.get("op_ref", "")
-        if op and f":{op}" not in edn_src:
+        if op and op not in VALID_OPERATORS:
             violations.append(f"{prefix}:op_invalid:{op}")
     elif "group" in node:
         conj = node["group"].get("conjunction", "")
-        if conj and f":{conj}" not in edn_src:
+        if conj and conj not in VALID_CONJUNCTIONS:
             violations.append(f"{prefix}:conjunction_invalid:{conj}")
         for child in node["group"].get("nodes", []):
-            _validate_filter_node(child, prefix, edn_src, violations)
+            _validate_filter_node(child, prefix, violations)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -676,9 +674,9 @@ class ReliabilityReport:
         return self.passed / max(1, self.total) * 100
 
 
-def run_case(case: TestCase, edn_src: str) -> TestResult:
+def run_case(case: TestCase) -> TestResult:
     t0         = time.perf_counter()
-    violations = validate(case.query, edn_src)
+    violations = validate(case.query)
     latency    = (time.perf_counter() - t0) * 1_000_000  # microseconds
 
     if case.is_negative():
@@ -813,16 +811,10 @@ def print_report(report: ReliabilityReport) -> None:
 def main() -> int:
     print(f"\n{SEP}")
     print(f"  JANUS AST IR — Suite de Confiabilidad (500 casos)")
-    print(f"  Contrato: {EDN_CONTRACT}")
+    print(f"  Contrato: proto/metri.proto")
     print(SEP)
 
-    if not EDN_CONTRACT.exists():
-        print(f"\n  ERROR: Contrato no encontrado en {EDN_CONTRACT}")
-        print(f"  Ejecuta primero: python3 tools/metri_schema.py generate metri.proto")
-        return 1
-
-    edn_src = EDN_CONTRACT.read_text(encoding="utf-8")
-    suite   = build_suite()
+    suite = build_suite()
 
     print(f"\n  Ejecutando {len(suite)} casos de prueba...\n")
     report  = ReliabilityReport()
@@ -830,7 +822,7 @@ def main() -> int:
     # Ejecutar con barra de progreso simple
     bar_width = 50
     for i, case in enumerate(suite):
-        result = run_case(case, edn_src)
+        result = run_case(case)
         report.record(result)
         # Progreso inline
         pct    = (i + 1) / len(suite)

@@ -1,0 +1,8 @@
+---
+source: src/janus/testing/contract_tests.rs
+expression: native
+---
+AevtScan {
+    tenant_id: "tnt_golden",
+    entity_type: "meter_reading",
+}

@@ -386,3 +386,159 @@ fn test_tenant_ast_compilation() {
         "tnt_01"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GOLDEN POR VIZ TYPE — Puerta 1 del plan de refactorización
+//
+// Un golden por cada viz type del contrato (`OutputCastType` en proto/metri.proto):
+// KPI, TIMESERIES, TABLE, PIE, BUBBLE, CSV_EXPORT. Cada uno recorre el camino
+// gRPC completo — traducción pb→FBS, compilación AST (ABAC + tenant isolation),
+// selección de plan y compilación del plan nativo EAV — y congela la forma del
+// resultado. Un cambio de snapshot se justifica en el commit o se revierte
+// (Regla 04 del plan).
+// ─────────────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod viz_goldens {
+    use super::*;
+    use crate::grpc::pb::{DimensionDefinition, MetricDefinition};
+    use crate::grpc::pb::{AnalyticsRequest as PbAnalyticsRequest, QueryRequest};
+    use crate::grpc::translator;
+
+    fn golden_ctx() -> CedarCtx {
+        CedarCtx {
+            tenant_id: "tnt_golden".to_string(),
+            user_id: "user_golden".to_string(),
+            roles: vec![],
+            is_super_master: false,
+            cross_tenant_scope: "".to_string(),
+            domain_boundaries: serde_json::json!({}),
+        }
+    }
+
+    /// Compila un `AnalyticsRequest` gRPC y snapshottea plan + plan nativo.
+    macro_rules! golden {
+        ($name:ident, $plan_snap:literal, $native_snap:literal, $req:expr) => {
+            #[test]
+            fn $name() {
+                let mut queries = std::collections::HashMap::new();
+                queries.insert("golden".to_string(), $req);
+                let request = QueryRequest {
+                    tenant_id: "tnt_golden".to_string(),
+                    queries,
+                    ..Default::default()
+                };
+                let fbs_map = translator::query_request_to_queries_map(&request)
+                    .expect("Traducción gRPC→FBS");
+                let fbs_req = fbs_map.get("golden").expect("Query presente en el mapa");
+                let compiled = compile_ast_fbs(fbs_req, &golden_ctx(), &serde_json::json!({}))
+                    .expect("Compilación AST");
+                let plan = select_plan_fbs(&compiled);
+                let native = compile_native_plan_fbs(&compiled, "tnt_golden");
+                assert_debug_snapshot!($plan_snap, plan);
+                assert_debug_snapshot!($native_snap, native);
+            }
+        };
+    }
+
+    golden!(kpi, "kpi_plan", "kpi_native", PbAnalyticsRequest {
+        entity: "asset".to_string(),
+        metrics: vec![MetricDefinition {
+            attribute: "id".to_string(),
+            aggregation: 1, // COUNT
+            name: "total_assets".to_string(),
+            ..Default::default()
+        }],
+        output_cast: 1, // KPI
+        limit: 100,
+        ..Default::default()
+    });
+
+    golden!(timeseries, "timeseries_plan", "timeseries_native", PbAnalyticsRequest {
+        entity: "meter_reading".to_string(),
+        metrics: vec![MetricDefinition {
+            attribute: "reading_value".to_string(),
+            aggregation: 2, // SUM
+            name: "consumo".to_string(),
+            interval: "day".to_string(),
+            ..Default::default()
+        }],
+        dimensions: vec![DimensionDefinition {
+            attribute: "timestamp".to_string(),
+            interval: "day".to_string(),
+            ..Default::default()
+        }],
+        output_cast: 2, // TIMESERIES
+        ..Default::default()
+    });
+
+    golden!(table, "table_plan", "table_native", PbAnalyticsRequest {
+        entity: "work_order".to_string(),
+        metrics: vec![MetricDefinition {
+            attribute: "id".to_string(),
+            aggregation: 1, // COUNT
+            name: "ordenes".to_string(),
+            ..Default::default()
+        }],
+        dimensions: vec![DimensionDefinition {
+            attribute: "status".to_string(),
+            ..Default::default()
+        }],
+        output_cast: 3, // TABLE
+        limit: 50,
+        ..Default::default()
+    });
+
+    golden!(pie, "pie_plan", "pie_native", PbAnalyticsRequest {
+        entity: "work_order".to_string(),
+        metrics: vec![MetricDefinition {
+            attribute: "cost".to_string(),
+            aggregation: 2, // SUM
+            name: "costo_por_categoria".to_string(),
+            ..Default::default()
+        }],
+        dimensions: vec![DimensionDefinition {
+            attribute: "category".to_string(),
+            ..Default::default()
+        }],
+        output_cast: 4, // PIE
+        ..Default::default()
+    });
+
+    golden!(bubble, "bubble_plan", "bubble_native", PbAnalyticsRequest {
+        entity: "meter_reading".to_string(),
+        metrics: vec![
+            MetricDefinition {
+                attribute: "reading_value".to_string(),
+                aggregation: 3, // AVG
+                name: "promedio".to_string(),
+                ..Default::default()
+            },
+            MetricDefinition {
+                attribute: "reading_value".to_string(),
+                aggregation: 12, // CORRELATION
+                secondary_attribute: "timestamp".to_string(),
+                name: "correlacion".to_string(),
+                ..Default::default()
+            },
+        ],
+        output_cast: 5, // BUBBLE
+        ..Default::default()
+    });
+
+    golden!(csv_export, "csv_export_plan", "csv_export_native", PbAnalyticsRequest {
+        entity: "work_order".to_string(),
+        metrics: vec![MetricDefinition {
+            attribute: "id".to_string(),
+            aggregation: 1, // COUNT
+            name: "ordenes".to_string(),
+            ..Default::default()
+        }],
+        dimensions: vec![DimensionDefinition {
+            attribute: "priority".to_string(),
+            ..Default::default()
+        }],
+        output_cast: 6, // CSV_EXPORT
+        limit: 100,
+        ..Default::default()
+    });
+}

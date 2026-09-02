@@ -924,3 +924,7 @@ impl EavWriter {
         Ok(Some(outbox_datoms))
     }
 }
+
+#[cfg(test)]
+#[path = "tests/writer_tests.rs"]
+mod tests;
