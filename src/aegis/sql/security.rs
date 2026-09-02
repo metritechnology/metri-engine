@@ -5,7 +5,6 @@ use serde_json::Value;
 
 /// Verifica que el AST IR contiene `tenant_id` en el árbol `:where`.
 /// Gate de seguridad §7 — si retorna false, el SQL NO se genera nunca.
-/// [PORTED_FROM: (ast-contains-tenant? ast-ir)]
 pub fn ast_contains_tenant(ast_ir: &Value) -> bool {
     fn scan(node: &Value) -> bool {
         if let Some(arr) = node.as_array() {

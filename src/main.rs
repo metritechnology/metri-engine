@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/lambda/handler.clj + src/metri/main.clj]
 // main.rs — Lambda entry point para AWS Lambda ARM64 (provided.al2023)
 // Runtime: Tonic gRPC server sobre Lambda Function URL
 

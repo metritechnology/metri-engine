@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/infrastructure/audit/interceptor.clj]
 // infrastructure/audit/interceptor.rs — AuditInterceptorImpl
 //
 // Se invoca SIEMPRE al final de cada request (Ok o Err).
@@ -18,7 +17,6 @@ use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
 
 /// Implementación del AuditInterceptor.
-/// [PORTED_FROM: (defrecord AuditInterceptorImpl [olap-channel fault-notifier])]
 pub struct AuditInterceptorImpl {
     olap_channel: Arc<dyn IWriteChannel>,
     // FASE 10: fault_notifier para emitir AUD_001 si falla la base transaccional
@@ -31,7 +29,6 @@ impl AuditInterceptorImpl {
     }
 
     /// Construye el snapshot de seguridad (domain_boundaries, etc).
-    /// [PORTED_FROM: (build-security-context-snapshot ctx)]
     fn build_security_snapshot(&self, request: &Value) -> Value {
         // En Rust extraemos lo relevante del request gRPC si estuviera inyectado.
         // Por simplicidad, retornamos el nodo "metadata" si existe.
@@ -42,7 +39,6 @@ impl AuditInterceptorImpl {
 #[async_trait::async_trait]
 impl IAuditInterceptor for AuditInterceptorImpl {
     /// Ejecuta la auditoría de forma asíncrona (fire-and-forget).
-    /// [PORTED_FROM: (audit! [this request result+])]
     async fn audit(&self, request: &Value, succeeded: bool, error_stage: Option<&str>) {
         let action_type = derive_action_type(succeeded, error_stage);
 

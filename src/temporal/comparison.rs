@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/temporal/comparison.clj]
 // temporal/comparison.rs — Resolución de AnalyticalComparison → períodos de comparación.
 //
 // CORRECCIONES vs implementación anterior:

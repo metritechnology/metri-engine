@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus/ast_compiler.clj]
 // janus/ast_compiler.rs — Ensamblador del AST IR.
 // SRP: combina los sub-pasos 4a-4f en un AST IR inmutable completo.
 
@@ -12,7 +11,6 @@ use crate::janus::filter_compiler;
 use crate::janus::router::CedarCtx;
 
 /// Construye la proyección :select
-/// [PORTED_FROM: (build-select entity stree schema)]
 fn build_select(entity: &str, stree: Option<&Value>, is_olap: bool) -> Vec<Value> {
     if let Some(stree) = stree {
         // Unpack gRPC's recursive wrapping under the "fields" key if present
@@ -82,7 +80,6 @@ fn build_select(entity: &str, stree: Option<&Value>, is_olap: bool) -> Vec<Value
 }
 
 /// Ensambla el AST IR completo desde los pasos 4a-4f.
-/// [PORTED_FROM: (compile-ast-internal query-descriptor cedar-ctx)]
 pub fn compile_ast_internal(
     query_descriptor: &Value,
     cedar_ctx: &CedarCtx,

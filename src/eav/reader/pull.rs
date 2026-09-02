@@ -2,7 +2,7 @@
 // eav/reader/pull.rs — Read path del motor EAV.
 // Blueprint: Metri EAV - OLPT.md §V y §VI
 //
-// En Clojure: (d/pull db pattern entity-id) → blob completo en memoria
+// En el stack anterior: (d/pull db pattern entity-id) → blob completo en memoria
 // En Rust:    Query selectiva por atributo → solo los bytes necesarios
 
 use std::collections::HashMap;
@@ -76,7 +76,6 @@ impl EavReader {
     /// Carga el estado actual de una entidad (todos los atributos vigentes).
     /// Equivale a (d/pull db '[*] entity-id) pero sin deserializar el blob.
     ///
-    /// [PORTED_FROM: aegis/datalog/pull.clj — (d/pull db pattern entity-id)]
     /// Mejora: solo carga los atributos pedidos, no el blob completo.
     pub async fn pull(
         &self,
@@ -261,7 +260,6 @@ impl EavReader {
 
     /// Time-travel: estado de la entidad as-of un TX_ID específico.
     /// [BLUEPRINT: §VI.1 — "Snapshot Reads — as-of TX T"]
-    /// [PORTED_FROM: eav_pull_as_of — diseñado en OLPT.md reader/as_of.rs]
     pub async fn pull_as_of(
         &self,
         tenant_id: &str,
@@ -606,7 +604,6 @@ pub struct HistoryEntry {
 
 /// Ensambla el estado actual de una entidad desde los datoms raw de DynamoDB.
 /// Toma el último datom con op=true por atributo.
-/// [PORTED_FROM: La lógica de pull de Datahike — reconstrucción sin blob]
 fn assemble_current_state(
     items: Vec<HashMap<String, AttributeValue>>,
     attr_filter: Option<&[&str]>,

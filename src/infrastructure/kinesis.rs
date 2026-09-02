@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/infrastructure/kinesis.clj]
 // infrastructure/kinesis.rs — KinesisFirehoseWriter implementando IStreamWriter.
-// En Clojure: (defrecord KinesisFirehoseWriter [client]) → put-record!
+// En el stack anterior: (defrecord KinesisFirehoseWriter [client]) → put-record!
 // En Rust:    aws-sdk-firehose (Firehose se mapea aquí)
 
 use async_trait::async_trait;
@@ -12,13 +11,11 @@ use tracing::info;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::IStreamWriter;
 
-/// [PORTED_FROM: (defrecord KinesisFirehoseWriter [client])]
 pub struct KinesisFirehoseWriter {
     client: Client,
 }
 
 impl KinesisFirehoseWriter {
-    /// [PORTED_FROM: ig/init-key :infra/kinesis]
     pub async fn new() -> Self {
         let region_provider =
             aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
@@ -55,15 +52,13 @@ impl KinesisFirehoseWriter {
 impl IStreamWriter for KinesisFirehoseWriter {
     /// Escribe un record al stream Firehose.
     /// El payload se serializa como JSON + newline (compatible con Firehose → S3).
-    /// [PORTED_FROM: (put-record! [_ stream-name partition-key data])]
     async fn put_record(
         &self,
         stream_name: &str,
         _partition_key: &str,
         data: Vec<u8>,
     ) -> Result<String, DomainError> {
-        // Añadir newline al final — mismo comportamiento que el Clojure
-        // [PORTED_FROM: (str (json/generate-string data) "\n")]
+        // // Añadir newline al final — mismo comportamiento que el el stack anterior
         let mut payload = data;
         payload.push(b'\n');
 
@@ -94,7 +89,6 @@ impl IStreamWriter for KinesisFirehoseWriter {
             })?;
 
         // Retorna record_id como identificador del record
-        // [PORTED_FROM: [:ok {:sequence-number (:RecordId resp)}]]
         Ok(resp.record_id)
     }
 }

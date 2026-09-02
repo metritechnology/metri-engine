@@ -153,7 +153,6 @@ where
         }
 
         // ── Fast-path: operación no monitoreada → pass-through O(1) ──────────
-        // [PORTED_FROM: (if (#{:update :delete :upsert} operation) [:ok ctx] ...)]
         if !matches!(op.as_str(), "CREATE" | "GET") {
             info!(
                 tenant    = %ctx.tenant_id,

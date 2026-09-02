@@ -1,4 +1,4 @@
-// [NUEVO — sin equivalente directo en Clojure]
+// [NUEVO — sin equivalente directo en el stack anterior]
 // src/eav/types/encoding.rs
 // Builders de Sort Key binario para los 4 índices EAV.
 // Diseñado según Metri EAV - OLPT.md §II.3 y §II.4

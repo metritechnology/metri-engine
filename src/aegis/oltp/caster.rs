@@ -267,7 +267,6 @@ pub fn apply_output_cast_fbs(
 }
 
 /// Trunca epoch-segundos al inicio del intervalo dado (UTC).
-/// [PORTED_FROM: truncate-to-interval en executor.clj]
 pub fn truncate_to_interval(epoch_secs: i64, interval: &str) -> i64 {
     let unit = interval.parse::<crate::temporal::core::CalUnit>().unwrap();
     crate::temporal::core::truncate_to_unit(epoch_secs, unit, "UTC")
@@ -275,7 +274,6 @@ pub fn truncate_to_interval(epoch_secs: i64, interval: &str) -> i64 {
 
 /// Bucketing TIMESERIES completo.
 ///
-/// [PORTED_FROM: apply-output-cast :TIMESERIES en executor.clj]
 pub fn apply_timeseries_bucketing(
     rows: &[Value],
     metrics: &[MetricDefinitionT],

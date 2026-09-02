@@ -25,7 +25,6 @@ pub enum ResponseType {
 
 impl ResponseType {
     /// Infiere el tipo desde las claves del body.
-    /// [PORTED_FROM: (cond (contains? body :data) :query-response ...)]
     pub fn infer(body: &Value) -> Self {
         let obj = match body.as_object() {
             Some(o) => o,
@@ -65,8 +64,7 @@ impl ResponseType {
 }
 
 /// Normaliza una respuesta al 100% de cobertura del contrato.
-/// Dispatch por ResponseType — equivalente al defmulti de Clojure.
-/// [PORTED_FROM: (normalize-response [[_tag body]] dispatch)]
+/// Dispatch por ResponseType — equivalente al defmulti de el stack anterior.
 pub fn normalize_response(body: &Value, response_type: ResponseType) -> Value {
     let mut body = body.clone();
 
@@ -119,7 +117,6 @@ pub fn normalize_response(body: &Value, response_type: ResponseType) -> Value {
 }
 
 /// Alias para normalizar chunks de QueryResponse (streaming, Paso 7).
-/// [PORTED_FROM: (normalize-chunk chunk)]
 pub fn normalize_chunk(body: &Value) -> Value {
     let mut body = body.clone();
     if let Some(obj) = body.as_object_mut() {
@@ -129,7 +126,6 @@ pub fn normalize_chunk(body: &Value) -> Value {
 }
 
 /// Alias para normalizar respuestas unarias (Discovery, Explore, Match).
-/// [PORTED_FROM: (normalize-unary chunk)]
 pub fn normalize_unary(body: &Value) -> Value {
     let response_type = ResponseType::infer(body);
     normalize_response(body, response_type)

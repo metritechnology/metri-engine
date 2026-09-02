@@ -1,5 +1,4 @@
 // janus/ — Read Path del Metri Engine.
-// [PORTED_FROM: src/metri/janus/]
 // Write Path → ver src/janus_router/
 
 pub mod fbs;

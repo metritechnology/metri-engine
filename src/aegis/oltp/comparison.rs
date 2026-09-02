@@ -1,9 +1,8 @@
-// [PORTED_FROM: src/metri/aegis/datalog/comparison.clj]
 // aegis/oltp/comparison.rs — AnalyticalComparison: 5 tipos del contrato §4.
 //
 // SRP: computar comparaciones temporales sobre rows EAV en memoria — sin I/O.
 //
-// Estrategias (paralelo al path Clojure/OLAP):
+// Estrategias (paralelo al path el stack anterior/OLAP):
 //   TIME_SHIFT_RELATIVE  → shift_by_calendar(N × granularidad) via temporal::comparison
 //   TIME_SHIFT_SHORTCUT  → resolve_shortcut via temporal::comparison (bisiesto-safe)
 //   TIME_SHIFT_ABSOLUTE  → ventana explícita absolute_start_ts / absolute_end_ts
@@ -114,7 +113,6 @@ fn fbs_to_temp_comparison(comp: &AnalyticalComparisonT) -> TempComparison {
 
 /// Filtra rows por ventana temporal [prev_start, prev_end].
 /// Prueba múltiples campos de timestamp por orden de prioridad.
-/// [PORTED_FROM: (run-shifted-query db base-clauses ... prev-start prev-end ts-field)]
 fn filter_rows_by_window<'a>(rows: &'a [Value], prev_start: i64, prev_end: i64) -> Vec<&'a Value> {
     const TS_CANDIDATES: &[&str] = &[
         "created_at",
@@ -143,7 +141,6 @@ fn filter_rows_by_window<'a>(rows: &'a [Value], prev_start: i64, prev_end: i64) 
 // ── SMART: estadísticas históricas ───────────────────────────────────────────
 
 /// Calcula mean/std/z_score para cada métrica sobre un conjunto histórico de rows.
-/// [PORTED_FROM: (compute-smart-stats hist-rows metrics current-metric-map)]
 fn compute_smart_stats(
     hist_rows: &[Value],
     metrics: &[MetricDefinitionT],
@@ -194,7 +191,6 @@ fn compute_smart_stats(
 }
 
 /// Construye el alias de métrica igual que apply_metrics_fbs.
-/// [PORTED_FROM: (str/lower-case (name fn-kw)) "_" (name attr-kw))]
 fn build_metric_alias(m: &MetricDefinitionT) -> String {
     if let Some(name) = m.name.as_deref().filter(|s| !s.is_empty()) {
         return name.to_string();
@@ -227,7 +223,6 @@ fn build_metric_alias(m: &MetricDefinitionT) -> String {
 /// Resolución de períodos delegada a `temporal::comparison::resolve_comparison_period`
 /// (shift_by_calendar — chrono — bisiesto-safe, DST-aware).
 ///
-/// [PORTED_FROM: (run-comparisons db base-clauses in-sym->val pull-pattern
 ///                metrics comparisons resolved-tf current-metrics ts-field)]
 pub fn run_comparisons(
     all_rows: &[Value],
@@ -246,7 +241,6 @@ pub fn run_comparisons(
     };
 
     // Si hay algún TIME_SHIFT, renombramos current_metrics a current_X
-    // [PORTED_FROM: (if (some #(time-shift? (:type %)) comparisons) rename-current ...)]
     let has_time_shift = comparisons.iter().any(|c| {
         c.type_ == AnalyticalComparison_ComparisonType::TIME_SHIFT_RELATIVE
             || c.type_ == AnalyticalComparison_ComparisonType::TIME_SHIFT_SHORTCUT
@@ -308,7 +302,7 @@ pub fn run_comparisons(
             // [CLJ: (keyword (str "benchmark_" (or lbl "value")))]
             t if t == AnalyticalComparison_ComparisonType::BENCHMARK => {
                 // CLJ default label es "comp_{idx}" pero para benchmark usamos "value"
-                // cuando el label real está vacío, igual que Clojure:
+                // // cuando el label real está vacío, igual que el stack anterior:
                 // (or (:label comp) "value") — aquí label ya tiene fallback "comp_{idx}"
                 // pero el CLJ original usa "value" como default específico de BENCHMARK.
                 let bk_label = comp

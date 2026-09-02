@@ -1,9 +1,8 @@
-// [PORTED_FROM: src/metri/aegis/datalog/hierarchy.clj]
 // aegis/oltp/hierarchy.rs — HierarchyContext post-processing.
 //
 // SRP: inyectar :has_children en rows EAV, sin I/O ni estado.
 //
-// Clojure implementa 2 modos:
+// el stack anterior implementa 2 modos:
 //   Modo 1 (ref): Datahike reverse-ref → pull retorna [{:db/id ...}]
 //   Modo 2 (string/EAV): in-memory usando el conjunto de parent_field values
 //
@@ -21,7 +20,6 @@ use tracing::debug;
 ///      → ese conjunto son los IDs de entidades que tienen al menos un hijo.
 ///   2. Para cada row: `has_children = (parent_ids.contains(row["id"]))`
 ///
-/// [PORTED_FROM: (inject-has-children-from-rows rows parent-field-kw)]
 pub fn inject_has_children_from_rows(rows: &mut [Value], parent_field: &str) {
     if rows.is_empty() {
         return;

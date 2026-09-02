@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/codice/base36.clj]
 // codice/base36.rs — Generador estocástico Base36.
-// En Clojure: SecureRandom singleton + repeated lazy-seq.
+// En el stack anterior: SecureRandom singleton + repeated lazy-seq.
 // En Rust:    rand::thread_rng() (CSPRNG equivalente a SecureRandom).
 //
 // Zero-Drop Policy: mismas garantías de unicidad y no-predictibilidad.
@@ -9,7 +8,6 @@
 use rand::Rng;
 
 /// Alfabeto canónico Base36 — 10 dígitos + 26 letras mayúsculas.
-/// [PORTED_FROM: (def ALPHABET "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")]
 const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /// Genera un código alfanumérico Base36 de longitud `length` con prefijo `prefix`.
@@ -22,7 +20,6 @@ const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 ///   ✔ Unicidad probabilística: P(colisión length=7) < 1/36^7
 ///   ✔ No predecible — ChaCha20 CSPRNG
 ///
-/// [PORTED_FROM: (generate [prefix length])]
 pub fn generate(prefix: &str, length: usize) -> String {
     let mut rng = rand::thread_rng();
     let mut result = String::with_capacity(prefix.len() + length);

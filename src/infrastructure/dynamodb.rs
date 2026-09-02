@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/infrastructure/dynamodb.clj]
 // infrastructure/dynamodb.rs — Cliente DynamoDB AWS SDK v1 para Rust.
-// En Clojure: cognitect.aws.client.api — Cognitect SDK directo.
+// En el stack anterior: cognitect.aws.client.api — Cognitect SDK directo.
 // En Rust:    aws-sdk-dynamodb — AWS SDK oficial.
 //
 // Zero-Drop Policy: replica get_item, put_item!, update_item!, delete_item!
@@ -17,7 +16,6 @@ use tracing::{info, warn};
 use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Cliente DynamoDB con su región configurada.
-/// [PORTED_FROM: {:client client :region region}]
 #[derive(Clone)]
 pub struct DynamoClient {
     pub client: Client,
@@ -27,7 +25,6 @@ pub struct DynamoClient {
 impl DynamoClient {
     /// Construye el cliente desde la configuración AWS del entorno.
     /// Si DYNAMODB_ENDPOINT está definido, se usa como endpoint override (dev local).
-    /// [PORTED_FROM: ig/init-key :infra/dynamodb]
     pub async fn new(table_eav: impl Into<String>) -> Self {
         let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
         let config = aws_config::from_env().region(region_provider).load().await;
@@ -50,7 +47,6 @@ impl DynamoClient {
     }
 
     /// Health check — lista tablas para verificar conectividad.
-    /// [PORTED_FROM: (aws/invoke client {:op :ListTables :request {:Limit 1}})]
     pub async fn health_check(&self) -> bool {
         match self.client.list_tables().limit(1).send().await {
             Ok(resp) => {
@@ -67,7 +63,6 @@ impl DynamoClient {
     // ── GetItem ───────────────────────────────────────────────────────────────
 
     /// Obtiene un item por su clave primaria.
-    /// [PORTED_FROM: (get-item ddb-client table-name key-map)]
     pub async fn get_item(
         &self,
         table_name: &str,
@@ -96,7 +91,6 @@ impl DynamoClient {
     // ── PutItem ───────────────────────────────────────────────────────────────
 
     /// Escribe un item completo. Idempotente.
-    /// [PORTED_FROM: (put-item! ddb-client table-name item-map)]
     pub async fn put_item(
         &self,
         table_name: &str,
@@ -117,7 +111,6 @@ impl DynamoClient {
     // Blueprint: Metri EAV - OLPT.md §IV — ACID Write Path
     //
     // Zero-Drop Policy: chunking de 100 items máximo por transacción.
-    // [PORTED_FROM: implícito en writer/chunker.rs]
 
     pub async fn transact_write(
         &self,
@@ -266,7 +259,6 @@ impl DynamoClient {
     // ── DeleteItem ────────────────────────────────────────────────────────────
 
     /// Elimina un item. Idempotente — no lanza si no existía.
-    /// [PORTED_FROM: (delete-item! ddb-client table-name key-map)]
     pub async fn delete_item(
         &self,
         table_name: &str,
@@ -296,7 +288,6 @@ impl DynamoClient {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Convierte un SdkError en DomainError.
-/// [PORTED_FROM: (if (:cognitect.anomalies/category resp) (errors/error code {...}))]
 fn map_sdk_error<E: std::fmt::Debug>(
     err: SdkError<E>,
     default: ErrorCode,

@@ -1,4 +1,4 @@
-// [NUEVO — no tiene equivalente en Clojure]
+// [NUEVO — no tiene equivalente en el stack anterior]
 // src/eav/types/value_type.rs
 // Define los 12 tipos de valor del sistema EAV y sus tag bytes para SK binario.
 // Diseñado según Metri EAV - OLPT.md §II.3

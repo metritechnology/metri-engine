@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/janus/validator.clj]
 // janus/validator.rs — Validador de contratos del AST IR.
-// En Clojure: Malli Registry cargado desde resources/schema/janus-ast-ir.edn.
+// En el stack anterior: el stack anterior Registry cargado desde resources/schema/janus-ast-ir.edn.
 // En Rust: validación estructural con serde_json + reglas semánticas.
 //
 // "Defensa Inquebrantable": cualquier payload que viole el contrato
@@ -12,7 +11,6 @@ use crate::domain::errors::{DomainError, ErrorCode};
 use crate::janus::fbs::{AnalyticsRequestT, OutputCastType};
 
 /// Valida que el tenant_id esté presente y no sea el placeholder "unknown-tenant".
-/// [PORTED_FROM: (validate-tenant! tenant-id)]
 pub fn validate_tenant(tenant_id: &str) -> Result<(), DomainError> {
     if tenant_id.is_empty() || tenant_id == "unknown-tenant" {
         return Err(DomainError::janus(
@@ -24,7 +22,6 @@ pub fn validate_tenant(tenant_id: &str) -> Result<(), DomainError> {
 }
 
 /// Valida que el entity_type sea un string no vacío.
-/// [PORTED_FROM: (m/validate :metri.spec/query-request ctx)]
 pub fn validate_entity_type(entity_type: &str) -> Result<(), DomainError> {
     if entity_type.is_empty() {
         return Err(DomainError::janus(
@@ -36,7 +33,6 @@ pub fn validate_entity_type(entity_type: &str) -> Result<(), DomainError> {
 }
 
 /// Valida el contrato completo de una query request.
-/// [PORTED_FROM: (validate! :metri.spec/query-request ctx)]
 pub fn validate_query_request(payload: &Value) -> Result<(), DomainError> {
     let obj = payload.as_object().ok_or_else(|| {
         DomainError::janus(ErrorCode::JanusVal001, "payload no es un objeto JSON")
@@ -114,7 +110,6 @@ pub fn validate_analytics_request_fbs(req: &AnalyticsRequestT) -> Result<(), Dom
 }
 
 /// Valida el contrato de una transacción IOP (Create / Update / Delete).
-/// [PORTED_FROM: (validate! :metri.spec/transaction-request ctx)]
 pub fn validate_transaction_request(payload: &Value) -> Result<(), DomainError> {
     let obj = payload.as_object().ok_or_else(|| {
         DomainError::janus(

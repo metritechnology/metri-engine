@@ -241,8 +241,7 @@ impl OltpExecutor {
             .get("entity")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let master_tenant_id: &str =
-            &crate::domain::config::engine_config().master_tenant_id;
+        let master_tenant_id: &str = &crate::domain::config::engine_config().master_tenant_id;
         let target_tenant = if entity_type == "tenant" {
             master_tenant_id
         } else {

@@ -85,7 +85,7 @@ impl DatomValue {
 /// Un Datom representa el hecho: "La entidad E tiene el atributo A con valor V
 /// a partir de la transacción T, y el hecho es op (true=assert, false=retract)."
 ///
-/// En Datomic/Datahike: [E A V T op]
+/// En el stack anterior/Datahike: [E A V T op]
 /// En DynamoDB: PK=T#<tenant>#E#<eid>, SK=[attr_id_u16][tx_u64][op_u8]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Datom {

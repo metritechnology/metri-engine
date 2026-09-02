@@ -143,17 +143,16 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
     // usan el secreto por defecto; un ENVIRONMENT ausente, desconocido o
     // productivo exige un secreto fuerte. La decisión vive como función pura
     // en domain::config y está testeada.
-    let hmac_secret_str =
-        match crate::domain::config::resolve_hmac_secret(
-            std::env::var("ENVIRONMENT").ok().as_deref(),
-            std::env::var("HMAC_SECRET").ok().as_deref(),
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!("FATAL SECURITY ERROR: {e} — Aborting server startup.");
-                std::process::exit(1);
-            }
-        };
+    let hmac_secret_str = match crate::domain::config::resolve_hmac_secret(
+        std::env::var("ENVIRONMENT").ok().as_deref(),
+        std::env::var("HMAC_SECRET").ok().as_deref(),
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("FATAL SECURITY ERROR: {e} — Aborting server startup.");
+            std::process::exit(1);
+        }
+    };
 
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
         hmac_secret_str.into_bytes(),

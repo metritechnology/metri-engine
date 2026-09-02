@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/infrastructure/session_store.clj]
 // infrastructure/session_store.rs — HMACTokenStore.
-// En Clojure: (defrecord HMACTokenStore [secret ddb-client table-name])
+// En el stack anterior: (defrecord HMACTokenStore [secret ddb-client table-name])
 // En Rust:    struct HmacTokenStore — implementa ISessionStore
 //
 // Zero-Drop Policy: replica verify_signature con constant-time comparison,
@@ -22,7 +21,6 @@ use crate::infrastructure::dynamodb::DynamoClient;
 type HmacSha256 = Hmac<Sha256>;
 
 /// HMACTokenStore — verificación local sub-0.1ms, revocación en DynamoDB.
-/// [PORTED_FROM: (defrecord HMACTokenStore [secret ddb-client table-name])]
 pub struct HmacTokenStore {
     secret: Vec<u8>, // HMAC-SHA256 secret
     ddb: Arc<DynamoClient>,
@@ -31,7 +29,6 @@ pub struct HmacTokenStore {
 
 impl HmacTokenStore {
     /// Constructor. El secret viene de Secrets Manager o variable de entorno.
-    /// [PORTED_FROM: ig/init-key :infra/session-store]
     pub fn new(secret: Vec<u8>, ddb: Arc<DynamoClient>, table_name: impl Into<String>) -> Self {
         info!("[HMAC] Session store activo — verificación local, sin red");
         HmacTokenStore {
@@ -42,10 +39,8 @@ impl HmacTokenStore {
     }
 
     /// Verifica la firma y la expiración del token. No consulta blacklist.
-    /// [PORTED_FROM: (verify-signature secret raw-token)]
     fn verify_signature(&self, raw_token: &str) -> Option<Session> {
         // El token tiene formato: mk_<base64url(payload)>.<base64url(HMAC)>
-        // [PORTED_FROM: (when (starts-with? raw-token "mk_") ...)]
         let token = raw_token.strip_prefix("mk_")?;
         let dot = token.find('.')?;
         let (payload_b64, sig_b64) = token.split_at(dot);
@@ -55,7 +50,6 @@ impl HmacTokenStore {
         let payload_bytes = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
 
         // Calcular HMAC esperado
-        // [PORTED_FROM: (hmac-sha256 secret payload-bytes)]
         let mut mac = HmacSha256::new_from_slice(&self.secret).ok()?;
         mac.update(&payload_bytes);
         let expected_sig = mac.finalize().into_bytes();
@@ -64,7 +58,6 @@ impl HmacTokenStore {
         let provided_sig = URL_SAFE_NO_PAD.decode(sig_b64).ok()?;
 
         // Comparación en tiempo constante — previene timing attacks
-        // [PORTED_FROM: (constant-time-eq? expected-sig provided-sig)]
         if !constant_time_eq(&expected_sig, &provided_sig) {
             debug!("[HMAC] Firma inválida");
             return None;
@@ -75,7 +68,6 @@ impl HmacTokenStore {
         let now = chrono::Utc::now().timestamp();
 
         // Verificar expiración
-        // [PORTED_FROM: (when (> (:exp claims) now) ...)]
         let exp = claims["exp"].as_i64()?;
         if exp <= now {
             debug!("[HMAC] Token expirado");
@@ -91,7 +83,6 @@ impl HmacTokenStore {
     }
 
     /// Verifica si un jti está en la blacklist de DynamoDB.
-    /// [PORTED_FROM: (blacklisted? ddb-client table-name jti)]
     async fn is_blacklisted(&self, jti: &str) -> bool {
         let pk = format!("REVOKED#{jti}");
         match self
@@ -112,7 +103,6 @@ impl HmacTokenStore {
 #[async_trait]
 impl ISessionStore for HmacTokenStore {
     /// Verifica token y retorna Session si es válido.
-    /// [PORTED_FROM: (get-session [_ raw-token])]
     async fn get_session(&self, token: &str) -> Result<Option<Session>, DomainError> {
         // 1. Verificación local de firma — sin red, < 0.1ms
         let claims = match self.verify_signature(token) {
@@ -121,7 +111,6 @@ impl ISessionStore for HmacTokenStore {
         };
 
         // 2. Blacklist check — solo si la firma es válida
-        // [PORTED_FROM: (if (blacklisted? ...) nil claims)]
         if self.is_blacklisted(&claims.jti).await {
             warn!("[HMAC] Token revocado, jti: {}", claims.jti);
             return Ok(None);
@@ -131,7 +120,6 @@ impl ISessionStore for HmacTokenStore {
     }
 
     /// REVOCAR: añade el jti a la blacklist DynamoDB con TTL.
-    /// [PORTED_FROM: (put-session! [_ raw-token _ ttl-seconds])]
     async fn revoke_session(&self, jti: &str, ttl_seconds: u64) -> Result<(), DomainError> {
         let pk = format!("REVOKED#{jti}");
         let expires = chrono::Utc::now().timestamp() as u64 + ttl_seconds;
@@ -156,7 +144,6 @@ impl ISessionStore for HmacTokenStore {
     }
 
     /// Quita un jti de la blacklist (des-revocar). Idempotente.
-    /// [PORTED_FROM: (del-session! [_ jti])]
     async fn unrevoke_session(&self, jti: &str) -> Result<(), DomainError> {
         let pk = format!("REVOKED#{jti}");
         self.ddb
@@ -168,7 +155,6 @@ impl ISessionStore for HmacTokenStore {
 // ── Primitivas de emisión de tokens ──────────────────────────────────────────
 
 /// Emite un token HMAC firmado.
-/// [PORTED_FROM: (issue-token secret {:keys [tenant-id user-id ttl-seconds jti]})]
 pub fn issue_token(
     secret: &[u8],
     tenant_id: &str,

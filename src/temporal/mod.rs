@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/temporal/]
 // temporal/mod.rs — Primitivas temporales canónicas del Metri Engine.
 //
 // SSOT para toda aritmética de fechas: sin I/O, sin estado, sin dependencias cruzadas.

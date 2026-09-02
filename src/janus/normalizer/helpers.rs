@@ -2,7 +2,6 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 /// Convierte cualquier valor numérico a f64 de forma segura.
-/// [PORTED_FROM: (safe-double v)]
 pub fn safe_double(v: &Value) -> f64 {
     match v {
         Value::Number(n) => n.as_f64().unwrap_or(0.0),
@@ -13,13 +12,11 @@ pub fn safe_double(v: &Value) -> f64 {
 }
 
 /// Genera un nuevo query_id UUID.
-/// [PORTED_FROM: (new-query-id)]
 pub fn new_query_id() -> String {
     Uuid::new_v4().to_string()
 }
 
 /// Garantiza que :status esté presente en cualquier body.
-/// [PORTED_FROM: (ensure-status body tag)]
 pub fn ensure_status(body: &mut Value, success: bool) {
     let obj = body.as_object_mut().expect("body debe ser un objeto JSON");
     if !obj.contains_key("status") {
@@ -48,7 +45,6 @@ pub fn ensure_status(body: &mut Value, success: bool) {
 }
 
 /// Infiere el tipo de visualización desde output_cast o viz_hint.
-/// [PORTED_FROM: (infer-viz-type output-cast viz-hint)]
 pub fn infer_viz_type(output_cast: Option<&str>, viz_hint: Option<&str>) -> &'static str {
     if let Some(hint) = viz_hint {
         return hint_to_static(hint);

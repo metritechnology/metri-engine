@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/iop/core.clj]
 // iop/core.rs — IOP Orchestrator raíz del Metri Engine.
-// En Clojure: ig/init-key :iop/orchestrator — coordina Cedar → Quota → Janus → Moira → Audit
+// En el stack anterior: ig/init-key :iop/orchestrator — coordina Cedar → Quota → Janus → Moira → Audit
 // En Rust: IopOrchestrator struct con run() async.
 //
 // Arquitectura:
@@ -23,7 +22,6 @@ use crate::domain::errors::DomainError;
 use crate::janus::normalizer::{normalize_response, ResponseType};
 
 /// Contexto de una request IOP — viaja por todo el pipeline.
-/// [PORTED_FROM: el mapa `ctx` / `request` que pasa por cada step]
 #[derive(Debug, Clone)]
 pub struct IopContext {
     pub tenant_id: String,
@@ -86,14 +84,12 @@ impl IopContext {
 }
 
 /// Trait del IOP Orchestrator — permite inyección de mocks en tests.
-/// [PORTED_FROM: (fn run-iop [request] ...)]
 #[async_trait::async_trait]
 pub trait IIopOrchestrator: Send + Sync {
     async fn run(&self, ctx: IopContext) -> Value;
 }
 
 /// Implementación real del IOP Orchestrator.
-/// [PORTED_FROM: ig/init-key :iop/orchestrator]
 pub struct IopOrchestrator {
     /// Interceptores del pipeline en orden (Cedar → Quota → Janus)
     steps: Vec<Arc<dyn IopStep>>,
@@ -132,7 +128,6 @@ impl IopOrchestrator {
 #[async_trait::async_trait]
 impl IIopOrchestrator for IopOrchestrator {
     /// Pipeline IOP completo.
-    /// [PORTED_FROM: (fn run-iop [request] pipeline/run + moira + audit + normalizer)]
     #[tracing::instrument(
         name = "iop.pipeline.start",
         skip(self, ctx),
@@ -154,7 +149,6 @@ impl IIopOrchestrator for IopOrchestrator {
         let entity_type = ctx.entity_type.clone();
 
         // ── Pipeline Railway: Cedar → Quota → Janus ──────────────────────────
-        // [PORTED_FROM: (pipeline/run steps request)]
         // Los steps se inyectan en IopOrchestrator::new() — cero &[] vacío.
         let result = self.run_steps(ctx).await;
 
@@ -174,11 +168,9 @@ impl IIopOrchestrator for IopOrchestrator {
         };
 
         // ── Audit: SIEMPRE — Ok y Err ────────────────────────────────────────
-        // [PORTED_FROM: (audit! audit-interceptor request result+)]
         self.perform_audit(request_clone, &user_id, &result).await;
 
         // ── Normalize + enriquecer exec_time_ms ─────────────────────────────
-        // [PORTED_FROM: (normalizer/normalize-response result+)]
         self.normalize_and_enrich_response(result, error_dto, exec_ms)
     }
 }
@@ -324,7 +316,6 @@ impl IopOrchestrator {
 // ── Traits de extensión ───────────────────────────────────────────────────────
 
 /// Paso del pipeline IOP — Cedar / Quota / JanusRouter implementan este trait.
-/// [PORTED_FROM: cada step-fn en el vector steps]
 #[async_trait::async_trait]
 pub trait IopStep: Send + Sync {
     async fn execute(&self, ctx: IopContext) -> Result<IopContext, DomainError>;
@@ -344,7 +335,6 @@ pub trait IopStep: Send + Sync {
 }
 
 /// Moira Emitter — fire-and-forget EDA tras Ok.
-/// [PORTED_FROM: moira-emitter de ig/init-key :iop/orchestrator]
 #[async_trait::async_trait]
 pub trait MoiraEmitter: Send + Sync {
     async fn emit(&self, ctx: IopContext) -> Result<(), DomainError>;

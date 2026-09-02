@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus/batch_enricher.clj]
 // janus/batch_enricher.rs — Enriquecedor de queries pre-compilación.
 // SRP: aplica BatchContext.common-filters y DashboardCrossFilterContext
 //      al mapa de sub-queries antes de que el AST compiler los procese.
@@ -8,7 +7,6 @@ use serde_json::Value;
 /// Mergea el BatchContext en cada sub-query del mapa.
 /// common-filters -> prepended a los :filters de cada sub-query.
 /// common-entity  -> heredado si la sub-query no tiene :entity propia.
-/// [PORTED_FROM: (apply-batch-context queries batch-ctx)]
 pub fn apply_batch_context(mut queries: Value, batch_ctx: Option<&Value>) -> Value {
     let Some(ctx) = batch_ctx else {
         return queries;
@@ -49,7 +47,6 @@ pub fn apply_batch_context(mut queries: Value, batch_ctx: Option<&Value>) -> Val
 }
 
 /// Inyecta los cross-filters del DashboardCrossFilterContext en cada sub-query.
-/// [PORTED_FROM: (apply-cross-filter queries cross-filter)]
 pub fn apply_cross_filter(mut queries: Value, cross_filter: Option<&Value>) -> Value {
     let Some(cf) = cross_filter else {
         return queries;

@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/domain/errors.clj]
 // Equivalencia: Railway-oriented error monad constructor.
-// En Clojure: (error :JANUS_400 {:reason "..."}) → [:error {...}]
+// En el stack anterior: (error :JANUS_400 {:reason "..."}) → [:error {...}]
 // En Rust:    DomainError::janus(JANUS_400, ctx) → Result::Err(DomainError)
 //
 // Zero-Drop Policy: todos los códigos de error del catálogo original
@@ -10,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Catálogo completo de códigos de error.
-/// Mapea 1:1 con errors/error_catalog.edn del Clojure.
+/// Mapea 1:1 con errors/error_catalog.edn del el stack anterior.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
@@ -351,7 +350,7 @@ impl ErrorCode {
 }
 
 /// Error de dominio Railway-Oriented.
-/// Reemplaza el vector Clojure [:error {:code :JANUS_400 :detail "..." :retryable? false}]
+/// Reemplaza el vector el stack anterior [:error {:code :JANUS_400 :detail "..." :retryable? false}]
 #[derive(Debug, Clone, Error, PartialEq, Serialize, Deserialize)]
 #[error("{code:?}: {detail}")]
 pub struct DomainError {
@@ -359,13 +358,13 @@ pub struct DomainError {
     pub stage: String,
     pub detail: String,
     pub retryable: bool,
-    /// Contexto adicional (equivale al ctx-map del error Clojure)
+    /// /// Contexto adicional (equivale al ctx-map del error el stack anterior)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<Box<serde_json::Value>>,
 }
 
 impl DomainError {
-    /// Constructor principal — equivale a (error code ctx-map) en Clojure.
+    /// /// Constructor principal — equivale a (error code ctx-map) en el stack anterior.
     pub fn new(code: ErrorCode, detail: impl Into<String>) -> Self {
         let retryable = code.is_retryable();
         let stage = code.stage().to_string();

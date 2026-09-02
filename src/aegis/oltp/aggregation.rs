@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/aegis/datalog/aggregation.clj]
 // aegis/oltp/aggregation.rs — Agregación in-memory con FilterNode support.
 //
 // Implementa los 14 AggregationFunction del contrato FBS:
@@ -199,7 +198,6 @@ fn get_strategy(agg_fn: AggregationFunction) -> Box<dyn AggregationStrategy> {
 }
 
 // ── Dispatcher de agregación ──────────────────────────────────────────────────
-// [PORTED_FROM: (compute-agg fn-kw vals sec-vals)]
 
 fn compute_agg(agg_fn: AggregationFunction, vals: &[f64], sec_vals: &[f64]) -> f64 {
     get_strategy(agg_fn).compute(vals, sec_vals)
@@ -209,7 +207,6 @@ fn compute_agg(agg_fn: AggregationFunction, vals: &[f64], sec_vals: &[f64]) -> f
 
 /// Aplica un vector de MetricDefinitionT sobre rows JSON ya procesados.
 ///
-/// [PORTED_FROM: (apply-metrics rows metrics) en aggregation.clj]
 ///
 /// Filtered aggregation: Si `metric.filter` está presente, solo los rows que
 /// pasan `eval_filter_node` contribuyen al cómputo.
@@ -308,7 +305,6 @@ pub fn apply_metrics_fbs(
 
 /// Deriva columnas desde la unión de keys de todos los rows.
 /// Anota cada columna con is_dimension / is_measure para VizMeta.
-/// [PORTED_FROM: (derive-columns rows ast-ir) en datalog/executor.clj]
 pub fn derive_columns(
     rows: &[Value],
     dim_attrs: &[String],

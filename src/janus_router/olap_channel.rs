@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus_router/channels/olap.clj]
 // janus_router/olap_channel.rs — OLAPChannel — Canal OLAP Columnar Nativo.
 //
 // Arquitectura: Columnar Nativo (sin Raw Zone genérica).
@@ -33,7 +32,6 @@ use std::sync::Arc;
 // ── OlapChannel ───────────────────────────────────────────────────────────────
 
 /// Canal de escritura OLAP vía Kinesis Firehose (Columnar Nativo).
-/// [PORTED_FROM: (defrecord OLAPChannel [stream-writer stream-prefix])]
 pub struct OlapChannel {
     /// Prefijo del stream Firehose — ej: "metri-olap-stream"
     stream_prefix: String,
@@ -52,7 +50,6 @@ impl OlapChannel {
 
     /// Nombre del stream Firehose para la entidad.
     /// underscore → hyphen: meter_reading → <prefix>-meter-reading
-    /// [PORTED_FROM: (defn- entity->stream-name [stream-prefix entity-type])]
     fn stream_name(&self, entity_type: &str) -> String {
         format!("{}-{}", self.stream_prefix, entity_type.replace('_', "-"))
     }
@@ -63,13 +60,11 @@ impl IWriteChannel for OlapChannel {
     /// Enruta BulkIngest al stream Firehose de la entidad.
     /// Bloquea rpc Transact (data = None).
     ///
-    /// [PORTED_FROM: (route [_ ctx] ...)]
     async fn route(&self, ctx: IopContext) -> Result<Value, DomainError> {
         let entity_type = &ctx.entity_type;
         let tenant_id = &ctx.tenant_id;
 
         // Guard: rpc Transact (data = nil) → JNS_OLAP_001
-        // [PORTED_FROM: (if (nil? data) (errors/error :JNS_OLAP_001 ...))]
         let data_opt = ctx.request.get("data");
         if data_opt.is_none() {
             warn!(
@@ -94,7 +89,6 @@ impl IWriteChannel for OlapChannel {
         let created_at = Utc::now().timestamp_millis();
 
         // Lookup atributos del Códice para coerción de tipos.
-        // [PORTED_FROM: (codice/describe-attributes entity-type ctx)]
         let registry = codice_global();
         let attributes = registry.get_attributes(entity_type);
 
@@ -151,7 +145,6 @@ impl IWriteChannel for OlapChannel {
             "[OlapChannel] ✅ Ingestión OLAP exitosa"
         );
 
-        // [PORTED_FROM: [:ok {:ingested-count (count records) :outbox-count 0}]]
         Ok(json!({
             "ingested_count": ingested,
             "outbox_count":   0,
@@ -171,7 +164,6 @@ impl IWriteChannel for OlapChannel {
 /// Tipos numéricos: Number | Decimal | Epoch
 /// Estrategia: si el valor es String y el tipo es numérico → parsear a f64 o i64.
 ///
-/// [PORTED_FROM: (defn- coerce-numeric-fields [record attributes])]
 fn coerce_numeric_fields(
     record: Value,
     attributes: Option<&[crate::codice::registry::AttributeDescriptor]>,
@@ -204,7 +196,6 @@ fn coerce_numeric_fields(
 ///   _tenant    → tenant_id (columna de partición)
 ///   created_at → epoch-ms server-side
 ///
-/// [PORTED_FROM: (defn- decorate-record [record tenant-id created-at ulid])]
 fn decorate_record(record: Value, tenant_id: &str, created_at: i64, record_ulid: &str) -> Value {
     let mut obj = match record {
         Value::Object(m) => m,

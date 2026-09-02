@@ -1,12 +1,11 @@
-// [PORTED_FROM: src/metri/temporal/adapters.clj]
 // temporal/adapters.rs — Adaptadores temporales: TimeRange → cláusulas engine-específicas.
 //
 // SRP: traducir {start_ts, end_ts} epoch-s a la sintaxis de cada motor.
 //
 // Adaptadores disponibles:
 //   to_datalog_clauses  → cláusulas Datahike (convierte a ms con s_to_ms)
-//   to_honey_clause     → HoneySQL BETWEEN para Athena/SQL (serde_json)
-//   to_bucket_fn        → fn de bucketing Clojure para OLTP TIMESERIES
+// to_honey_clause → el stack anterior BETWEEN para Athena/SQL (serde_json)
+// to_bucket_fn → fn de bucketing el stack anterior para OLTP TIMESERIES
 
 use crate::temporal::core::{s_to_ms, truncate_to_unit, CalUnit, TimeRange};
 use serde_json::{json, Value};
@@ -71,7 +70,7 @@ pub fn datalog_clause_to_parts(clause: &DatalogClause) -> Vec<String> {
     parts
 }
 
-// ── OLAP: HoneySQL Athena ─────────────────────────────────────────────────────
+// ── OLAP: el stack anterior Athena ─────────────────────────────────────────────────────
 
 /// TimeRange × col_name → cláusula WHERE en formato serde_json Value.
 ///

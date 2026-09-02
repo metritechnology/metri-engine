@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/codice/generator.clj]
 // codice/generator.rs — Inyector de atributos auto-generados.
-// En Clojure: (inject! db-conn tenant-guard schema tenant-id payload)
+// En el stack anterior: (inject! db-conn tenant-guard schema tenant-id payload)
 //             con reducción Railway sobre atributos :auto_generate.
 // En Rust:    inject() — función pura excepto por los efectos de I/O
 //             de sequence/next (DynamoDB) y base36/generate (CSPRNG).
@@ -14,7 +13,6 @@ use crate::domain::errors::DomainError;
 use crate::infrastructure::dynamodb::DynamoClient;
 
 /// Estrategia de auto-generación de un atributo.
-/// [PORTED_FROM: (keyword (:strategy attr-config)) → :stochastic_base36 | :sequential]
 #[derive(Debug, Clone)]
 pub enum AutoGenStrategy {
     StochasticBase36 { prefix: String, length: usize },
@@ -22,7 +20,6 @@ pub enum AutoGenStrategy {
 }
 
 /// Extrae los atributos con :auto_generate del modelo.
-/// [PORTED_FROM: (auto-generate-attrs schema)]
 fn auto_generate_attrs(model: &EntityModel) -> Vec<(String, AutoGenStrategy)> {
     model
         .attributes
@@ -69,7 +66,6 @@ fn auto_generate_attrs(model: &EntityModel) -> Vec<(String, AutoGenStrategy)> {
 }
 
 /// Busca el campo scope (is_sequence_scope o is_sequence_scope_via).
-/// [PORTED_FROM: (find-scope-field schema)]
 fn find_scope_field(model: &EntityModel) -> Option<&str> {
     model
         .attributes
@@ -80,12 +76,11 @@ fn find_scope_field(model: &EntityModel) -> Option<&str> {
 
 /// Inyecta los valores auto-generados en el payload.
 ///
-/// Flujo Railway (mismo que el Clojure):
+/// Flujo Railway (mismo que el el stack anterior):
 ///   - Si no hay atributos auto_generate → retorna el payload sin cambios.
 ///   - Para cada atributo, ejecuta la estrategia y reduce el payload.
 ///   - Un solo error en la cadena → retorna [:error] inmediatamente.
 ///
-/// [PORTED_FROM: (inject! db-conn tenant-guard schema tenant-id payload)]
 pub async fn inject(
     ddb: &DynamoClient,
     model: &EntityModel,
@@ -95,7 +90,6 @@ pub async fn inject(
     let attrs_to_gen = auto_generate_attrs(model);
 
     if attrs_to_gen.is_empty() {
-        // [PORTED_FROM: (if (empty? attrs) (do (otel/set-status! ...) [:ok payload]))]
         return Ok(payload);
     }
 
@@ -105,14 +99,13 @@ pub async fn inject(
 
     for (attr_name, strategy) in attrs_to_gen {
         // Si el atributo ya existe en el payload, no sobreescribir
-        // (semántica idéntica al Clojure: (assoc enriched attr-kw (second result)))
+        // // (semántica idéntica al el stack anterior: (assoc enriched attr-kw (second result)))
         if enriched.contains_key(&attr_name) {
             continue;
         }
 
         let generated_value: String = match &strategy {
             AutoGenStrategy::StochasticBase36 { prefix, length } => {
-                // [PORTED_FROM: [:ok (base36/generate (:prefix attr-config "") (long (:length attr-config 7)))]]
                 base36::generate(prefix, *length)
             }
             AutoGenStrategy::Sequential(config) => {
@@ -122,7 +115,6 @@ pub async fn inject(
                     .and_then(|v| v.as_str())
                     .map(str::to_string);
 
-                // [PORTED_FROM: (sequence/next! db-conn tenant-guard attr-config scope-field tenant-id enriched)]
                 sequence::next(ddb, config, scope_tag.as_deref(), tenant_id).await?
             }
         };

@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus/multi_series.clj]
 // janus/multi_series.rs — Motor de fusión MultiSeriesGroup — Full Outer Join asintótico.
 // SRP: realiza y fusiona resultados de sub-queries agrupados bajo un group-id.
 
@@ -34,7 +33,6 @@ fn hash_value(val: &Value) -> u64 {
 }
 
 /// Full Outer Join de filas de múltiples sub-queries.
-/// [PORTED_FROM: (outer-join-data rows-per-qk)]
 pub fn outer_join_data(rows_per_qk: HashMap<String, Vec<Value>>) -> Vec<Value> {
     if rows_per_qk.len() == 1 {
         return rows_per_qk.into_values().next().unwrap_or_default();
@@ -59,7 +57,6 @@ pub fn outer_join_data(rows_per_qk: HashMap<String, Vec<Value>>) -> Vec<Value> {
 }
 
 /// Retorna el subconjunto de queries que NO pertenecen a ningún merge-group.
-/// [PORTED_FROM: (partition-standalone queries merge-groups)]
 pub fn partition_standalone(
     queries: Map<String, Value>,
     merge_groups: &[Value],

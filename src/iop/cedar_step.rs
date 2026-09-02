@@ -1,5 +1,5 @@
 // cedar_step.rs — IopStep wrapper para CedarAuthorizer.
-// En Clojure: Paso 1 del pipeline — :iop/cedar-authorizer
+// En el stack anterior: Paso 1 del pipeline — :iop/cedar-authorizer
 //
 // Conecta con cedar-policy real y realiza evaluación Zero-Trust.
 

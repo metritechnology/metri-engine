@@ -1,7 +1,6 @@
-// [PORTED_FROM: src/metri/temporal/time_frame.clj]
 // temporal/time_frame.rs — Resuelve TimeFrameContext → {start_ts, end_ts} epoch-segundos.
 //
-// SSOT — reemplaza metres.aegis.time-frame en Clojure.
+// SSOT — reemplaza metres.aegis.time-frame en el stack anterior.
 //
 // CORRECCIONES vs la implementación anterior:
 //   1. CUSTOM_RANGE: el proto envía epoch-MILISEGUNDOS → se convierte con ms_to_s
@@ -118,7 +117,7 @@ pub fn resolve_time_frame(tf: &TimeFrameCtx) -> Option<TimeRange> {
     let qt = || t::truncate_to_unit(now, CalUnit::Quarter, tz);
     let yr = || t::truncate_to_unit(now, CalUnit::Year, tz);
 
-    // Helpers de shift nombrados (igual que el Clojure)
+    // // Helpers de shift nombrados (igual que el el stack anterior)
     let d = |base: i64, delta: i64| shift_by_calendar(base, delta, CalUnit::Day, tz);
     let m = |base: i64, delta: i64| shift_by_calendar(base, delta, CalUnit::Month, tz);
     let y = |base: i64, delta: i64| shift_by_calendar(base, delta, CalUnit::Year, tz);

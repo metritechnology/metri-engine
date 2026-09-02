@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/infrastructure/sqs.clj]
 // infrastructure/sqs.rs — SQSFifoBus implementando ISqsBus.
-// En Clojure: (defrecord SQSFifoBus [client queue-url])
+// En el stack anterior: (defrecord SQSFifoBus [client queue-url])
 // En Rust:    aws-sdk-sqs + ISqsBus trait
 
 use async_trait::async_trait;
@@ -10,14 +9,12 @@ use tracing::{info, warn};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::{ISqsBus, SqsMessage};
 
-/// [PORTED_FROM: (defrecord SQSFifoBus [client queue-url])]
 pub struct SqsFifoBus {
     client: Client,
     queue_url: String,
 }
 
 impl SqsFifoBus {
-    /// [PORTED_FROM: ig/init-key :moira/sqs-bus]
     pub async fn new(queue_url: impl Into<String>) -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
@@ -30,7 +27,6 @@ impl SqsFifoBus {
     }
 
     /// Health check: verifica que la cola existe.
-    /// [PORTED_FROM: (aws/invoke client {:op :GetQueueAttributes ...})]
     pub async fn health_check(&self) -> bool {
         match self
             .client
@@ -63,7 +59,6 @@ impl SqsFifoBus {
 #[async_trait]
 impl ISqsBus for SqsFifoBus {
     /// Publica un mensaje en la cola FIFO.
-    /// [PORTED_FROM: (publish! [_ payload group-id dedup-id])]
     async fn publish(
         &self,
         payload: &str,
@@ -90,10 +85,8 @@ impl ISqsBus for SqsFifoBus {
     }
 
     /// Recibe mensajes de la cola (long-polling 5s).
-    /// [PORTED_FROM: (receive-messages [_ max-count])]
     async fn receive_messages(&self, max_count: u32) -> Result<Vec<SqsMessage>, DomainError> {
         // Límite AWS: máximo 10 mensajes por ReceiveMessage
-        // [PORTED_FROM: (min max-count 10) ;; límite AWS]
         let count = (max_count.min(10)) as i32;
 
         let resp = self
@@ -128,7 +121,6 @@ impl ISqsBus for SqsFifoBus {
     }
 
     /// Confirma y elimina un mensaje procesado.
-    /// [PORTED_FROM: (delete-message! [_ receipt-handle])]
     async fn delete_message(&self, receipt_handle: &str) -> Result<(), DomainError> {
         self.client
             .delete_message()

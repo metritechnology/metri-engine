@@ -2,7 +2,7 @@
 // eav/writer/transact.rs — Write path ACID del motor EAV.
 // Blueprint: Metri EAV - OLPT.md §IV — ACID Write Path
 //
-// En Clojure: d/transact → DynamoDB (blob monolítico via Datahike)
+// En el stack anterior: d/transact → DynamoDB (blob monolítico via Datahike)
 // En Rust:    TransactWriteItems con datoms EAVT/AEVT/AVET/VAET individuales
 //
 // Este módulo es el reemplazo directo de la corrupción de blobs de Datahike.
@@ -24,7 +24,7 @@ use crate::eav::types::{
 use crate::infrastructure::dynamodb::DynamoClient;
 
 /// Contexto de una transacción EAV.
-/// Equivale al `TransactPayload` implícito en el pipeline IOP de Clojure.
+/// Equivale al `TransactPayload` implícito en el pipeline IOP de el stack anterior.
 #[derive(Debug, Clone)]
 pub struct TransactPayload {
     pub tenant_id: String,
@@ -102,7 +102,6 @@ impl EavWriter {
     }
 
     /// Ejecuta una transacción ACID.
-    /// [PORTED_FROM: (d/transact conn tx-data) → DynamoDB blob]
     ///
     /// Proceso:
     /// 1. Generar TX_ID (ULID epoch ms monotónico)

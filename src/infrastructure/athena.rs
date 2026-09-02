@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/infrastructure/athena.clj]
 // infrastructure/athena.rs — AthenaQueryEngine implementando IQueryEngine.
-// En Clojure: AthenaClient SDK v2 Java.
+// En el stack anterior: AthenaClient SDK v2 Java.
 // En Rust:    aws-sdk-athena — polling de resultados con coerción de tipos.
 //
 // Este módulo es el cliente PURO de AWS Athena para producción.
@@ -19,7 +18,6 @@ use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::{IQueryEngine, QueryResults};
 
 /// Motor de consultas Athena.
-/// [PORTED_FROM: (defrecord AthenaQueryEngine [^AthenaClient client workgroup output-location])]
 pub struct AthenaQueryEngine {
     client: Client,
     workgroup: String,
@@ -29,7 +27,6 @@ pub struct AthenaQueryEngine {
 
 impl AthenaQueryEngine {
     /// Constructor desde configuración del entorno.
-    /// [PORTED_FROM: ig/init-key :infra/athena]
     pub async fn new(
         workgroup: impl Into<String>,
         output_location: impl Into<String>,
@@ -75,7 +72,6 @@ impl AthenaQueryEngine {
 #[async_trait]
 impl IQueryEngine for AthenaQueryEngine {
     /// Inicia una query asíncrona y retorna el execution_id.
-    /// [PORTED_FROM: (start-query! [_ sql database])]
     async fn start_query(&self, sql: &str, database: &str) -> Result<String, DomainError> {
         let db = if database.is_empty() {
             &self.database
@@ -112,10 +108,8 @@ impl IQueryEngine for AthenaQueryEngine {
     }
 
     /// Espera a que la query complete y retorna los resultados.
-    /// [PORTED_FROM: (get-query-results [_ execution-id])]
     async fn get_query_results(&self, execution_id: &str) -> Result<QueryResults, DomainError> {
-        // Polling con back-off exponencial — mismo patrón que el Clojure
-        // [PORTED_FROM: loop de polling implícito en el cliente Java]
+        // // Polling con back-off exponencial — mismo patrón que el el stack anterior
         let mut delay = Duration::from_millis(200);
         const MAX_POLLS: usize = 30;
 
@@ -180,7 +174,6 @@ impl IQueryEngine for AthenaQueryEngine {
             .ok_or_else(|| DomainError::aegis(ErrorCode::Aeg004, "Sin result_set en respuesta"))?;
 
         // Extraer nombres de columnas desde el header (primera fila)
-        // [PORTED_FROM: (.columnInfo (.resultSetMetadata rs))]
         let col_infos = result_set
             .result_set_metadata
             .as_ref()
@@ -192,7 +185,6 @@ impl IQueryEngine for AthenaQueryEngine {
         let col_types: Vec<&str> = col_infos.iter().map(|c| c.r#type()).collect();
 
         // Parsear filas omitiendo el header (primera fila de Athena = header)
-        // [PORTED_FROM: (rest (.rows rs))]
         let data_rows = result_set.rows();
         let skip = if !data_rows.is_empty() { 1 } else { 0 };
 
@@ -216,7 +208,6 @@ impl IQueryEngine for AthenaQueryEngine {
 }
 
 /// Coerciona un string Athena al tipo JSON correspondiente.
-/// [PORTED_FROM: (coerce s col-type) — todos los casos del case Clojure]
 fn coerce_athena_value(raw: &str, col_type: &str) -> Value {
     if raw.is_empty() {
         return Value::Null;
@@ -235,7 +226,6 @@ fn coerce_athena_value(raw: &str, col_type: &str) -> Value {
         // Boolean
         "boolean" => Value::Bool(raw.eq_ignore_ascii_case("true")),
         // Timestamps → epoch segundos (entero)
-        // [PORTED_FROM: (temporal/parse-athena-ts s)]
         "timestamp" | "date" => parse_athena_timestamp(raw)
             .map(Value::from)
             .unwrap_or_else(|| Value::String(raw.to_string())),
@@ -245,7 +235,6 @@ fn coerce_athena_value(raw: &str, col_type: &str) -> Value {
 }
 
 /// Parsea timestamps de Athena a epoch segundos.
-/// [PORTED_FROM: (temporal/parse-athena-ts s) — mismos 5 patrones]
 fn parse_athena_timestamp(s: &str) -> Option<i64> {
     use chrono::NaiveDateTime;
 

@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus/abac_clauses.clj]
 // janus/abac_clauses.rs — Construcción de cláusulas ABAC desde el CedarCtx.
 // SRP: transforma {entity + boundaries + user-id + schema} -> nodo AST IR ABAC.
 
@@ -13,7 +12,6 @@ pub struct OwnershipFields {
 }
 
 /// Extrae los atributos de propiedad y asignación desde el model schema del Códice.
-/// [PORTED_FROM: (ownership-fields entity schema)]
 pub fn ownership_fields(entity: &str, schema: &Value) -> OwnershipFields {
     let mut owner_field = None;
     let mut assignee_field = None;
@@ -48,13 +46,11 @@ pub fn ownership_fields(entity: &str, schema: &Value) -> OwnershipFields {
 }
 
 /// Retorna el nodo Zero-Trust cardinal. SIEMPRE debe ser el primer nodo del :where.
-/// [PORTED_FROM: (tenant-node tenant-id)]
 pub fn tenant_node(tenant_id: &str) -> Value {
     json!(["=", "tenant/id", tenant_id])
 }
 
 /// Construye el nodo ABAC combinado desde los boundaries (en FASE 2/3 pasados como array).
-/// [PORTED_FROM: (build-abac-node entity boundaries owner-field assignee-field user-id)]
 pub fn build_abac_node(
     entity: &str,
     boundaries: &[Value],

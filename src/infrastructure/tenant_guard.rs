@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/infrastructure/tenant_guard.clj]
 // infrastructure/tenant_guard.rs — Aislamiento multitenant en la capa EAV.
-// En Clojure: Pool Model gate para Datahike + schema verification.
+// En el stack anterior: Pool Model gate para Datahike + schema verification.
 // En Rust:    TenantGuard valida que todo I/O tenga tenant_id en el PK.
 //
 // Zero-Drop Policy: replicas query_with_tenant, transact_with_tenant!,
@@ -10,11 +9,9 @@ use crate::codice::CodeRegistry;
 use crate::domain::errors::{DomainError, ErrorCode};
 
 /// ID de sistema para operaciones de bootstrap (seeds, migraciones).
-/// [PORTED_FROM: (def SYSTEM_TENANT_ID "SYSTEM")]
 pub const SYSTEM_TENANT_ID: &str = "SYSTEM";
 
 /// TenantGuard — garantiza que todo I/O del EAV engine tenga tenant_id válido.
-/// [PORTED_FROM: (defmethod ig/init-key :infra/tenant-guard ...)]
 pub struct TenantGuard {
     /// Prefijo usado en el PK de DynamoDB: "T#<tenant_id>#..."
     /// Verifica que el tenant_id no sea vacío ni "SYSTEM" en operaciones de usuario.
@@ -35,7 +32,6 @@ impl TenantGuard {
     }
 
     /// Valida que el tenant_id sea un valor no-vacío y bien formado.
-    /// [PORTED_FROM: la validación implícita de transact-with-tenant!]
     pub fn validate_tenant(&self, tenant_id: &str) -> Result<(), DomainError> {
         if tenant_id.is_empty() {
             return Err(DomainError::auth(
@@ -53,7 +49,6 @@ impl TenantGuard {
     }
 
     /// Genera el Partition Key canónico para la tabla EAV.
-    /// [PORTED_FROM: lógica implícita de isolation por :tenant/id en Datahike]
     /// Formato: "T#<tenant_id>#E#<entity_id>"
     pub fn eavt_pk(&self, tenant_id: &str, entity_id: &str) -> Result<String, DomainError> {
         self.validate_tenant(tenant_id)?;
@@ -61,7 +56,6 @@ impl TenantGuard {
     }
 
     /// Verifica que el entity_type exista en el CodeRegistry.
-    /// [PORTED_FROM: ensure-tenant-schema! — verifica existencia de atributos]
     pub fn ensure_schema(
         &self,
         entity_type: &str,

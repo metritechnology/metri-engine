@@ -1,12 +1,10 @@
-// [PORTED_FROM: src/metri/domain/audit/action_type.clj]
 // domain/audit/action_type.rs — derive-action-type (fn pura).
-// En Clojure: (defn derive-action-type [request result] ...)
+// En el stack anterior: (defn derive-action-type [request result] ...)
 //
 // Mapea (request, result) → ActionType para el audit_log OLAP.
 // Dominio puro: sin I/O, sin efectos secundarios.
 
 /// Tipo de acción para el audit_log OLAP.
-/// [PORTED_FROM: (defn derive-action-type [request result])]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionType {
     /// Escritura exitosa (Create / Update / Delete / BulkIngest)
@@ -44,7 +42,6 @@ impl ActionType {
 ///   - Err stage=janus   → WriteError
 ///   - Err otros         → Unknown
 ///
-/// [PORTED_FROM: (defn derive-action-type [request result])]
 pub fn derive_action_type(succeeded: bool, error_stage: Option<&str>) -> ActionType {
     if succeeded {
         return ActionType::Write;

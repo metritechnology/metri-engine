@@ -1,8 +1,7 @@
-// [PORTED_FROM: src/metri/domain/protocols.clj]
 // Equivalencia: ISessionStore, ISQSBus, IQueryEngine, IStreamWriter,
 //               IEventBus, ICedarContext, IASTCompiler, IAegisEngine
 //
-// En Clojure: defprotocol → interfaz dinámica (duck typing)
+// En el stack anterior: defprotocol → interfaz dinámica (duck typing)
 // En Rust:    trait → interfaz estática tipada
 //
 // Zero-Drop Policy: todos los métodos de cada defprotocol están presentes.
@@ -21,7 +20,7 @@ pub type DomainResult<T> = Result<T, DomainError>;
 // ── Sesión / Token HMAC ───────────────────────────────────────────────────────
 
 /// Sesión verificada — resultado de get_session()
-/// Equivale al mapa {:tenant-id :user-id :jti :exp} de Clojure.
+/// Equivale al mapa {:tenant-id :user-id :jti :exp} de el stack anterior.
 #[derive(Debug, Clone)]
 pub struct Session {
     pub tenant_id: String,
@@ -31,19 +30,15 @@ pub struct Session {
 }
 
 /// ISessionStore — verifica tokens HMAC-SHA256 y gestiona blacklist.
-/// [PORTED_FROM: (defprotocol ISessionStore)]
 #[async_trait]
 pub trait ISessionStore: Send + Sync {
     /// Verifica token `mk_...` → Session o None si inválido/expirado/revocado.
-    /// [PORTED_FROM: (get-session [store token])]
     async fn get_session(&self, token: &str) -> DomainResult<Option<Session>>;
 
     /// REVOCAR: añade el token a la blacklist DynamoDB.
-    /// [PORTED_FROM: (put-session! [store token session-map ttl-seconds])]
     async fn revoke_session(&self, jti: &str, ttl_seconds: u64) -> DomainResult<()>;
 
     /// Quita un jti de la blacklist (des-revocar). Idempotente.
-    /// [PORTED_FROM: (del-session! [store token-or-jti])]
     async fn unrevoke_session(&self, jti: &str) -> DomainResult<()>;
 }
 
@@ -58,19 +53,15 @@ pub struct SqsMessage {
 }
 
 /// ISQSBus — bus de mensajes FIFO.
-/// [PORTED_FROM: (defprotocol ISQSBus)]
 #[async_trait]
 pub trait ISqsBus: Send + Sync {
     /// Publica un mensaje en la cola FIFO.
-    /// [PORTED_FROM: (publish! [bus payload group-id dedup-id])]
     async fn publish(&self, payload: &str, group_id: &str, dedup_id: &str) -> DomainResult<String>; // retorna message_id
 
     /// Recibe hasta `max_count` mensajes.
-    /// [PORTED_FROM: (receive-messages [bus max-count])]
     async fn receive_messages(&self, max_count: u32) -> DomainResult<Vec<SqsMessage>>;
 
     /// Confirma el procesamiento eliminando el mensaje.
-    /// [PORTED_FROM: (delete-message! [bus receipt-handle])]
     async fn delete_message(&self, receipt_handle: &str) -> DomainResult<()>;
 }
 
@@ -84,26 +75,21 @@ pub struct QueryResults {
 }
 
 /// IQueryEngine — motor analítico (Athena / stub).
-/// [PORTED_FROM: (defprotocol IQueryEngine)]
 #[async_trait]
 pub trait IQueryEngine: Send + Sync {
     /// Inicia query asíncrona. Retorna execution_id.
-    /// [PORTED_FROM: (start-query! [engine sql database])]
     async fn start_query(&self, sql: &str, database: &str) -> DomainResult<String>;
 
     /// Espera y retorna resultados.
-    /// [PORTED_FROM: (get-query-results [engine execution-id])]
     async fn get_query_results(&self, execution_id: &str) -> DomainResult<QueryResults>;
 }
 
 // ── Stream Writer (Kinesis) ───────────────────────────────────────────────────
 
 /// IStreamWriter — escritura a Kinesis Firehose.
-/// [PORTED_FROM: (defprotocol IStreamWriter)]
 #[async_trait]
 pub trait IStreamWriter: Send + Sync {
     /// Escribe un record al stream. Retorna sequence_number.
-    /// [PORTED_FROM: (put-record! [writer stream-name partition-key data])]
     async fn put_record(
         &self,
         stream_name: &str,
@@ -115,11 +101,9 @@ pub trait IStreamWriter: Send + Sync {
 // ── Event Bus (EventBridge) ───────────────────────────────────────────────────
 
 /// IEventBus — bus de eventos de dominio.
-/// [PORTED_FROM: (defprotocol IEventBus)]
 #[async_trait]
 pub trait IEventBus: Send + Sync {
     /// Publica un evento de dominio. Retorna event_id.
-    /// [PORTED_FROM: (put-event! [bus event-bus-name source detail-type detail])]
     async fn put_event(
         &self,
         event_bus_name: &str,
@@ -132,7 +116,7 @@ pub trait IEventBus: Send + Sync {
 // ── Cedar Authorization Context ───────────────────────────────────────────────
 
 /// Contexto de autorización Cedar.
-/// Equivale al mapa {:tenant-id :user-id :roles :domain-boundaries} de Clojure.
+/// Equivale al mapa {:tenant-id :user-id :roles :domain-boundaries} de el stack anterior.
 #[derive(Debug, Clone)]
 pub struct CedarCtx {
     pub tenant_id: String,
@@ -142,29 +126,25 @@ pub struct CedarCtx {
 }
 
 /// ICedarContext — autorización Zero-Trust.
-/// [PORTED_FROM: (defprotocol ICedarContext)]
 #[async_trait]
 pub trait ICedarContext: Send + Sync {
     /// Evalúa el request contra políticas Cedar.
-    /// [PORTED_FROM: (intercept [this request])]
     async fn intercept(&self, request: &Value) -> DomainResult<CedarCtx>;
 }
 
 // ── AST Compiler (Janus) ──────────────────────────────────────────────────────
 
 /// IASTCompiler — compilador puro de AST IR. Sin I/O. Sin estado.
-/// [PORTED_FROM: (defprotocol IASTCompiler)]
 pub trait IAstCompiler: Send + Sync {
     /// Transforma descriptor gRPC + cedar-ctx → AST IR inmutable.
     /// Invariante: ast_ir["where"] siempre incluye tenant_id filter.
-    /// [PORTED_FROM: (compile-ast [this query-descriptor cedar-ctx])]
     fn compile_ast(&self, query_descriptor: &Value, cedar_ctx: &CedarCtx) -> DomainResult<Value>;
 }
 
 // ── Aegis Engine ──────────────────────────────────────────────────────────────
 
 /// Chunk de resultado analítico — item de la secuencia lazy.
-/// Equivale a cada [:ok chunk-map] del lazy-seq Clojure.
+/// Equivale a cada [:ok chunk-map] del lazy-seq el stack anterior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResultChunk {
     pub data: Value,
@@ -172,12 +152,10 @@ pub struct ResultChunk {
 }
 
 /// IAegisEngine — motor analítico: AST IR → Datalog (OLTP) o SQL (OLAP).
-/// [PORTED_FROM: (defprotocol IAegisEngine)]
 #[async_trait]
 pub trait IAegisEngine: Send + Sync {
     /// Ejecuta el AST IR contra el motor correcto.
-    /// Retorna stream de chunks (equivalente a lazy-seq Clojure).
-    /// [PORTED_FROM: (transmute! [this ast-ir])]
+    /// /// Retorna stream de chunks (equivalente a lazy-seq el stack anterior).
     async fn transmute(&self, ast_ir: Value) -> DomainResult<Vec<ResultChunk>>;
 }
 

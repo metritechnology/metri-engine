@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/infrastructure/glue.clj]
 // infrastructure/glue.rs — Glue schema sync para tablas OLAP Iceberg.
 // Zero-Drop Policy: mismo mapeo de tipos Códice→Glue y lógica de sync.
 
@@ -11,7 +10,6 @@ use tracing::{error, info, warn};
 use crate::codice::{AttrType, CodeRegistry, EngineChannel};
 
 /// Mapeo de tipos Códice → tipos Glue.
-/// [PORTED_FROM: (def codice->glue-type {...})]
 fn codice_to_glue_type(attr_type: &AttrType) -> &'static str {
     match attr_type {
         AttrType::Decimal => "double",
@@ -23,7 +21,6 @@ fn codice_to_glue_type(attr_type: &AttrType) -> &'static str {
 }
 
 /// Cliente de sincronización de schemas Glue.
-/// [PORTED_FROM: ig/init-key :infra/glue + sync-all-entity-tables!]
 pub struct GlueSyncClient {
     client: Client,
     database: String,
@@ -42,7 +39,6 @@ impl GlueSyncClient {
     }
 
     /// Sincroniza el schema de TODAS las entidades OLAP con Glue.
-    /// [PORTED_FROM: (sync-all-entity-tables! client db)]
     pub async fn sync_all_entity_tables(&self, registry: &CodeRegistry) {
         info!(
             "[Glue Sync] Iniciando sincronización | database: {}",
@@ -70,7 +66,6 @@ impl GlueSyncClient {
     }
 
     /// Sincroniza una tabla Iceberg individual.
-    /// [PORTED_FROM: (sync-entity-table! client db model)]
     async fn sync_entity_table(
         &self,
         entity_name: &str,
@@ -143,7 +138,6 @@ impl GlueSyncClient {
     }
 
     /// Construye columnas Glue para una entidad.
-    /// [PORTED_FROM: (build-entity-columns model)]
     fn build_entity_columns(&self, entity_name: &str, registry: &CodeRegistry) -> Vec<Column> {
         let system_names: HashSet<&str> = ["id", "_tenant", "created_at"].into_iter().collect();
 

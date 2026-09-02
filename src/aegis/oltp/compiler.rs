@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/aegis/datalog/compiler.clj]
 // aegis/oltp/compiler.rs — Compilador OLTP: AST IR → plan físico EAV.
 //
 // Conecta la salida del PlanSelector (janus::plan_selector::EavQueryPlan)
@@ -25,7 +24,6 @@ use crate::temporal::core::TimeRange;
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
 /// Infiere el subconjunto mínimo de atributos a extraer (pull pattern).
-/// [PORTED_FROM: (infer-required-fields ast-ir ts-field)]
 fn infer_required_fields(ast_ir: &Value, ts_field: &str) -> Vec<String> {
     let mut fields = vec![
         ts_field.to_string(),
@@ -83,7 +81,6 @@ fn infer_required_fields(ast_ir: &Value, ts_field: &str) -> Vec<String> {
 }
 
 /// Recupera el campo de tipo 'epoch' desde el esquema para usar como timestamp de serie temporal.
-/// [PORTED_FROM: (resolve-created-at-field entity-type schema)]
 pub(crate) fn resolve_ts_field(entity_type: &str, schema: Option<&Value>) -> String {
     if let Some(attrs) = schema
         .and_then(|s| s.get("attributes"))
@@ -152,7 +149,6 @@ pub fn compile_native_plan(ast_ir: &Value, tenant_id: &str) -> NativeQueryPlan {
 }
 
 /// Compila AST IR → QueryExecutionPlan legacy (para compatibilidad con aegis/oltp/executor.rs).
-/// [PORTED_FROM: (compile-oltp-query ast-ir)]
 pub fn compile_oltp_query(
     ast_ir: &Value,
     tenant_id: &str,

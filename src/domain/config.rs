@@ -94,8 +94,7 @@ pub fn resolve_hmac_secret(
     environment: Option<&str>,
     hmac_secret: Option<&str>,
 ) -> Result<String, String> {
-    let known_non_prod =
-        matches!(environment, Some("development" | "dev" | "local" | "test"));
+    let known_non_prod = matches!(environment, Some("development" | "dev" | "local" | "test"));
     if !known_non_prod {
         let secret = hmac_secret
             .ok_or("HMAC_SECRET ausente en entorno productivo (o ENVIRONMENT desconocido)")?;
@@ -139,13 +138,21 @@ mod tests {
     fn environment_desconocido_se_trata_como_produccion() {
         assert!(resolve_hmac_secret(Some("qa"), None).is_err());
         assert!(resolve_hmac_secret(Some("staging"), Some(DEV_HMAC_SECRET)).is_err());
-        assert!(resolve_hmac_secret(Some("Production"), Some("a-very-strong-production-secret-0001")).is_ok());
+        assert!(resolve_hmac_secret(
+            Some("Production"),
+            Some("a-very-strong-production-secret-0001")
+        )
+        .is_ok());
     }
 
     #[test]
     fn produccion_exige_secreto_fuerte() {
         assert!(resolve_hmac_secret(Some("production"), Some("short")).is_err());
-        assert!(resolve_hmac_secret(Some("production"), Some("a-very-strong-production-secret-0001")).is_ok());
+        assert!(resolve_hmac_secret(
+            Some("production"),
+            Some("a-very-strong-production-secret-0001")
+        )
+        .is_ok());
     }
 
     #[test]
@@ -155,7 +162,8 @@ mod tests {
             DEV_HMAC_SECRET
         );
         assert_eq!(
-            resolve_hmac_secret(Some("local"), Some("local-dev-secret-do-not-use-in-prod")).unwrap(),
+            resolve_hmac_secret(Some("local"), Some("local-dev-secret-do-not-use-in-prod"))
+                .unwrap(),
             "local-dev-secret-do-not-use-in-prod"
         );
     }

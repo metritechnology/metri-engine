@@ -1,8 +1,7 @@
-// [PORTED_FROM: src/metri/janus_router/core.clj — ig/init-key :iop/janus-router]
 // iop/janus_step.rs — IopStep wrapper para JanusRouter.
 // Paso 3 (y último) del pipeline IOP: validación + ruteo al canal de escritura.
 //
-// En Clojure: (fn [ctx] (route ctx {:channel-registry channel-registry}))
+// En el stack anterior: (fn [ctx] (route ctx {:channel-registry channel-registry}))
 // En Rust:    JanusRouterStep implementa IopStep, invoca JanusRouter::route()
 
 use std::sync::Arc;
@@ -13,7 +12,6 @@ use crate::iop::core::{IopContext, IopStep};
 use crate::janus_router::router::JanusRouter;
 
 /// Wrapper IopStep para el JanusRouter (Paso 3 del pipeline IOP).
-/// [PORTED_FROM: ig/init-key :iop/janus-router → (fn [ctx] (route ctx deps))]
 pub struct JanusRouterStep {
     router: Arc<JanusRouter>,
 }
@@ -36,7 +34,6 @@ impl IopStep for JanusRouterStep {
     ///   5. Enriquecer ctx (tenant_id inyectado)
     ///   6. Despachar al canal
     ///
-    /// [PORTED_FROM: (.route channel safe-ctx) en janus_router/core.clj]
     #[tracing::instrument(
         name = "iop.step3.janus.start",
         skip(self, ctx),
@@ -65,7 +62,6 @@ impl JanusRouterStep {
 
         // El resultado del canal (entity_id, tx_id, ingested_count, etc.)
         // se almacena en ctx.request bajo "result" para que el normalizer lo recoja.
-        // [PORTED_FROM: [:ok {:entity-id ... :channel :oltp}] → normalizer]
         if let Some(obj) = ctx.request.get_mut("result") {
             // Ya existe — merge
             if let (Some(r_obj), Some(res_obj)) = (obj.as_object_mut(), result.as_object()) {

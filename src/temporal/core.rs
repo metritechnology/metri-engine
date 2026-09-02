@@ -1,7 +1,6 @@
-// [PORTED_FROM: src/metri/temporal/core.clj]
 // temporal/core.rs — Primitivas temporales canónicas.
 //
-// Invariantes (idénticas al Clojure):
+// Invariantes (idénticas al el stack anterior):
 //   - TODOS los valores internos son epoch-SEGUNDOS (i64), salvo sufijo _ms.
 //   - CUSTOM_RANGE del proto llega en epoch-MILISEGUNDOS → usar ms_to_s antes de procesar.
 //   - shift_by_calendar usa chrono → bisiesto-safe, DST-aware.

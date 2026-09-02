@@ -17,7 +17,6 @@ impl NormalizerStrategy for QueryNormalizer {
 }
 
 /// Garantiza :metadata en un chunk de QueryResponse.
-/// [PORTED_FROM: (ensure-metadata chunk)]
 fn ensure_metadata(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;
@@ -68,7 +67,6 @@ fn ensure_metadata(body: &mut Value) {
 }
 
 /// Garantiza :pagination básica.
-/// [PORTED_FROM: (ensure-pagination chunk)]
 fn ensure_pagination(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;
@@ -91,7 +89,6 @@ fn ensure_pagination(body: &mut Value) {
 }
 
 /// Garantiza :links de HATEOAS a nivel raíz.
-/// [PORTED_FROM: (ensure-hateoas-links chunk)]
 fn ensure_hateoas_links(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;
@@ -136,7 +133,6 @@ fn ensure_hateoas_links(body: &mut Value) {
 }
 
 /// Garantiza :viz_ext en el chunk con el tipo de visualización correcto.
-/// [PORTED_FROM: (ensure-viz-meta chunk)]
 fn ensure_viz_meta(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;
@@ -272,7 +268,6 @@ fn ensure_viz_meta(body: &mut Value) {
             json!({"signal": signal_obj})
         }
         "pie" | "donut" => {
-            // [PORTED_FROM: :breakdown {:signals {...}}]
             // Key = valor real de la primera columna dimensión (no "slice_N" sintético)
             // Los rows del executor PIE son Object: {"area": "Mecánica", "count": 12}
             let dim_key = columns
@@ -357,7 +352,6 @@ fn ensure_viz_meta(body: &mut Value) {
             json!({"breakdown": {"signals": signals}})
         }
         "line" | "bar" | "area" | "scatter" | "timeseries" => {
-            // [PORTED_FROM: (build-chart-decoration chunk)]
             // Construye ChartDecoration con los 10 campos del contrato proto §VizMeta.
             // Fuente de verdad de encoding: columnas derivadas por el executor.
             let col_names: Vec<_> = columns
@@ -368,7 +362,6 @@ fn ensure_viz_meta(body: &mut Value) {
             let y_dims = col_names.into_iter().skip(1).collect::<Vec<_>>();
 
             // Leer overrides de `decoration` (inyectado por router desde ast_ir o widget layout)
-            // [PORTED_FROM: (merge default-decoration (:decoration chunk))]
             let mut dec = obj.get("decoration").cloned().unwrap_or(Value::Null);
             if let Some(ref override_obj) = json_override {
                 let mut dec_map = match dec {
@@ -386,7 +379,6 @@ fn ensure_viz_meta(body: &mut Value) {
             // fill_gaps: el override explícito del JSON hint tiene prioridad absoluta.
             // Si el hint JSON contiene "fill_gaps" explícito (true o false), ese valor se respeta.
             // Solo si no hay override explícito se aplica la heurística automática de timeseries.
-            // [PORTED_FROM: ANO-005: fill-gaps directive]
             let fill_gaps = if let Some(ref override_obj) = json_override {
                 if let Some(explicit) = override_obj.get("fill_gaps").and_then(|v| v.as_bool()) {
                     // Valor explícito en JSON hint — tiene prioridad máxima
@@ -426,7 +418,6 @@ fn ensure_viz_meta(body: &mut Value) {
                 "smooth":       dec.get("smooth").and_then(|v| v.as_bool()).unwrap_or(false),
 
                 // §4 — Mustache label template (Resolved at render-time por ECharts formatter)
-                // [PORTED_FROM: label-template/interpolate-rows en label_template.clj]
                 "label_template": dec.get("label_template").and_then(|v| v.as_str()).unwrap_or(""),
                 "x_axis_label_template": dec.get("x_axis_label_template").and_then(|v| v.as_str()).unwrap_or(""),
                 "y_axis_label_template": dec.get("y_axis_label_template").and_then(|v| v.as_str()).unwrap_or(""),
@@ -684,7 +675,6 @@ fn ensure_viz_meta(body: &mut Value) {
 }
 
 /// Enriquece la inteligencia TIME_SHIFT, BENCHMARK o SMART.
-/// [PORTED_FROM: (enrich-viz-intelligence chunk)]
 fn enrich_viz_intelligence(body: &mut Value) {
     let already_has = body
         .pointer("/viz_ext/payload/signal/intelligence")

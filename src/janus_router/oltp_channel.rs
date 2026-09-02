@@ -1,7 +1,6 @@
-// [PORTED_FROM: src/metri/janus_router/channels/oltp.clj]
 // janus_router/oltp_channel.rs — OLTPChannel — Canal ACID vía EAV (DynamoDB).
 //
-// Responsabilidades (igual que OLTPChannel Clojure):
+// Responsabilidades (igual que OLTPChannel el stack anterior):
 //   1. Validar payload contra el Códice → HashMap<attr, DatomValue>
 //   2. Enriquecer con auto-generados (ULID, meta/created_at, meta/updated_at)
 //   3. Coerción de tipos numéricos (epoch/number strings → DatomValue correcto)
@@ -27,7 +26,6 @@ use crate::janus_router::ulid;
 // ── OltpChannel ───────────────────────────────────────────────────────────────
 
 /// Canal de escritura ACID via EAV/DynamoDB.
-/// [PORTED_FROM: (defrecord OLTPChannel [datahike-conn projections codice-generator-fn])]
 pub struct OltpChannel {
     writer: EavWriter,
 }
@@ -50,7 +48,6 @@ impl IWriteChannel for OltpChannel {
     ///   por cada row: validate → enrich → transact → cortocircuito en error
     ///   → [:ok {:ingested_count N}]
     ///
-    /// [PORTED_FROM: (route [_ ctx] ...)]
     async fn route(&self, ctx: IopContext) -> Result<Value, DomainError> {
         let entity_type = &ctx.entity_type;
 
@@ -494,7 +491,6 @@ pub(crate) fn extract_entity_id(payload: &Value) -> Option<String> {
 /// Coerce campos numéricos del Códice que lleguen como strings al tipo correcto.
 /// Crítico para evitar errores de validación cuando los clientes envían números como strings.
 ///
-/// [PORTED_FROM: (defn- coerce-payload [payload model])]
 fn coerce_payload(record: Value, model: &crate::codice::registry::EntityModel) -> Value {
     let Some(obj) = record.as_object() else {
         return record;

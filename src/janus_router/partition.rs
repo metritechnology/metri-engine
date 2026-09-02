@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus_router/partition.clj]
 // janus/partition.rs — Estrategias de particionamiento S3/Hive para OLAP.
 // Dominio puro — sin I/O, sin infra. Evaluación de paths en memoria.
 //
@@ -13,7 +12,6 @@ use chrono::{DateTime, TimeZone, Utc};
 
 /// Pre-evalúa la parte estática de la estrategia (fechas UTC) una sola vez por batch.
 ///
-/// [PORTED_FROM: (defn pre-evaluate-date-strategy [strategy timestamp])]
 pub fn pre_evaluate_date_strategy(strategy: Option<&str>, timestamp_ms: i64) -> String {
     let base = strategy.unwrap_or("YYYY-MM-DD");
 
@@ -28,7 +26,6 @@ pub fn pre_evaluate_date_strategy(strategy: Option<&str>, timestamp_ms: i64) -> 
     let hh = format!("{:02}", dt.format("%H"));
 
     // Reemplazos en orden — de más específico a menos específico.
-    // [PORTED_FROM: (->> base-strategy (str/replace "YYYY-MM-DD/HH" ...) ...)]
     base.replace(
         "YYYY-MM-DD/HH",
         &format!("year={yyyy}/month={mm}/day={dd}/hour={hh}"),
@@ -43,10 +40,8 @@ pub fn pre_evaluate_date_strategy(strategy: Option<&str>, timestamp_ms: i64) -> 
 /// Sanitización estricta: previene Path Traversal (../) e inyección S3.
 /// Solo permite [a-zA-Z0-9\-_] — el resto se reemplaza con '_'.
 ///
-/// [PORTED_FROM: (defn build-dynamic-path [date-evaluated-strategy record])]
 pub fn build_dynamic_path(date_strategy: &str, record: &serde_json::Value) -> String {
     // Regex: {atributo} → atributo=valor_sanitizado
-    // [PORTED_FROM: (str/replace date-evaluated-strategy #"\{([^}]+)\}" (fn [[_ k]] ...))]
     let result = regex::Regex::new(r"\{([^}]+)\}")
         .expect("regex válida")
         .replace_all(date_strategy, |caps: &regex::Captures| {
@@ -63,7 +58,6 @@ pub fn build_dynamic_path(date_strategy: &str, record: &serde_json::Value) -> St
                 .unwrap_or_else(|| "UNKNOWN".to_string());
 
             // Sanitización: solo [a-zA-Z0-9\-_]
-            // [PORTED_FROM: (str/replace raw-val #"[^a-zA-Z0-9\-_]" "_")]
             let safe: String = raw
                 .chars()
                 .map(|c| {

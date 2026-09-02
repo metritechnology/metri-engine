@@ -1,5 +1,3 @@
-// [PORTED_FROM: src/metri/aegis/sql/fuzzy_sql.clj]
-// [PORTED_FROM: src/metri/aegis/datalog/fuzzy.clj]
 // aegis/sql/fuzzy.rs — Expansor de términos fuzzy para Athena/OLAP y OLTP.
 // SRP: genera expresiones regex exactas de Damerau-Levenshtein 1 y evalúa distancias.
 
@@ -13,7 +11,6 @@ const FUZZY_MAX_LEN: usize = 8;
 // ── Funciones compartidas (OLTP / Datalog) ───────────────────────────────────
 
 /// Distancia de edición mínima entre dos strings (Wagner-Fischer, O(n) espacio).
-/// [PORTED_FROM: (levenshtein-distance a b)]
 pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let la = a.chars().count();
     let lb = b.chars().count();
@@ -44,7 +41,6 @@ pub fn levenshtein_distance(a: &str, b: &str) -> usize {
 }
 
 /// Threshold adaptativo según la longitud del término.
-/// [PORTED_FROM: (fuzzy-threshold term)]
 pub fn fuzzy_threshold(term: &str) -> usize {
     let n = term.chars().count();
     if n <= 2 {
@@ -57,7 +53,6 @@ pub fn fuzzy_threshold(term: &str) -> usize {
 }
 
 /// Tokeniza dividiendo por espacios, guiones y puntos.
-/// [PORTED_FROM: (tokenize s)]
 fn tokenize(s: &str) -> Vec<String> {
     s.to_lowercase()
         .split(|c: char| c.is_whitespace() || c == '-' || c == '.' || c == '_')
@@ -67,7 +62,6 @@ fn tokenize(s: &str) -> Vec<String> {
 }
 
 /// Evalúa si `value` contiene `term` de forma aproximada.
-/// [PORTED_FROM: (fuzzy-match? value term)]
 pub fn fuzzy_match(value: &str, term: &str) -> bool {
     if value.is_empty() || term.is_empty() {
         return false;
@@ -95,7 +89,6 @@ pub fn fuzzy_match(value: &str, term: &str) -> bool {
 // ── Funciones OLAP (Athena SQL) ──────────────────────────────────────────────
 
 /// Escapa caracteres literales para Presto/Athena Regex (Java-like).
-/// [PORTED_FROM: (escape-regex-literal s)]
 fn escape_regex_literal(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len() * 2);
     for c in s.chars() {
@@ -111,7 +104,6 @@ fn escape_regex_literal(s: &str) -> String {
 }
 
 /// Genera un patrón RE2/Athena estricto con distancia Damerau-Levenshtein 1.
-/// [PORTED_FROM: (generate-lev1-regex t)]
 fn generate_lev1_regex(t: &str) -> String {
     let chars: Vec<char> = t.chars().collect();
     let n = chars.len();
@@ -170,7 +162,6 @@ pub struct ExpandedFuzzyTerm {
 }
 
 /// Expande un término de búsqueda en patrones SQL cost-safe para Athena.
-/// [PORTED_FROM: (expand-term term)]
 pub fn expand_term(term: &str) -> Option<ExpandedFuzzyTerm> {
     if term.is_empty() {
         return None;

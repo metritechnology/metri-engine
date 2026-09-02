@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus/filter_compiler.clj]
 // janus/filter_compiler.rs — Compilador de FilterNode -> nodos AST IR.
 // SRP: transforma árboles de filtros del cliente en nodos del AST IR inmutable.
 

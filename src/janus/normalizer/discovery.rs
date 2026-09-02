@@ -8,7 +8,6 @@ impl NormalizerStrategy for DiscoveryNormalizer {
         let Some(obj) = body.as_object_mut() else {
             return;
         };
-        // [PORTED_FROM: (update body :schemas #(or % []))] — null OR missing → []
         let schemas = obj.get("schemas").cloned().unwrap_or(Value::Null);
         if schemas.is_null()
             || (schemas.is_array()

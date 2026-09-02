@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/codice/registry.clj + src/metri/codice/api.clj]
 // Equivalencia: CodeRegistry — carga, valida, hashea y compila todos los modelos JSON.
-// En Clojure: Integrant ig/init-key :codice/registry + atom global
+// En el stack anterior: Integrant ig/init-key :codice/registry + atom global
 // En Rust:    OnceLock<CodeRegistry> — inmutable post-bootstrap, lookup O(1)
 //
 // Zero-Drop Policy: todos los guard de error (COD_001, COD_002, COD_003, COD_SCOPE_001)
@@ -62,7 +61,7 @@ impl From<&str> for AttrType {
 }
 
 /// Canal de ejecución del engine.
-/// Equivale a (keyword (get model :engine "oltp")) en Clojure.
+/// Equivale a (keyword (get model :engine "oltp")) en el stack anterior.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineChannel {
@@ -96,7 +95,7 @@ pub struct AttributeDescriptor {
     pub options: Vec<String>,   // enum values
     pub is_sequence_scope: bool,
     pub is_sequence_scope_via: bool,
-    /// Marca PII — sanitizado en error_response (Clojure: :sensitive true).
+    /// /// Marca PII — sanitizado en error_response (el stack anterior: :sensitive true).
     pub sensitive: bool,
     pub auto_generate: Option<serde_json::Value>,
     pub validation_regex: Option<String>,
@@ -194,7 +193,6 @@ pub struct RegistryEntry {
 
 /// CodeRegistry — registro en memoria de todos los modelos compilados.
 /// Lookup O(1) por entity_name.
-/// [PORTED_FROM: (def ^:private registry (atom {})) + ig/init-key :codice/registry]
 pub struct CodeRegistry {
     /// Lookup por nombre de entidad → entry
     by_entity: HashMap<String, RegistryEntry>,
@@ -207,7 +205,6 @@ pub struct CodeRegistry {
 impl CodeRegistry {
     /// Construye el registry escaneando todos los JSON en `models_dir`.
     /// Lanza DomainError en cualquier condición de error (fail-fast de bootstrap).
-    /// [PORTED_FROM: (build-registry models-dir)]
     pub fn build(models_dir: &Path) -> Result<(Self, Vec<serde_json::Value>), DomainError> {
         let files = collect_json_files(models_dir)?;
 
@@ -323,7 +320,6 @@ impl CodeRegistry {
                 .to_string();
 
             // Guard COD_002: entidad duplicada
-            // [PORTED_FROM: (when (contains? registry entity) (throw ...))]
             if by_entity.contains_key(&entity_name) {
                 return Err(DomainError::codice(
                     ErrorCode::Cod002,
@@ -334,7 +330,6 @@ impl CodeRegistry {
             let fingerprint = schema_fingerprint(&entity_name, &json);
 
             // Guard COD_003: colisión de fingerprint
-            // [PORTED_FROM: (when-let [existing (get hashes hash)] (throw ...))]
             if let Some(existing) = by_hash.get(&fingerprint) {
                 return Err(DomainError::codice(
                     ErrorCode::Cod003,
@@ -348,7 +343,6 @@ impl CodeRegistry {
             let model = parse_entity_model(&json)?;
 
             // Acumular event_rules para seed posterior
-            // [PORTED_FROM: (extract-event-rules model)]
             if let Some(rules) = json["event_rules"].as_array() {
                 for rule in rules {
                     let mut rule = rule.clone();
@@ -383,7 +377,6 @@ impl CodeRegistry {
         };
 
         // Post-build: validar scope providers
-        // [PORTED_FROM: (validate-scope-providers! registry)]
         registry.validate_scope_providers()?;
 
         info!(
@@ -398,19 +391,16 @@ impl CodeRegistry {
     // ── API pública — lookup O(1) ────────────────────────────────────────────
 
     /// Obtiene el modelo de una entidad.
-    /// [PORTED_FROM: (entity-model entity-type ctx)]
     pub fn get_model(&self, entity_type: &str) -> Option<&EntityModel> {
         self.by_entity.get(entity_type).map(|e| &e.model)
     }
 
     /// Obtiene el engine channel de una entidad.
-    /// [PORTED_FROM: (entity-engine entity-type ctx)]
     pub fn get_engine(&self, entity_type: &str) -> Option<&EngineChannel> {
         self.by_entity.get(entity_type).map(|e| &e.model.engine)
     }
 
     /// Obtiene los atributos de una entidad.
-    /// [PORTED_FROM: (describe-attributes entity-type ctx)]
     pub fn get_attributes(&self, entity_type: &str) -> Option<&[AttributeDescriptor]> {
         self.by_entity
             .get(entity_type)
@@ -432,7 +422,6 @@ impl CodeRegistry {
     }
 
     /// Obtiene el fingerprint SHA-256.
-    /// [PORTED_FROM: (entity-hash entity-type)]
     pub fn get_fingerprint(&self, entity_type: &str) -> Option<&str> {
         self.by_entity
             .get(entity_type)
@@ -500,7 +489,6 @@ impl CodeRegistry {
 
     /// Valida que los atributos con is_sequence_scope apunten a un
     /// entityRef que sea is_sequence_scope_provider: true.
-    /// [PORTED_FROM: (validate-scope-providers! registry)]
     fn validate_scope_providers(&self) -> Result<(), DomainError> {
         for (entity_name, entry) in &self.by_entity {
             for attr in &entry.model.attributes {
@@ -527,13 +515,11 @@ impl CodeRegistry {
     }
 }
 
-// ── Registro estático global — equivale al `(atom {})` de Clojure ────────────
+// ── Registro estático global — equivale al `(atom {})` de el stack anterior ────────────
 /// OnceLock garantiza que se inicialice UNA sola vez en el cold start.
-/// [PORTED_FROM: (def ^:private registry (atom {}))]
 static REGISTRY: OnceLock<CodeRegistry> = OnceLock::new();
 
 /// Inicializa el registry global. Llamado UNA sola vez en main.rs.
-/// [PORTED_FROM: (api/init! registry)]
 pub fn init_global(registry: CodeRegistry) {
     REGISTRY.set(registry).unwrap_or_else(|_| {
         panic!("CodeRegistry ya fue inicializado — no llamar init_global dos veces")
@@ -555,7 +541,6 @@ pub fn global() -> &'static CodeRegistry {
 // ── Helpers privados ─────────────────────────────────────────────────────────
 
 /// Genera fingerprint SHA-256 del modelo.
-/// [PORTED_FROM: (schema-fingerprint [{:keys [entity attributes]}])]
 fn schema_fingerprint(entity_name: &str, json: &serde_json::Value) -> String {
     let attr_names: Vec<&str> = json["attributes"]
         .as_array()
@@ -568,7 +553,6 @@ fn schema_fingerprint(entity_name: &str, json: &serde_json::Value) -> String {
 }
 
 /// Parsea un modelo JSON en un EntityModel tipado.
-/// [PORTED_FROM: (load-model-file file)]
 fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainError> {
     let entity = json["entity"].as_str().unwrap_or("unknown").to_string();
 
@@ -699,7 +683,6 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
 }
 
 /// Recolecta todos los archivos .json de un directorio.
-/// [PORTED_FROM: (list-model-files models-dir)]
 fn collect_json_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, DomainError> {
     if !dir.is_dir() {
         return Err(DomainError::codice(

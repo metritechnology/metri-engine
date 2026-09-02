@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus_router/ulid.clj]
 // janus/ulid.rs — Generador ULID monotónico.
 // Spec: https://github.com/ulid/spec
 //
@@ -17,17 +16,14 @@ use tracing::warn;
 use ulid::Ulid;
 
 // Último ULID generado — para garantía de orden monotónico.
-// [PORTED_FROM: UlidCreator/getMonotonicUlid() — JVM thread-safe via internal counter]
 static LAST_ULID: Lazy<Mutex<Option<Ulid>>> = Lazy::new(|| Mutex::new(None));
 
 // Alfabeto Crockford Base32 para validación.
-// [PORTED_FROM: (def ^:private ^String CROCKFORD "0123456789ABCDEFGHJKMNPQRSTVWXYZ")]
 const CROCKFORD: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /// Genera un ULID monotónico de 26 caracteres Crockford Base32.
 /// Thread-safe. Nunca lanza.
 ///
-/// [PORTED_FROM: (defn generate ^String [] (-> (UlidCreator/getMonotonicUlid) (.toString)))]
 pub fn generate() -> String {
     let mut last = LAST_ULID.lock().unwrap_or_else(|e| {
         warn!("[ULID] Mutex poisoned — reiniciando estado monotónico");
@@ -37,7 +33,6 @@ pub fn generate() -> String {
     let candidate = Ulid::new();
 
     // Garantía monotónica: si el candidato es <= al último, incrementamos.
-    // [PORTED_FROM: monotonía del UlidCreator JVM dentro del mismo ms]
     let next = match *last {
         Some(prev) if candidate <= prev => {
             // Mismo ms o colisión — incrementar bits random del previo.
@@ -55,7 +50,6 @@ pub fn generate() -> String {
 
 /// Retorna true si `s` es un ULID válido (26 chars Crockford Base32).
 ///
-/// [PORTED_FROM: (defn ulid? [s] (and (string? s) (= 26 (count s)) (every? ...)))]
 pub fn is_ulid(s: &str) -> bool {
     s.len() == 26
         && s.chars()

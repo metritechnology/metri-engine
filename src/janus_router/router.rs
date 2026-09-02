@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/janus_router/core.clj]
 // janus_router/router.rs — JanusRouter — Write Path del Metri Engine.
 // Invocado exclusivamente por el IOP, después de Cedar + Quota.
 //
@@ -24,7 +23,6 @@ use crate::janus::validator;
 // ── Trait del canal de escritura ─────────────────────────────────────────────
 
 /// Canal de escritura para una entidad (OLTP | OLAP).
-/// [PORTED_FROM: IJanusWriteChannel → (.route channel safe-ctx)]
 #[async_trait::async_trait]
 pub trait IWriteChannel: Send + Sync {
     async fn route(&self, ctx: IopContext) -> Result<Value, DomainError>;
@@ -33,7 +31,6 @@ pub trait IWriteChannel: Send + Sync {
 // ── JanusRouter ──────────────────────────────────────────────────────────────
 
 /// JanusRouter — enrutador del Write Path.
-/// [PORTED_FROM: (defn route [ctx {:keys [channel-registry]}] ...)]
 pub struct JanusRouter {
     channel_registry: HashMap<EngineChannel, Arc<dyn IWriteChannel>>,
 }
@@ -49,7 +46,6 @@ impl JanusRouter {
 
     /// Pipeline completo del Write Path (6 pasos).
     ///
-    /// [PORTED_FROM: (defn route [ctx {:keys [channel-registry]}] ...)]
     pub async fn route(&self, mut ctx: IopContext) -> Result<Value, DomainError> {
         let entity_type = ctx.entity_type.clone();
         let operation = ctx.operation.clone();
@@ -64,7 +60,6 @@ impl JanusRouter {
         let registry = codice_global();
 
         // 1. Cargar schema desde el Códice (O(1))
-        // [PORTED_FROM: (codice/load-schema entity-type {})]
         let model = registry.get_model(&entity_type).ok_or_else(|| {
             warn!("[JanusRouter] Entidad desconocida en Códice: {entity_type}");
             DomainError::janus(
@@ -96,7 +91,6 @@ impl JanusRouter {
         })?;
 
         // 5. Enriquecer ctx — tenant_id inyectado (NUNCA del cliente) (SRP)
-        // [PORTED_FROM: (assoc :schema schema :entity-type entity-type ...)]
         self.enrich_context_metadata(&mut ctx, schema_json);
 
         info!(
@@ -107,7 +101,6 @@ impl JanusRouter {
         );
 
         // 6. Despachar al canal
-        // [PORTED_FROM: (.route channel safe-ctx)]
         channel.route(ctx).await
     }
 
@@ -164,7 +157,6 @@ impl JanusRouter {
         }
 
         // Bulk: inyectar tenant_id en cada row del array :data
-        // [PORTED_FROM: (update-in [:request :data] #(mapv (fn [row] (assoc row :tenant_id ...)) %))]
         if let Some(Value::Array(rows)) = ctx.request.get_mut("data") {
             for row in rows.iter_mut() {
                 if let Some(obj) = row.as_object_mut() {

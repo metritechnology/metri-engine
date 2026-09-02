@@ -1,4 +1,3 @@
-// [PORTED_FROM: src/metri/aegis/label_template.clj]
 // aegis/label_template.rs — Interpolación de label templates Mustache-style.
 // SRP: resolución pura de templates — sin I/O, sin estado.
 
@@ -12,7 +11,6 @@ lazy_static! {
 }
 
 /// Busca un campo en el row tolerando diferencias de tipos (string/keyword) o estructura.
-/// [PORTED_FROM: (coerce-key row field-str)]
 fn coerce_key<'a>(row: &'a Value, field_str: &str) -> Option<&'a Value> {
     if let Some(obj) = row.as_object() {
         if let Some(v) = obj.get(field_str) {
@@ -37,7 +35,6 @@ fn coerce_key<'a>(row: &'a Value, field_str: &str) -> Option<&'a Value> {
 /// - entero    -> "42"
 /// - decimal   -> "45.23" (2 decimales max)
 /// - string    -> valor directo
-///   [PORTED_FROM: (format-value v)]
 ///   Resuelve un camino (por ejemplo "location.name") navegando en objetos JSON.
 fn resolve_path<'a>(mut current: &'a Value, path: &str) -> Option<&'a Value> {
     // Si la clave entera coincide directamente en el valor actual, úsala directamente.
@@ -61,7 +58,6 @@ fn resolve_path<'a>(mut current: &'a Value, path: &str) -> Option<&'a Value> {
 /// - entero    -> "42"
 /// - decimal   -> "45.23" (2 decimales max)
 /// - string    -> valor directo
-///   [PORTED_FROM: (format-value v)]
 pub(crate) fn format_value(v: Option<&Value>) -> String {
     match v {
         Some(Value::Null) | None => "".to_string(),
@@ -85,7 +81,6 @@ pub(crate) fn format_value(v: Option<&Value>) -> String {
 /// Template: '{{asset_name}} - {{area_value}} KW'
 /// Row:      {"asset_name": "Pump A", "area_value": 45.2}
 /// Retorna:  'Pump A - 45.2 KW'
-/// [PORTED_FROM: (interpolate template row)]
 pub fn interpolate(template: &str, row: &Value) -> Option<String> {
     if template.trim().is_empty() {
         return None;
@@ -102,7 +97,6 @@ pub fn interpolate(template: &str, row: &Value) -> Option<String> {
 
 /// Aplica `interpolate` a todos los rows de un vector de JSON values.
 /// Añade la key `_label` a cada row con el label resuelto.
-/// [PORTED_FROM: (interpolate-rows rows template)]
 #[allow(dead_code)]
 pub fn interpolate_rows(rows: &mut [Value], template: &str) {
     if template.trim().is_empty() {
@@ -119,7 +113,6 @@ pub fn interpolate_rows(rows: &mut [Value], template: &str) {
 }
 
 /// Extrae los nombres de campo referenciados en un template.
-/// [PORTED_FROM: (extract-fields template)]
 #[allow(dead_code)]
 pub fn extract_fields(template: &str) -> Vec<String> {
     if template.trim().is_empty() {

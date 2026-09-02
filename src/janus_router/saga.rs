@@ -1,6 +1,5 @@
 // janus_router/saga.rs — SagaBuilder — Proyección declarativa hacia `scheduled_job`.
 //
-// [PORTED_FROM: src/metri/janus/channels/projections/saga.clj]
 //
 // Cuando una entidad madre declara `shadow_sagas_mapping`, cada CREATE proyecta uno o más
 // `scheduled_job` en la MISMA transacción ACID. Metri Schedulers los consume por el bus.

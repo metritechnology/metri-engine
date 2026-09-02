@@ -1,6 +1,5 @@
-// [PORTED_FROM: src/metri/infrastructure/eventbridge.clj]
 // infrastructure/eventbridge.rs — EventBridgeClient implementando IEventBus.
-// En Clojure: cognitect/aws :events PutEvents
+// En el stack anterior: cognitect/aws :events PutEvents
 // En Rust:    aws-sdk-eventbridge
 
 use async_trait::async_trait;
@@ -11,13 +10,11 @@ use tracing::{error, info};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::IEventBus;
 
-/// [PORTED_FROM: (defrecord EventBridgeClient [client])]
 pub struct EventBridgeClient {
     client: Client,
 }
 
 impl EventBridgeClient {
-    /// [PORTED_FROM: ig/init-key :infra/eventbridge]
     pub async fn new() -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
@@ -65,7 +62,6 @@ pub fn publish_domain_event_async(
 #[async_trait]
 impl IEventBus for EventBridgeClient {
     /// Publica un evento de dominio en EventBridge.
-    /// [PORTED_FROM: (put-event! [_ bus-name source detail-type detail])]
     async fn put_event(
         &self,
         event_bus_name: &str,
@@ -90,7 +86,6 @@ impl IEventBus for EventBridgeClient {
             .await
             .map_err(|e| {
                 let msg = format!("{e:?}");
-                // [PORTED_FROM: código de error AccessDeniedException → INFRA_EVENTBRIDGE_003]
                 // Clasificación pendiente: hoy toda falla mapea a INFRA_004.
                 // La rama por `AccessDeniedException` se documentó en el port.
                 DomainError::infra(
@@ -100,7 +95,6 @@ impl IEventBus for EventBridgeClient {
             })?;
 
         // Verificar errores por-entry
-        // [PORTED_FROM: (when (:ErrorCode entry-resp) (errors/error :INFRA_EVENTBRIDGE_002 ...))]
         if let Some(first_entry) = resp.entries().first() {
             if let Some(error_code) = first_entry.error_code() {
                 let error_message = first_entry.error_message().unwrap_or("sin mensaje");

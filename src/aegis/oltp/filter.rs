@@ -10,7 +10,6 @@ use crate::janus::fbs::{FilterNodeT, FilterOperator};
 
 /// Evalúa un FilterNodeT sobre un row JSON. Retorna true si el row pasa.
 ///
-/// [PORTED_FROM: (node->pred node) en aggregation.clj]
 pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
     // Hoja: criteria
     if let Some(crit) = &node.criteria {
