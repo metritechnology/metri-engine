@@ -127,7 +127,8 @@ async fn test_audit_interceptor_crud_e2e() {
         "id": asset_id,
         "name": "Bomba Centrifuga Audit E2E",
         "area": "Mecánica",
-        "status": "active",
+        "status": "ACTIVE",
+        "location_id": "01JLOCATIONTEST0000000000",
         "timestamp": Utc::now_timestamp()
     });
 
@@ -340,7 +341,8 @@ async fn test_audit_time_travel_history() {
         "id": asset_id,
         "name": "Bomba Centrifuga Original",
         "area": "Mecánica",
-        "status": "active",
+        "status": "ACTIVE",
+        "location_id": "01JLOCATIONTEST0000000000",
         "timestamp": Utc::now_timestamp()
     });
 
@@ -531,8 +533,10 @@ async fn test_audit_time_travel_history() {
 
     let mut found_original = false;
     let mut found_modified = false;
+    let rows_debug;
 
     if let Some(PayloadStrategy::RowsJson(row_list)) = &row_set.payload_strategy {
+        rows_debug = format!("{:?}", row_list);
         for row in &row_list.iter {
             let vals = &row.values;
 
@@ -566,7 +570,8 @@ async fn test_audit_time_travel_history() {
 
     assert!(
         found_original,
-        "Should find history entry for original name"
+        "Should find history entry for original name. Filas recibidas: {:?}",
+        rows_debug
     );
     assert!(
         found_modified,

@@ -1,6 +1,9 @@
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 
 #[test]
+// ROUND redondea PI a 2 decimales; el literal esperado 3.14 es el resultado
+// canónico de esa operación, no una aproximación accidental de PI.
+#[allow(clippy::approx_constant)]
 fn test_standard_functions() {
     let reg = FunctionRegistry::standard();
 
@@ -11,8 +14,10 @@ fn test_standard_functions() {
 
     // 2. ROUND
     let round_fn = reg.get("ROUND").unwrap();
-    assert_eq!(round_fn.evaluate(&[3.14159, 2.0]), Some(3.14));
-    assert_eq!(round_fn.evaluate(&[3.14159, 0.0]), Some(3.0));
+    // 2. ROUND
+    let round_fn = reg.get("ROUND").unwrap();
+    assert_eq!(round_fn.evaluate(&[std::f64::consts::PI, 2.0]), Some(3.14));
+    assert_eq!(round_fn.evaluate(&[std::f64::consts::PI, 0.0]), Some(3.0));
 
     // 3. CEIL
     let ceil_fn = reg.get("CEIL").unwrap();
