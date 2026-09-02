@@ -32,6 +32,9 @@ jobs:
       - name: Unit tests
         run: cargo test --lib
 
+      - name: Referencia desactualizada (docs/reference)
+        run: python3 scripts/docs/gen_reference.py --check
+
       - name: Clippy (línea base registrada: 73 hallazgos al 2-sep-2026 (Fase 2: desde 348))
         run: cargo clippy --all-targets 2>&1 | tee clippy_baseline.txt
         continue-on-error: true
