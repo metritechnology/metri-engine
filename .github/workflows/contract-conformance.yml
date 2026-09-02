@@ -3,35 +3,26 @@ name: Contract Conformance
 on:
   pull_request:
     paths:
-      - "proto/metri.proto"
-      - "docs/architecture/janus-aegis-contract-v3.edn"
-      - "docs/architecture/**/*.md"
-      - "docs/architecture/validate_contracts.clj"
-      - "docs/architecture/validate_traceability.clj"
+      - "proto/**"
+      - "config/**"
+      - "tests/contract_conformance.rs"
       - ".github/workflows/contract-conformance.yml"
   push:
     branches: [main, master]
-    paths:
-      - "proto/metri.proto"
-      - "docs/architecture/janus-aegis-contract-v3.edn"
-      - "docs/architecture/**/*.md"
-      - "docs/architecture/validate_contracts.clj"
-      - "docs/architecture/validate_traceability.clj"
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  validate:
+  conformance:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Clojure
-        uses: DeLaGuardo/setup-clojure@13.2
-        with:
-          cli: 1.11.1.1413
-
-      - name: Validate contracts
-        run: clojure -Sdeps '{:paths ["docs/architecture"]}' -M -m validate-contracts
-
-      - name: Validate traceability matrix
-        run: clojure -Sdeps '{:paths ["docs/architecture"]}' -M -m validate-traceability
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: flatc (FlatBuffers compiler)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatbuffers-compiler-dev
+      - name: Conformidad de contratos (Rust nativo)
+        run: cargo test --test contract_conformance

@@ -45,7 +45,7 @@
       "type": "array",
       "of": "object",
       "required": true,
-      "description": "Grafo estructurado del AST. Descompone los filtros en tuplas nativas para que Datomic eval\u00fae los Webhooks directamente cruzando atributos indexados.",
+      "description": "Grafo estructurado del AST. Descompone los filtros en tuplas nativas para que el motor eval\u00fae los Webhooks directamente cruzando atributos indexados.",
       "schema": [
         {
           "name": "logical_operator",

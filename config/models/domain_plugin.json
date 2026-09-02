@@ -24,7 +24,7 @@
       "doc": "Specific point in the execution pipeline where the plugin is executed."
     },
     {
-      "name": "clojure_fn",
+      "name": "handler_fn",
       "type": "string",
       "required": true,
       "doc": "Fully qualified namespace and function name (e.g., 'metri.plugins.inventory/validate-stock')."

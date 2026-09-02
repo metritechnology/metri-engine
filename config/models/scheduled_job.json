@@ -60,14 +60,14 @@
       "type": "reference",
       "entityRef": "user",
       "cardinality": "one",
-      "description": "Si la alarma as\u00edncrona es para un humano aislado, Datomic amarra el Job a \u00e9l para evitar punteros muertos (Null Pointers as\u00edncronos)."
+      "description": "Si la alarma as\u00edncrona es para un humano aislado, el motor amarra el Job a \u00e9l para evitar punteros muertos (Null Pointers as\u00edncronos)."
     },
     {
       "name": "target_group_id",
       "type": "reference",
       "entityRef": "user_group",
       "cardinality": "one",
-      "description": "Si el Job invoca Broadcasting de Notificaciones en Masa, Datomic protege y bloquea la eliminaci\u00f3n del User Group base."
+      "description": "Si el Job invoca Broadcasting de Notificaciones en Masa, el motor protege y bloquea la eliminaci\u00f3n del User Group base."
     },
     {
       "name": "target_role_id",
