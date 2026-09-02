@@ -448,58 +448,9 @@ impl OltpExecutor {
 
         let mut ast_ir_mut = ast_ir.clone();
 
-        // Enriquecer select_tree dinámicamente analizando las dimensiones que contienen label_template
-        let mut dynamic_select = if let Some(stree_str) = &ast_ir_mut.select_tree {
-            serde_json::from_str::<serde_json::Value>(stree_str)
-                .unwrap_or_else(|_| serde_json::json!({}))
-        } else {
-            serde_json::json!({})
-        };
-
-        let mut has_dynamic_relations = false;
-        if let Some(dims) = &ast_ir_mut.dimensions {
-            let registry = crate::codice::global();
-            if let Some(model) = registry.get_model(entity_type) {
-                for d in dims {
-                    if let Some(lt) = &d.label_template {
-                        for field in crate::aegis::label_template::extract_fields(lt) {
-                            let base_ref = field.split('.').next().unwrap_or(&field);
-                            // Buscar un atributo tipo reference en el modelo
-                            let ref_attr_opt = model.attributes.iter().find(|a| {
-                                a.attr_type == crate::codice::registry::AttrType::Reference
-                                    && (a.name == *base_ref
-                                        || a.name.split('/').next_back() == Some(base_ref)
-                                        || a.entity_ref.as_deref() == Some(base_ref))
-                            });
-                            if let Some(ref_attr) = ref_attr_opt {
-                                let attr_name = ref_attr
-                                    .name
-                                    .split('/')
-                                    .next_back()
-                                    .unwrap_or(&ref_attr.name)
-                                    .to_string();
-                                if let Some(obj) = dynamic_select.as_object_mut() {
-                                    let fields_obj = if let Some(inner) =
-                                        obj.get_mut("fields").and_then(|v| v.as_object_mut())
-                                    {
-                                        inner
-                                    } else {
-                                        obj
-                                    };
-                                    fields_obj
-                                        .entry(attr_name)
-                                        .or_insert_with(|| serde_json::json!({}));
-                                    has_dynamic_relations = true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if has_dynamic_relations {
-            ast_ir_mut.select_tree = Some(dynamic_select.to_string());
+        // Enriquecer select_tree dinámicamente (label_template → referencias)
+        if let Some(stree) = enrich_select_tree_with_label_templates(entity_type, ast_ir) {
+            ast_ir_mut.select_tree = Some(stree);
         }
         if let Some(filters) = &mut ast_ir_mut.filters {
             let registry = crate::codice::global();
@@ -547,89 +498,15 @@ impl OltpExecutor {
         );
 
         // ── EavReader::history: path especial para Time-Travel ────────────────
-        if let Some(stree) = ast_ir
-            .select_tree
-            .as_ref()
-            .and_then(|s| serde_json::from_str::<Value>(s).ok())
-        {
-            if stree
-                .get("_history")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
-                if let Some(entity_id) = stree.get("id").and_then(|v| v.as_str()) {
-                    debug!("[Aegis OLTP FBS] History timeline query for entity_id={entity_id}");
-                    let entries = self
-                        .pull_reader
-                        .history(target_tenant, entity_id, None)
-                        .await?;
-                    let rows: Vec<Value> = entries.into_iter().map(|entry| {
-                        json!({
-                            "attr_name": entry.attr_name,
-                            "value": match entry.value {
-                                Some(crate::eav::types::datom::DatomValue::Str(s)) => json!(s),
-                                Some(crate::eav::types::datom::DatomValue::Bool(b)) => json!(b),
-                                Some(crate::eav::types::datom::DatomValue::Long(l)) => json!(l),
-                                Some(crate::eav::types::datom::DatomValue::Double(d)) => json!(d),
-                                Some(crate::eav::types::datom::DatomValue::Uuid(u)) => json!(u),
-                                Some(crate::eav::types::datom::DatomValue::Array(a)) => json!(a),
-                                Some(crate::eav::types::datom::DatomValue::Ref(r)) => json!(r.to_string()),
-                                Some(crate::eav::types::datom::DatomValue::Instant(i)) => json!(i),
-                                _ => Value::Null,
-                            },
-                            "tx_id": entry.tx_id,
-                            "op": entry.op,
-                            "user_id": Value::Null,
-                            "timestamp": entry.tx_id,
-                        })
-                    }).collect();
-
-                    return Ok(json!({
-                        "data": rows,
-                        "total": rows.len(),
-                        "pagination": Value::Null,
-                    }));
-                }
-            }
+        if let Some(result) = fetch_history_timeline(self, target_tenant, ast_ir).await? {
+            return Ok(result);
         }
 
         // ── AsOfSnapshot: path especial ───────────────────────────────────────
-        let is_custom_range = ast_ir
-            .time_frame
-            .as_ref()
-            .map(|tf| tf.type_.0 == 1 /* CUSTOM_RANGE */)
-            .unwrap_or(false);
-
-        if is_custom_range {
-            if let (Some(end_ts), Some(entity_id)) =
-                (time_range.end_ts, extract_ulid_fbs_executor(ast_ir))
-            {
-                let as_of_tx = end_ts as u64;
-                debug!("[Aegis OLTP FBS] AsOfSnapshot entity_id={entity_id} as_of_tx={as_of_tx}");
-                let select = extract_select_attrs_fbs(ast_ir);
-                let sel_ref: Vec<&str> = select.iter().map(|s| s.as_str()).collect();
-                let mut map = self
-                    .pull_reader
-                    .pull_as_of(
-                        target_tenant,
-                        &entity_id,
-                        as_of_tx,
-                        if sel_ref.is_empty() {
-                            None
-                        } else {
-                            Some(&sel_ref)
-                        },
-                    )
-                    .await?;
-                map.insert(
-                    "id".to_string(),
-                    crate::eav::types::datom::DatomValue::Str(entity_id.clone()),
-                );
-                let mut rows = vec![entity_map_to_json(map)];
-                self.apply_overlays(target_tenant, entity_type, &mut rows)
-                    .await;
-                return Ok(Value::Array(rows));
-            }
+        if let Some(result) =
+            fetch_as_of_snapshot(self, target_tenant, entity_type, ast_ir, &time_range).await?
+        {
+            return Ok(result);
         }
 
         // ── Plan normal vía PlanSelector FBS ──────────────────────────────────
@@ -655,109 +532,7 @@ impl OltpExecutor {
         );
 
         // ── Extracción y resolución de atributos requeridos ──────────────────
-        let mut raw_attrs = std::collections::HashSet::new();
-
-        // Extraer de metrics
-        if let Some(metrics) = &ast_ir.metrics {
-            for m in metrics {
-                if let Some(attr) = &m.attribute {
-                    raw_attrs.insert(attr.clone());
-                }
-                if let Some(sec) = &m.secondary_attribute {
-                    raw_attrs.insert(sec.clone());
-                }
-            }
-        }
-
-        // Extraer de dimensions
-        if let Some(dims) = &ast_ir.dimensions {
-            for d in dims {
-                if let Some(attr) = &d.attribute {
-                    raw_attrs.insert(attr.clone());
-                }
-            }
-        }
-
-        // Extraer de filters
-        if let Some(filters) = &ast_ir.filters {
-            for f in filters {
-                extract_attrs_from_filter_node(f, &mut raw_attrs);
-            }
-        }
-
-        // Extraer de sort
-        if let Some(sort_defs) = &ast_ir.sort {
-            for spec in sort_defs {
-                if let Some(field) = &spec.field {
-                    raw_attrs.insert(field.clone());
-                }
-            }
-        }
-
-        // Extraer de hierarchy
-        if let Some(h) = &ast_ir.hierarchy {
-            if let Some(pf) = &h.parent_field {
-                raw_attrs.insert(pf.clone());
-            }
-        }
-
-        // Extraer de select_tree
-        if let Some(stree_str) = &ast_ir.select_tree {
-            if let Ok(stree) = serde_json::from_str::<Value>(stree_str) {
-                if let Some(obj) = stree.as_object() {
-                    let mut select_obj = obj;
-                    if let Some(inner) = obj.get("fields").and_then(|v| v.as_object()) {
-                        select_obj = inner;
-                    }
-                    for key in select_obj.keys() {
-                        raw_attrs.insert(key.clone());
-                    }
-                }
-            }
-        }
-
-        // Mapear/Resolver nombres con namespace usando el global CodeRegistry
-        let registry = crate::codice::global();
-        let mut resolved_attrs = std::collections::HashSet::new();
-        let infrastructure_fields = [
-            "tenant_id",
-            "entity_type",
-            "entity/type",
-            "entity/ulid",
-            "id",
-        ];
-
-        for raw_attr in raw_attrs {
-            if infrastructure_fields.contains(&raw_attr.as_str()) {
-                continue;
-            }
-            let mapped_attr = match raw_attr.as_str() {
-                "created_at" | "createdAt" => "meta/created_at".to_string(),
-                "updated_at" | "updatedAt" => "meta/updated_at".to_string(),
-                other => other.to_string(),
-            };
-
-            let mut resolved = false;
-            if let Some(attrs) = registry.get_attributes(entity_type) {
-                for attr in attrs {
-                    if attr.name == mapped_attr {
-                        resolved_attrs.insert(attr.name.clone());
-                        resolved = true;
-                        break;
-                    }
-                    if let Some(last_part) = attr.name.split('/').next_back() {
-                        if last_part == mapped_attr {
-                            resolved_attrs.insert(attr.name.clone());
-                            resolved = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            if !resolved {
-                resolved_attrs.insert(mapped_attr);
-            }
-        }
+        let resolved_attrs = resolve_required_attrs(entity_type, ast_ir);
 
         // ── Calentamiento de Caché Incremental y Concurrencia de Hydration ─────
         let hydrator = OltpEntityHydrator::new(self.pull_reader.clone());
@@ -786,7 +561,7 @@ impl OltpExecutor {
                     .filter(|f| {
                         if let Some(crit) = &f.criteria {
                             let field = crit.field.as_deref().unwrap_or("");
-                            !infrastructure_fields.contains(&field)
+                            !INFRASTRUCTURE_FIELDS.contains(&field)
                         } else {
                             true
                         }
@@ -874,102 +649,14 @@ impl OltpExecutor {
                 target_break,
                 should_break_early,
                 move |row| {
-                    // ── Strict Entity Type Filter ────────────────────
-                    let row_entity_type = row
-                        .get("entity/type")
-                        .or_else(|| row.get("entity_type"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let target_entity = entity_cloned.as_deref().unwrap_or("");
-                    if !target_entity.is_empty() && row_entity_type != target_entity {
-                        return false;
-                    }
-
-                    // ── Business Filters (in-memory) ─────────────────
-                    let passes_business = business_filters.is_empty()
-                        || business_filters
-                            .iter()
-                            .all(|f| crate::aegis::oltp::filter::eval_filter_node(row, f));
-
-                    // ── Hierarchical Filter ──────────────────────────
-                    let mut passes_hierarchy = true;
-                    if let Some(h) = &hierarchy_cloned {
-                        if let Some(pf) = &h.parent_field {
-                            let bare_pf =
-                                hierarchy_parent_field_bare_cloned.as_deref().unwrap_or(pf);
-                            let val = row.get(pf.as_str()).or_else(|| row.get(bare_pf));
-                            let node_id = h.current_node_id.as_deref().unwrap_or("");
-                            let has_search = search_cloned
-                                .as_ref()
-                                .map(|s| !s.is_empty())
-                                .unwrap_or(false);
-                            if has_search && (node_id == "__none__" || node_id.is_empty()) {
-                                passes_hierarchy = true;
-                            } else if node_id == "__none__" || node_id.is_empty() {
-                                passes_hierarchy = match val {
-                                    None => true,
-                                    Some(v) => {
-                                        v.is_null()
-                                            || v.as_str() == Some("")
-                                            || v.as_str() == Some("null")
-                                    }
-                                };
-                            } else {
-                                passes_hierarchy = val
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s == node_id)
-                                    .unwrap_or(false);
-                            }
-                        }
-                    }
-
-                    // ── Omni-Search Fuzzy Filter ─────────────────────
-                    let mut passes_search = true;
-                    if let Some(term) = &search_cloned {
-                        if !term.is_empty() {
-                            passes_search = false;
-                            let entity_name = entity_cloned.as_deref().unwrap_or("");
-
-                            let mut checked = false;
-                            if let Some(model) =
-                                crate::codice::registry::global().get_model(entity_name)
-                            {
-                                if !model.fts_fields.is_empty() {
-                                    for f in &model.fts_fields {
-                                        let bare_f = f.split('/').next_back().unwrap_or(f);
-                                        let val_opt = row.get(f).or_else(|| row.get(bare_f));
-
-                                        if let Some(val) = val_opt.and_then(|v| v.as_str()) {
-                                            if crate::aegis::oltp::fuzzy::fuzzy_match(val, term) {
-                                                passes_search = true;
-                                                checked = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    if !passes_search {
-                                        checked = true;
-                                    }
-                                }
-                            }
-
-                            if !checked {
-                                if let Some(obj) = row.as_object() {
-                                    for (_k, v) in obj {
-                                        if let Some(val_str) = v.as_str() {
-                                            if crate::aegis::oltp::fuzzy::fuzzy_match(val_str, term)
-                                            {
-                                                passes_search = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    passes_business && passes_hierarchy && passes_search
+                    row_passes_filters(
+                        row,
+                        &business_filters,
+                        hierarchy_cloned.as_deref(),
+                        hierarchy_parent_field_bare_cloned.as_deref(),
+                        search_cloned.as_deref(),
+                        entity_cloned.as_deref(),
+                    )
                 },
             )
             .await?;
@@ -985,33 +672,7 @@ impl OltpExecutor {
         let all_rows_for_comparison = matching_rows.clone();
 
         // ── In-Memory TimeFrame Filtering (Primary Window) ───────────────────
-        if has_time_range {
-            const TS_CANDIDATES: &[&str] = &[
-                "created_at",
-                "meta/created_at",
-                "timestamp",
-                "updated_at",
-                "ingested_at",
-            ];
-            matching_rows.retain(|row| {
-                let ts_raw = TS_CANDIDATES
-                    .iter()
-                    .find_map(|f| row.get(*f).and_then(|v| v.as_f64()))
-                    .unwrap_or(0.0);
-                let ts_secs = if ts_raw > 1e11 {
-                    (ts_raw / 1000.0) as i64
-                } else {
-                    ts_raw as i64
-                };
-
-                let passes_start = time_range
-                    .start_ts
-                    .map(|start| ts_secs >= start)
-                    .unwrap_or(true);
-                let passes_end = time_range.end_ts.map(|end| ts_secs <= end).unwrap_or(true);
-                passes_start && passes_end
-            });
-        }
+        retain_in_time_window(&mut matching_rows, &time_range, has_time_range);
 
         if !is_pre_sliced {
             total_count = matching_rows.len();
@@ -1065,75 +726,14 @@ impl OltpExecutor {
         }
 
         // ── inject_has_children real de base de datos ────────────────────────────
-        if let Some(h) = &ast_ir.hierarchy {
-            if h.inject_has_children {
-                if let Some(pf) = &h.parent_field {
-                    let registry = crate::codice::global();
-                    let mut resolved_parent_field = pf.clone();
-                    if let Some(attrs) = registry.get_attributes(entity_type) {
-                        for attr in attrs {
-                            if &attr.name == pf {
-                                resolved_parent_field = attr.name.clone();
-                                break;
-                            }
-                            if let Some(last_part) = attr.name.split('/').next_back() {
-                                if last_part == pf {
-                                    resolved_parent_field = attr.name.clone();
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    let mut join_set = tokio::task::JoinSet::new();
-                    for row in &rows {
-                        let id = row
-                            .get("id")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let field_clone = resolved_parent_field.clone();
-                        let tenant_clone = target_tenant.to_string();
-                        let executor = self.query_executor.clone();
-
-                        join_set.spawn(async move {
-                            if id.is_empty() {
-                                return (id, false);
-                            }
-                            // GSI-AVET lookup for children via execute_native_plan
-                            let plan = crate::eav::reader::query::NativeQueryPlan::AvetSingle {
-                                tenant_id: tenant_clone,
-                                attr_name: field_clone,
-                                value: crate::eav::types::datom::DatomValue::Str(id.clone()),
-                            };
-                            match executor.execute_native_plan(&plan).await {
-                                Ok(child_ids) => {
-                                    let ids: Vec<String> = child_ids;
-                                    (id, !ids.is_empty())
-                                }
-                                Err(_) => (id, false),
-                            }
-                        });
-                    }
-
-                    let mut has_children_map: std::collections::HashMap<String, bool> =
-                        std::collections::HashMap::new();
-                    while let Some(res) = join_set.join_next().await {
-                        if let Ok((id, has_kids)) = res {
-                            has_children_map.insert(id, has_kids);
-                        }
-                    }
-
-                    for row in &mut rows {
-                        if let Some(obj) = row.as_object_mut() {
-                            let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                            let has_kids = has_children_map.get(id).copied().unwrap_or(false);
-                            obj.insert("has_children".to_string(), json!(has_kids));
-                        }
-                    }
-                }
-            }
-        }
+        inject_has_children_real(
+            self,
+            target_tenant,
+            entity_type,
+            &mut rows,
+            ast_ir.hierarchy.as_deref(),
+        )
+        .await;
 
         self.apply_overlays(target_tenant, entity_type, &mut rows)
             .await;
@@ -1459,6 +1059,504 @@ fn extract_attrs_from_filter_node(
         if let Some(nodes) = &group.nodes {
             for child in nodes {
                 extract_attrs_from_filter_node(child, attrs);
+            }
+        }
+    }
+}
+
+/// Campos de infraestructura: nunca llegan a la resolución de atributos ni a
+/// los filtros de negocio.
+const INFRASTRUCTURE_FIELDS: [&str; 5] = [
+    "tenant_id",
+    "entity_type",
+    "entity/type",
+    "entity/ulid",
+    "id",
+];
+
+/// Enriquece el select_tree con los atributos reference que aparecen en los
+/// `label_template` de las dimensiones. Devuelve `Some(nuevo_json)` si agregó
+/// relaciones dinámicas.
+fn enrich_select_tree_with_label_templates(
+    entity_type: &str,
+    ast_ir: &crate::janus::fbs::AnalyticsRequestT,
+) -> Option<String> {
+    let mut dynamic_select = if let Some(stree_str) = &ast_ir.select_tree {
+        serde_json::from_str::<serde_json::Value>(stree_str)
+            .unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let mut has_dynamic_relations = false;
+    if let Some(dims) = &ast_ir.dimensions {
+        let registry = crate::codice::global();
+        if let Some(model) = registry.get_model(entity_type) {
+            for d in dims {
+                if let Some(lt) = &d.label_template {
+                    for field in crate::aegis::label_template::extract_fields(lt) {
+                        let base_ref = field.split('.').next().unwrap_or(&field);
+                        // Buscar un atributo tipo reference en el modelo
+                        let ref_attr_opt = model.attributes.iter().find(|a| {
+                            a.attr_type == crate::codice::registry::AttrType::Reference
+                                && (a.name == *base_ref
+                                    || a.name.split('/').next_back() == Some(base_ref)
+                                    || a.entity_ref.as_deref() == Some(base_ref))
+                        });
+                        if let Some(ref_attr) = ref_attr_opt {
+                            let attr_name = ref_attr
+                                .name
+                                .split('/')
+                                .next_back()
+                                .unwrap_or(&ref_attr.name)
+                                .to_string();
+                            if let Some(obj) = dynamic_select.as_object_mut() {
+                                let fields_obj = if let Some(inner) =
+                                    obj.get_mut("fields").and_then(|v| v.as_object_mut())
+                                {
+                                    inner
+                                } else {
+                                    obj
+                                };
+                                fields_obj
+                                    .entry(attr_name)
+                                    .or_insert_with(|| serde_json::json!({}));
+                                has_dynamic_relations = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if has_dynamic_relations {
+        return Some(dynamic_select.to_string());
+    }
+    None
+}
+
+/// Path especial Time-Travel: timeline completa de una entidad (`_history`).
+/// `Ok(None)` cuando el request no es de esta forma.
+async fn fetch_history_timeline(
+    executor: &OltpExecutor,
+    target_tenant: &str,
+    ast_ir: &crate::janus::fbs::AnalyticsRequestT,
+) -> Result<Option<Value>, DomainError> {
+    if let Some(stree) = ast_ir
+        .select_tree
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+    {
+        if stree
+            .get("_history")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            if let Some(entity_id) = stree.get("id").and_then(|v| v.as_str()) {
+                debug!("[Aegis OLTP FBS] History timeline query for entity_id={entity_id}");
+                let entries = executor
+                    .pull_reader
+                    .history(target_tenant, entity_id, None)
+                    .await?;
+                let rows: Vec<Value> = entries.into_iter().map(|entry| {
+                    json!({
+                        "attr_name": entry.attr_name,
+                        "value": match entry.value {
+                            Some(crate::eav::types::datom::DatomValue::Str(s)) => json!(s),
+                            Some(crate::eav::types::datom::DatomValue::Bool(b)) => json!(b),
+                            Some(crate::eav::types::datom::DatomValue::Long(l)) => json!(l),
+                            Some(crate::eav::types::datom::DatomValue::Double(d)) => json!(d),
+                            Some(crate::eav::types::datom::DatomValue::Uuid(u)) => json!(u),
+                            Some(crate::eav::types::datom::DatomValue::Array(a)) => json!(a),
+                            Some(crate::eav::types::datom::DatomValue::Ref(r)) => json!(r.to_string()),
+                            Some(crate::eav::types::datom::DatomValue::Instant(i)) => json!(i),
+                            _ => Value::Null,
+                        },
+                        "tx_id": entry.tx_id,
+                        "op": entry.op,
+                        "user_id": Value::Null,
+                        "timestamp": entry.tx_id,
+                    })
+                }).collect();
+
+                return Ok(Some(json!({
+                    "data": rows,
+                    "total": rows.len(),
+                    "pagination": Value::Null,
+                })));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Path especial As-Of Snapshot: estado de una entidad en un instante dado
+/// (CUSTOM_RANGE con end_ts e id explícito). `Ok(None)` si no aplica.
+async fn fetch_as_of_snapshot(
+    executor: &OltpExecutor,
+    target_tenant: &str,
+    entity_type: &str,
+    ast_ir: &crate::janus::fbs::AnalyticsRequestT,
+    time_range: &crate::temporal::core::TimeRange,
+) -> Result<Option<Value>, DomainError> {
+    let is_custom_range = ast_ir
+        .time_frame
+        .as_ref()
+        .map(|tf| tf.type_.0 == 1 /* CUSTOM_RANGE */)
+        .unwrap_or(false);
+
+    if is_custom_range {
+        if let (Some(end_ts), Some(entity_id)) =
+            (time_range.end_ts, extract_ulid_fbs_executor(ast_ir))
+        {
+            let as_of_tx = end_ts as u64;
+            debug!("[Aegis OLTP FBS] AsOfSnapshot entity_id={entity_id} as_of_tx={as_of_tx}");
+            let select = extract_select_attrs_fbs(ast_ir);
+            let sel_ref: Vec<&str> = select.iter().map(|s| s.as_str()).collect();
+            let mut map = executor
+                .pull_reader
+                .pull_as_of(
+                    target_tenant,
+                    &entity_id,
+                    as_of_tx,
+                    if sel_ref.is_empty() {
+                        None
+                    } else {
+                        Some(&sel_ref)
+                    },
+                )
+                .await?;
+            map.insert(
+                "id".to_string(),
+                crate::eav::types::datom::DatomValue::Str(entity_id.clone()),
+            );
+            let mut rows = vec![entity_map_to_json(map)];
+            executor
+                .apply_overlays(target_tenant, entity_type, &mut rows)
+                .await;
+            return Ok(Some(Value::Array(rows)));
+        }
+    }
+    Ok(None)
+}
+
+/// Extracción y resolución de los atributos requeridos por la consulta:
+/// reúne attrs de metrics/dimensions/filters/sort/hierarchy/select_tree y los
+/// resuelve contra el Códice (con namespace) salvo los de infraestructura.
+fn resolve_required_attrs(
+    entity_type: &str,
+    ast_ir: &crate::janus::fbs::AnalyticsRequestT,
+) -> std::collections::HashSet<String> {
+    let mut raw_attrs = std::collections::HashSet::new();
+
+    // Extraer de metrics
+    if let Some(metrics) = &ast_ir.metrics {
+        for m in metrics {
+            if let Some(attr) = &m.attribute {
+                raw_attrs.insert(attr.clone());
+            }
+            if let Some(sec) = &m.secondary_attribute {
+                raw_attrs.insert(sec.clone());
+            }
+        }
+    }
+
+    // Extraer de dimensions
+    if let Some(dims) = &ast_ir.dimensions {
+        for d in dims {
+            if let Some(attr) = &d.attribute {
+                raw_attrs.insert(attr.clone());
+            }
+        }
+    }
+
+    // Extraer de filters
+    if let Some(filters) = &ast_ir.filters {
+        for f in filters {
+            extract_attrs_from_filter_node(f, &mut raw_attrs);
+        }
+    }
+
+    // Extraer de sort
+    if let Some(sort_defs) = &ast_ir.sort {
+        for spec in sort_defs {
+            if let Some(field) = &spec.field {
+                raw_attrs.insert(field.clone());
+            }
+        }
+    }
+
+    // Extraer de hierarchy
+    if let Some(h) = &ast_ir.hierarchy {
+        if let Some(pf) = &h.parent_field {
+            raw_attrs.insert(pf.clone());
+        }
+    }
+
+    // Extraer de select_tree
+    if let Some(stree_str) = &ast_ir.select_tree {
+        if let Ok(stree) = serde_json::from_str::<Value>(stree_str) {
+            if let Some(obj) = stree.as_object() {
+                let mut select_obj = obj;
+                if let Some(inner) = obj.get("fields").and_then(|v| v.as_object()) {
+                    select_obj = inner;
+                }
+                for key in select_obj.keys() {
+                    raw_attrs.insert(key.clone());
+                }
+            }
+        }
+    }
+
+    // Mapear/Resolver nombres con namespace usando el global CodeRegistry
+    let registry = crate::codice::global();
+    let mut resolved_attrs = std::collections::HashSet::new();
+
+    for raw_attr in raw_attrs {
+        if INFRASTRUCTURE_FIELDS.contains(&raw_attr.as_str()) {
+            continue;
+        }
+        let mapped_attr = match raw_attr.as_str() {
+            "created_at" | "createdAt" => "meta/created_at".to_string(),
+            "updated_at" | "updatedAt" => "meta/updated_at".to_string(),
+            other => other.to_string(),
+        };
+
+        let mut resolved = false;
+        if let Some(attrs) = registry.get_attributes(entity_type) {
+            for attr in attrs {
+                if attr.name == mapped_attr {
+                    resolved_attrs.insert(attr.name.clone());
+                    resolved = true;
+                    break;
+                }
+                if let Some(last_part) = attr.name.split('/').next_back() {
+                    if last_part == mapped_attr {
+                        resolved_attrs.insert(attr.name.clone());
+                        resolved = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if !resolved {
+            resolved_attrs.insert(mapped_attr);
+        }
+    }
+
+    resolved_attrs
+}
+
+/// Filtro en streaming de cada fila hidratada: tipo de entidad estricto,
+/// filtros de negocio, jerarquía y omni-search fuzzy.
+fn row_passes_filters(
+    row: &Value,
+    business_filters: &[&crate::janus::fbs::FilterNodeT],
+    hierarchy: Option<&crate::janus::fbs::HierarchyContextT>,
+    hierarchy_parent_field_bare: Option<&str>,
+    search: Option<&str>,
+    entity: Option<&str>,
+) -> bool {
+    // ── Strict Entity Type Filter ────────────────────
+    let row_entity_type = row
+        .get("entity/type")
+        .or_else(|| row.get("entity_type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let target_entity = entity.unwrap_or("");
+    if !target_entity.is_empty() && row_entity_type != target_entity {
+        return false;
+    }
+
+    // ── Business Filters (in-memory) ─────────────────
+    let passes_business = business_filters.is_empty()
+        || business_filters
+            .iter()
+            .all(|f| crate::aegis::oltp::filter::eval_filter_node(row, f));
+
+    // ── Hierarchical Filter ──────────────────────────
+    let mut passes_hierarchy = true;
+    if let Some(h) = hierarchy {
+        if let Some(pf) = &h.parent_field {
+            let bare_pf = hierarchy_parent_field_bare.unwrap_or(pf);
+            let val = row.get(pf.as_str()).or_else(|| row.get(bare_pf));
+            let node_id = h.current_node_id.as_deref().unwrap_or("");
+            let has_search = search.map(|s| !s.is_empty()).unwrap_or(false);
+            if has_search && (node_id == "__none__" || node_id.is_empty()) {
+                passes_hierarchy = true;
+            } else if node_id == "__none__" || node_id.is_empty() {
+                passes_hierarchy = match val {
+                    None => true,
+                    Some(v) => v.is_null() || v.as_str() == Some("") || v.as_str() == Some("null"),
+                };
+            } else {
+                passes_hierarchy = val
+                    .and_then(|v| v.as_str())
+                    .map(|s| s == node_id)
+                    .unwrap_or(false);
+            }
+        }
+    }
+
+    // ── Omni-Search Fuzzy Filter ─────────────────────
+    let mut passes_search = true;
+    if let Some(term) = search {
+        if !term.is_empty() {
+            passes_search = false;
+            let entity_name = entity.unwrap_or("");
+
+            let mut checked = false;
+            if let Some(model) = crate::codice::registry::global().get_model(entity_name) {
+                if !model.fts_fields.is_empty() {
+                    for f in &model.fts_fields {
+                        let bare_f = f.split('/').next_back().unwrap_or(f);
+                        let val_opt = row.get(f).or_else(|| row.get(bare_f));
+
+                        if let Some(val) = val_opt.and_then(|v| v.as_str()) {
+                            if crate::aegis::oltp::fuzzy::fuzzy_match(val, term) {
+                                passes_search = true;
+                                checked = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !passes_search {
+                        checked = true;
+                    }
+                }
+            }
+
+            if !checked {
+                if let Some(obj) = row.as_object() {
+                    for (_k, v) in obj {
+                        if let Some(val_str) = v.as_str() {
+                            if crate::aegis::oltp::fuzzy::fuzzy_match(val_str, term) {
+                                passes_search = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    passes_business && passes_hierarchy && passes_search
+}
+
+/// Ventana temporal en memoria (primary window): conserva solo las filas cuyo
+/// timestamp cae dentro del rango resuelto. No-op si no hay rango.
+fn retain_in_time_window(
+    rows: &mut Vec<Value>,
+    time_range: &crate::temporal::core::TimeRange,
+    has_time_range: bool,
+) {
+    if !has_time_range {
+        return;
+    }
+    const TS_CANDIDATES: &[&str] = &[
+        "created_at",
+        "meta/created_at",
+        "timestamp",
+        "updated_at",
+        "ingested_at",
+    ];
+    rows.retain(|row| {
+        let ts_raw = TS_CANDIDATES
+            .iter()
+            .find_map(|f| row.get(*f).and_then(|v| v.as_f64()))
+            .unwrap_or(0.0);
+        let ts_secs = if ts_raw > 1e11 {
+            (ts_raw / 1000.0) as i64
+        } else {
+            ts_raw as i64
+        };
+
+        let passes_start = time_range
+            .start_ts
+            .map(|start| ts_secs >= start)
+            .unwrap_or(true);
+        let passes_end = time_range.end_ts.map(|end| ts_secs <= end).unwrap_or(true);
+        passes_start && passes_end
+    });
+}
+
+/// `has_children` real contra la base: un lookup GSI-AVET por fila en
+/// paralelo (JoinSet) anota `has_children` en cada fila.
+async fn inject_has_children_real(
+    executor: &OltpExecutor,
+    target_tenant: &str,
+    entity_type: &str,
+    rows: &mut [Value],
+    hierarchy: Option<&crate::janus::fbs::HierarchyContextT>,
+) {
+    if let Some(h) = hierarchy {
+        if h.inject_has_children {
+            if let Some(pf) = &h.parent_field {
+                let registry = crate::codice::global();
+                let mut resolved_parent_field = pf.clone();
+                if let Some(attrs) = registry.get_attributes(entity_type) {
+                    for attr in attrs {
+                        if &attr.name == pf {
+                            resolved_parent_field = attr.name.clone();
+                            break;
+                        }
+                        if let Some(last_part) = attr.name.split('/').next_back() {
+                            if last_part == pf {
+                                resolved_parent_field = attr.name.clone();
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                let mut join_set = tokio::task::JoinSet::new();
+                for row in rows.iter() {
+                    let id = row
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let field_clone = resolved_parent_field.clone();
+                    let tenant_clone = target_tenant.to_string();
+                    let executor = executor.query_executor.clone();
+
+                    join_set.spawn(async move {
+                        if id.is_empty() {
+                            return (id, false);
+                        }
+                        // GSI-AVET lookup for children via execute_native_plan
+                        let plan = crate::eav::reader::query::NativeQueryPlan::AvetSingle {
+                            tenant_id: tenant_clone,
+                            attr_name: field_clone,
+                            value: crate::eav::types::datom::DatomValue::Str(id.clone()),
+                        };
+                        match executor.execute_native_plan(&plan).await {
+                            Ok(child_ids) => {
+                                let ids: Vec<String> = child_ids;
+                                (id, !ids.is_empty())
+                            }
+                            Err(_) => (id, false),
+                        }
+                    });
+                }
+
+                let mut has_children_map: std::collections::HashMap<String, bool> =
+                    std::collections::HashMap::new();
+                while let Some(res) = join_set.join_next().await {
+                    if let Ok((id, has_kids)) = res {
+                        has_children_map.insert(id, has_kids);
+                    }
+                }
+
+                for row in rows.iter_mut() {
+                    if let Some(obj) = row.as_object_mut() {
+                        let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let has_kids = has_children_map.get(id).copied().unwrap_or(false);
+                        obj.insert("has_children".to_string(), json!(has_kids));
+                    }
+                }
             }
         }
     }

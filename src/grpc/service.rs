@@ -102,6 +102,98 @@ impl MetriGrpcService {
         }
     }
 
+    /// Preámbulo de autorización compartido por los RPC de lectura.
+    ///
+    /// Una sola copia del camino Cedar: request sintético con sus cuatro
+    /// cabeceras, `intercept`, y chequeo de aislamiento de tenant. Las
+    /// divergencias legítimas entre RPC — el estado con que se reporta la
+    /// denegación y si el conflicto de tenant emite a Sherlog — son parámetros
+    /// explícitos, nunca copias de código.
+    #[allow(clippy::too_many_arguments)]
+    async fn authorize_read(
+        &self,
+        rpc_label: &str,
+        action: &str,
+        entity_type: &str,
+        domains: &str,
+        auth_header: &str,
+        tenant_id: &str,
+        session_user_id: &str,
+        error_entity: Option<String>,
+        cedar_denial_is_permission: bool,
+        emit_on_isolation: bool,
+    ) -> Result<crate::cedar::authorizer::CedarContext, Status> {
+        let mut dummy_req = tonic::Request::new(());
+        if !auth_header.is_empty() {
+            if let Ok(m_val) = auth_header.parse() {
+                dummy_req.metadata_mut().insert("authorization", m_val);
+            }
+        }
+        if let Ok(m_val) = action.parse() {
+            dummy_req.metadata_mut().insert("x-metri-action", m_val);
+        }
+        if let Ok(m_val) = entity_type.parse() {
+            dummy_req
+                .metadata_mut()
+                .insert("x-metri-entity-type", m_val);
+        }
+        if let Ok(m_val) = domains.parse() {
+            dummy_req.metadata_mut().insert("x-metri-domains", m_val);
+        }
+
+        let ctx = match crate::cedar::authorizer::intercept(
+            &dummy_req,
+            self.valkey_store.as_ref(),
+            self.oltp_executor.pull_reader(),
+            self.principal_cache.as_ref(),
+            &self.cedar_engine,
+            &self.policy_cache,
+        )
+        .await
+        {
+            Ok(ctx) => ctx,
+            Err(e) => {
+                error!("[gRPC {rpc_label}] Acceso rechazado por Cedar: {:?}", e);
+                let err_msg = e.detail.clone();
+                let domain_err = crate::domain::errors::DomainError::auth(
+                    crate::domain::errors::ErrorCode::InfraCedar002,
+                    format!("{rpc_label} Access Denied by Cedar: {err_msg}"),
+                );
+                self.emit_read_error(tenant_id, session_user_id, domain_err, error_entity);
+                let status = if cedar_denial_is_permission {
+                    Status::permission_denied(format!("Acceso denegado: {err_msg}"))
+                } else {
+                    Status::unauthenticated(format!("Acceso denegado: {err_msg}"))
+                };
+                return Err(status);
+            }
+        };
+
+        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
+            tenant_id,
+            &ctx.tenant_id,
+            &ctx.user_id,
+        ) {
+            error!(
+                "[gRPC {rpc_label}] Conflicto de Tenant: Request={tenant_id:?} vs Session={:?}",
+                ctx.tenant_id
+            );
+            if emit_on_isolation {
+                let domain_err = crate::domain::errors::DomainError::auth(
+                    crate::domain::errors::ErrorCode::GrpcTenant001,
+                    format!(
+                        "Tenant conflict in {rpc_label}: Request={tenant_id} vs Session={}",
+                        ctx.tenant_id
+                    ),
+                );
+                self.emit_read_error(tenant_id, &ctx.user_id.clone(), domain_err, error_entity);
+            }
+            return Err(Status::permission_denied(e.detail));
+        }
+
+        Ok(ctx)
+    }
+
     fn emit_read_error(
         &self,
         tenant_id: &str,
@@ -711,79 +803,20 @@ impl MetriService for MetriGrpcService {
         };
         req.tenant_id = resolved_tenant_id;
 
-        let mut dummy_req = tonic::Request::new(());
-        if !auth_header.is_empty() {
-            if let Ok(m_val) = auth_header.parse() {
-                dummy_req.metadata_mut().insert("authorization", m_val);
-            }
-        }
-        if let Ok(m_val) = "VIEW".parse() {
-            dummy_req.metadata_mut().insert("x-metri-action", m_val);
-        }
-        if let Ok(m_val) = req.entity.parse() {
-            dummy_req
-                .metadata_mut()
-                .insert("x-metri-entity-type", m_val);
-        }
-        if let Ok(m_val) = req.entity.parse() {
-            dummy_req.metadata_mut().insert("x-metri-domains", m_val);
-        }
-
-        let authenticated_ctx = match crate::cedar::authorizer::intercept(
-            &dummy_req,
-            self.valkey_store.as_ref(),
-            self.oltp_executor.pull_reader(),
-            self.principal_cache.as_ref(),
-            &self.cedar_engine,
-            &self.policy_cache,
-        )
-        .await
-        {
-            Ok(ctx) => ctx,
-            Err(e) => {
-                error!("[gRPC Explore] Acceso rechazado por Cedar: {:?}", e);
-                let err_msg = e.detail.clone();
-                let domain_err = crate::domain::errors::DomainError::auth(
-                    crate::domain::errors::ErrorCode::InfraCedar002,
-                    format!("Explore Access Denied by Cedar: {}", err_msg),
-                );
-                self.emit_read_error(
-                    &req.tenant_id,
-                    &session_user_id,
-                    domain_err,
-                    Some(req.entity.clone()),
-                );
-                return Err(Status::unauthenticated(format!(
-                    "Acceso denegado: {}",
-                    err_msg
-                )));
-            }
-        };
-
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
-            &req.tenant_id,
-            &authenticated_ctx.tenant_id,
-            &authenticated_ctx.user_id,
-        ) {
-            error!(
-                "[gRPC Explore] Conflicto de Tenant: Request={:?} vs Session={:?}",
-                req.tenant_id, authenticated_ctx.tenant_id
-            );
-            let domain_err = crate::domain::errors::DomainError::auth(
-                crate::domain::errors::ErrorCode::GrpcTenant001,
-                format!(
-                    "Tenant conflict in Explore: Request={} vs Session={}",
-                    req.tenant_id, authenticated_ctx.tenant_id
-                ),
-            );
-            self.emit_read_error(
+        let authenticated_ctx = self
+            .authorize_read(
+                "Explore",
+                "VIEW",
+                &req.entity,
+                &req.entity,
+                &auth_header,
                 &req.tenant_id,
-                &authenticated_ctx.user_id,
-                domain_err,
+                &session_user_id,
                 Some(req.entity.clone()),
-            );
-            return Err(Status::permission_denied(e.detail));
-        }
+                false,
+                true,
+            )
+            .await?;
 
         // Only master tenant users (or system BFF) can explore tenants or quotas
         if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_crud_authorization(
@@ -1011,81 +1044,22 @@ impl MetriService for MetriGrpcService {
             .cloned()
             .unwrap_or_else(|| "project".to_string());
 
-        let mut dummy_req = tonic::Request::new(());
-        if !auth_header.is_empty() {
-            if let Ok(m_val) = auth_header.parse() {
-                dummy_req.metadata_mut().insert("authorization", m_val);
-            }
-        }
         let is_csv_export = req.queries.values().any(|q| q.output_cast == 6);
         let action_str = if is_csv_export { "EXPORT" } else { "VIEW" };
-        if let Ok(m_val) = action_str.parse() {
-            dummy_req.metadata_mut().insert("x-metri-action", m_val);
-        }
-        if let Ok(m_val) = target_entity.parse() {
-            dummy_req
-                .metadata_mut()
-                .insert("x-metri-entity-type", m_val);
-        }
-        if let Ok(m_val) = target_domains.parse() {
-            dummy_req.metadata_mut().insert("x-metri-domains", m_val);
-        }
-
-        let authenticated_ctx = match crate::cedar::authorizer::intercept(
-            &dummy_req,
-            self.valkey_store.as_ref(),
-            self.oltp_executor.pull_reader(),
-            self.principal_cache.as_ref(),
-            &self.cedar_engine,
-            &self.policy_cache,
-        )
-        .await
-        {
-            Ok(ctx) => ctx,
-            Err(e) => {
-                error!("[gRPC Query] Acceso rechazado por Cedar: {:?}", e);
-                let err_msg = e.detail.clone();
-                let domain_err = crate::domain::errors::DomainError::auth(
-                    crate::domain::errors::ErrorCode::InfraCedar002,
-                    format!("Query Access Denied by Cedar: {}", err_msg),
-                );
-                self.emit_read_error(
-                    &req.tenant_id,
-                    &session_user_id,
-                    domain_err,
-                    Some(target_entity.clone()),
-                );
-                return Err(Status::unauthenticated(format!(
-                    "Acceso denegado: {}",
-                    err_msg
-                )));
-            }
-        };
-
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
-            &req.tenant_id,
-            &authenticated_ctx.tenant_id,
-            &authenticated_ctx.user_id,
-        ) {
-            error!(
-                "[gRPC Query] Conflicto de Tenant: Request={:?} vs Session={:?}",
-                req.tenant_id, authenticated_ctx.tenant_id
-            );
-            let domain_err = crate::domain::errors::DomainError::auth(
-                crate::domain::errors::ErrorCode::GrpcTenant001,
-                format!(
-                    "Tenant conflict in Query: Request={} vs Session={}",
-                    req.tenant_id, authenticated_ctx.tenant_id
-                ),
-            );
-            self.emit_read_error(
+        let authenticated_ctx = self
+            .authorize_read(
+                "Query",
+                &action_str,
+                &target_entity,
+                &target_domains,
+                &auth_header,
                 &req.tenant_id,
-                &authenticated_ctx.user_id,
-                domain_err,
+                &session_user_id,
                 Some(target_entity.clone()),
-            );
-            return Err(Status::permission_denied(e.detail));
-        }
+                false,
+                true,
+            )
+            .await?;
 
         // Only master tenant users (or system BFF) can query tenants or quotas
         for entity in &query_entities {
@@ -1372,69 +1346,20 @@ impl MetriService for MetriGrpcService {
             )));
         }
 
-        // ── Autorizacion: mismo camino que cualquier otra lectura ──
-        let mut dummy_req = tonic::Request::new(());
-        if !auth_header.is_empty() {
-            if let Ok(m_val) = auth_header.parse() {
-                dummy_req.metadata_mut().insert("authorization", m_val);
-            }
-        }
-        if let Ok(m_val) = "VIEW".parse() {
-            dummy_req.metadata_mut().insert("x-metri-action", m_val);
-        }
-        if let Ok(m_val) = req.entity_type.parse() {
-            dummy_req
-                .metadata_mut()
-                .insert("x-metri-entity-type", m_val);
-        }
-        if let Ok(m_val) = req.entity_type.parse() {
-            dummy_req.metadata_mut().insert("x-metri-domains", m_val);
-        }
-
-        let authenticated_ctx = match crate::cedar::authorizer::intercept(
-            &dummy_req,
-            self.valkey_store.as_ref(),
-            self.oltp_executor.pull_reader(),
-            self.principal_cache.as_ref(),
-            &self.cedar_engine,
-            &self.policy_cache,
-        )
-        .await
-        {
-            Ok(ctx) => ctx,
-            Err(e) => {
-                error!("[gRPC ListEntities] Acceso rechazado por Cedar: {:?}", e);
-                let err_msg = e.detail.clone();
-                let domain_err = crate::domain::errors::DomainError::auth(
-                    crate::domain::errors::ErrorCode::InfraCedar002,
-                    format!("ListEntities Access Denied by Cedar: {}", err_msg),
-                );
-                self.emit_read_error(
-                    &req.tenant_id,
-                    &session_user_id,
-                    domain_err,
-                    Some(req.entity_type.clone()),
-                );
-                // Denegacion explicita, NO lista vacia: confundirlas convierte un
-                // fallo de permisos en "no hay datos".
-                return Err(Status::permission_denied(format!(
-                    "Acceso denegado: {}",
-                    err_msg
-                )));
-            }
-        };
-
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
-            &req.tenant_id,
-            &authenticated_ctx.tenant_id,
-            &authenticated_ctx.user_id,
-        ) {
-            error!(
-                "[gRPC ListEntities] Conflicto de Tenant: Request={:?} vs Session={:?}",
-                req.tenant_id, authenticated_ctx.tenant_id
-            );
-            return Err(Status::permission_denied(e.detail));
-        }
+        let authenticated_ctx = self
+            .authorize_read(
+                "ListEntities",
+                "VIEW",
+                &req.entity_type,
+                &req.entity_type,
+                &auth_header,
+                &req.tenant_id,
+                &session_user_id,
+                Some(req.entity_type.clone()),
+                true,
+                false,
+            )
+            .await?;
 
         if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_crud_authorization(
             &req.entity_type,
