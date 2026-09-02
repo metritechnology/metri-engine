@@ -3,7 +3,7 @@ name: Contract Conformance
 on:
   pull_request:
     paths:
-      - "metri.proto"
+      - "proto/metri.proto"
       - "docs/architecture/janus-aegis-contract-v3.edn"
       - "docs/architecture/**/*.md"
       - "docs/architecture/validate_contracts.clj"
@@ -12,7 +12,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - "metri.proto"
+      - "proto/metri.proto"
       - "docs/architecture/janus-aegis-contract-v3.edn"
       - "docs/architecture/**/*.md"
       - "docs/architecture/validate_contracts.clj"
