@@ -10,10 +10,12 @@ help: ## Muestra esta ayuda
 
 # ── Infraestructura local (sin engine) ───────────────────────────────────────
 
-infra: ## Levanta DynamoDB Local + MinIO + ElasticMQ
-	@echo "▶ Levantando infraestructura AWS local..."
-	docker compose up -d dynamodb-local dynamodb-init minio minio-init elasticmq
-	@./scripts/local/wait-infra.sh
+infra: ## Levanta DynamoDB Local
+	@echo "▶ Levantando DynamoDB Local..."
+	docker compose up -d dynamodb-local
+	@ok=0; for i in $$(seq 1 30); do curl -s -o /dev/null http://localhost:8000 && ok=1 && break; sleep 1; done; \
+	if [ "$$ok" != "1" ]; then echo "✗ DynamoDB Local no respondió en :8000"; exit 1; fi
+	@echo "✅ DynamoDB Local listo en :8000 — tablas: make seed"
 
 infra-down: ## Detiene y limpia la infraestructura
 	docker compose down -v
@@ -76,11 +78,12 @@ test-integration: infra ## Tests de integración contra DynamoDB Local
 
 # ── Seed ─────────────────────────────────────────────────────────────────────
 
-seed: ## Inserta datos de prueba (tenant demo + work_orders)
-	@./scripts/local/seed.sh
+seed: ## Recrea las tablas locales (metri-eav/schemas/quota-local)
+	python3 scripts/dev/reset_local.py --recreate
 
-smoke: ## Smoke test gRPC contra el engine local
-	@./scripts/local/grpcurl-test.sh
+smoke: ## Smoke test gRPC contra el engine local (requiere make engine)
+	grpcurl -plaintext localhost:9090 list
+	grpcurl -plaintext localhost:9090 describe metri.MetriService
 
 # ── Docker image ──────────────────────────────────────────────────────────────
 

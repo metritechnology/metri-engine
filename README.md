@@ -80,9 +80,9 @@ grpcurl -plaintext localhost:9090 describe metri.MetriService
 ## Quickstart local
 
 ```bash
-make infra    # DynamoDB Local + MinIO + ElasticMQ (docker compose)
+make infra    # DynamoDB Local (docker compose)
 make dev      # engine con hot-reload (cargo-watch) — gRPC en localhost:9090
-make seed     # datos de prueba: tenant demo + work_orders
+make seed     # recrea las tablas locales — datos demo: scripts/dev/seed_base.py con el engine arriba
 make smoke    # smoke test gRPC con grpcurl
 ```
 

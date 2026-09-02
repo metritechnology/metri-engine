@@ -1,4 +1,5 @@
-version: "3.8"
+# Única dependencia externa del desarrollo local: DynamoDB Local.
+# Las tablas (metri-eav/schemas/quota-local) las crea scripts/dev/reset_local.py.
 services:
   dynamodb-local:
     image: amazon/dynamodb-local:latest
