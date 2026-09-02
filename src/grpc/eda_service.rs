@@ -6,12 +6,12 @@ use tonic::{Request, Response, Status};
 use tracing::{error, info, instrument};
 
 use crate::aegis::oltp::executor::OltpExecutor;
+use crate::grpc::handlers::query_support::fc_to_fbs_filter_node;
 use crate::grpc::pb::eda::v1::moira_routing_service_server::MoiraRoutingService;
 use crate::grpc::pb::eda::v1::{
     MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse, ResetOrphanedEventsRequest,
     ResetOrphanedEventsResponse,
 };
-use crate::grpc::service::fc_to_fbs_filter_node;
 use crate::iop::core::MoiraEmitter;
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

@@ -1,4 +1,6 @@
 use super::*;
+use crate::grpc::handlers::query_support::*;
+use crate::grpc::translator;
 use serde_json::json;
 
 #[tokio::test]
@@ -949,7 +951,7 @@ fn list_filters_acepta_status_aunque_no_declare_index() {
         .get_model("scheduled_job")
         .expect("scheduled_job en el Códice");
     assert!(
-        crate::grpc::service::validate_list_filters(model, &["status"]).is_ok(),
+        crate::grpc::handlers::list_support::validate_list_filters(model, &["status"]).is_ok(),
         "status debe aceptarse como filtro"
     );
 }
@@ -958,7 +960,7 @@ fn list_filters_acepta_status_aunque_no_declare_index() {
 fn list_filters_rechaza_atributo_inexistente() {
     let reg = list_test_registry();
     let model = reg.get_model("scheduled_job").unwrap();
-    let err = crate::grpc::service::validate_list_filters(model, &["no_existe"]);
+    let err = crate::grpc::handlers::list_support::validate_list_filters(model, &["no_existe"]);
     assert!(err.is_err(), "un atributo inexistente debe rechazarse");
     assert!(err.unwrap_err().contains("no_existe"));
 }
@@ -977,7 +979,7 @@ fn list_filters_rechaza_tipos_no_indexables() {
         .collect();
     for name in arrays {
         assert!(
-            crate::grpc::service::validate_list_filters(model, &[name]).is_err(),
+            crate::grpc::handlers::list_support::validate_list_filters(model, &[name]).is_err(),
             "'{}' es Array y no debe admitirse como filtro",
             name
         );
@@ -988,9 +990,11 @@ fn list_filters_rechaza_tipos_no_indexables() {
 fn list_filters_acepta_varios_a_la_vez() {
     let reg = list_test_registry();
     let model = reg.get_model("scheduled_job").unwrap();
-    assert!(
-        crate::grpc::service::validate_list_filters(model, &["status", "trigger_type"]).is_ok()
-    );
+    assert!(crate::grpc::handlers::list_support::validate_list_filters(
+        model,
+        &["status", "trigger_type"]
+    )
+    .is_ok());
 }
 
 #[test]
@@ -998,7 +1002,7 @@ fn sort_and_truncate_marca_lo_que_deja_fuera() {
     // Sin la bandera, un resultado recortado es indistinguible de uno completo, y un
     // consumidor que reconcilie estado borraría lo que corresponde a los ids ausentes.
     let mut ids = vec!["c".into(), "a".into(), "b".into()];
-    let truncated = crate::grpc::service::sort_and_truncate(&mut ids, 2);
+    let truncated = crate::grpc::handlers::list_support::sort_and_truncate(&mut ids, 2);
     assert!(truncated, "3 ids con limit 2 deben marcarse truncados");
     assert_eq!(ids, vec!["a".to_string(), "b".to_string()]);
 }
@@ -1006,7 +1010,9 @@ fn sort_and_truncate_marca_lo_que_deja_fuera() {
 #[test]
 fn sort_and_truncate_no_marca_si_cabe_entero() {
     let mut ids = vec!["b".into(), "a".into()];
-    assert!(!crate::grpc::service::sort_and_truncate(&mut ids, 5));
+    assert!(!crate::grpc::handlers::list_support::sort_and_truncate(
+        &mut ids, 5
+    ));
     assert_eq!(ids, vec!["a".to_string(), "b".to_string()]);
 }
 
@@ -1017,8 +1023,8 @@ fn sort_and_truncate_es_determinista() {
     // consumidor actuaría sobre una foto arbitraria.
     let mut a = vec!["z".into(), "m".into(), "a".into(), "k".into()];
     let mut b = vec!["k".into(), "a".into(), "z".into(), "m".into()];
-    crate::grpc::service::sort_and_truncate(&mut a, 2);
-    crate::grpc::service::sort_and_truncate(&mut b, 2);
+    crate::grpc::handlers::list_support::sort_and_truncate(&mut a, 2);
+    crate::grpc::handlers::list_support::sort_and_truncate(&mut b, 2);
     assert_eq!(
         a, b,
         "el mismo conjunto en otro orden debe recortarse igual"

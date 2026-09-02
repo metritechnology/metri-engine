@@ -12,6 +12,7 @@ pub mod pb {
 pub mod agent_config_service;
 pub mod bootstrap;
 pub mod eda_service;
+pub(crate) mod handlers;
 pub mod interceptors;
 pub mod quota_service;
 pub mod server;
