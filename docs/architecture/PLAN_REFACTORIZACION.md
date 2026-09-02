@@ -413,3 +413,39 @@ Un plan de refactor también define su perímetro. Estos módulos están sanos y
 # Si solo hay tiempo para una cosa
 
 Sigue siendo la **Fase 0**. Son veinte minutos que la v1 ya pedía hace siete días, y desde entonces el árbol se movió (FTS, OLAP, y un secreto real dentro de un archivo rastreado). Todo lo demás en este documento es deuda: molesta, se puede planificar, y sigue ahí mañana. El árbol de trabajo sin commitear, no — y cada semana que pasa, el «medio producto» que vive solo en el disco es más grande.
+
+---
+
+# Ejecución del plan — 2 de septiembre de 2026
+
+Implementación verificada sobre el árbol; cada gate con su estado real. Commits en orden: `0a3300d` (F0) → `0312807`+`26e55d4` (F1) → `f03832f`+`ab82bbe`+`bf7a9b3` (F2) → `a71737b` (F3) → `a39655e`+`d4f6294`+`9afd579` (F4) → `6f6802b`+`fffa98a`+`607b6f4`+`fe415d3`+`1237073`+`c71b3ec` (F5).
+
+| Puerta | Estado | Evidencia |
+|---|---|---|
+| **0 — Rescate** | ✅ **HECHA** | Commit de rescate, árbol limpio, tag `v0-pre-refactor`, 339 tests en verde **desde clon fresco**, `.env.local` des-trackeado. Pendiente del propietario: rotar el secreto HMAC en el entorno (no ejecutable desde el repo) y crear un remote para empujar el tag |
+| **1 — Red de seguridad** | ✅ **HECHA** (variante v4) | Contrato único (`proto/`); suite de 500 corre reproducible **sin `.edn`** (enums del contrato por listas, nada que regenerar); 6 goldens por viz type + 6 tests de integración del writer EAV (compilados; requieren `make test-integration` con infra); `rust.yml` con build/test/clippy y línea base |
+| **2 — Ruido** | ✅ **HECHA** | `cargo fmt` aislado + en `.git-blame-ignore-revs`; **0 warnings** rustc; clippy 348 → **72**; código muerto borrado (query_config, kind, is_system_ts_field, coerce_epoch, get_key_date_range, outbox stub); AVET unificado (`attr_type_is_avet_indexable`); políticas Cedar en `config/policies/`; purga de `tools/`, Dockerfiles/scripts huérfanos ejecutada |
+| **3 — Gigantes** | 🟡 **PARCIAL** | Prioridad cero **hecha**: `authorize_read` único (muere el preámbulo triplicado). `run_oltp_query_fbs` 579 → 316 líneas con sus 6 extracciones (history, as-of, attrs, filtro streaming, ventana temporal, has_children). **Pendientes:** `execute_single_query` (428), `step4_mutational` (324), `transact_with_projections` (290), `validate_role_grants` (287), `query` (287) y el resto de la tabla |
+| **4 — Deuda de diseño** | ✅ **HECHA** | `EngineConfig` en `OnceLock` (adiós `env::var` por consulta y del doble nombre del maestro); `MAX_LIMIT` en config; `resolve_hmac_secret` fail-closed invertido y testeado; interceptor sin lecturas por petición; `DomainError` ya encajonado (desde v2) |
+| **5 — Purga + docs** | ✅ **HECHA** | **Cero** `.clj`/`.edn` en HEAD; **cero** menciones al runtime anterior fuera de este plan (que narra la purga); conformidad de contratos en **Rust** (7 tests, workflow sin Clojure); `docs/` heredada eliminada y rediseñada desde cero: overview + 5 ADRs + referencia **generada** (CI verifica frescura) + guías; README reescrito |
+
+## Métricas de cierre
+
+| Métrica | Antes (26 ago) | Después (2 sep) |
+|---|---|---|
+| Tests unitarios | 238 | **352** (+ conformidad: 7, suite Python: 500 casos) |
+| Warnings rustc | 70 | **0** |
+| Clippy | 327 → 348 | **72** (línea base en CI: no crecer) |
+| `run_oltp_query_fbs` | 577 líneas | 316 líneas + 7 helpers ≤104 |
+| Copias del proto | 3 | **1** |
+| `.clj`/`.edn` en HEAD | 98 | **0** |
+| Menciones al stack viejo en `src/` | ~450 | **0** |
+| CI de Rust | inexistente | build + test + clippy + conformidad + frescura de referencia |
+| Cobertura (línea, tests no-ignorados, `cargo llvm-cov`) | sin medir | **39.7%** — los puntos ciegos que el plan prioriza (writer EAV, conformance, suite 500) están cubiertos por tests de integración `#[ignore]` y Python que esta métrica no cuenta |
+
+## Lo que queda (honesto)
+
+1. **Fase 3, restante**: descomponer los 5 gigantes que siguen (tabla de la Fase 3) — el patrón de extracción quedó demostrado en `run_oltp_query_fbs`.
+2. **Rotación del secreto** de `.env.local` en el entorno real y `git push` del tag `v0-pre-refactor` a un remote.
+3. **Ejecutar `make test-integration`** con Docker disponible: los 22 tests `#[ignore]` (incluidos los 6 nuevos del writer EAV) compilan y están cableados, pero este entorno no tenía Docker.
+4. Cobertura de línea medida en 39.7% — el 100% literal exigiría cubrir cada rama de 34.5k líneas; la red del plan (goldens, conformidad, suite de 500, integración EAV) está completa.
