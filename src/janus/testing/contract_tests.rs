@@ -1,7 +1,7 @@
 use crate::aegis::oltp::compiler::compile_native_plan_fbs;
 use crate::janus::ast_compiler::compile_ast_fbs;
 use crate::janus::fbs;
-use crate::janus::plan_selector::{select_plan_fbs, EavQueryPlan};
+use crate::janus::plan_selector::select_plan_fbs;
 use crate::janus::router::CedarCtx;
 use insta::assert_debug_snapshot;
 use proptest::prelude::*;

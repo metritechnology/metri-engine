@@ -23,7 +23,7 @@ impl OltpChannel {
 
 #[async_trait::async_trait]
 impl IWriteChannel for OltpChannel {
-    async fn route(&self, mut ctx: IopContext) -> Result<Value, DomainError> {
+    async fn route(&self, ctx: IopContext) -> Result<Value, DomainError> {
         info!(
             "[OltpChannel] Ejecutando Write Path para {}",
             ctx.entity_type

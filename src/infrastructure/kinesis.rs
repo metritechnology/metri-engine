@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use aws_sdk_firehose::primitives::Blob;
 use aws_sdk_firehose::types::Record;
 use aws_sdk_firehose::Client;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::IStreamWriter;

@@ -14,13 +14,12 @@
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
-use crate::codice::registry::AttrType;
 use crate::codice::{global as codice_global, validator};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::datom::DatomValue;
-use crate::eav::writer::{EavWriter, TransactOp, TransactPayload, TransactResult};
+use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
 use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
 use crate::janus_router::ulid;

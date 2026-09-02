@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tracing::{error, info, warn};
+use tracing::info;
 
 use crate::domain::errors::{DomainError, ErrorCode};
 
@@ -198,8 +198,6 @@ pub struct RegistryEntry {
 pub struct CodeRegistry {
     /// Lookup por nombre de entidad → entry
     by_entity: HashMap<String, RegistryEntry>,
-    /// Lookup por fingerprint → entity_name (para COD_003)
-    by_hash: HashMap<String, String>,
     /// Lookup inverso: DJB2 hash de atributo → nombre de atributo
     by_attr_id: HashMap<u16, String>,
     /// Diccionarios de localización: locale -> JSON
@@ -380,7 +378,6 @@ impl CodeRegistry {
 
         let registry = CodeRegistry {
             by_entity,
-            by_hash,
             by_attr_id,
             locales,
         };

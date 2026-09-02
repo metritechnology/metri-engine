@@ -12,7 +12,6 @@ use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_dynamodb::{
     config::Builder as DdbConfigBuilder, error::SdkError, types::AttributeValue, Client,
 };
-use serde_json::Value;
 use tracing::{info, warn};
 
 use crate::domain::errors::{DomainError, ErrorCode};

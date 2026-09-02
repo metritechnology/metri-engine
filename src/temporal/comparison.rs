@@ -11,7 +11,6 @@
 use crate::temporal::core::{
     shift_by_calendar, CalUnit, ComparisonPeriod, TimeRange, SMART_HISTORY_DAYS,
 };
-use chrono::Datelike;
 
 // ── Tipos del proto ───────────────────────────────────────────────────────────
 
@@ -212,6 +211,7 @@ pub fn smart_history_window(range: &TimeRange, history_days: Option<i64>) -> Tim
 
 #[cfg(test)]
 mod tests {
+    use chrono::Datelike;
     use super::*;
 
     fn range(s: i64, e: i64) -> TimeRange {

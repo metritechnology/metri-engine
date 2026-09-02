@@ -8,12 +8,11 @@ use crate::codice::global as codice_global;
 use crate::domain::protocols::IQueryEngine;
 use crate::iop::core::IopContext;
 use crate::janus::fbs::AnalyticsRequestT;
-use crate::janus::normalizer::normalize_chunk;
 use crate::janus::validator;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::error;
 
 // ── Cedar Context ─────────────────────────────────────────────────────────────
 

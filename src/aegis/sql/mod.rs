@@ -3,7 +3,6 @@ pub(crate) mod cte_compiler;
 pub(crate) mod dialect;
 pub mod fuzzy;
 pub(crate) mod metric_compiler;
-pub(crate) mod query_config;
 pub mod registry;
 pub(crate) mod security;
 pub(crate) mod select_compiler;

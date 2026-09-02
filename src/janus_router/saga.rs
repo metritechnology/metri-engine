@@ -35,16 +35,6 @@ enum Trigger {
     Telemetry { expr: String },
 }
 
-impl Trigger {
-    fn kind(&self) -> &'static str {
-        match self {
-            Trigger::Cron { .. } => "CRON",
-            Trigger::ExactTime { .. } => "EXACT_TIME",
-            Trigger::Telemetry { .. } => "TELEMETRY",
-        }
-    }
-}
-
 /// Deriva el trigger de la entidad madre.
 ///
 /// Orden deliberado: la condición física gana al calendario. Un mantenimiento con

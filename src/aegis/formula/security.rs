@@ -1,7 +1,6 @@
 // aegis/formula/security.rs — Validación de seguridad para fórmulas.
 // SRP: Solo valida. No parsea, no evalúa, no compila.
 
-use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -31,6 +30,7 @@ static SQL_KEYWORD_RE: Lazy<Regex> = Lazy::new(|| {
 /// Usa **word-boundary matching** (`\bSELECT\b`) para keywords SQL,
 /// evitando falsos positivos en atributos como `selection_count` o `updated_from`.
 /// Los patrones literales (`--`, `/*`, `*/`, `;`) se buscan por substring directo.
+use crate::aegis::formula::errors::FormulaError;
 pub fn validate_formula(formula: &str) -> Result<(), FormulaError> {
     let upper = formula.to_uppercase();
 

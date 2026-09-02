@@ -1553,28 +1553,3 @@ fn extract_cte_name(expr: &str, prefix: &str) -> String {
         prefix.to_string()
     }
 }
-
-fn get_key_date_range(key: &str) -> Option<(i64, i64)> {
-    let parts: Vec<&str> = key.split('/').collect();
-    if parts.len() >= 5 {
-        let n = parts.len();
-        let y_str = parts[n - 5];
-        let m_str = parts[n - 4];
-        let d_str = parts[n - 3];
-        let h_str = parts[n - 2];
-
-        let year: i32 = y_str.parse().ok()?;
-        let month: u32 = m_str.parse().ok()?;
-        let day: u32 = d_str.parse().ok()?;
-        let hour: u32 = h_str.parse().ok()?;
-
-        if month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour <= 23 {
-            use chrono::{TimeZone, Utc};
-            if let Some(dt) = Utc.with_ymd_and_hms(year, month, day, hour, 0, 0).single() {
-                let ts = dt.timestamp();
-                return Some((ts, ts + 3600));
-            }
-        }
-    }
-    None
-}

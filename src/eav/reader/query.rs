@@ -12,7 +12,7 @@ use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::RwLock;
-use tracing::{debug, warn};
+use tracing::debug;
 
 pub const MAX_AEVT_SCAN_CACHE_SIZE: usize = 2_000;
 

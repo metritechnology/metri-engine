@@ -117,12 +117,12 @@ pub fn build_select_exprs(
                         }
                     }
                 } else {
-                    select_exprs.push((Expr::asterisk().into(), None));
+                    select_exprs.push((Expr::col(sea_query::Asterisk).into(), None));
                 }
             }
         }
         OutputCast::CsvExport => {
-            select_exprs.push((Expr::asterisk().into(), None));
+            select_exprs.push((Expr::col(sea_query::Asterisk).into(), None));
         }
     }
     Ok(select_exprs)

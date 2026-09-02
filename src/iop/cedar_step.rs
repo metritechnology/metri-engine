@@ -7,10 +7,10 @@ use cedar_policy::PolicySet;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::info;
 
 use crate::cedar::authorizer::{intercept, is_master_tenant, CedarAuthorizer, PrincipalCache};
-use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::errors::DomainError;
 use crate::domain::protocols::ISessionStore;
 use crate::eav::reader::pull::EavReader;
 use crate::iop::core::{IopContext, IopStep};

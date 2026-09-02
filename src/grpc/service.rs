@@ -13,7 +13,6 @@ use super::pb::{
     MatchRoutingRulesBatchResponse, MatchRoutingRulesResponse, MatchedRule, QueryRequest,
     QueryResponse, TransactionRequest, TransactionResponse, WebhookTarget,
 };
-use crate::janus::router;
 use crate::janus::router::CedarCtx;
 use crate::janus_router::oltp_channel::extract_entity_id;
 
@@ -1985,8 +1984,6 @@ impl MetriService for MetriGrpcService {
                         .and_then(|c| c.as_u64())
                     {
                         ingested_count = count as i32;
-                    } else {
-                        ingested_count = 0;
                     }
 
                     // Invalidate caches upon successful ingest

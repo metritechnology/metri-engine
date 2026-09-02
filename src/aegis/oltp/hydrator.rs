@@ -126,7 +126,7 @@ impl OltpEntityHydrator {
         tenant_id: &str,
         entity_ids: &[String],
         resolved_attrs: &HashSet<String>,
-        is_analytical: bool,
+        _is_analytical: bool,
         sel_opt: Option<&[&str]>,
         max_hydrations: usize,
         target_break: usize,

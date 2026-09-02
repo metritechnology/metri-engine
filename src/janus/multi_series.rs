@@ -2,13 +2,11 @@
 // janus/multi_series.rs — Motor de fusión MultiSeriesGroup — Full Outer Join asintótico.
 // SRP: realiza y fusiona resultados de sub-queries agrupados bajo un group-id.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use tracing::warn;
 
-use crate::janus::router::QueryChunk;
 
 /// Calcula un hash simplificado para un objeto JSON.
 fn hash_value(val: &Value) -> u64 {
@@ -64,7 +62,7 @@ pub fn outer_join_data(rows_per_qk: HashMap<String, Vec<Value>>) -> Vec<Value> {
 /// Retorna el subconjunto de queries que NO pertenecen a ningún merge-group.
 /// [PORTED_FROM: (partition-standalone queries merge-groups)]
 pub fn partition_standalone(
-    mut queries: Map<String, Value>,
+    queries: Map<String, Value>,
     merge_groups: &[Value],
 ) -> Map<String, Value> {
     if merge_groups.is_empty() {

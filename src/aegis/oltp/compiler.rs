@@ -15,7 +15,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::aegis::temporal_bridge::resolve_fbs_time_frame;
-use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::errors::DomainError;
 use crate::eav::reader::query::{IndexStrategy, NativeQueryPlan, QueryExecutionPlan};
 use crate::eav::types::datom::DatomValue;
 use crate::janus::plan_selector::{select_plan, EavQueryPlan};

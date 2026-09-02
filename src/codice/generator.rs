@@ -5,16 +5,13 @@
 // En Rust:    inject() — función pura excepto por los efectos de I/O
 //             de sequence/next (DynamoDB) y base36/generate (CSPRNG).
 
-use std::collections::HashMap;
-use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use tracing::warn;
 
 use crate::codice::base36;
 use crate::codice::registry::EntityModel;
 use crate::codice::sequence::{self, ScopeResolution, SeqAttrConfig};
-use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::errors::DomainError;
 use crate::infrastructure::dynamodb::DynamoClient;
 
 /// Estrategia de auto-generación de un atributo.

@@ -5,7 +5,6 @@
 // Mapea (request, result) → ActionType para el audit_log OLAP.
 // Dominio puro: sin I/O, sin efectos secundarios.
 
-use serde_json::Value;
 
 /// Tipo de acción para el audit_log OLAP.
 /// [PORTED_FROM: (defn derive-action-type [request result])]

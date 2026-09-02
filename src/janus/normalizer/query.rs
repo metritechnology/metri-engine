@@ -74,7 +74,7 @@ fn ensure_pagination(body: &mut Value) {
         return;
     };
     if !obj.contains_key("pagination") {
-        let total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+        let _total = obj.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
         obj.insert(
             "pagination".to_string(),
             json!({

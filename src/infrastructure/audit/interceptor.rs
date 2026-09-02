@@ -16,7 +16,6 @@ use crate::domain::audit::action_type::derive_action_type;
 use crate::domain::audit::protocol::IAuditInterceptor;
 use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
-use crate::janus_router::ulid;
 
 /// Implementación del AuditInterceptor.
 /// [PORTED_FROM: (defrecord AuditInterceptorImpl [olap-channel fault-notifier])]

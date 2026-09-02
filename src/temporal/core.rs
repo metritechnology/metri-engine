@@ -6,7 +6,7 @@
 //   - CUSTOM_RANGE del proto llega en epoch-MILISEGUNDOS → usar ms_to_s antes de procesar.
 //   - shift_by_calendar usa chrono → bisiesto-safe, DST-aware.
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike, Weekday};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike};
 use chrono_tz::Tz;
 
 // ── Constantes de Escala ──────────────────────────────────────────────────────

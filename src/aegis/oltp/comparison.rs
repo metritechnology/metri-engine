@@ -28,7 +28,7 @@ use crate::janus::fbs::{
     MetricDefinitionT,
 };
 use crate::temporal::comparison::{
-    resolve_comparison_period, resolve_shortcut, smart_history_window,
+    resolve_comparison_period, smart_history_window,
     AnalyticalComparison as TempComparison, ComparisonType, ShiftShortcut,
 };
 use crate::temporal::core::TimeRange;

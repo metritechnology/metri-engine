@@ -4,7 +4,7 @@
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};
 
-use crate::aegis::oltp::compiler::{compile_native_plan, compile_oltp_query};
+use crate::aegis::oltp::compiler::compile_native_plan;
 use crate::aegis::oltp::hydrator::{entity_map_to_json, OltpEntityHydrator};
 use crate::aegis::temporal_bridge::{no_time_range, resolve_fbs_time_frame};
 use crate::domain::errors::DomainError;

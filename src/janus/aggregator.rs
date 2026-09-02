@@ -279,7 +279,7 @@ pub fn apply_output_cast(rows: Vec<Value>, ast_ir: &Value) -> Vec<Value> {
 
             let mut result: Vec<Value> = groups
                 .into_iter()
-                .map(|(key, group_rows)| {
+                .map(|(_key, group_rows)| {
                     let mut row = apply_metrics(&group_rows, &metrics);
                     // Inyectar valores de las dimensiones en el resultado
                     if let Some(first) = group_rows.first() {

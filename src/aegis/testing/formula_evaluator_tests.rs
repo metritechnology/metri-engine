@@ -1,4 +1,3 @@
-use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::evaluator::FormulaEvaluator;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::lexer::tokenize;

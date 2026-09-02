@@ -7,7 +7,7 @@ pub mod query;
 pub mod strategy;
 pub mod transaction;
 
-use self::helpers::{ensure_status, infer_viz_type};
+use self::helpers::ensure_status;
 use self::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 

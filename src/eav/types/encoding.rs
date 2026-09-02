@@ -9,7 +9,6 @@
 //   3. Todos los tipos numéricos son comparables correctamente
 
 use crate::eav::types::datom::DatomValue;
-use crate::eav::types::value_type::ValueType;
 
 // ─── EAVT Sort Key ────────────────────────────────────────────────────────────
 // PK = "T#<tenant>#E#<eid>"

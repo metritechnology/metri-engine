@@ -4,7 +4,7 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
-use tracing::{error, info, warn};
+use tracing::warn;
 
 use crate::codice::registry::{AttrType, EntityModel};
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -14,7 +14,7 @@ use crate::eav::types::datom::DatomValue;
 pub fn validate_payload(
     model: &EntityModel,
     payload: &Value,
-    tenant_id: &str,
+    _tenant_id: &str,
     is_create: bool,
 ) -> Result<HashMap<String, DatomValue>, DomainError> {
     let obj = payload.as_object().ok_or_else(|| {

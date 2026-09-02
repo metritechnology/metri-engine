@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use tracing::{error, info, warn};
 
 use crate::codice::{global as codice_global, EngineChannel};

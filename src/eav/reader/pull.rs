@@ -14,9 +14,9 @@ use tracing::debug;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::{
     datom::DatomValue,
-    encoding::{eavt_sk_as_of, eavt_sk_attr_prefix},
+    encoding::eavt_sk_as_of,
 };
-use crate::infrastructure::dynamodb::{av_bytes, av_number, av_string, DynamoClient};
+use crate::infrastructure::dynamodb::DynamoClient;
 
 use once_cell::sync::Lazy;
 use std::sync::RwLock;

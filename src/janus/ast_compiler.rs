@@ -3,10 +3,9 @@
 // SRP: combina los sub-pasos 4a-4f en un AST IR inmutable completo.
 
 use serde_json::{json, Value};
-use tracing::{info, warn};
 
 use crate::cedar::authorizer::is_master_tenant;
-use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::errors::DomainError;
 use crate::janus::abac_clauses;
 use crate::janus::fbs::{FilterGroup_Conjunction, FilterOperator};
 use crate::janus::filter_compiler;

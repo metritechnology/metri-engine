@@ -7,7 +7,6 @@
 // es rechazado antes de llegar al motor EAV.
 
 use serde_json::Value;
-use tracing::error;
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::janus::fbs::{AnalyticsRequestT, OutputCastType};

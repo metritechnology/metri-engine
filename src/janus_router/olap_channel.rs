@@ -19,10 +19,9 @@
 
 use chrono::Utc;
 use serde_json::{json, Value};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::codice::global as codice_global;
-use crate::codice::registry::AttrType;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;

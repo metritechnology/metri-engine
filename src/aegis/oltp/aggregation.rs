@@ -16,7 +16,7 @@
 use serde_json::Value;
 use tracing::warn;
 
-use crate::janus::fbs::{AggregationFunction, FilterNodeT, FilterOperator};
+use crate::janus::fbs::AggregationFunction;
 
 pub use crate::aegis::oltp::filter::eval_filter_node;
 

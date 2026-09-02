@@ -9,7 +9,6 @@ use crate::aegis::oltp::comparison::run_comparisons;
 use crate::janus::fbs::{AnalyticsRequestT, DimensionDefinitionT, MetricDefinitionT};
 use crate::temporal::core::TimeRange;
 use serde_json::{json, Value};
-use tracing::info;
 
 /// Aplica las agregaciones de OutputCast (KPI, TIMESERIES, PIE, BUBBLE) sobre los rows finales hidratados.
 pub fn apply_output_cast_fbs(
@@ -235,7 +234,7 @@ pub fn apply_output_cast_fbs(
                                         .collect::<Vec<_>>().join("|");
                                     groups.entry(key).or_default().push(row.clone());
                                 }
-                                let mut result: Vec<Value> = groups.into_iter().map(|(_, group_rows)| {
+                                let result: Vec<Value> = groups.into_iter().map(|(_, group_rows)| {
                                     let mut agg = apply_metrics_fbs(&group_rows, metrics);
                                     if let (Some(first), Some(obj)) = (group_rows.first(), agg.as_object_mut()) {
                                         for dk in &dim_keys {

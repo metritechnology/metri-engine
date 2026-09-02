@@ -1,7 +1,7 @@
 // aegis/sql/cte_compiler.rs
 // Compiles comparison CTE queries (TIME_SHIFT, SMART, BENCHMARK) using sea-query.
 
-use crate::aegis::ast_ir::{AstIr, ComparisonDef, MetricDef, OutputCast};
+use crate::aegis::ast_ir::{AstIr, ComparisonDef, OutputCast};
 use crate::aegis::sql::dialect::SqlDialect;
 use crate::aegis::sql::metric_compiler::compile_metric;
 use crate::aegis::sql::select_compiler::build_select_exprs;
@@ -11,7 +11,7 @@ use crate::temporal::comparison::{
     ShiftShortcut,
 };
 use crate::temporal::core::TimeRange;
-use sea_query::{Alias, CommonTableExpression, Cond, Expr, Query, SelectStatement, SimpleExpr};
+use sea_query::{Alias, CommonTableExpression, Cond, Expr, Query, SelectStatement};
 
 #[derive(Clone, Debug)]
 pub enum TableExpression {

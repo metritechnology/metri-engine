@@ -6,11 +6,6 @@ use serde_json::{json, Value};
 
 use crate::domain::errors::{DomainError, ErrorCode};
 
-/// Atributos de sistema en OLTP
-fn is_system_ts_field(field: &str) -> bool {
-    field == "created_at" || field == "updated_at" || field == "createdAt" || field == "updatedAt"
-}
-
 /// Mapea campos de sistema al namespace `:meta/`
 fn oltp_system_field_map(field: &str) -> Option<&'static str> {
     match field {
@@ -18,11 +13,6 @@ fn oltp_system_field_map(field: &str) -> Option<&'static str> {
         "updated_at" | "updatedAt" => Some("meta/updated_at"),
         _ => None,
     }
-}
-
-/// Coerce a f64 para valores numéricos en proto que vienen como f64 y se necesitan como f64 o long
-fn coerce_epoch(val: &Value) -> Option<f64> {
-    val.as_f64()
 }
 
 /// Extrae valor simple de proto

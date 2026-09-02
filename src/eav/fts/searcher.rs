@@ -1,10 +1,9 @@
 // eav/fts/searcher.rs — Full-Text Search via trigram intersection
 // Blueprint: Metri EAV §V.2
 
-use std::collections::HashMap;
 use tracing::debug;
 
-use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::errors::DomainError;
 use crate::eav::fts::trigram::generate_trigrams;
 
 /// Score de un resultado de búsqueda FTS.

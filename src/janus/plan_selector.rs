@@ -302,7 +302,7 @@ fn extract_ulid_fbs(ast_ir: &fbs::AnalyticsRequestT) -> Option<String> {
 }
 
 fn extract_indexed_filters_fbs(ast_ir: &fbs::AnalyticsRequestT) -> Vec<(String, DatomValue)> {
-    let entity_type = ast_ir.entity.as_deref().unwrap_or("unknown");
+    let _entity_type = ast_ir.entity.as_deref().unwrap_or("unknown");
     let mut results = Vec::new();
 
     // 1. Hierarchy Indexing: si hay current_node_id explícito (!= "__none__"), aprovechar el índice AVET.

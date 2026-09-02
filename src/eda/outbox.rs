@@ -18,7 +18,7 @@ impl OutboxManager {
     pub async fn save_for_retry(
         &self,
         event_type: &str,
-        payload: &Value,
+        _payload: &Value,
     ) -> Result<(), DomainError> {
         // STUB implementation
         warn!(

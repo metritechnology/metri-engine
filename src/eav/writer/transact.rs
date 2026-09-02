@@ -13,15 +13,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use aws_sdk_dynamodb::types::{AttributeValue, Put, TransactWriteItem};
-use tracing::{info, warn};
+use tracing::warn;
 use ulid::Ulid;
 
-use crate::codice::CodeRegistry;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::{
     datom::{Datom, DatomValue},
     encoding::{build_aevt_sk, build_avet_sk, build_eavt_sk, build_vaet_sk},
-    value_type::ValueType,
 };
 use crate::infrastructure::dynamodb::DynamoClient;
 
