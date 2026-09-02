@@ -4,7 +4,7 @@
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use super::pb::metri_service_server::MetriService;
 use super::pb::{
@@ -1539,7 +1539,21 @@ impl MetriService for MetriGrpcService {
             entity_id = extract_entity_id(&actual_payload).unwrap_or_default();
         }
 
-        if !entity_id.is_empty() {
+        // ADR-006: la identidad en el payload solo se inyecta para
+        // UPDATE/DELETE (localizar la entidad). En CREATE reproduciría la
+        // entidad fantasma: el cliente propone un id, el engine mintea otro,
+        // y el UPDATE posterior opera sobre el propuesto. Un CREATE de
+        // negocio con identidad del cliente la rechaza la ruta con
+        // JANUS_VAL_001 (vía payload) o queda registrada aquí (vía campo RPC).
+        let identity_proposed = !entity_id.is_empty();
+        if operation_str == "CREATE" && identity_proposed {
+            warn!(
+                entity = %req.entity_type,
+                id_propuesto = %entity_id,
+                "[ADR-006] CREATE de entidad de negocio con id propuesto por el cliente — se ignora: el id real viaja en entity_id de la respuesta"
+            );
+        }
+        if !entity_id.is_empty() && operation_str != "CREATE" {
             if let Some(obj) = actual_payload.as_object_mut() {
                 if !obj.contains_key("id")
                     && !obj.contains_key("entity_id")

@@ -123,9 +123,9 @@ async fn test_audit_interceptor_crud_e2e() {
 
     let auth_header_val = format!("Bearer {}", token);
 
-    // 1. CREATE asset
+    // 1. CREATE asset — sin 'id': el engine mintea el ULID para entidades de
+    // negocio y lo devuelve en entity_id (ADR-006).
     let create_payload = json!({
-        "id": asset_id,
         "name": "Bomba Centrifuga Audit E2E",
         "area": "Mecánica",
         "status": "ACTIVE",
@@ -338,13 +338,11 @@ async fn test_audit_time_travel_history() {
 
     let tenant_id = "system";
     let user_id = "usr_system_bff";
-    let asset_id = format!("ast_e2e_{}", uuid::Uuid::new_v4());
 
     let auth_header_val = format!("Bearer {}", token);
 
-    // 1. CREATE asset
+    // 1. CREATE asset — sin 'id': la identidad la mintea el engine (ADR-006).
     let create_payload = json!({
-        "id": asset_id,
         "name": "Bomba Centrifuga Original",
         "area": "Mecánica",
         "status": "ACTIVE",
@@ -355,7 +353,7 @@ async fn test_audit_time_travel_history() {
     let mut req = tonic::Request::new(TransactionRequest {
         tenant_id: tenant_id.to_string(),
         entity_type: "asset".to_string(),
-        entity_id: asset_id.clone(),
+        entity_id: String::new(),
         action: OperationAction::Create as i32,
         payload: Some(translator::value_to_struct(&create_payload)),
         suppress_events: false,
@@ -403,7 +401,7 @@ async fn test_audit_time_travel_history() {
     let mut req = tonic::Request::new(TransactionRequest {
         tenant_id: tenant_id.to_string(),
         entity_type: "asset".to_string(),
-        entity_id: asset_id.clone(),
+        entity_id: String::new(),
         action: OperationAction::Update as i32,
         payload: Some(translator::value_to_struct(&update_payload)),
         suppress_events: false,
@@ -433,7 +431,7 @@ async fn test_audit_time_travel_history() {
         status_obj.error_message
     );
 
-    // 3. Query history timeline with select_tree: { id: <asset_id>, _history: true }
+    // 3. Query history timeline con el id autoritativo del CREATE
     let query_ast = json!({
         "entity": "asset",
         "select_tree": {
@@ -617,4 +615,61 @@ impl Utc {
     fn now_timestamp() -> i64 {
         chrono::Utc::now().timestamp()
     }
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_create_negocio_con_id_de_cliente_se_rechaza() {
+    let (service, _spy, token) = setup_service().await;
+
+    // ADR-006: la identidad de una entidad de negocio la mintea el engine.
+    // Un 'id' del cliente en el CREATE no se ignora en silencio: se rechaza
+    // con JANUS_VAL_001 — el silencio era lo que fabricaba entidades fantasma.
+    // Payload válido salvo por el 'id': la validación de esquema pasa y la
+    // rechaza la ruta, con el código de payload inválido.
+    let create_payload = json!({
+        "id": "ast_propuesto_por_el_cliente",
+        "name": "Bomba Rechazada",
+        "area": "Mecánica",
+        "status": "ACTIVE",
+        "location_id": "01JLOCATIONTEST0000000000",
+        "timestamp": Utc::now_timestamp()
+    });
+
+    let mut req = tonic::Request::new(TransactionRequest {
+        tenant_id: "system".to_string(),
+        entity_type: "asset".to_string(),
+        entity_id: String::new(),
+        action: OperationAction::Create as i32,
+        payload: Some(translator::value_to_struct(&create_payload)),
+        suppress_events: false,
+    });
+    req.metadata_mut().insert(
+        "authorization",
+        format!("Bearer {}", token).parse().unwrap(),
+    );
+    req.metadata_mut()
+        .insert("test-tenant", "system".parse().unwrap());
+    req.metadata_mut()
+        .insert("test-user", "usr_system_bff".parse().unwrap());
+    req.extensions_mut().insert(AuthenticatedSession {
+        tenant_id: "system".to_string(),
+        user_id: "usr_system_bff".to_string(),
+        jti: "test-jti".to_string(),
+    });
+
+    let res: Result<tonic::Response<TransactionResponse>, tonic::Status> =
+        service.transact(req).await;
+    assert!(
+        res.is_ok(),
+        "La rechaza la ruta, no el transporte: {:?}",
+        res.err()
+    );
+    let tx = res.unwrap().into_inner();
+    let status = tx.status.expect("Status missing");
+    assert!(!status.success, "El CREATE con id de cliente debe fallar");
+    assert_eq!(
+        status.error_code, "JANUS_VAL_001",
+        "código canónico de payload inválido"
+    );
 }
