@@ -23,6 +23,11 @@ pub struct EngineConfig {
     pub master_tenant_id: String,
     /// Tope duro de `ListEntities` mientras no exista paginación real (L4).
     pub max_list_limit: i32,
+    /// `ENVIRONMENT` tal como llegó al arranque (None = ausente). El interceptor
+    /// local lo consulta por petición; leerlo de acá, no del entorno.
+    pub environment: Option<String>,
+    /// `HMAC_SECRET` tal como llegó al arranque (None = ausente).
+    pub hmac_secret: Option<String>,
 }
 
 impl Default for EngineConfig {
@@ -30,6 +35,8 @@ impl Default for EngineConfig {
         Self {
             master_tenant_id: "system".to_string(),
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
+            environment: None,
+            hmac_secret: None,
         }
     }
 }
@@ -45,6 +52,8 @@ impl EngineConfig {
         Self {
             master_tenant_id,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
+            environment: std::env::var("ENVIRONMENT").ok(),
+            hmac_secret: std::env::var("HMAC_SECRET").ok(),
         }
     }
 
@@ -53,6 +62,8 @@ impl EngineConfig {
         Self {
             master_tenant_id: master_tenant_id.into(),
             max_list_limit,
+            environment: None,
+            hmac_secret: None,
         }
     }
 }

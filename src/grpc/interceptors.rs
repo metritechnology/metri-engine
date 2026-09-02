@@ -58,8 +58,10 @@ fn verify_hmac_token_local(raw_token: &str) -> Option<AuthenticatedSession> {
     let sig_b64 = &sig_b64[1..]; // Quitar el punto
 
     let payload_bytes = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
-    let hmac_secret = std::env::var("HMAC_SECRET")
-        .unwrap_or_else(|_| "secret-key-development-metri-256-bits!!!".to_string());
+    let hmac_secret = crate::domain::config::engine_config()
+        .hmac_secret
+        .clone()
+        .unwrap_or_else(|| "secret-key-development-metri-256-bits!!!".to_string());
 
     let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes()).ok()?;
     mac.update(&payload_bytes);
@@ -75,7 +77,9 @@ fn verify_hmac_token_local(raw_token: &str) -> Option<AuthenticatedSession> {
     let now = chrono::Utc::now().timestamp();
     let exp = claims["exp"].as_i64()?;
     // Permitir mayor tolerancia para diferencias de reloj en entorno de desarrollo local (robustez ante suspensión del host)
-    let is_local = std::env::var("ENVIRONMENT")
+    let is_local = crate::domain::config::engine_config()
+        .environment
+        .as_deref()
         .map(|v| v == "local" || v == "development")
         .unwrap_or(false);
     let skew_tolerance = if is_local { 86400 } else { 300 }; // 24 horas en local vs 5 minutos en prod
