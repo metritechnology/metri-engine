@@ -22,14 +22,14 @@ use tracing::debug;
 ///   2. Para cada row: `has_children = (parent_ids.contains(row["id"]))`
 ///
 /// [PORTED_FROM: (inject-has-children-from-rows rows parent-field-kw)]
-pub fn inject_has_children_from_rows(rows: &mut Vec<Value>, parent_field: &str) {
+pub fn inject_has_children_from_rows(rows: &mut [Value], parent_field: &str) {
     if rows.is_empty() {
         return;
     }
 
     // Paso 1: IDs de todas las entidades referenciadas como padres
     // Probar tanto el campo con namespace como sin namespace
-    let bare_parent = parent_field.split('/').last().unwrap_or(parent_field);
+    let bare_parent = parent_field.split('/').next_back().unwrap_or(parent_field);
     let parent_ids: HashSet<String> = rows
         .iter()
         .filter_map(|r| {

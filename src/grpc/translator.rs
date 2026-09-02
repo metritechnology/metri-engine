@@ -55,7 +55,7 @@ fn translate_analytics_request(
             filter: m
                 .filter
                 .as_ref()
-                .and_then(|f| translate_filter_node(f))
+                .and_then(translate_filter_node)
                 .map(Box::new),
             interval: if m.interval.is_empty() {
                 None

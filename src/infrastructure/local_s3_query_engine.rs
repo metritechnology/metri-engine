@@ -985,7 +985,7 @@ fn extract_right_value(right_part: &str) -> Option<(Value, usize)> {
     let trimmed = right_part.trim_start();
     let offset = right_part.len() - trimmed.len();
 
-    if trimmed.starts_with('\'') {
+    if let Some(rest) = trimmed.strip_prefix('\'') {
         let rest = &trimmed[1..];
         if let Some(end_idx) = rest.find('\'') {
             let val_str = &rest[..end_idx];
@@ -1443,7 +1443,7 @@ fn evaluate_final_expression(
                         _ => 0.0,
                     };
                     if let Some(s_list) = smart_rows.get(&smart_name) {
-                        if let Some(s_row) = s_list.get(0) {
+                        if let Some(s_row) = s_list.first() {
                             let mean_key = format!("mean_{}", key);
                             let std_key = format!("std_{}", key);
                             mean_val = s_row
@@ -1514,7 +1514,7 @@ fn evaluate_final_expression(
         }
     } else if cte_name.starts_with("smart_") {
         if let Some(list) = smart_rows.get(&cte_name) {
-            if let Some(row) = list.get(0) {
+            if let Some(row) = list.first() {
                 row.get(&field_name).cloned().unwrap_or(Value::Null)
             } else {
                 Value::Null

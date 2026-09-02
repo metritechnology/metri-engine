@@ -640,7 +640,7 @@ async fn test_tenant_and_quota_master_crud_gates() {
         let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes()).unwrap();
         mac.update(&payload_bytes);
         let sig_bytes = mac.finalize().into_bytes();
-        let sig_b64 = URL_SAFE_NO_PAD.encode(&sig_bytes);
+        let sig_b64 = URL_SAFE_NO_PAD.encode(sig_bytes);
 
         format!("Bearer mk_{}.{}", payload_b64, sig_b64)
     }

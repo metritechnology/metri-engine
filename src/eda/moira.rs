@@ -257,7 +257,8 @@ where
             let base = 2_f64.powi(current_retries as i32) * 30_000.0;
             base.min(1_800_000.0) as i64
         };
-        let _new_status = if is_exhausted { "FAILED" } else { "FAILED" }; // si falla y no hay reintentos, permanente FAILED
+        // El estado resultante es siempre FAILED: si aún hay reintentos, el
+        // fetcher lo relee cuando `retry_at` expire; si se agotó, permanente.
         let retry_at = now + delay_ms;
 
         let mut attrs = HashMap::new();

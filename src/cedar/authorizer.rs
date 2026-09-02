@@ -2522,7 +2522,7 @@ mod tests {
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(&payload_bytes);
         let sig = mac.finalize().into_bytes();
-        let sig_b64 = URL_SAFE_NO_PAD.encode(&sig);
+        let sig_b64 = URL_SAFE_NO_PAD.encode(sig);
 
         let token = format!("mk_{}.{}", payload_b64, sig_b64);
 

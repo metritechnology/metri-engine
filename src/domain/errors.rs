@@ -361,7 +361,7 @@ pub struct DomainError {
     pub retryable: bool,
     /// Contexto adicional (equivale al ctx-map del error Clojure)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub context: Option<serde_json::Value>,
+    pub context: Option<Box<serde_json::Value>>,
 }
 
 impl DomainError {
@@ -386,8 +386,17 @@ impl DomainError {
 
     /// Añade contexto estructurado al error.
     pub fn with_context(mut self, context: serde_json::Value) -> Self {
-        self.context = Some(context);
+        self.context = Some(Box::new(context));
         self
+    }
+
+    /// Contexto estructurado, si lo hay.
+    ///
+    /// El campo vive encajonado para mantener `DomainError` por debajo del
+    /// umbral de clippy `result_large_err`: es el tipo de retorno de casi todo
+    /// el dominio y su peso se pagaría en cada llamada.
+    pub fn context(&self) -> Option<&serde_json::Value> {
+        self.context.as_deref()
     }
 
     // ── Constructores rápidos por dominio ────────────────────────────────────

@@ -411,7 +411,8 @@ async fn el_rechazo_lleva_las_cifras_del_contador() {
     let err = step.execute(ctx).await.unwrap_err();
 
     let contexto = err
-        .context
+        .context()
+        .cloned()
         .expect("el rechazo por cuota debe llevar contexto");
     assert_eq!(
         contexto.get("current_usage").unwrap().as_i64(),

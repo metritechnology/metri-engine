@@ -683,7 +683,7 @@ async fn test_seed_production_quotas() {
     // 1. Inicializar Códice
     let models_dir = std::path::Path::new("config/models");
     let (registry, _event_rules) = crate::codice::CodeRegistry::build(models_dir).unwrap();
-    let _ = crate::codice::init_global(registry);
+    crate::codice::init_global(registry);
 
     // 2. Set credentials for production
     std::env::set_var("AWS_PROFILE", "metri-dev");
@@ -773,7 +773,7 @@ async fn test_seed_and_emit_production_outbox_events() {
     // 1. Inicializar Códice
     let models_dir = std::path::Path::new("config/models");
     let (registry, _event_rules) = crate::codice::CodeRegistry::build(models_dir).unwrap();
-    let _ = crate::codice::init_global(registry);
+    crate::codice::init_global(registry);
 
     // 2. Set credentials for production
     std::env::set_var("AWS_PROFILE", "metri-dev");
@@ -880,7 +880,7 @@ async fn test_seed_rules_and_webhooks_production() {
     // 1. Inicializar Códice
     let models_dir = std::path::Path::new("config/models");
     let (registry, _event_rules) = crate::codice::CodeRegistry::build(models_dir).unwrap();
-    let _ = crate::codice::init_global(registry);
+    crate::codice::init_global(registry);
 
     // 2. Set credentials for production
     std::env::set_var("AWS_PROFILE", "metri-dev");
@@ -981,7 +981,7 @@ async fn test_seed_cmms_rules_and_events_production() {
     // 1. Inicializar Códice
     let models_dir = std::path::Path::new("config/models");
     let (registry, _event_rules) = crate::codice::CodeRegistry::build(models_dir).unwrap();
-    let _ = crate::codice::init_global(registry);
+    crate::codice::init_global(registry);
 
     // 2. Set credentials for production
     std::env::set_var("AWS_PROFILE", "metri-dev");

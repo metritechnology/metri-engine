@@ -15,13 +15,13 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
     // Hoja: criteria
     if let Some(crit) = &node.criteria {
         let field = crit.field.as_deref().unwrap_or("");
-        let bare_field = field.split('/').last().unwrap_or(field);
+        let bare_field = field.split('/').next_back().unwrap_or(field);
         // Intentar con key completo y sin namespace
         let mut row_val = row.get(field).or_else(|| row.get(bare_field));
         if row_val.is_none() {
             if let Some(obj) = row.as_object() {
                 for (k, v) in obj {
-                    if k.split('/').last() == Some(bare_field) {
+                    if k.split('/').next_back() == Some(bare_field) {
                         row_val = Some(v);
                         break;
                     }

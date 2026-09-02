@@ -131,7 +131,7 @@ impl MetriGrpcService {
             &error,
             tenant_id,
             user_id,
-            error.context.clone(),
+            error.context().cloned(),
             None,
         );
 
@@ -1525,7 +1525,7 @@ impl MetriService for MetriGrpcService {
         let principal = crate::cedar::authorizer::get_principal_data(
             &request,
             self.valkey_store.as_ref(),
-            &self.oltp_executor.pull_reader(),
+            self.oltp_executor.pull_reader(),
             self.principal_cache.as_ref(),
         )
         .await
@@ -1770,7 +1770,7 @@ impl MetriService for MetriGrpcService {
         let principal = crate::cedar::authorizer::get_principal_data(
             &request,
             self.valkey_store.as_ref(),
-            &self.oltp_executor.pull_reader(),
+            self.oltp_executor.pull_reader(),
             self.principal_cache.as_ref(),
         )
         .await
@@ -2185,7 +2185,7 @@ impl MetriService for MetriGrpcService {
 
                 let condition_proto = rule
                     .get("filter_conditions")
-                    .and_then(|fc| fc_to_proto_filter_node(fc));
+                    .and_then(fc_to_proto_filter_node);
 
                 matched_rules.push(MatchedRule {
                     rule_code: rule_code.to_string(),

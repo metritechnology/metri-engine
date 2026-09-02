@@ -110,7 +110,7 @@ impl OltpExecutor {
                     // Check if this field_name is a reference attribute in our model
                     let attr_opt = model.attributes.iter().find(|a| {
                         a.name == *field_name
-                            || a.name.split('/').last() == Some(field_name.as_str())
+                            || a.name.split('/').next_back() == Some(field_name.as_str())
                     });
 
                     if let Some(attr) = attr_opt {
@@ -468,14 +468,14 @@ impl OltpExecutor {
                             let ref_attr_opt = model.attributes.iter().find(|a| {
                                 a.attr_type == crate::codice::registry::AttrType::Reference
                                     && (a.name == *base_ref
-                                        || a.name.split('/').last() == Some(base_ref)
+                                        || a.name.split('/').next_back() == Some(base_ref)
                                         || a.entity_ref.as_deref() == Some(base_ref))
                             });
                             if let Some(ref_attr) = ref_attr_opt {
                                 let attr_name = ref_attr
                                     .name
                                     .split('/')
-                                    .last()
+                                    .next_back()
                                     .unwrap_or(&ref_attr.name)
                                     .to_string();
                                 if let Some(obj) = dynamic_select.as_object_mut() {
@@ -745,7 +745,7 @@ impl OltpExecutor {
                         resolved = true;
                         break;
                     }
-                    if let Some(last_part) = attr.name.split('/').last() {
+                    if let Some(last_part) = attr.name.split('/').next_back() {
                         if last_part == mapped_attr {
                             resolved_attrs.insert(attr.name.clone());
                             resolved = true;
@@ -771,11 +771,10 @@ impl OltpExecutor {
             )
             .await;
 
-        let sel_opt: Option<&[&str]> = if is_analytical {
-            None // traer todo — aggregation necesita todos los campos
-        } else {
-            None // Por defecto, sin filtro selectivo en pull para mayor compatibilidad
-        };
+        // Siempre None: la agregación necesita todos los campos y el pull sin
+        // filtro selectivo es la vía compatible. La rama selectiva para lecturas
+        // analíticas quedó como intención futura, no como código.
+        let sel_opt: Option<&[&str]> = None;
 
         // Extraer filtros de negocio
         let business_filters: Vec<_> = ast_ir
@@ -842,7 +841,7 @@ impl OltpExecutor {
             .hierarchy
             .as_ref()
             .and_then(|h| h.parent_field.as_deref())
-            .map(|pf| pf.split('/').last().unwrap_or(pf).to_string());
+            .map(|pf| pf.split('/').next_back().unwrap_or(pf).to_string());
 
         let should_break_early = !has_sort && !has_filters && !is_analytical;
         let target_break = if is_pre_sliced {
@@ -937,7 +936,7 @@ impl OltpExecutor {
                             {
                                 if !model.fts_fields.is_empty() {
                                     for f in &model.fts_fields {
-                                        let bare_f = f.split('/').last().unwrap_or(f);
+                                        let bare_f = f.split('/').next_back().unwrap_or(f);
                                         let val_opt = row.get(f).or_else(|| row.get(bare_f));
 
                                         if let Some(val) = val_opt.and_then(|v| v.as_str()) {
@@ -1077,7 +1076,7 @@ impl OltpExecutor {
                                 resolved_parent_field = attr.name.clone();
                                 break;
                             }
-                            if let Some(last_part) = attr.name.split('/').last() {
+                            if let Some(last_part) = attr.name.split('/').next_back() {
                                 if last_part == pf {
                                     resolved_parent_field = attr.name.clone();
                                     break;
@@ -1178,7 +1177,7 @@ impl OltpExecutor {
                             if let Some(attrs) = registry.get_attributes(entity_type) {
                                 for attr in attrs {
                                     let bare_name =
-                                        attr.name.split('/').last().unwrap_or(&attr.name);
+                                        attr.name.split('/').next_back().unwrap_or(&attr.name);
                                     if bare_name == ref_attr_name {
                                         if let Some(ref_entity) = &attr.entity_ref {
                                             ref_entity_type = Some(ref_entity.clone());
@@ -1355,7 +1354,7 @@ fn extract_select_attrs_fbs(ast_ir: &crate::janus::fbs::AnalyticsRequestT) -> Ve
 }
 
 /// Ordena rows en memoria según la especificación `order_by` del AST IR.
-fn apply_sort_in_memory(rows: &mut Vec<Value>, order_by: &[Value]) {
+fn apply_sort_in_memory(rows: &mut [Value], order_by: &[Value]) {
     if order_by.is_empty() {
         return;
     }
@@ -1402,7 +1401,7 @@ fn compare_json_values(a: &Value, b: &Value) -> std::cmp::Ordering {
 }
 
 /// Normaliza timestamps ms→segundos en los rows.
-fn normalize_timestamps_in_rows(rows: &mut Vec<Value>) {
+fn normalize_timestamps_in_rows(rows: &mut [Value]) {
     const TS_FIELDS: &[&str] = &[
         "created_at",
         "updated_at",
@@ -1428,7 +1427,7 @@ fn normalize_timestamps_in_rows(rows: &mut Vec<Value>) {
 }
 
 /// Sort multi-key con cortocircuito correcto.
-fn apply_sort_fbs(rows: &mut Vec<Value>, sort_defs: &[crate::janus::fbs::SortDefinitionT]) {
+fn apply_sort_fbs(rows: &mut [Value], sort_defs: &[crate::janus::fbs::SortDefinitionT]) {
     if sort_defs.is_empty() {
         return;
     }

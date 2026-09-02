@@ -79,20 +79,20 @@ fn build_virtual_table(
         select
             .column(Alias::new(attr_col))
             .column(Alias::new(val_col))
-            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(&format!("{}_avg", val_col)))
-            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(&format!("{}_min", val_col)))
-            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(&format!("{}_max", val_col)))
+            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(format!("{}_avg", val_col)))
+            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(format!("{}_min", val_col)))
+            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(format!("{}_max", val_col)))
             .expr_as(Expr::val(1i32), Alias::new("reading_count"))
             .expr_as(
-                Expr::cust(&format!("CAST(IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) AS BIGINT)")),
+                Expr::cust(format!("CAST(IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) AS BIGINT)")),
                 Alias::new(ts_col)
             )
             .from((Alias::new(database), Alias::new(base_tbl)))
             .cond_where(
                 sea_query::Cond::all()
                     .add(Expr::col(Alias::new(&config.tenant_column_raw)).eq(tenant_id))
-                    .add(Expr::cust(&format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) >= {}", start_ts)))
-                    .add(Expr::cust(&format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) <= {}", end_ts)))
+                    .add(Expr::cust(format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) >= {}", start_ts)))
+                    .add(Expr::cust(format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) <= {}", end_ts)))
             );
         select
     } else if end_ts < today_utc_start {
@@ -113,7 +113,7 @@ fn build_virtual_table(
             config
                 .id_rollup_fields
                 .iter()
-                .map(|f| format!("{}", f))
+                .map(|f| f.to_string())
                 .collect::<Vec<_>>()
                 .join(", '-', ")
         );
@@ -133,12 +133,12 @@ fn build_virtual_table(
         select
             .column(Alias::new(attr_col))
             .expr_as(
-                Expr::col(Alias::new(&format!("{}_avg", val_col))),
+                Expr::col(Alias::new(format!("{}_avg", val_col))),
                 Alias::new(val_col),
             )
-            .column(Alias::new(&format!("{}_avg", val_col)))
-            .column(Alias::new(&format!("{}_min", val_col)))
-            .column(Alias::new(&format!("{}_max", val_col)))
+            .column(Alias::new(format!("{}_avg", val_col)))
+            .column(Alias::new(format!("{}_min", val_col)))
+            .column(Alias::new(format!("{}_max", val_col)))
             .column(Alias::new("reading_count"))
             .expr_as(
                 Expr::cust(&format!(
@@ -173,7 +173,7 @@ fn build_virtual_table(
             config
                 .id_rollup_fields
                 .iter()
-                .map(|f| format!("{}", f))
+                .map(|f| f.to_string())
                 .collect::<Vec<_>>()
                 .join(", '-', ")
         );
@@ -193,12 +193,12 @@ fn build_virtual_table(
         select_a
             .column(Alias::new(attr_col))
             .expr_as(
-                Expr::col(Alias::new(&format!("{}_avg", val_col))),
+                Expr::col(Alias::new(format!("{}_avg", val_col))),
                 Alias::new(val_col),
             )
-            .column(Alias::new(&format!("{}_avg", val_col)))
-            .column(Alias::new(&format!("{}_min", val_col)))
-            .column(Alias::new(&format!("{}_max", val_col)))
+            .column(Alias::new(format!("{}_avg", val_col)))
+            .column(Alias::new(format!("{}_min", val_col)))
+            .column(Alias::new(format!("{}_max", val_col)))
             .column(Alias::new("reading_count"))
             .expr_as(
                 Expr::cust(&format!(
@@ -233,20 +233,20 @@ fn build_virtual_table(
         select_b
             .column(Alias::new(attr_col))
             .column(Alias::new(val_col))
-            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(&format!("{}_avg", val_col)))
-            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(&format!("{}_min", val_col)))
-            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(&format!("{}_max", val_col)))
+            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(format!("{}_avg", val_col)))
+            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(format!("{}_min", val_col)))
+            .expr_as(Expr::col(Alias::new(val_col)), Alias::new(format!("{}_max", val_col)))
             .expr_as(Expr::val(1i32), Alias::new("reading_count"))
             .expr_as(
-                Expr::cust(&format!("CAST(IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) AS BIGINT)")),
+                Expr::cust(format!("CAST(IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) AS BIGINT)")),
                 Alias::new(ts_col)
             )
             .from((Alias::new(database), Alias::new(base_tbl)))
             .cond_where(
                 sea_query::Cond::all()
                     .add(Expr::col(Alias::new(&config.tenant_column_raw)).eq(tenant_id))
-                    .add(Expr::cust(&format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) >= {}", start_ts)))
-                    .add(Expr::cust(&format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) <= {}", end_ts)))
+                    .add(Expr::cust(format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) >= {}", start_ts)))
+                    .add(Expr::cust(format!("IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE)) <= {}", end_ts)))
                     .add(Expr::cust(&format!(
                         "format_datetime(from_unixtime(IF({ts_col} > 100000000000, {ts_col} / 1000.0, CAST({ts_col} AS DOUBLE))), 'yyyy-MM-dd') NOT IN (
                             SELECT DISTINCT {}
@@ -276,16 +276,16 @@ fn build_virtual_table(
             columns.push(Alias::new(&dim.raw_column));
         }
         columns.push(Alias::new(attr_col));
-        columns.push(Alias::new(&format!("{}_avg", val_col)));
-        columns.push(Alias::new(&format!("{}_min", val_col)));
-        columns.push(Alias::new(&format!("{}_max", val_col)));
+        columns.push(Alias::new(format!("{}_avg", val_col)));
+        columns.push(Alias::new(format!("{}_min", val_col)));
+        columns.push(Alias::new(format!("{}_max", val_col)));
         columns.push(Alias::new("reading_count"));
         columns.push(Alias::new(ts_col));
 
         select
             .columns(columns)
             .expr_as(
-                Expr::col(Alias::new(&format!("{}_avg", val_col))),
+                Expr::col(Alias::new(format!("{}_avg", val_col))),
                 Alias::new(val_col),
             )
             .from_subquery(select_union, Alias::new("union_db"));

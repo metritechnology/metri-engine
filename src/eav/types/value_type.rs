@@ -58,9 +58,7 @@ impl ValueType {
 /// [`ValueType::is_avet_indexable`]. La divergencia histórica en `Null` muere
 /// por construcción: `Null` no existe como `AttrType` y a nivel de datom ya lo
 /// excluye `is_avet_indexable`.
-pub fn attr_type_is_avet_indexable(
-    attr_type: &crate::codice::registry::AttrType,
-) -> bool {
+pub fn attr_type_is_avet_indexable(attr_type: &crate::codice::registry::AttrType) -> bool {
     use crate::codice::registry::AttrType;
     !matches!(attr_type, AttrType::Bytes | AttrType::Array)
 }

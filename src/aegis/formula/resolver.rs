@@ -23,7 +23,7 @@ impl<'a> OltpVariableResolver<'a> {
 
 impl<'a> VariableResolver for OltpVariableResolver<'a> {
     fn resolve(&self, var_name: &str) -> Option<f64> {
-        let bare_name = var_name.split('/').last().unwrap_or(var_name);
+        let bare_name = var_name.split('/').next_back().unwrap_or(var_name);
         self.row
             .get(var_name)
             .or_else(|| self.row.get(bare_name))
@@ -41,7 +41,7 @@ impl OlapVariableResolver {
         if var_name == "tenant/id" || var_name == "entity/tenant-id" {
             return "_tenant".to_string();
         }
-        let base = var_name.split('/').last().unwrap_or(var_name);
+        let base = var_name.split('/').next_back().unwrap_or(var_name);
         base.replace('-', "_")
     }
 }

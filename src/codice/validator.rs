@@ -137,7 +137,7 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
                 Ok(DatomValue::Instant(i))
             } else if let Some(s) = val.as_str() {
                 s.parse::<i64>()
-                    .map(|v| DatomValue::Instant(v))
+                    .map(DatomValue::Instant)
                     .map_err(|_| "Epoch debe ser un entero válido".to_string())
             } else {
                 Err("Debe ser un número entero (epoch ms)".to_string())

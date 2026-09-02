@@ -7,7 +7,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
-
 /// Calcula un hash simplificado para un objeto JSON.
 fn hash_value(val: &Value) -> u64 {
     let mut hasher = DefaultHasher::new();

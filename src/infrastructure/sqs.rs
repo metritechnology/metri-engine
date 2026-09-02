@@ -81,12 +81,8 @@ impl ISqsBus for SqsFifoBus {
             .await
             .map_err(|e| {
                 let msg = format!("{e:?}");
-                let code = if msg.contains("AccessDeniedException") {
-                    ErrorCode::Infra003
-                } else {
-                    ErrorCode::Infra003
-                };
-                DomainError::infra(code, format!("SQS SendMessage falló: {msg}"))
+                // Clasificación pendiente: toda falla mapea a INFRA_003.
+                DomainError::infra(ErrorCode::Infra003, format!("SQS SendMessage falló: {msg}"))
             })?;
 
         resp.message_id
@@ -150,6 +146,12 @@ impl ISqsBus for SqsFifoBus {
 /// StubSqsBus — Simulación local en memoria del SQS FIFO.
 pub struct StubSqsBus {
     pub messages: std::sync::Mutex<Vec<SqsMessage>>,
+}
+
+impl Default for StubSqsBus {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StubSqsBus {

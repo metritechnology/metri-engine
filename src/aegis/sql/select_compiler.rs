@@ -75,7 +75,7 @@ pub fn build_select_exprs(
             if let Some(sem_ms) = &ast.semantic_measures {
                 for sm in sem_ms {
                     select_exprs.push((
-                        Expr::cust(&format!("NULL /* semantic:{} */", sm.metric_key)),
+                        Expr::cust(format!("NULL /* semantic:{} */", sm.metric_key)),
                         Some(sm.metric_key.clone()),
                     ));
                 }

@@ -130,10 +130,10 @@ impl FormulaError {
             stage: "aegis::formula".to_string(),
             detail,
             retryable,
-            context: Some(serde_json::json!({
+            context: Some(Box::new(serde_json::json!({
                 "error_type": format!("{:?}", self),
                 "formula_module": "aegis::formula",
-            })),
+            }))),
         }
     }
 
@@ -152,7 +152,7 @@ impl FormulaError {
             &domain_error,
             &ctx.tenant_id,
             &ctx.user_id,
-            domain_error.context.clone(),
+            domain_error.context().cloned(),
             model,
         );
 

@@ -213,7 +213,7 @@ pub async fn process_fault(
     let severity = match error_catalog::try_global() {
         Some(catalog) => {
             catalog
-                .get(&code_str)
+                .get(code_str)
                 .map(|entry| FaultSeverity::from_catalog_str(&entry.severity))
                 .unwrap_or(FaultSeverity::Warning) // default conservador
         }

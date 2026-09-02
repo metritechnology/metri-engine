@@ -122,7 +122,7 @@ pub fn apply_output_cast_fbs(
                                     4 => "min",   5 => "max", _ => "agg",
                                 };
                                 m.attribute.as_deref().map(|a| {
-                                    format!("{}_{}", agg, a.split('/').last().unwrap_or(a))
+                                    format!("{}_{}", agg, a.split('/').next_back().unwrap_or(a))
                                 })
                             })
                         });
@@ -224,7 +224,7 @@ pub fn apply_output_cast_fbs(
                                 for row in rows {
                                     let key = dim_keys.iter()
                                         .filter_map(|k| {
-                                            let bare_k = k.split('/').last().unwrap_or(k);
+                                            let bare_k = k.split('/').next_back().unwrap_or(k);
                                             row.get(k).or_else(|| row.get(bare_k)).and_then(|v| {
                                                 v.as_str().map(|s| s.to_string())
                                                     .or_else(|| v.as_f64().map(|n| n.to_string()))
@@ -238,7 +238,7 @@ pub fn apply_output_cast_fbs(
                                     let mut agg = apply_metrics_fbs(&group_rows, metrics);
                                     if let (Some(first), Some(obj)) = (group_rows.first(), agg.as_object_mut()) {
                                         for dk in &dim_keys {
-                                            let bare_dk = dk.split('/').last().unwrap_or(dk);
+                                            let bare_dk = dk.split('/').next_back().unwrap_or(dk);
                                             if let Some(v) = first.get(dk).or_else(|| first.get(bare_dk)) {
                                                 obj.insert(dk.clone(), v.clone());
                                             }

@@ -19,7 +19,7 @@ fn coerce_key<'a>(row: &'a Value, field_str: &str) -> Option<&'a Value> {
             return Some(v);
         }
         // Intentar sin namespace si lo hubiera, ej. `entity/asset_name` -> `asset_name`
-        let base_field = field_str.split('/').last().unwrap_or(field_str);
+        let base_field = field_str.split('/').next_back().unwrap_or(field_str);
         if let Some(v) = obj.get(base_field) {
             return Some(v);
         }
@@ -37,8 +37,8 @@ fn coerce_key<'a>(row: &'a Value, field_str: &str) -> Option<&'a Value> {
 /// - entero    -> "42"
 /// - decimal   -> "45.23" (2 decimales max)
 /// - string    -> valor directo
-/// [PORTED_FROM: (format-value v)]
-/// Resuelve un camino (por ejemplo "location.name") navegando en objetos JSON.
+///   [PORTED_FROM: (format-value v)]
+///   Resuelve un camino (por ejemplo "location.name") navegando en objetos JSON.
 fn resolve_path<'a>(mut current: &'a Value, path: &str) -> Option<&'a Value> {
     // Si la clave entera coincide directamente en el valor actual, úsala directamente.
     if let Some(v) = coerce_key(current, path) {
@@ -61,7 +61,7 @@ fn resolve_path<'a>(mut current: &'a Value, path: &str) -> Option<&'a Value> {
 /// - entero    -> "42"
 /// - decimal   -> "45.23" (2 decimales max)
 /// - string    -> valor directo
-/// [PORTED_FROM: (format-value v)]
+///   [PORTED_FROM: (format-value v)]
 pub(crate) fn format_value(v: Option<&Value>) -> String {
     match v {
         Some(Value::Null) | None => "".to_string(),

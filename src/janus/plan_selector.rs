@@ -317,7 +317,7 @@ fn extract_indexed_filters_fbs(ast_ir: &fbs::AnalyticsRequestT) -> Vec<(String, 
                     .clone()
                     .unwrap_or_else(|| "parent_id".to_string());
                 // Usar solo la parte después del último '/' (bare name) para coincidir con AVET_PK
-                let bare_attr = pf.split('/').last().unwrap_or(&pf).to_string();
+                let bare_attr = pf.split('/').next_back().unwrap_or(&pf).to_string();
                 results.push((bare_attr, DatomValue::Str(node_id.to_string())));
             }
         }
@@ -337,7 +337,11 @@ fn extract_indexed_filters_fbs(ast_ir: &fbs::AnalyticsRequestT) -> Vec<(String, 
                     }
                     // FIX CRÍTICO: el AVET_PK en DynamoDB almacena el attr_name SIN namespace (bare name)
                     // tal como viene en el write path de transact.rs, por lo que usamos el bare name.
-                    let attr = raw_attr.split('/').last().unwrap_or(&raw_attr).to_string();
+                    let attr = raw_attr
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(&raw_attr)
+                        .to_string();
 
                     let val = if let Some(v) = &crit.value {
                         if let Some(s) = &v.string_val {

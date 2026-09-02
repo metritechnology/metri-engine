@@ -37,5 +37,8 @@ fn test_domain_error_constructors() {
     assert_eq!(err.code, ErrorCode::Cod001);
     assert_eq!(err.stage, "custom_stage");
     assert_eq!(err.detail, "Registry parse error");
-    assert_eq!(err.context, Some(serde_json::json!({"file": "test.json"})));
+    assert_eq!(
+        err.context().cloned(),
+        Some(serde_json::json!({"file": "test.json"}))
+    );
 }

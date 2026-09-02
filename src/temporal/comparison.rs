@@ -211,8 +211,8 @@ pub fn smart_history_window(range: &TimeRange, history_days: Option<i64>) -> Tim
 
 #[cfg(test)]
 mod tests {
-    use chrono::Datelike;
     use super::*;
+    use chrono::Datelike;
 
     fn range(s: i64, e: i64) -> TimeRange {
         TimeRange {

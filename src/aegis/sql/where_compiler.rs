@@ -11,7 +11,7 @@ pub fn col_id_str(name: &str) -> String {
     if name == "tenant/id" || name == "entity/tenant-id" {
         return "_tenant".to_string();
     }
-    let base = name.split('/').last().unwrap_or(name);
+    let base = name.split('/').next_back().unwrap_or(name);
     base.replace('-', "_")
 }
 

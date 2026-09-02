@@ -189,10 +189,7 @@ async fn test_process_fault_double_action() {
         fault_record.get("entity_type").unwrap().as_str().unwrap(),
         "asset"
     );
-    assert_eq!(
-        fault_record.get("retryable").unwrap().as_bool().unwrap(),
-        false
-    );
+    assert!(!fault_record.get("retryable").unwrap().as_bool().unwrap());
     assert_eq!(
         fault_record.get("occurred_at").unwrap().as_i64().unwrap(),
         1718221000i64

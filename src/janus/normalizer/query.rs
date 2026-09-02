@@ -219,8 +219,8 @@ fn ensure_viz_meta(body: &mut Value) {
             for row in &rows {
                 let current_val = if let Some(ref key) = primary_metric_key {
                     row.get(key)
-                        .or_else(|| row.get(&format!("current_{}", key)))
-                        .map(|v| safe_double(v))
+                        .or_else(|| row.get(format!("current_{}", key)))
+                        .map(safe_double)
                 } else {
                     None
                 };
@@ -236,7 +236,7 @@ fn ensure_viz_meta(body: &mut Value) {
                                     .or_else(|| m.values().next())
                             })
                         })
-                        .map(|v| safe_double(v))
+                        .map(safe_double)
                         .unwrap_or(0.0)
                 });
 
@@ -338,14 +338,14 @@ fn ensure_viz_meta(body: &mut Value) {
 
                     let val = if let Some(arr) = row.as_array() {
                         // Array: [dimension, value]
-                        arr.get(1).map(|v| safe_double(v)).unwrap_or(0.0)
+                        arr.get(1).map(safe_double).unwrap_or(0.0)
                     } else if let Some(obj) = row.as_object() {
                         // Object: buscar el primer campo numérico (la métrica)
                         metric_key
                             .as_ref()
                             .and_then(|mk| obj.get(mk))
                             .or_else(|| obj.values().find(|v| v.is_number()))
-                            .map(|v| safe_double(v))
+                            .map(safe_double)
                             .unwrap_or(0.0)
                     } else {
                         0.0

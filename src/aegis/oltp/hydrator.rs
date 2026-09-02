@@ -312,7 +312,7 @@ pub fn entity_map_to_json(map: std::collections::HashMap<String, DatomValue>) ->
             DatomValue::Bytes(_) => json!("_binary_"),
         };
         if k.contains('/') {
-            let bare_key = k.split('/').last().unwrap_or(&k).to_string();
+            let bare_key = k.split('/').next_back().unwrap_or(&k).to_string();
             if !bare_key.is_empty() {
                 if bare_key == "id" {
                     if k == "entity/id" {

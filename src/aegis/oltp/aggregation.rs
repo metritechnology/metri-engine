@@ -267,7 +267,7 @@ pub fn apply_metrics_fbs(
             // COUNT(*) — contar todos los rows efectivos
             vec![1.0; eff_rows.len()]
         } else {
-            let bare_key = attr_key.split('/').last().unwrap_or(attr_key);
+            let bare_key = attr_key.split('/').next_back().unwrap_or(attr_key);
             eff_rows
                 .iter()
                 .filter_map(|r| {

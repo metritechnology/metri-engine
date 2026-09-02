@@ -252,7 +252,7 @@ impl IopOrchestrator {
             e,
             tenant_id,
             user_id,
-            e.context.clone(),
+            e.context().cloned(),
             model,
         );
 

@@ -111,8 +111,8 @@ impl EavWriter {
     /// 4. Construir TransactWriteItems para EAVT + GSIs activos
     /// 5. Chunk a 100 items por transacción (DynamoDB limit)
     /// 6. Ejecutar TransactWriteItems
-    /// Reader sobre la misma tabla — necesario para resolver mappings que
-    /// atraviesan referencias (ver janus_router::saga).
+    ///    Reader sobre la misma tabla — necesario para resolver mappings que
+    ///    atraviesan referencias (ver janus_router::saga).
     pub fn reader(&self) -> crate::eav::reader::pull::EavReader {
         crate::eav::reader::pull::EavReader::new(self.ddb.clone(), self.table.clone())
     }
@@ -363,7 +363,7 @@ impl EavWriter {
                 let ctx = crate::eav::writer::constraints::ConstraintContext {
                     tenant_id: &payload.tenant_id,
                     entity_id: &entity_id,
-                    model: &model,
+                    model: model,
                     attrs: &payload.attrs,
                     op: payload.op.clone(),
                     table: &self.table,

@@ -47,7 +47,7 @@ impl IWriteChannel for OltpChannel {
         // FASE 3: Validación estructural contra Códice
         let is_create = ctx.operation == "CREATE";
         let validated_attrs =
-            validator::validate_payload(&model, &payload_val, &ctx.tenant_id, is_create)?;
+            validator::validate_payload(model, &payload_val, &ctx.tenant_id, is_create)?;
 
         let op = match ctx.operation.as_str() {
             "CREATE" => TransactOp::Create,

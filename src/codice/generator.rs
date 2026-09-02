@@ -5,7 +5,6 @@
 // En Rust:    inject() — función pura excepto por los efectos de I/O
 //             de sequence/next (DynamoDB) y base36/generate (CSPRNG).
 
-
 use serde_json::{Map, Value};
 
 use crate::codice::base36;

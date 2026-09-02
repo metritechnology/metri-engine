@@ -28,8 +28,8 @@ use crate::janus::fbs::{
     MetricDefinitionT,
 };
 use crate::temporal::comparison::{
-    resolve_comparison_period, smart_history_window,
-    AnalyticalComparison as TempComparison, ComparisonType, ShiftShortcut,
+    resolve_comparison_period, smart_history_window, AnalyticalComparison as TempComparison,
+    ComparisonType, ShiftShortcut,
 };
 use crate::temporal::core::TimeRange;
 
@@ -160,7 +160,7 @@ fn compute_smart_stats(
             .iter()
             .filter_map(|r| {
                 r.get(attr)
-                    .or_else(|| r.get(attr.split('/').last().unwrap_or(attr)))
+                    .or_else(|| r.get(attr.split('/').next_back().unwrap_or(attr)))
                     .and_then(|v| v.as_f64())
             })
             .collect();
@@ -205,7 +205,7 @@ fn build_metric_alias(m: &MetricDefinitionT) -> String {
         .as_deref()
         .unwrap_or("total")
         .split('/')
-        .last()
+        .next_back()
         .unwrap_or("total");
     format!("{fn_str}_{attr}")
 }

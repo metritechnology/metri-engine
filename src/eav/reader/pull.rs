@@ -12,10 +12,7 @@ use aws_sdk_dynamodb::types::AttributeValue;
 use tracing::debug;
 
 use crate::domain::errors::{DomainError, ErrorCode};
-use crate::eav::types::{
-    datom::DatomValue,
-    encoding::eavt_sk_as_of,
-};
+use crate::eav::types::{datom::DatomValue, encoding::eavt_sk_as_of};
 use crate::infrastructure::dynamodb::DynamoClient;
 
 use once_cell::sync::Lazy;
@@ -103,7 +100,10 @@ impl EavReader {
                 } else if let Some(filter) = attrs {
                     filter.iter().all(|&attr| {
                         entry.map.contains_key(attr)
-                            || entry.map.keys().any(|k| k.split('/').last() == Some(attr))
+                            || entry
+                                .map
+                                .keys()
+                                .any(|k| k.split('/').next_back() == Some(attr))
                     })
                 } else {
                     false
@@ -115,7 +115,7 @@ impl EavReader {
                             .map
                             .iter()
                             .filter(|(k, _)| {
-                                let bare = k.split('/').last().unwrap_or(k);
+                                let bare = k.split('/').next_back().unwrap_or(k);
                                 filter.contains(&k.as_str()) || filter.contains(&bare)
                             })
                             .map(|(k, v)| (k.clone(), v.clone()))
@@ -180,7 +180,7 @@ impl EavReader {
             let filtered: EntityMap = full_entity_map
                 .iter()
                 .filter(|(k, _)| {
-                    let bare = k.split('/').last().unwrap_or(k);
+                    let bare = k.split('/').next_back().unwrap_or(k);
                     filter.contains(&k.as_str()) || filter.contains(&bare)
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -241,7 +241,7 @@ impl EavReader {
             let filtered: EntityMap = full_entity_map
                 .iter()
                 .filter(|(k, _)| {
-                    let bare = k.split('/').last().unwrap_or(k);
+                    let bare = k.split('/').next_back().unwrap_or(k);
                     filter.contains(&k.as_str()) || filter.contains(&bare)
                 })
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -478,7 +478,7 @@ impl EavReader {
                         _ => continue,
                     };
 
-                    let entity_id = match pk.split('#').last() {
+                    let entity_id = match pk.split('#').next_back() {
                         Some(id) => id.to_string(),
                         None => continue,
                     };
@@ -641,7 +641,7 @@ fn assemble_current_state(
 
         // Aplicar filtro de atributos si se especificó
         if let Some(filter) = attr_filter {
-            let bare_name = attr_name.split('/').last().unwrap_or(&attr_name);
+            let bare_name = attr_name.split('/').next_back().unwrap_or(&attr_name);
             if !filter.contains(&attr_name.as_str()) && !filter.contains(&bare_name) {
                 continue;
             }

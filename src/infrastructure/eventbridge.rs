@@ -91,12 +91,12 @@ impl IEventBus for EventBridgeClient {
             .map_err(|e| {
                 let msg = format!("{e:?}");
                 // [PORTED_FROM: código de error AccessDeniedException → INFRA_EVENTBRIDGE_003]
-                let code = if msg.contains("AccessDeniedException") {
-                    ErrorCode::Infra004
-                } else {
-                    ErrorCode::Infra004
-                };
-                DomainError::infra(code, format!("EventBridge PutEvents falló: {msg}"))
+                // Clasificación pendiente: hoy toda falla mapea a INFRA_004.
+                // La rama por `AccessDeniedException` se documentó en el port.
+                DomainError::infra(
+                    ErrorCode::Infra004,
+                    format!("EventBridge PutEvents falló: {msg}"),
+                )
             })?;
 
         // Verificar errores por-entry

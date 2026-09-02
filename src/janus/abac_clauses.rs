@@ -5,7 +5,7 @@
 use serde_json::{json, Value};
 
 use crate::domain::errors::{DomainError, ErrorCode};
- // Import CedarCtx which holds boundaries eventually
+// Import CedarCtx which holds boundaries eventually
 
 pub struct OwnershipFields {
     pub owner_field: Option<String>,

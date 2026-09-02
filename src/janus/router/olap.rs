@@ -79,7 +79,7 @@ pub async fn execute_olap_query(
         .time_frame
         .as_ref()
         .and_then(|tf| crate::aegis::temporal_bridge::resolve_fbs_time_frame(tf))
-        .unwrap_or_else(|| crate::aegis::temporal_bridge::no_time_range());
+        .unwrap_or_else(crate::aegis::temporal_bridge::no_time_range);
 
     let ts_col = crate::aegis::sql::registry::get_hybrid_config(entity_type)
         .map(|config| config.timestamp_column.clone());
@@ -179,7 +179,7 @@ pub async fn execute_olap_query(
             if let Some(row_obj) = row_val.as_object_mut() {
                 let keys: Vec<String> = row_obj.keys().cloned().collect();
                 for key in keys {
-                    if key.starts_with("current_") {
+                    if let Some(base_alias) = key.strip_prefix("current_") {
                         let base_alias = &key["current_".len()..];
                         if let Some(val) = row_obj.get(&key).cloned() {
                             row_obj.entry(base_alias.to_string()).or_insert(val);

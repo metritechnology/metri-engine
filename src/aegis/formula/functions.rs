@@ -39,7 +39,7 @@ impl FormulaFunction for RoundFunction {
         None
     }
     fn evaluate(&self, args: &[f64]) -> Option<f64> {
-        let x = args.get(0)?;
+        let x = args.first()?;
         let n = *args.get(1).unwrap_or(&0.0) as i32;
         let factor = 10_f64.powi(n);
         Some((x * factor).round() / factor)
@@ -81,7 +81,7 @@ impl FormulaFunction for PowerFunction {
         Some(2)
     }
     fn evaluate(&self, args: &[f64]) -> Option<f64> {
-        let base = *args.get(0)?;
+        let base = *args.first()?;
         let exponent = *args.get(1)?;
         Some(base.powf(exponent))
     }
@@ -150,7 +150,7 @@ impl FormulaFunction for ModFunction {
         Some(2)
     }
     fn evaluate(&self, args: &[f64]) -> Option<f64> {
-        let x = args.get(0)?;
+        let x = args.first()?;
         let y = args.get(1)?;
         if *y == 0.0 {
             None
@@ -193,7 +193,7 @@ impl FormulaFunction for NullifFunction {
         Some(2)
     }
     fn evaluate(&self, args: &[f64]) -> Option<f64> {
-        let x = args.get(0)?;
+        let x = args.first()?;
         let y = args.get(1)?;
         if x == y {
             None
@@ -225,7 +225,7 @@ impl FormulaFunction for IfFunction {
         Some(3)
     }
     fn evaluate(&self, args: &[f64]) -> Option<f64> {
-        let cond = args.get(0)?;
+        let cond = args.first()?;
         let then_val = args.get(1)?;
         let else_val = args.get(2)?;
         Some(if *cond != 0.0 { *then_val } else { *else_val })
@@ -273,7 +273,7 @@ impl FormulaFunction for ClampFunction {
         Some(3)
     }
     fn evaluate(&self, args: &[f64]) -> Option<f64> {
-        let x = args.get(0)?;
+        let x = args.first()?;
         let lo = args.get(1)?;
         let hi = args.get(2)?;
         Some(x.clamp(*lo, *hi))

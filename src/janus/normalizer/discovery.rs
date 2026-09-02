@@ -16,8 +16,6 @@ impl NormalizerStrategy for DiscoveryNormalizer {
                 && !obj.contains_key("schemas"))
         {
             obj.insert("schemas".to_string(), json!([]));
-        } else if schemas.is_null() {
-            obj.insert("schemas".to_string(), json!([]));
         }
         if obj.get("has_next").map(|v| v.is_null()).unwrap_or(true) {
             obj.insert("has_next".to_string(), json!(false));

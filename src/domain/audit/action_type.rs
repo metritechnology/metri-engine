@@ -5,7 +5,6 @@
 // Mapea (request, result) → ActionType para el audit_log OLAP.
 // Dominio puro: sin I/O, sin efectos secundarios.
 
-
 /// Tipo de acción para el audit_log OLAP.
 /// [PORTED_FROM: (defn derive-action-type [request result])]
 #[derive(Debug, Clone, PartialEq, Eq)]

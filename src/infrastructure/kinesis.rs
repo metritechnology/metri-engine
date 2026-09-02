@@ -86,15 +86,9 @@ impl IStreamWriter for KinesisFirehoseWriter {
             .await
             .map_err(|e| {
                 let msg = format!("{e:?}");
-                let code = if msg.contains("AccessDeniedException") {
-                    ErrorCode::Infra005
-                } else if msg.contains("ServiceUnavailableException") {
-                    ErrorCode::Infra005
-                } else {
-                    ErrorCode::Infra005
-                };
+                // Clasificación pendiente: toda falla mapea a INFRA_005.
                 DomainError::infra(
-                    code,
+                    ErrorCode::Infra005,
                     format!("Firehose PutRecord falló en '{stream_name}': {msg}"),
                 )
             })?;
@@ -108,6 +102,12 @@ impl IStreamWriter for KinesisFirehoseWriter {
 use std::sync::{Arc, Mutex};
 
 pub struct StubStreamWriter;
+
+impl Default for StubStreamWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl StubStreamWriter {
     pub fn new() -> Self {
@@ -145,6 +145,12 @@ pub struct CapturedRecord {
     pub stream_name: String,
     pub partition_key: String,
     pub data: Vec<u8>,
+}
+
+impl Default for SpyStreamWriter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SpyStreamWriter {

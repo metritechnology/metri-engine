@@ -49,17 +49,17 @@ pub fn time_frame_to_cond(
             let end_expr = dialect.format_from_unixtime(&end.to_string());
             Some(
                 sea_query::Cond::all()
-                    .add(Expr::cust(&format!("{} >= {}", dt_col, start_expr)))
-                    .add(Expr::cust(&format!("{} <= {}", dt_col, end_expr))),
+                    .add(Expr::cust(format!("{} >= {}", dt_col, start_expr)))
+                    .add(Expr::cust(format!("{} <= {}", dt_col, end_expr))),
             )
         }
         (Some(start), None) => {
             let start_expr = dialect.format_from_unixtime(&start.to_string());
-            Some(sea_query::Cond::all().add(Expr::cust(&format!("{} >= {}", dt_col, start_expr))))
+            Some(sea_query::Cond::all().add(Expr::cust(format!("{} >= {}", dt_col, start_expr))))
         }
         (None, Some(end)) => {
             let end_expr = dialect.format_from_unixtime(&end.to_string());
-            Some(sea_query::Cond::all().add(Expr::cust(&format!("{} <= {}", dt_col, end_expr))))
+            Some(sea_query::Cond::all().add(Expr::cust(format!("{} <= {}", dt_col, end_expr))))
         }
         _ => None,
     }
@@ -287,11 +287,11 @@ pub fn build_comparison_cte_query(
                                 format!("\"{}\"", raw_field)
                             };
                             stat_exprs.push((
-                                Expr::cust(&format!("AVG({})", field_for_stats)),
+                                Expr::cust(format!("AVG({})", field_for_stats)),
                                 Some(format!("mean_{}", alias)),
                             ));
                             stat_exprs.push((
-                                Expr::cust(&dialect.format_stddev_samp(&field_for_stats)),
+                                Expr::cust(dialect.format_stddev_samp(&field_for_stats)),
                                 Some(format!("std_{}", alias)),
                             ));
                         }
@@ -337,20 +337,20 @@ pub fn build_comparison_cte_query(
             final_select.expr(Expr::cust("c.*"));
         } else {
             final_select.expr_as(
-                Expr::cust(&format!("c.\"{}\"", bucket_alias)),
+                Expr::cust(format!("c.\"{}\"", bucket_alias)),
                 Alias::new(&bucket_alias),
             );
         }
 
         for (_, alias) in &metric_exprs {
-            final_select.expr_as(Expr::cust(&format!("c.\"{}\"", alias)), Alias::new(alias));
+            final_select.expr_as(Expr::cust(format!("c.\"{}\"", alias)), Alias::new(alias));
         }
 
         for (cte_name, _) in &time_shift_ctes {
             for (_, alias) in &metric_exprs {
                 final_select.expr_as(
-                    Expr::cust(&format!("{}.\"{}\"", cte_name, alias)),
-                    Alias::new(&format!("{}_{}", cte_name, alias)),
+                    Expr::cust(format!("{}.\"{}\"", cte_name, alias)),
+                    Alias::new(format!("{}_{}", cte_name, alias)),
                 );
             }
         }
@@ -365,16 +365,16 @@ pub fn build_comparison_cte_query(
 
         for (_, alias) in &metric_exprs {
             final_select.expr_as(
-                Expr::cust(&format!("c.\"{}\"", alias)),
-                Alias::new(&format!("current_{}", alias)),
+                Expr::cust(format!("c.\"{}\"", alias)),
+                Alias::new(format!("current_{}", alias)),
             );
         }
 
         for (cte_name, _) in &time_shift_ctes {
             for (_, alias) in &metric_exprs {
                 final_select.expr_as(
-                    Expr::cust(&format!("{}.\"{}\"", cte_name, alias)),
-                    Alias::new(&format!("{}_{}", cte_name, alias)),
+                    Expr::cust(format!("{}.\"{}\"", cte_name, alias)),
+                    Alias::new(format!("{}_{}", cte_name, alias)),
                 );
             }
         }
@@ -395,7 +395,7 @@ pub fn build_comparison_cte_query(
                 );
                 final_select.expr_as(
                     Expr::cust(&z_expr),
-                    Alias::new(&format!("z_score_{}", alias)),
+                    Alias::new(format!("z_score_{}", alias)),
                 );
             }
         }

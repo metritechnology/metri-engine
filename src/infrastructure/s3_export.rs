@@ -145,6 +145,12 @@ impl IExportStorage for S3ExportStorage {
 
 pub struct StubExportStorage;
 
+impl Default for StubExportStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StubExportStorage {
     pub fn new() -> Self {
         info!("[StubExportStorage] Stub storage active (local mock URLs)");
