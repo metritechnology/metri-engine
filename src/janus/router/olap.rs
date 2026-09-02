@@ -179,7 +179,7 @@ pub async fn execute_olap_query(
             if let Some(row_obj) = row_val.as_object_mut() {
                 let keys: Vec<String> = row_obj.keys().cloned().collect();
                 for key in keys {
-                    if let Some(base_alias) = key.strip_prefix("current_") {
+                    if key.starts_with("current_") {
                         let base_alias = &key["current_".len()..];
                         if let Some(val) = row_obj.get(&key).cloned() {
                             row_obj.entry(base_alias.to_string()).or_insert(val);

@@ -985,7 +985,7 @@ fn extract_right_value(right_part: &str) -> Option<(Value, usize)> {
     let trimmed = right_part.trim_start();
     let offset = right_part.len() - trimmed.len();
 
-    if let Some(rest) = trimmed.strip_prefix('\'') {
+    if trimmed.starts_with('\'') {
         let rest = &trimmed[1..];
         if let Some(end_idx) = rest.find('\'') {
             let val_str = &rest[..end_idx];
