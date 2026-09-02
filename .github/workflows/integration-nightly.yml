@@ -1,0 +1,37 @@
+name: Integration (nightly)
+
+# Fase 0 — los tests #[ignore] corren contra DynamoDB Local + MinIO + ElasticMQ.
+# No bloquean PRs (necesitan contenedores); corren a diario y a demanda.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: flatc (FlatBuffers compiler)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatbuffers-compiler-dev
+
+      - name: Infra local (DynamoDB · MinIO · ElasticMQ)
+        run: make infra
+
+      - name: Tests de integración (#[ignore])
+        run: make test-integration
+
+      - name: Logs de infra si algo falló
+        if: failure()
+        run: docker compose logs --tail 100

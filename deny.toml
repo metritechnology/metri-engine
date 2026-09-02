@@ -1,0 +1,60 @@
+# Fase 0 — Puerta de supply-chain (cargo-deny).
+# Vulnerabilidades conocidas: bloquean. Licencias: solo permisivas.
+# Duplicados de versiones: visibles sin bloquear (el árbol AWS aún arrastra dos).
+
+[graph]
+all-features = false
+no-default-features = false
+
+[licenses]
+version = 2
+# metri-engine no se publica en crates.io (el binario va embebido en la Lambda);
+# su licencia es decisión del propietario y no bloquea la puerta.
+private = { ignore = true }
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "MIT-0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+  "MPL-2.0",
+  "CDLA-Permissive-2.0",
+  "OpenSSL",
+  "CC0-1.0",
+  "BSL-1.0",
+]
+confidence-threshold = 0.93
+
+[advisories]
+version = 2
+yanked = "warn"
+ignore = [
+  # ── Cadena TLS antigua — UNA sola causa raíz, UN solo follow-up ────────────
+  # tonic 0.11 (tls) arrastra rustls 0.22 → rustls-webpki 0.102, y el cliente
+  # HTTP del AWS SDK (hyper 0.14) arrastra rustls 0.21 → rustls-webpki 0.101.
+  # Todos los parches viven en rustls-webpki 0.103+, que exige la migración a
+  # tonic 0.12+/rustls 0.23 (y hyper 1 en el SDK). Excepciones registradas;
+  # LEVANTAR TODAS al aterrizar esa migración (plan de refactor, fase de
+  # dependencias). Alcance del riesgo: cliente TLS hacia servicios AWS — no
+  # afecta al servidor gRPC (Function URL termina TLS en CloudFront/WAF).
+  "RUSTSEC-2026-0098", # webpki: name constraints URI aceptadas (GHSA-965h-392x-2mh5)
+  "RUSTSEC-2026-0099", # webpki: name constraints DNS con wildcards (GHSA-xgp8-3hg3-c2mh)
+  "RUSTSEC-2026-0104", # webpki: panic alcanzable parseando CRLs
+  "RUSTSEC-2026-0049", # webpki: CRL no autoritativa por distributionPoint (impacto limitado)
+  "RUSTSEC-2026-0258", # h2 0.3: DATA frames vacíos sin límite (rama 0.4 ya parcheada)
+  "RUSTSEC-2025-0134", # rustls-pemfile archivado — sin upgrade seguro hasta migrar tonic
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

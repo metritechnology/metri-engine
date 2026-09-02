@@ -2,6 +2,8 @@
 name    = "metri-engine"
 version = "0.1.0"
 edition = "2021"
+# El binario va embebido en la Lambda (provided.al2023); no se publica en crates.io.
+publish = false
 
 # ─── Runtime asíncrono ────────────────────────────────────────────────────────
 [dependencies]

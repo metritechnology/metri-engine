@@ -26,6 +26,9 @@ jobs:
           sudo apt-get install -y -qq flatbuffers-compiler-dev
           flatc --version
 
+      - name: Formato (rustfmt — no negociable)
+        run: cargo fmt --check
+
       - name: Build
         run: cargo build --all-targets
 
@@ -35,15 +38,69 @@ jobs:
       - name: Referencia desactualizada (docs/reference)
         run: python3 scripts/docs/gen_reference.py --check
 
-      - name: Clippy (línea base registrada: 73 hallazgos al 2-sep-2026 (Fase 2: desde 348))
-        run: cargo clippy --all-targets 2>&1 | tee clippy_baseline.txt
-        continue-on-error: true
+      # Fase 0: los ERRORES de clippy (deny-by-default o compilación) bloquean.
+      # La salida se captura a archivo para que el gate decida, no `tee`.
+      - name: Clippy (captura de hallazgos)
+        run: cargo clippy --all-targets > clippy_baseline.txt 2>&1 || true
 
-      - name: Clippy no debe crecer
+      - name: Clippy — cero errores y sin crecer sobre la línea base
         run: |
-          COUNT=$(grep -c "^warning" clippy_baseline.txt || true)
-          echo "Hallazgos clippy: $COUNT"
-          if [ "$COUNT" -gt 73 ]; then
-            echo "::error::Clippy creció por encima de la línea base (73): $COUNT"
+          if grep -q "^error" clippy_baseline.txt; then
+            echo "::error::clippy reportó errores (no negociables):"
+            grep "^error" clippy_baseline.txt
             exit 1
           fi
+          # 88 = total REAL sobre árbol verde (el 73 anterior se midió sobre
+          # una compilación que fallaba en lib test y no contaba todos los
+          # targets). Origen: 348. Solo puede bajar.
+          COUNT=$(grep -c "^warning" clippy_baseline.txt || true)
+          echo "Hallazgos clippy: $COUNT"
+          if [ "$COUNT" -gt 88 ]; then
+            echo "::error::Clippy creció por encima de la línea base (88): $COUNT"
+            exit 1
+          fi
+
+  supply-chain:
+    # Fase 0 — licencias, advisories y duplicados de dependencias.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo-deny (deny.toml)
+        uses: EmbarkStudios/cargo-deny-action@v2
+
+  coverage:
+    # Fase 0 — línea base de cobertura SIN gate: se publica para que la
+    # tendencia sea visible; el umbral se fijará cuando la cifra sea estable.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: flatc (FlatBuffers compiler)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatbuffers-compiler-dev
+
+      - name: cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Cobertura unitaria (resumen)
+        run: cargo llvm-cov --lib --summary-only
+
+      - name: Reporte LCOV
+        run: cargo llvm-cov --lib --lcov --output-path lcov.info
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
