@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use serde_json::{json, Value};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::codice::{global as codice_global, validator};
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -99,6 +99,7 @@ impl OltpChannel {
 
         let mut ingested = 0usize;
         let mut outbox_count = 0usize;
+        let actor = ctx.user_id; // atribución de auditoría para todo el bulk
 
         // Concurrent ingestion of chunks to leverage in-memory DynamoDB performance
         for chunk in records.chunks(100) {
@@ -109,6 +110,7 @@ impl OltpChannel {
                 let tenant_id = tenant_id.clone();
                 let entity_type = entity_type.clone();
                 let raw_record = raw_record.clone();
+                let actor = actor.clone();
 
                 futures.push(tokio::spawn(async move {
                     let validated = Self::prepare_and_validate_payload_static(
@@ -135,7 +137,9 @@ impl OltpChannel {
                         attrs: validated,
                     };
 
-                    writer.transact_bulk_deferred(transact).await
+                    writer
+                        .transact_bulk_deferred(transact, Some(actor.as_str()))
+                        .await
                 }));
             }
 
@@ -280,11 +284,33 @@ impl OltpChannel {
             Vec::new()
         };
 
-        match self
+        // Colisión de tx (EAV_TX_004): la condición append-only protegió el
+        // histórico — el reintento mintea un tx nuevo y es siempre seguro.
+        let mut write_result = self
             .writer
-            .transact_with_projections(transact, projections)
-            .await
-        {
+            .transact_with_projections(transact.clone(), projections.clone(), Some(&ctx.user_id))
+            .await;
+        for attempt in 1..=2 {
+            match write_result {
+                Err(ref e) if e.code == ErrorCode::EavTx004 => {
+                    warn!(
+                        intento = attempt,
+                        "[OltpChannel] Colisión de tx (EAV_TX_004) — reintentando con tx nuevo"
+                    );
+                    write_result = self
+                        .writer
+                        .transact_with_projections(
+                            transact.clone(),
+                            projections.clone(),
+                            Some(&ctx.user_id),
+                        )
+                        .await;
+                }
+                _ => break,
+            }
+        }
+
+        match write_result {
             Ok(result) => {
                 info!(
                     entity_id = %result.entity_id,

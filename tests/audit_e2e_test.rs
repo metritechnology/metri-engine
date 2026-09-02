@@ -168,9 +168,14 @@ async fn test_audit_interceptor_crud_e2e() {
         status_obj.error_message
     );
 
+    // El engine es la autoridad del id para entidades de negocio: usa el id
+    // DEVUELTO, no el propuesto (el UPDATE-fantasma ya no hace upsert).
+    let authoritative_id = tx_resp.entity_id.clone();
+    assert!(!authoritative_id.is_empty(), "CREATE devuelve entity_id");
+
     // 2. UPDATE asset
     let update_payload = json!({
-        "id": asset_id,
+        "id": authoritative_id,
         "name": "Bomba Centrifuga Actualizada E2E",
     });
 
@@ -211,7 +216,7 @@ async fn test_audit_interceptor_crud_e2e() {
 
     // 3. DELETE asset
     let delete_payload = json!({
-        "id": asset_id,
+        "id": authoritative_id,
     });
 
     let mut req = tonic::Request::new(TransactionRequest {
@@ -320,7 +325,7 @@ async fn test_audit_interceptor_crud_e2e() {
         } else if i == 2 {
             assert_eq!(
                 req_payload.get("id").and_then(|v| v.as_str()),
-                Some(asset_id.as_str())
+                Some(authoritative_id.as_str())
             );
         }
     }
@@ -380,9 +385,18 @@ async fn test_audit_time_travel_history() {
         status_obj.error_message
     );
 
+    // El engine es la autoridad del id: para entidades de negocio genera
+    // ULID propio aunque el payload traiga uno. El UPDATE debe operar sobre
+    // el id DEVUELTO, no sobre el propuesto.
+    let authoritative_id = tx_resp.entity_id.clone();
+    assert!(
+        !authoritative_id.is_empty(),
+        "El CREATE debe devolver el entity_id real"
+    );
+
     // 2. UPDATE asset (change name)
     let update_payload = json!({
-        "id": asset_id,
+        "id": authoritative_id,
         "name": "Bomba Centrifuga Modificada",
     });
 
@@ -423,7 +437,7 @@ async fn test_audit_time_travel_history() {
     let query_ast = json!({
         "entity": "asset",
         "select_tree": {
-            "id": asset_id,
+            "id": authoritative_id,
             "_history": true
         }
     });
@@ -517,6 +531,7 @@ async fn test_audit_time_travel_history() {
     let mut attr_name_idx = None;
     let mut value_idx = None;
     let mut op_idx = None;
+    let mut user_idx = None;
 
     for (idx, col) in columns.iter().enumerate() {
         if col.key == "attr_name" {
@@ -525,15 +540,19 @@ async fn test_audit_time_travel_history() {
             value_idx = Some(idx);
         } else if col.key == "op" {
             op_idx = Some(idx);
+        } else if col.key == "user_id" {
+            user_idx = Some(idx);
         }
     }
 
     let attr_name_idx = attr_name_idx.expect("attr_name column missing");
     let value_idx = value_idx.expect("value column missing");
     let op_idx = op_idx.expect("op column missing");
+    let user_idx = user_idx.expect("user_id column missing");
 
     let mut found_original = false;
     let mut found_modified = false;
+    let mut found_actor = false;
     let rows_debug;
 
     if let Some(PayloadStrategy::RowsJson(row_list)) = &row_set.payload_strategy {
@@ -556,6 +575,14 @@ async fn test_audit_time_travel_history() {
                 _ => None,
             };
 
+            let user = match vals[user_idx].kind.as_ref() {
+                Some(prost_types::value::Kind::StringValue(s)) => Some(s.as_str()),
+                _ => None,
+            };
+            if user == Some(user_id) {
+                found_actor = true;
+            }
+
             if attr_name == Some("name") {
                 if value == Some("Bomba Centrifuga Original") && op == Some(true) {
                     found_original = true;
@@ -577,6 +604,11 @@ async fn test_audit_time_travel_history() {
     assert!(
         found_modified,
         "Should find history entry for modified name"
+    );
+    assert!(
+        found_actor,
+        "La timeline debe atribuir cada transacción a su actor ({}): el registro TX del writer alimenta user_id",
+        user_id
     );
 }
 

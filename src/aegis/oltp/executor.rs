@@ -271,6 +271,22 @@ impl OltpExecutor {
                         .pull_reader
                         .history(target_tenant, entity_id, None)
                         .await?;
+                    let mut actors: std::collections::HashMap<u64, String> =
+                        std::collections::HashMap::new();
+                    for tx in entries
+                        .iter()
+                        .map(|e| e.tx_id)
+                        .collect::<std::collections::BTreeSet<_>>()
+                    {
+                        if let Some(actor) = self
+                            .pull_reader
+                            .ddb
+                            .get_tx_actor(self.pull_reader.table.as_str(), target_tenant, tx)
+                            .await
+                        {
+                            actors.insert(tx, actor);
+                        }
+                    }
                     let rows: Vec<Value> = entries.into_iter().map(|entry| {
                         json!({
                             "attr_name": entry.attr_name,
@@ -287,7 +303,11 @@ impl OltpExecutor {
                             },
                             "tx_id": entry.tx_id,
                             "op": entry.op,
-                            "user_id": Value::Null,
+                            "user_id": actors
+                                .get(&entry.tx_id)
+                                .cloned()
+                                .map(serde_json::Value::String)
+                                .unwrap_or(Value::Null),
                             "timestamp": entry.tx_id,
                         })
                     }).collect();
@@ -1158,6 +1178,26 @@ async fn fetch_history_timeline(
                     .pull_reader
                     .history(target_tenant, entity_id, None)
                     .await?;
+
+                // Atribución de actor: el registro de cada transacción vive en
+                // la partición TX; sin él, user_id sería null en el trail.
+                let mut actors: std::collections::HashMap<u64, String> =
+                    std::collections::HashMap::new();
+                for tx in entries
+                    .iter()
+                    .map(|e| e.tx_id)
+                    .collect::<std::collections::BTreeSet<_>>()
+                {
+                    if let Some(actor) = executor
+                        .pull_reader
+                        .ddb
+                        .get_tx_actor(executor.pull_reader.table.as_str(), target_tenant, tx)
+                        .await
+                    {
+                        actors.insert(tx, actor);
+                    }
+                }
+
                 let rows: Vec<Value> = entries.into_iter().map(|entry| {
                     json!({
                         "attr_name": entry.attr_name,
@@ -1174,7 +1214,11 @@ async fn fetch_history_timeline(
                         },
                         "tx_id": entry.tx_id,
                         "op": entry.op,
-                        "user_id": Value::Null,
+                        "user_id": actors
+                            .get(&entry.tx_id)
+                            .cloned()
+                            .map(serde_json::Value::String)
+                            .unwrap_or(Value::Null),
                         "timestamp": entry.tx_id,
                     })
                 }).collect();

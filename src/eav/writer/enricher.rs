@@ -126,7 +126,26 @@ pub fn generate_entity_id() -> String {
     Ulid::new().to_string()
 }
 
-/// Genera un TX ID monotónico basado en el timestamp del ULID.
+/// Reloj de transacciones: la ÚNICA puerta de minteo de `tx_id` del motor.
+///
+/// Monotónico por proceso: si dos transacciones caen en el mismo milisegundo,
+/// la segunda recibe `anterior + 1` en lugar de repetir el valor — así ningún
+/// par (attr, tx, op) colisiona por reloj dentro del mismo engine, y las
+/// condiciones `attribute_not_exists` del writer convierten cualquier colisión
+/// remanente (otra réplica, reloj hacia atrás) en `EAV_TX_004`, no en pérdida
+/// silenciosa de histórico.
 pub fn generate_tx_id() -> u64 {
-    Ulid::new().timestamp_ms()
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAST_TX: AtomicU64 = AtomicU64::new(0);
+    loop {
+        let now = Ulid::new().timestamp_ms();
+        let last = LAST_TX.load(Ordering::Relaxed);
+        let next = if now > last { now } else { last + 1 };
+        if LAST_TX
+            .compare_exchange(last, next, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return next;
+        }
+    }
 }

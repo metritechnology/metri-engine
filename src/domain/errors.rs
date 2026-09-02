@@ -86,6 +86,7 @@ pub enum ErrorCode {
     JnsRef002,
     JnsConflict001,
     EavTx001,
+    EavTx004,
     GrpcTenant001,
     InfraAthena005,
     InfraCedar002,
@@ -158,6 +159,7 @@ impl ErrorCode {
         ErrorCode::JnsRef002,
         ErrorCode::JnsConflict001,
         ErrorCode::EavTx001,
+        ErrorCode::EavTx004,
         ErrorCode::GrpcTenant001,
         ErrorCode::InfraAthena005,
         ErrorCode::InfraCedar002,
@@ -238,6 +240,7 @@ impl ErrorCode {
             ErrorCode::JnsRef002 => "JNS_REF_002",
             ErrorCode::JnsConflict001 => "JNS_CONFLICT_001",
             ErrorCode::EavTx001 => "EAV_TX_001",
+            ErrorCode::EavTx004 => "EAV_TX_004",
             ErrorCode::GrpcTenant001 => "GRPC_TENANT_001",
             ErrorCode::InfraAthena005 => "INFRA_ATHENA_005",
             ErrorCode::InfraCedar002 => "INFRA_CEDAR_002",
@@ -273,6 +276,7 @@ impl ErrorCode {
                     | ErrorCode::Eav002
                     | ErrorCode::Eav003
                     | ErrorCode::Eav005
+                    | ErrorCode::EavTx004
                     | ErrorCode::Aeg003
                     | ErrorCode::Aeg005
                     | ErrorCode::Infra001
@@ -315,7 +319,8 @@ impl ErrorCode {
             | ErrorCode::Eav004
             | ErrorCode::Eav005
             | ErrorCode::EavFts001
-            | ErrorCode::EavTx001 => "eav",
+            | ErrorCode::EavTx001
+            | ErrorCode::EavTx004 => "eav",
             ErrorCode::Cod001 | ErrorCode::Cod002 | ErrorCode::Cod003 | ErrorCode::CodScope001 => {
                 "codice"
             }

@@ -54,6 +54,34 @@ pub struct TransactResult {
     pub outbox_count: usize,
 }
 
+/// Deduplica datoms por clave de almacenamiento (entity, attr_id, tx, op),
+/// conservando la ÚLTIMA ocurrencia — el intento final de la transacción.
+///
+/// Hoy el enriquecimiento meta puede re-emitir datoms que el payload ya trajo;
+/// sin dedup, `TransactWriteItems` rechazaría la transacción entera por claves
+/// duplicadas (AWS real lo hace; DynamoDB Local las colapsa en silencio, que es
+/// peor: el despliegue descubre el bug en producción).
+fn dedup_datoms_por_sk(datoms: Vec<Datom>) -> Vec<Datom> {
+    let mut index: HashMap<(String, u16, u64, bool), usize> = HashMap::new();
+    let mut unique: Vec<Datom> = Vec::with_capacity(datoms.len());
+    for datom in datoms {
+        let key = (
+            datom.entity_id.clone(),
+            datom.attr_id,
+            datom.tx_id,
+            datom.op,
+        );
+        match index.get(&key) {
+            Some(&pos) => unique[pos] = datom,
+            None => {
+                index.insert(key, unique.len());
+                unique.push(datom);
+            }
+        }
+    }
+    unique
+}
+
 /// EavWriter — motor de escritura ACID.
 /// Reemplaza d/transact de Datahike con TransactWriteItems de DynamoDB.
 #[derive(Clone)]
@@ -126,7 +154,8 @@ impl EavWriter {
     }
 
     pub async fn transact(&self, payload: TransactPayload) -> Result<TransactResult, DomainError> {
-        self.transact_with_projections(payload, Vec::new()).await
+        self.transact_with_projections(payload, Vec::new(), None)
+            .await
     }
 
     /// Igual que `transact`, pero además escribe N entidades proyectadas
@@ -138,6 +167,31 @@ impl EavWriter {
         &self,
         payload: TransactPayload,
         projections: Vec<crate::janus_router::saga::SagaProjection>,
+        actor: Option<&str>,
+    ) -> Result<TransactResult, DomainError> {
+        self.transact_inner(payload, projections, actor, None).await
+    }
+
+    /// Costura de prueba: fuerza el `tx_id` para verificar que la condición
+    /// append-only rechaza la colisión con `EAV_TX_004` en lugar de
+    /// sobrescribir. Solo visible dentro del crate (tests del writer).
+    pub(crate) async fn transact_with_tx(
+        &self,
+        payload: TransactPayload,
+        projections: Vec<crate::janus_router::saga::SagaProjection>,
+        actor: Option<&str>,
+        forced_tx: u64,
+    ) -> Result<TransactResult, DomainError> {
+        self.transact_inner(payload, projections, actor, Some(forced_tx))
+            .await
+    }
+
+    async fn transact_inner(
+        &self,
+        payload: TransactPayload,
+        projections: Vec<crate::janus_router::saga::SagaProjection>,
+        actor: Option<&str>,
+        forced_tx: Option<u64>,
     ) -> Result<TransactResult, DomainError> {
         // 1. Verificar entity_type en registry
         crate::codice::global()
@@ -149,8 +203,8 @@ impl EavWriter {
                 )
             })?;
 
-        // 2. Generar TX_ID — ULID epoch ms garantiza monotonía
-        let tx_id = Ulid::new().timestamp_ms();
+        // 2. Generar TX_ID — reloj monotónico (o el forzado por el test)
+        let tx_id = forced_tx.unwrap_or_else(crate::eav::writer::generate_tx_id);
 
         // 3. Generar entity_id si es creación
         let entity_id = match &payload.entity_id {
@@ -168,6 +222,21 @@ impl EavWriter {
         } else {
             std::collections::HashMap::new()
         };
+
+        // Invariante de existencia: un UPDATE/DELETE presupone una entidad
+        // previa. Sin este guard, una entidad fantasma (id equivocado, id de
+        // cliente ignorado en el CREATE) se fabrica aquí como upsert silencioso
+        // y el audit trail del recurso real queda amputado.
+        if matches!(payload.op, TransactOp::Update | TransactOp::Delete) && active_attrs.is_empty()
+        {
+            return Err(DomainError::eav(
+                ErrorCode::Eav002,
+                format!(
+                    "UPDATE/DELETE sobre entidad inexistente: '{}' (tenant '{}') — el motor no hace upsert",
+                    entity_id, payload.tenant_id
+                ),
+            ));
+        }
 
         if payload.op == TransactOp::Delete {
             for (attr_name, (attr_id, val)) in active_attrs {
@@ -342,7 +411,16 @@ impl EavWriter {
         }
 
         // 5. Construir TransactWriteItems para la capa ACID
+        let datoms = dedup_datoms_por_sk(datoms);
         let mut write_items = self.build_write_items(&datoms)?;
+        // Registro de la transacción: atribución de actor para el audit trail.
+        write_items.push(self.tx_registry_item(
+            &payload.tenant_id,
+            tx_id,
+            &payload,
+            &entity_id,
+            actor,
+        )?);
         let datom_count = datoms.len();
 
         // 5b. Items de reclamación de las restricciones declaradas.
@@ -451,6 +529,7 @@ impl EavWriter {
     pub async fn transact_bulk_deferred(
         &self,
         payload: TransactPayload,
+        actor: Option<&str>,
     ) -> Result<TransactResult, DomainError> {
         // 1. Verificar entity_type en registry
         crate::codice::global()
@@ -463,7 +542,7 @@ impl EavWriter {
             })?;
 
         // 2. Generar TX_ID
-        let tx_id = Ulid::new().timestamp_ms();
+        let tx_id = crate::eav::writer::generate_tx_id();
 
         // 3. Generar entity_id si es creación
         let entity_id = match &payload.entity_id {
@@ -481,6 +560,21 @@ impl EavWriter {
         } else {
             std::collections::HashMap::new()
         };
+
+        // Invariante de existencia: un UPDATE/DELETE presupone una entidad
+        // previa. Sin este guard, una entidad fantasma (id equivocado, id de
+        // cliente ignorado en el CREATE) se fabrica aquí como upsert silencioso
+        // y el audit trail del recurso real queda amputado.
+        if matches!(payload.op, TransactOp::Update | TransactOp::Delete) && active_attrs.is_empty()
+        {
+            return Err(DomainError::eav(
+                ErrorCode::Eav002,
+                format!(
+                    "UPDATE/DELETE sobre entidad inexistente: '{}' (tenant '{}') — el motor no hace upsert",
+                    entity_id, payload.tenant_id
+                ),
+            ));
+        }
 
         if payload.op == TransactOp::Delete {
             for (attr_name, (attr_id, val)) in active_attrs {
@@ -585,7 +679,7 @@ impl EavWriter {
             &payload.tenant_id,
             &payload.entity_type,
             &entity_id,
-            payload.op,
+            payload.op.clone(),
             &payload.attrs,
             tx_id,
         )? {
@@ -594,7 +688,15 @@ impl EavWriter {
         }
 
         // 5. Construir TransactWriteItems
-        let write_items = self.build_write_items(&datoms)?;
+        let datoms = dedup_datoms_por_sk(datoms);
+        let mut write_items = self.build_write_items(&datoms)?;
+        write_items.push(self.tx_registry_item(
+            &payload.tenant_id,
+            tx_id,
+            &payload,
+            &entity_id,
+            actor,
+        )?);
         let datom_count = datoms.len();
 
         // 6. Lanzar FTS de forma asíncrona concurrente
@@ -627,6 +729,52 @@ impl EavWriter {
             datoms: datom_count,
             outbox_count,
         })
+    }
+
+    /// Item de registro de la transacción (partición `T#<tenant>#TX`).
+    ///
+    /// La transacción pasa a ser una entidad de primera clase: guarda quién
+    /// (actor de sesión), qué (entidad y operación) y cuándo (el propio tx_id
+    /// es epoch ms). La timeline de auditoría consulta esta partición para
+    /// atribuir cada datom — sin ella, `user_id` es null en el histórico.
+    fn tx_registry_item(
+        &self,
+        tenant_id: &str,
+        tx_id: u64,
+        payload: &TransactPayload,
+        entity_id: &str,
+        actor: Option<&str>,
+    ) -> Result<TransactWriteItem, DomainError> {
+        let op_str = match &payload.op {
+            TransactOp::Create => "CREATE",
+            TransactOp::Update => "UPDATE",
+            TransactOp::Delete => "DELETE",
+        };
+        let actor = actor.unwrap_or("system").to_string();
+        let mut item = HashMap::new();
+        item.insert(
+            "PK".to_string(),
+            AttributeValue::S(format!("T#{tenant_id}#TX")),
+        );
+        item.insert("SK".to_string(), av_binary(tx_id.to_be_bytes().to_vec()));
+        item.insert("actor".to_string(), AttributeValue::S(actor));
+        item.insert(
+            "entity_type".to_string(),
+            AttributeValue::S(payload.entity_type.clone()),
+        );
+        item.insert(
+            "entity_id".to_string(),
+            AttributeValue::S(entity_id.to_string()),
+        );
+        item.insert("op".to_string(), AttributeValue::S(op_str.to_string()));
+        let put = Put::builder()
+            .table_name(&self.table)
+            .set_item(Some(item))
+            // Un tx_id repetido no es idempotencia: es una colisión.
+            .condition_expression("attribute_not_exists(PK) AND attribute_not_exists(SK)")
+            .build()
+            .map_err(|e| DomainError::eav(ErrorCode::Eav001, format!("Put builder error: {e}")))?;
+        Ok(TransactWriteItem::builder().put(put).build())
     }
 
     /// Construye todos los TransactWriteItems para los 4 índices EAV.
@@ -674,6 +822,15 @@ impl EavWriter {
                         Put::builder()
                             .table_name(&self.table)
                             .set_item(Some(eavt_item))
+                            // Invariante append-only: el SK ya codifica
+                            // (attr_id, tx_id, op); si la clave existe, algo
+                            // intenta reescribir historia (colisión de tx,
+                            // reintento, reloj atrás). La condición lo vuelve
+                            // un fallo de transacción (EAV_TX_004), nunca una
+                            // sobrescritura silenciosa.
+                            .condition_expression(
+                                "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+                            )
                             .build()
                             .map_err(|e| {
                                 DomainError::eav(

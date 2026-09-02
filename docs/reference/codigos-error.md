@@ -33,7 +33,7 @@ Versión del catálogo: **2.0.0**
 | `CDX_002` | codice | 400 | INVALID_ARGUMENT | no | Model validation failed — entity JSON schema does not conform to Códice contract |
 | `CDX_003` | codice | 404 | NOT_FOUND | no | Entity type not found in Códice registry — unknown entity_type in request |
 
-## Familia `eav` (7 códigos)
+## Familia `eav` (8 códigos)
 
 | Código | Etapa | HTTP | gRPC | Reintentable | Descripción |
 |---|---|---|---|---|---|
@@ -44,6 +44,7 @@ Versión del catálogo: **2.0.0**
 | `EAV_TX_001` | eav-writer | 500 | INTERNAL | sí | DynamoDB TransactWriteItems returned TransactionCanceledException |
 | `EAV_TX_002` | eav-writer | 507 | RESOURCE_EXHAUSTED | no | EAV transaction exceeded 100-item DynamoDB limit after chunking — degraded consistency mode activated |
 | `EAV_TX_003` | eav-writer | 409 | ABORTED | sí | Optimistic locking failed — entity version changed between read and write (ConcurrentModification) |
+| `EAV_TX_004` | eav-writer | 409 | ABORTED | sí | Datom write collision — conditional write detected an existing (attr_id, tx_id, op); the append-only history invariant refused the overwrite. Retry re-mints a fresh tx_id |
 
 ## Familia `fml` (13 códigos)
 

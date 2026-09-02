@@ -192,6 +192,17 @@ description      = "Optimistic locking failed — entity version changed between
 context_required = ["entity_id", "expected_version", "tenant_id"]
 retryable        = true
 
+[[errors]]
+code             = "EAV_TX_004"
+family           = "eav"
+stage            = "eav-writer"
+severity         = "error"
+http_status      = 409
+grpc_status      = "ABORTED"
+description      = "Datom write collision — conditional write detected an existing (attr_id, tx_id, op); the append-only history invariant refused the overwrite. Retry re-mints a fresh tx_id"
+context_required = ["entity_id", "tx_id", "tenant_id"]
+retryable        = true
+
 # ══════════════════════════════════════════════════════════════════════════════
 # FAMILIA JANUS — Read Path (AST Compiler / Cerebro)
 # ══════════════════════════════════════════════════════════════════════════════

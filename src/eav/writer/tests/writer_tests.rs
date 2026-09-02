@@ -17,6 +17,17 @@ async fn writer() -> EavWriter {
     std::env::set_var("AWS_ACCESS_KEY_ID", "test");
     std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
     std::env::set_var("AWS_REGION", "us-east-1");
+    // El writer valida entity_type contra el Códice global: inicializarlo una
+    // sola vez por proceso (los tests del writer no comparten setup con otros).
+    static CODICE: std::sync::Once = std::sync::Once::new();
+    CODICE.call_once(|| {
+        if crate::codice::registry::global_opt().is_none() {
+            let models = std::path::Path::new("config/models");
+            let (registry, _) = crate::codice::CodeRegistry::build(models)
+                .expect("Códice: registry de config/models");
+            crate::codice::init_global(registry);
+        }
+    });
     EavWriter::new(Arc::new(DynamoClient::new(TABLA).await), TABLA)
 }
 
@@ -150,7 +161,7 @@ async fn bulk_deferred_escribe_y_es_visible() {
     let tenant = tenant_nuevo();
 
     let res = w
-        .transact_bulk_deferred(payload_nueva(&tenant))
+        .transact_bulk_deferred(payload_nueva(&tenant), None)
         .await
         .expect("Bulk deferred");
     assert!(res.datoms >= 2);
@@ -183,4 +194,107 @@ async fn entity_type_desconocido_rechaza_con_eav004() {
     };
     let err = w.transact(payload).await.expect_err("Debe rechazar");
     assert_eq!(err.code, crate::domain::errors::ErrorCode::Eav004);
+}
+
+#[tokio::test]
+#[ignore]
+async fn update_de_entidad_inexistente_falla_con_eav002() {
+    let w = writer().await;
+    let tenant = tenant_nuevo();
+
+    let mut attrs = HashMap::new();
+    attrs.insert("status".to_string(), DatomValue::Str("open".to_string()));
+    let upd = TransactPayload {
+        tenant_id: tenant,
+        entity_id: Some("entidad_fantasma".to_string()),
+        entity_type: "work_order".to_string(),
+        attrs,
+        op: TransactOp::Update,
+    };
+
+    let err = w
+        .transact(upd)
+        .await
+        .expect_err("Un UPDATE sobre entidad inexistente NO puede hacer upsert");
+    assert_eq!(err.code, crate::domain::errors::ErrorCode::Eav002);
+}
+
+#[tokio::test]
+#[ignore]
+async fn colision_de_tx_se_rechaza_y_el_historico_queda_intacto() {
+    let w = writer().await;
+    let tenant = tenant_nuevo();
+    let res = w.transact(payload_nueva(&tenant)).await.expect("Create");
+    let tx_create = res.tx_id;
+
+    // Reutilizar el tx del CREATE fuerza la colisión: el assert del nuevo
+    // valor caería sobre un SK (attr, tx, op) ya ocupado. La condición
+    // append-only debe anular la TX completa con EAV_TX_004.
+    let mut attrs = HashMap::new();
+    attrs.insert("status".to_string(), DatomValue::Str("closed".to_string()));
+    let upd = TransactPayload {
+        tenant_id: tenant.clone(),
+        entity_id: Some(res.entity_id.clone()),
+        entity_type: "work_order".to_string(),
+        attrs,
+        op: TransactOp::Update,
+    };
+    let err = w
+        .transact_with_tx(upd, Vec::new(), None, tx_create)
+        .await
+        .expect_err("La colisión de datom debe rechazarse, no sobrescribirse");
+    assert_eq!(err.code, crate::domain::errors::ErrorCode::EavTx004);
+
+    // El UPDATE falló entero: el estado vigente sigue siendo el del CREATE.
+    let map = w
+        .reader()
+        .pull(&tenant, &res.entity_id, None)
+        .await
+        .expect("Pull tras colisión");
+    assert_eq!(
+        map.get("status"),
+        Some(&DatomValue::Str("open".to_string())),
+        "El UPDATE anulado no puede alterar el estado vigente"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn update_preserva_el_historico_con_par_retract_assert() {
+    let w = writer().await;
+    let tenant = tenant_nuevo();
+    let res = w.transact(payload_nueva(&tenant)).await.expect("Create");
+
+    let mut attrs = HashMap::new();
+    attrs.insert("status".to_string(), DatomValue::Str("closed".to_string()));
+    let upd = TransactPayload {
+        tenant_id: tenant.clone(),
+        entity_id: Some(res.entity_id.clone()),
+        entity_type: "work_order".to_string(),
+        attrs,
+        op: TransactOp::Update,
+    };
+    w.transact(upd).await.expect("Update");
+
+    let entries = w
+        .reader()
+        .history(&tenant, &res.entity_id, Some("status"))
+        .await
+        .expect("History");
+
+    let asserts: Vec<_> = entries.iter().filter(|e| e.op).collect();
+    let retracts: Vec<_> = entries.iter().filter(|e| !e.op).collect();
+    assert_eq!(asserts.len(), 2, "assert open + assert closed");
+    assert_eq!(retracts.len(), 1, "un retract del valor open");
+    assert!(
+        !entries.is_empty() && entries.windows(2).all(|w| w[0].tx_id <= w[1].tx_id),
+        "el historial queda ordenado por tx"
+    );
+    // El assert del valor "open" sobrevive: el histórico NO se sobrescribe.
+    assert!(
+        asserts
+            .iter()
+            .any(|e| e.value == Some(DatomValue::Str("open".to_string()))),
+        "el valor original debe seguir consultable en el histórico"
+    );
 }

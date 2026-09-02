@@ -112,6 +112,25 @@ impl DynamoClient {
     //
     // Zero-Drop Policy: chunking de 100 items máximo por transacción.
 
+    /// Actor registrado para una transacción (partición `T#<tenant>#TX` que
+    /// escribe el writer). `None` para escrituras de sistema o transacciones
+    /// anteriores a la introducción del registro.
+    pub async fn get_tx_actor(
+        &self,
+        table_name: &str,
+        tenant_id: &str,
+        tx_id: u64,
+    ) -> Option<String> {
+        let pk = format!("T#{tenant_id}#TX");
+        let item = self
+            .get_item(table_name, &pk, Some(tx_id.to_be_bytes().as_ref()))
+            .await
+            .ok()??;
+        item.get("actor")
+            .and_then(|v| v.as_s().ok())
+            .map(|s| s.to_string())
+    }
+
     pub async fn transact_write(
         &self,
         items: Vec<aws_sdk_dynamodb::types::TransactWriteItem>,
@@ -133,10 +152,30 @@ impl DynamoClient {
                 .send()
                 .await
                 .map_err(|e| {
-                    DomainError::eav(
-                        ErrorCode::Eav001,
-                        format!("TransactWriteItems falló: {e:?}"),
-                    )
+                    // Un ConditionalCheckFailed aquí es el invariante
+                    // append-only disparando: alguien intentó escribir un
+                    // datom que ya existe (colisión de tx). No es un fallo
+                    // genérico de infraestructura — es reintentable con tx
+                    // nuevo (el route lo hace) y NUNCA debe enmascararse
+                    // como sobrescritura silenciosa.
+                    let collision = e
+                        .as_service_error()
+                        .map(|se| {
+                            se.meta().code() == Some("TransactionCanceledException")
+                                && se.to_string().contains("ConditionalCheckFailed")
+                        })
+                        .unwrap_or(false);
+                    if collision {
+                        DomainError::eav(
+                            ErrorCode::EavTx004,
+                            format!("Datom write collision — append-only invariant: {e:?}"),
+                        )
+                    } else {
+                        DomainError::eav(
+                            ErrorCode::Eav001,
+                            format!("TransactWriteItems falló: {e:?}"),
+                        )
+                    }
                 })?;
         }
         Ok(())
