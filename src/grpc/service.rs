@@ -1049,7 +1049,7 @@ impl MetriService for MetriGrpcService {
         let authenticated_ctx = self
             .authorize_read(
                 "Query",
-                &action_str,
+                action_str,
                 &target_entity,
                 &target_domains,
                 &auth_header,
