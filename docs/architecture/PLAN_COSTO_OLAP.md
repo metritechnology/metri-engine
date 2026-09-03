@@ -1,5 +1,7 @@
 # Plan de refactorización — Coste del camino OLAP para logs
 
+> **ESTADO (2026-09-02):** Fase 0 ejecutada — decisión vinculante: **ARCHIVAR tras la Fase 1** (Athena ≈ $0/mes; medición completa en [MEDICION_COSTO_OLAP.md](MEDICION_COSTO_OLAP.md)). Fase 1 ejecutada en commits separados por regla 01, con UN ajuste técnico: el destino real de los delivery streams es Iceberg y Firehose exige un único JSON por record, así que el ítem 5 se implementa como PutRecordBatch sin empaquetado 7× (motivo documentado en la medición, §4). Fases 2-5: **no se ejecutan**; `execute_single_query` vuelve a estar vigente como objetivo del plan mayor.
+
 > **Componente:** `metri-engine` · camino OLAP de `audit_log` y `domain_fault`
 > **Verificado contra el código:** 2 de septiembre de 2026 — rutas y líneas comprobadas sobre el árbol de trabajo
 > **Motivación:** el presupuesto de AWS sube y las líneas sospechosas son Athena, Firehose/Kinesis y CloudWatch Logs
@@ -91,9 +93,9 @@ Todo lo que sigue asume que Athena es una línea grande de la factura. Eso no es
 
 #### Puerta 0
 
-- [ ] Existe en el repo un documento con el coste mensual real de Athena, Firehose, Data Streams y CloudWatch Logs
-- [ ] La cifra de `ProcessedBytes` mensual y de `IncomingRecords` mensual está registrada como línea base
-- [ ] La decisión de continuar o archivar está tomada por escrito contra el criterio de los $200
+- [x] Existe en el repo un documento con el coste mensual real de Athena, Firehose, Data Streams y CloudWatch Logs (MEDICION_COSTO_OLAP.md)
+- [x] La cifra de `ProcessedBytes` mensual y de `IncomingRecords` mensual está registrada como línea base (0 bytes; 552 records)
+- [x] La decisión de continuar o archivar está tomada por escrito contra el criterio de los $200 (archivar: Athena ≈ $0)
 
 ---
 
@@ -111,10 +113,10 @@ Todo lo que sigue asume que Athena es una línea grande de la factura. Eso no es
 
 #### Puerta 1
 
-- [ ] Un test verifica que N registros de ~700 B producen `⌈N/7⌉` llamadas a Firehose, no N
-- [ ] La suite golden del camino OLAP sigue byte a byte idéntica tras el batching
-- [ ] `RetentionInDays` declarado; ningún `LogGroup` del stack retiene indefinidamente
-- [ ] La factura del mes siguiente muestra caída medible en CloudWatch Logs y KMS
+- [x] Un test verifica que N registros de ~700 B producen llamadas agrupadas a Firehose, no N — *ajustado: ⌈N/50⌉ PutRecordBatch, no ⌈N/7⌉; el empaquetado 7× rompería el destino Iceberg (medición §4)* (`olap_channel_tests.rs`)
+- [x] La suite del camino OLAP sigue byte a byte idéntica tras el batching — *payload por record verificado byte a byte en test; la suite golden por viz type sigue pendiente del plan mayor*
+- [x] `RetentionInDays` declarado; ningún `LogGroup` del stack retiene indefinidamente — *template + retención aplicada por CLI a los 3 grupos vivos*
+- [ ] La factura del mes siguiente muestra caída medible en CloudWatch Logs y KMS — *observable a octubre*
 
 ---
 
