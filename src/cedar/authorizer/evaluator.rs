@@ -597,3 +597,217 @@ pub(crate) fn step4_analytical(
 fn is_mutational_action(action: &str) -> bool {
     matches!(action, "CREATE" | "UPDATE" | "DELETE" | "UPSERT")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cedar::authorizer::RoleBoundary;
+
+    fn principal_with_grants(grants: Vec<serde_json::Value>) -> PrincipalData {
+        PrincipalData {
+            user_id: "usr_test".to_string(),
+            tenant_id: "tnt_01".to_string(),
+            status: "ACTIVE".to_string(),
+            user_type: "INTERNAL".to_string(),
+            company_id: String::new(),
+            roles: ["role_test".to_string()].into_iter().collect(),
+            roles_boundaries: vec![RoleBoundary {
+                role_id: "role_test".to_string(),
+                grants,
+                permitted_locations: vec![],
+                permitted_assets: vec![],
+            }],
+            time_restrictions: vec![],
+            group_allowed_locations: vec![],
+            group_allowed_assets: vec![],
+            groups: HashSet::new(),
+        }
+    }
+
+    fn resource(domains: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "entity_type": "project",
+            "entity_id": "res_1",
+            "domains": domains
+        })
+    }
+
+    // ── Caracterización: collect_user_grants ────────────────────────────────
+
+    #[test]
+    fn char_grants_wildcard_domain_expands_to_registry_domains() {
+        let principal = principal_with_grants(vec![serde_json::json!({
+            "domain": "*", "actions": ["VIEW"], "scope": "ALL"
+        })]);
+        let grants = collect_user_grants(&principal);
+        assert!(grants.contains("project:VIEW"));
+        assert!(grants.contains("work_order:VIEW"));
+        assert!(grants.contains("tenant:VIEW"));
+        assert!(!grants.contains("project:DELETE"));
+    }
+
+    #[test]
+    fn char_grants_wildcard_action_expands_to_all_actions() {
+        let principal = principal_with_grants(vec![serde_json::json!({
+            "domain": "project", "actions": ["*"], "scope": "ALL"
+        })]);
+        let grants = collect_user_grants(&principal);
+        for action in ["VIEW", "CREATE", "UPDATE", "DELETE", "EXECUTE", "EXPORT"] {
+            assert!(grants.contains(&format!("project:{action}")), "falta project:{action}");
+        }
+    }
+
+    #[test]
+    fn char_grants_action_as_string_is_single_grant() {
+        let principal = principal_with_grants(vec![serde_json::json!({
+            "domain": "asset", "actions": "VIEW", "scope": "ALL"
+        })]);
+        let grants = collect_user_grants(&principal);
+        assert!(grants.contains("asset:VIEW"));
+        assert_eq!(grants.len(), 1);
+    }
+
+    #[test]
+    fn char_grants_multiple_boundaries_accumulate() {
+        let mut principal = principal_with_grants(vec![serde_json::json!({
+            "domain": "project", "actions": ["VIEW"]
+        })]);
+        principal.roles_boundaries.push(RoleBoundary {
+            role_id: "role_other".to_string(),
+            grants: vec![serde_json::json!({"domain": "asset", "actions": ["VIEW"]})],
+            permitted_locations: vec![],
+            permitted_assets: vec![],
+        });
+        let grants = collect_user_grants(&principal);
+        assert!(grants.contains("project:VIEW"));
+        assert!(grants.contains("asset:VIEW"));
+    }
+
+    // ── Caracterización: grant_allows_action ────────────────────────────────
+
+    #[test]
+    fn char_grant_allows_exact_and_wildcard() {
+        let exact = serde_json::json!({"actions": ["VIEW"]});
+        let wildcard = serde_json::json!({"actions": ["*"]});
+        let string_form = serde_json::json!({"actions": "VIEW"});
+        assert!(grant_allows_action(&exact, "VIEW"));
+        assert!(!grant_allows_action(&exact, "DELETE"));
+        assert!(grant_allows_action(&wildcard, "DELETE"));
+        assert!(grant_allows_action(&string_form, "VIEW"));
+        assert!(!grant_allows_action(&string_form, "EXPORT"));
+    }
+
+    #[test]
+    fn char_grant_bulk_ingest_maps_to_create_and_update() {
+        let create = serde_json::json!({"actions": ["CREATE"]});
+        let update = serde_json::json!({"actions": ["UPDATE"]});
+        let view = serde_json::json!({"actions": ["VIEW"]});
+        assert!(grant_allows_action(&create, "BulkIngestData"));
+        assert!(grant_allows_action(&update, "BulkIngestData"));
+        assert!(!grant_allows_action(&view, "BulkIngestData"));
+    }
+
+    // ── Caracterización: enrutamiento de step4_evaluate_cedar ───────────────
+
+    #[test]
+    fn char_system_bff_mutational_returns_empty_dict() {
+        let mut principal = principal_with_grants(vec![]);
+        principal.user_id = "usr_system_bff".to_string();
+        let engine = crate::cedar::authorizer::CedarAuthorizer::new();
+        let policy_cache = HashMap::new();
+        let res = step4_evaluate_cedar(
+            &engine,
+            &policy_cache,
+            &principal,
+            "CREATE",
+            &resource(&["project"]),
+            &serde_json::json!({}),
+        );
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), serde_json::json!({}));
+    }
+
+    #[test]
+    fn char_system_bff_analytical_returns_all_scope_per_domain() {
+        let mut principal = principal_with_grants(vec![]);
+        principal.user_id = "usr_system_bff".to_string();
+        let engine = crate::cedar::authorizer::CedarAuthorizer::new();
+        let policy_cache = HashMap::new();
+        let res = step4_evaluate_cedar(
+            &engine,
+            &policy_cache,
+            &principal,
+            "VIEW",
+            &resource(&["project", "asset"]),
+            &serde_json::json!({}),
+        );
+        assert!(res.is_ok());
+        let dict = res.unwrap();
+        for domain in ["project", "asset"] {
+            let boundaries = dict[domain].as_array().unwrap();
+            assert_eq!(boundaries[0]["query_scope"], "ALL");
+        }
+    }
+
+    #[test]
+    fn char_action_routing_mutational_vs_analytical() {
+        // UPSERT es mutacional; QueryMetrics y DiscoverSchema no lo son.
+        assert!(is_mutational_action("UPSERT"));
+        assert!(is_mutational_action("DELETE"));
+        assert!(!is_mutational_action("QueryMetrics"));
+        assert!(!is_mutational_action("DiscoverSchema"));
+        assert!(!is_mutational_action("BulkIngestData"));
+    }
+
+    // ── Caracterización: bordes de step4_analytical ─────────────────────────
+
+    #[test]
+    fn char_analytical_no_matching_grant_is_auth403() {
+        let principal = principal_with_grants(vec![serde_json::json!({
+            "domain": "project", "actions": ["VIEW"], "scope": "OWN"
+        })]);
+        let engine = crate::cedar::authorizer::CedarAuthorizer::new();
+        let res = step4_analytical(&engine, &principal, "DELETE", &resource(&["project"]));
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().code, ErrorCode::Auth403);
+    }
+
+    #[test]
+    fn char_analytical_scope_and_boundaries_flow_to_output() {
+        let mut principal = principal_with_grants(vec![serde_json::json!({
+            "domain": "project", "actions": ["VIEW"], "scope": "OWN"
+        })]);
+        principal.roles_boundaries[0].permitted_locations = vec!["loc_1".to_string()];
+        principal.roles_boundaries[0].permitted_assets = vec!["asset_1".to_string()];
+
+        let engine = crate::cedar::authorizer::CedarAuthorizer::new();
+        let res = step4_analytical(&engine, &principal, "VIEW", &resource(&["project"]));
+        assert!(res.is_ok());
+        let dict = res.unwrap();
+        let boundaries = dict["project"].as_array().unwrap();
+        assert_eq!(boundaries[0]["query_scope"], "OWN");
+        assert_eq!(boundaries[0]["permitted_locations"][0], "loc_1");
+        assert_eq!(boundaries[0]["permitted_assets"][0], "asset_1");
+    }
+
+    #[test]
+    fn char_analytical_wildcard_domain_grant_covers_any_domain() {
+        let principal = principal_with_grants(vec![serde_json::json!({
+            "domain": "*", "actions": ["VIEW"], "scope": "ALL"
+        })]);
+        let engine = crate::cedar::authorizer::CedarAuthorizer::new();
+        let res = step4_analytical(&engine, &principal, "VIEW", &resource(&["webhook_endpoint"]));
+        assert!(res.is_ok());
+        let dict = res.unwrap();
+        assert_eq!(dict["webhook_endpoint"][0]["query_scope"], "ALL");
+    }
+
+    #[test]
+    fn char_analytical_resource_without_domains_is_empty_ok() {
+        let principal = principal_with_grants(vec![]);
+        let engine = crate::cedar::authorizer::CedarAuthorizer::new();
+        let res = step4_analytical(&engine, &principal, "VIEW", &serde_json::json!({}));
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), serde_json::json!({}));
+    }
+}
