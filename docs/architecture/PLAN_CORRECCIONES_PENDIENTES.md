@@ -1,6 +1,11 @@
 # Plan de refactorización — Correcciones pendientes del camino OLAP
 
-> **ESTADO (2026-09-03, misma tarde):** Fases 0, 2, 3 y 6 **EJECUTADAS Y VERDES** — ver anexo de ejecución al final del documento. La causa raíz resultó más profunda que la escrita aquí (metadata Iceberg borrada del lake, no solo prefijos ausentes) y el remedio completo fue: recrear el stream `domain-fault` con `WarehouseLocation` explícito + **materializar las 4 tablas Iceberg vía DDL de Athena** (las del catálogo apuntaban a metadata inexistente). Fase 1 (deploy) **aplazada**: el árbol tiene el desmonte Cedar en pleno vuelo — desplegar publicaría código a medio refactorizar. Fase 4 (seeder) y Fase 5 (`execute_single_query`) pendientes, sin cambios.
+> **Componente:** `metri-engine` — lake OLAP (Firehose → Iceberg → Athena) y su motor de desarrollo
+> **Verificado contra el código y la cuenta:** 3 de septiembre de 2026 — rutas, líneas, métricas y configuración AWS comprobadas sobre el árbol y la cuenta `982592308819`
+> **Motivación:** la ejecución de [PLAN_COSTO_OLAP.md](PLAN_COSTO_OLAP.md) destapó que **la entrega Firehose → Iceberg nunca funcionó** (dato analítico perdido desde el 30-jul) y dejó un inventario de deudas operativas sin dueño
+> **Naturaleza:** el sistema está en producción; ningún commit intermedio puede romperlo
+> **Relación:** consume el veredicto de [MEDICION_COSTO_OLAP.md](MEDICION_COSTO_OLAP.md) (Fase 0 archiva DataFusion) y reactiva el ítem de `execute_single_query` del [PLAN_REFACTORIZACION.md](PLAN_REFACTORIZACION.md) Fase 3
+> **ESTADO (2026-09-03):** Fases 0, 1, 2, 3 y 6 **EJECUTADAS Y VERDES** — anexo de ejecución al final de esta sección. La causa raíz fue más profunda que la escrita aquí (metadata Iceberg borrada del lake, no solo prefijos ausentes); el remedio completo: stream `domain-fault` recreado con `WarehouseLocation` explícito + **4 tablas Iceberg materializadas por DDL de Athena**. Fase 1 desplegada en producción tras cerrarse el desmonte Cedar (con un incidente de empaquetado documentado y resuelto). Fase 4 (seeder) y Fase 5 (`execute_single_query`) pendientes.
 
 ## Anexo de ejecución (2026-09-03)
 
@@ -10,16 +15,9 @@
 | **2 — Vigilancia** | **VERDE.** `CloudWatchLoggingOptions` ON en los 4 streams (grupos `/aws/kinesisfirehose/metri-olap-*`; descubrimiento: exige `LogGroupName` **y** `LogStreamName` explícitos). Política `firehose-cloudwatch-logs` añadida al rol de entrega (no tenía permisos de logs — hubieran fallado en silencio). 12 alarmas creadas (3 por stream: `DeliveryToIceberg.FailedRowCount`, `DeliveryToS3.Success`, `FailedValidation.Records`) con acción hacia `metri-echo-escalation-production`. **Pendiente humano: el tópico SNS tiene 0 suscriptores** — sin añadir uno, las alarmas son dashboard, no página. |
 | **3 — Reingesta** | **VERDE.** [scripts/ops/reingesta_iceberg_failed.py](../../scripts/ops/reingesta_iceberg_failed.py) (dry-run por defecto): 682 records emitidos, 0 fallos, 263 objetos archivados en `errors/firehose/reingested/`. Conciliación exacta por Athena: `audit_log` **634/634**, `domain_fault` **44/44 reales** + 1 orgánico vivo (los 48 ids del lote incluían 4 centinelas fallidos A-D). Cero objetos en `iceberg-failed/` — el lago ya no acumula errores. |
 | **6 — Stream IoT** | **VERDE.** `metri-iot-telemetry-stream` en `ON_DEMAND`, ACTIVE, regla IoT intacta. ~$21,90/mes → ~$0 en reposo. |
-| **1 — Deploy** | **APLAZADA** con causa: desmonte Cedar en curso en el árbol (`src/cedar/tests.rs` en tránsito). Ejecutar cuando el árbol esté limpio y el refactor Cedar commiteado en verde. |
+| **1 — Deploy** | **VERDE (2026-09-03 18:24 UTC), con incidente de deploy documentado.** Desplegado tras cerrarse el desmonte Cedar (375 tests en verde). Verificado en vivo: LogGroup `metri-engine-metri-engine` con retención 14; `RUST_LOG: warn` (los WARN del QuotaSweeper llegan, los INFO no); `BucketKeyEnabled: true`; lifecycle `GLACIER_IR` a 90 días; **kinesis:\* = 0** en los 4 policies del rol con `firehose:PutRecordBatch` concedido; versión 211→212 publicada con alias `live` repuntado. **Incidente:** `sam deploy` empaquetó el template fuente (CodeUri `.`) en vez del artefacto de build — el binario subió anidado en `MetriEngineFunction/bootstrap` y la versión 211 crasheó al arrancar (~4 min, 50 `Runtime.ExitError`). Rollback quirúrgico: `update-function-code --publish` con el zip correcto (bootstrap en raíz) + `update-alias live → 212`. Lección operativa: con el `Metadata: BuildMethod: makefile` de este stack, desplegar SIEMPRE con `sam build && sam deploy` desde el mismo árbol (el build manual del directorio `.aws-sam/` no es equivalente). Evidencia de PutRecordBatch en tráfico orgánico: pendiente de la primera BulkIngest real post-deploy (el binario desplegado es el del commit 1c2bedc, cubierto por los 3 tests de olap_channel_tests). |
 | **4 — Seeder** | Pendiente. Prioridad reforzada: hoy `domain-fault` tiene `WarehouseLocation` explícito y los otros 3 streams no — drift de config real que solo una herramienta idempotente normaliza. |
 | **5 — execute_single_query** | Pendiente, sin cambios. |
-
-
-> **Componente:** `metri-engine` — lake OLAP (Firehose → Iceberg → Athena) y su motor de desarrollo
-> **Verificado contra el código y la cuenta:** 3 de septiembre de 2026 — rutas, líneas, métricas y configuración AWS comprobadas sobre el árbol y la cuenta `982592308819`
-> **Motivación:** la ejecución de [PLAN_COSTO_OLAP.md](PLAN_COSTO_OLAP.md) destapó que **la entrega Firehose → Iceberg nunca funcionó** (dato analítico perdido desde el 30-jul) y dejó un inventario de deudas operativas sin dueño
-> **Naturaleza:** el sistema está en producción; ningún commit intermedio puede romperlo
-> **Relación:** consume el veredicto de [MEDICION_COSTO_OLAP.md](MEDICION_COSTO_OLAP.md) (Fase 0 archiva DataFusion) y reactiva el ítem de `execute_single_query` del [PLAN_REFACTORIZACION.md](PLAN_REFACTORIZACION.md) Fase 3
 
 ---
 
