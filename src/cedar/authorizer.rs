@@ -16,10 +16,11 @@ use tracing::{info, warn};
 
 use cedar_policy::{Authorizer, Decision, Entities, PolicySet, Request};
 
+use crate::cedar::request::AuthRequest;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::{ISessionStore, Session};
-use crate::eav::types::datom::DatomValue;
 pub use crate::cedar::authn::HmacTokenVerifier;
+use crate::cedar::{pipeline, resource_hydrator};
 pub use crate::cedar::cache::invalidation::INVALIDATION_TX;
 pub use crate::cedar::cache::principal::{InMemoryPrincipalCache, MAX_PRINCIPAL_CACHE_SIZE};
 pub use crate::cedar::cache::session::{InMemorySessionStore, MAX_SESSION_CACHE_SIZE};
@@ -95,24 +96,11 @@ use crate::cedar::authn::VerifiedToken;
 
 // --- Public Helper Interceptor Methods ---
 
-pub async fn step1_extract_token<T>(
-    req: &tonic::Request<T>,
+pub async fn step1_extract_token(
+    auth: &AuthRequest<'_>,
     valkey_store: &dyn ISessionStore,
 ) -> Result<Session, DomainError> {
-    let token = if let Some(auth_header) = req
-        .metadata()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-    {
-        auth_header
-            .strip_prefix("Bearer ")
-            .or_else(|| auth_header.strip_prefix("bearer "))
-            .unwrap_or(auth_header)
-            .trim()
-            .to_string()
-    } else if let Some(sid_header) = req.metadata().get("sid").and_then(|v| v.to_str().ok()) {
-        sid_header.trim().to_string()
-    } else {
+    let Some(token) = auth.session_token() else {
         return Err(
             DomainError::new(ErrorCode::Auth401, "Missing authorization or sid header")
                 .with_stage("cedar"),
@@ -183,52 +171,14 @@ pub async fn intercept<T>(
     cedar_engine: &CedarAuthorizer,
     policy_cache: &dyn PolicyStore,
 ) -> Result<CedarContext, DomainError> {
-    let session = step1_extract_token(req, valkey_store).await?;
-    let raw_principal =
-        step2_query_oltp(eav_reader, &session.tenant_id, &session.user_id, cache).await?;
-    let principal = step3_consolidate(eav_reader, &session.tenant_id, raw_principal, true).await?;
-    step3b_validate_time_window(&principal, Utc::now())?;
+    let auth = AuthRequest::from_tonic(req);
 
-    let action = extract_cedar_action(req)?;
-    let mut resource = extract_cedar_resource(req)?;
+    let principal = pipeline::resolve_principal(&auth, valkey_store, eav_reader, cache).await?;
 
-    let resource_id = resource
-        .get("entity_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if !resource_id.is_empty() {
-        if let Ok(entity_map) = eav_reader.pull(&session.tenant_id, resource_id, None).await {
-            if let Some(obj) = resource.as_object_mut() {
-                for key in &[
-                    "assigned_company_id",
-                    "company_id",
-                    "assigned_company",
-                    "company",
-                ] {
-                    let entity_type = obj
-                        .get("entity_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if let Some(val) = entity_map
-                        .get(*key)
-                        .or_else(|| entity_map.get(&format!("{}/{}", entity_type, key)))
-                    {
-                        match val {
-                            DatomValue::Str(s) => {
-                                obj.insert("assigned_company_id".to_string(), serde_json::json!(s));
-                                break;
-                            }
-                            DatomValue::Ref(r) => {
-                                obj.insert("assigned_company_id".to_string(), serde_json::json!(r));
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let action = auth.cedar_action();
+    let mut resource = auth.cedar_resource();
+    resource_hydrator::hydrate_company_assignment(eav_reader, &principal.tenant_id, &mut resource)
+        .await;
 
     let domain_dict = step4_evaluate_cedar(
         cedar_engine,
@@ -238,55 +188,12 @@ pub async fn intercept<T>(
         &resource,
     )?;
 
-    Ok(CedarContext {
-        tenant_id: session.tenant_id,
-        user_id: session.user_id,
-        roles: principal.roles,
-        domain_boundaries: domain_dict,
-    })
-}
-
-fn extract_cedar_action<T>(req: &tonic::Request<T>) -> Result<String, DomainError> {
-    if let Some(act) = req
-        .metadata()
-        .get("x-metri-action")
-        .and_then(|v| v.to_str().ok())
-    {
-        Ok(act.to_string())
-    } else {
-        Ok("QueryMetrics".to_string())
-    }
-}
-
-fn extract_cedar_resource<T>(req: &tonic::Request<T>) -> Result<serde_json::Value, DomainError> {
-    let entity_type = req
-        .metadata()
-        .get("x-metri-entity-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("project");
-
-    let domains = req
-        .metadata()
-        .get("x-metri-domains")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            s.split(',')
-                .map(|d| d.trim().to_string())
-                .collect::<Vec<String>>()
-        })
-        .unwrap_or_else(|| vec![entity_type.to_string()]);
-
-    let entity_id = req
-        .metadata()
-        .get("x-metri-entity-id")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    Ok(serde_json::json!({
-        "entity_type": entity_type,
-        "entity_id": entity_id,
-        "domains": domains,
-    }))
+    Ok(pipeline::cedar_context(
+        principal.tenant_id,
+        principal.user_id,
+        principal.roles,
+        domain_dict,
+    ))
 }
 
 pub async fn get_principal_data<T>(
@@ -299,46 +206,11 @@ pub async fn get_principal_data<T>(
     // Costura explícita de desarrollo: `dev_auth_bypass` lo decide la raíz de
     // composición vía `resolve_dev_auth_bypass` (fail-closed) — nunca el
     // entorno por petición. En producción es siempre `false`.
+    let auth = AuthRequest::from_tonic(req);
     if dev_auth_bypass {
-        let test_tenant = req
-            .metadata()
-            .get("test-tenant")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("system")
-            .to_string();
-        let test_user = req
-            .metadata()
-            .get("test-user")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("usr_system_bff")
-            .to_string();
-        let test_roles = req
-            .metadata()
-            .get("test-roles")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.split(',').map(|r| r.to_string()).collect())
-            .unwrap_or_else(|| ["system-admin".to_string()].into_iter().collect());
-
-        return Ok(PrincipalData {
-            user_id: test_user,
-            tenant_id: test_tenant,
-            status: "ACTIVE".to_string(),
-            user_type: "SYSTEM".to_string(),
-            company_id: String::new(),
-            roles: test_roles,
-            roles_boundaries: vec![],
-            time_restrictions: vec![],
-            group_allowed_locations: vec![],
-            group_allowed_assets: vec![],
-            groups: std::collections::HashSet::new(),
-        });
+        return Ok(pipeline::dev_bypass_principal(&auth));
     }
-    let session = step1_extract_token(req, valkey_store).await?;
-    let raw_principal =
-        step2_query_oltp(eav_reader, &session.tenant_id, &session.user_id, cache).await?;
-    let principal = step3_consolidate(eav_reader, &session.tenant_id, raw_principal, true).await?;
-    step3b_validate_time_window(&principal, Utc::now())?;
-    Ok(principal)
+    pipeline::resolve_principal(&auth, valkey_store, eav_reader, cache).await
 }
 
 #[cfg(test)]
@@ -596,7 +468,7 @@ mod tests {
     async fn test_token_missing() {
         let valkey = InMemorySessionStore::new();
         let req = tonic::Request::new(());
-        let res = step1_extract_token(&req, &valkey).await;
+        let res = step1_extract_token(&AuthRequest::from_tonic(&req), &valkey).await;
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().code, ErrorCode::Auth401);
     }

@@ -1,6 +1,9 @@
 pub mod authn;
 pub mod authorizer;
 pub mod cache;
+pub mod pipeline;
 pub mod ports;
+pub mod request;
+pub mod resource_hydrator;
 pub mod rules;
 pub mod types;
