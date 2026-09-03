@@ -15,7 +15,9 @@ mod mutational;
 pub(crate) use analytical::step4_analytical;
 pub(crate) use mutational::step4_mutational;
 
-use crate::cedar::authorizer::{CedarAuthorizer, PolicyStore, PrincipalData};
+use crate::cedar::engine::CedarAuthorizer;
+use crate::cedar::ports::PolicyStore;
+use crate::cedar::types::PrincipalData;
 use crate::domain::errors::DomainError;
 
 pub fn step4_evaluate_cedar(
@@ -60,7 +62,7 @@ pub fn step4_evaluate_cedar(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cedar::authorizer::RoleBoundary;
+    use crate::cedar::types::RoleBoundary;
     use crate::domain::errors::ErrorCode;
     use std::collections::{HashMap, HashSet};
 

@@ -141,7 +141,7 @@ where
         if ctx.is_super_master
             || ctx.user_id == "usr_system_bff"
             || ctx.user_id == "usr_master"
-            || crate::cedar::authorizer::SystemSecurityRules::is_quota_exempt(&ctx.entity_type)
+            || crate::cedar::SystemSecurityRules::is_quota_exempt(&ctx.entity_type)
         {
             info!(
                 tenant = %ctx.tenant_id,

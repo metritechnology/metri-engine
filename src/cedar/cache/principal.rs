@@ -30,6 +30,12 @@ pub struct InMemoryPrincipalCache {
     cache: Arc<RwLock<HashMap<String, Entry>>>,
 }
 
+impl Default for InMemoryPrincipalCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryPrincipalCache {
     pub fn new() -> Self {
         let cache = Arc::new(RwLock::new(HashMap::<String, Entry>::new()));
@@ -39,7 +45,7 @@ impl InMemoryPrincipalCache {
 }
 
 #[async_trait]
-impl crate::cedar::authorizer::PrincipalCache for InMemoryPrincipalCache {
+impl crate::cedar::ports::PrincipalCache for InMemoryPrincipalCache {
     async fn lookup_principal(&self, user_id: &str) -> Option<PrincipalData> {
         if let Ok(mut lock) = self.cache.write() {
             match lock.get(user_id) {

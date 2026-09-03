@@ -99,6 +99,74 @@ impl HmacTokenVerifier {
     }
 }
 
+
+// ── step1: extracción de token y consulta de sesión ────────────────────────
+
+use crate::cedar::request::AuthRequest;
+use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::protocols::{ISessionStore, Session};
+
+/// Verificación HMAC estricta del camino Cedar (sin tolerancia de reloj).
+///
+/// Envoltorio fino sobre `authn::HmacTokenVerifier` — la implementación única
+/// del formato mk_ (D1). El secreto viene de la configuración del arranque.
+pub fn verify_hmac_token_local_in_step(raw_token: &str) -> Option<Session> {
+    HmacTokenVerifier::from_engine_config()
+        .verify(raw_token, 0)
+        .map(
+            |VerifiedToken {
+                 tenant_id,
+                 user_id,
+                 jti,
+                 exp,
+             }| Session {
+                tenant_id,
+                user_id,
+                jti,
+                exp,
+            },
+        )
+}
+
+
+// --- Public Helper Interceptor Methods ---
+
+
+pub async fn step1_extract_token(
+    auth: &AuthRequest<'_>,
+    valkey_store: &dyn ISessionStore,
+) -> Result<Session, DomainError> {
+    let Some(token) = auth.session_token() else {
+        return Err(
+            DomainError::new(ErrorCode::Auth401, "Missing authorization or sid header")
+                .with_stage("cedar"),
+        );
+    };
+
+    // Rechazo temprano sin red de tokens mk_ mal firmados o expirados.
+    // S1: el fast-path YA NO devuelve la sesión aquí — la revocación (blacklist
+    // por jti) vive en el session store y ninguna firma válida se la salta.
+    if token.starts_with("mk_") && verify_hmac_token_local_in_step(&token).is_none() {
+        return Err(
+            DomainError::new(ErrorCode::Auth401, "Invalid or expired token").with_stage("cedar"),
+        );
+    }
+
+    let session = valkey_store.get_session(&token).await?.ok_or_else(|| {
+        DomainError::new(ErrorCode::Auth401, "Invalid or expired token").with_stage("cedar")
+    })?;
+
+    if session.user_id.is_empty() || session.tenant_id.is_empty() {
+        return Err(
+            DomainError::new(ErrorCode::Auth401, "Malformed session payload from Valkey")
+                .with_stage("cedar"),
+        );
+    }
+
+    Ok(session)
+}
+
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;

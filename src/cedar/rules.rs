@@ -98,6 +98,39 @@ impl SystemSecurityRules {
     }
 }
 
+
+// ── step3b: restricción temporal de acceso ─────────────────────────────────
+
+use chrono::{DateTime, Datelike, Timelike, Utc};
+
+use crate::cedar::types::PrincipalData;
+
+pub fn step3b_validate_time_window(
+    principal: &PrincipalData,
+    now: DateTime<Utc>,
+) -> Result<(), DomainError> {
+    if principal.time_restrictions.is_empty() {
+        return Ok(());
+    }
+
+    let day = now.weekday().number_from_monday() as i32;
+    let minute = now.hour() * 60 + now.minute();
+
+    let matches_any = principal.time_restrictions.iter().any(|r| {
+        r.days_of_week.contains(&day) && minute >= r.start_minute && minute <= r.end_minute
+    });
+
+    if !matches_any {
+        return Err(
+            DomainError::new(ErrorCode::Auth403, "Access outside allowed time window")
+                .with_stage("cedar"),
+        );
+    }
+
+    Ok(())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

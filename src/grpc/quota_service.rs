@@ -141,7 +141,7 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
     /// petición dejando traza, para poder verlo en producción antes de cerrar.
     fn authorize(session: &AuthenticatedSession, target_tenant: &str) -> Result<(), Status> {
         if session.tenant_id == target_tenant
-            || crate::cedar::authorizer::is_master_tenant(&session.tenant_id)
+            || crate::cedar::is_master_tenant(&session.tenant_id)
             || SYSTEM_USERS.contains(&session.user_id.as_str())
         {
             return Ok(());

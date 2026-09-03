@@ -6,10 +6,12 @@ use std::collections::HashSet;
 
 use futures::future::join_all;
 
-use crate::cedar::authorizer::{
-    is_master_tenant, PrincipalCache, PrincipalData, RoleBoundary, TimeRestriction, EntityReader,
-    MAX_HIERARCHY_DEPTH,
-};
+use crate::cedar::ports::{EntityReader, PrincipalCache};
+use crate::cedar::rules::is_master_tenant;
+use crate::cedar::types::{PrincipalData, RoleBoundary, TimeRestriction};
+
+/// Profundidad máxima de expansión de jerarquías (locations/assets).
+const MAX_HIERARCHY_DEPTH: usize = 10;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::reader::pull::EntityMap;
 use crate::eav::types::datom::DatomValue;

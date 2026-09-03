@@ -16,7 +16,7 @@ use std::sync::OnceLock;
 
 use cedar_policy::{Entities, Schema};
 
-pub const CEDAR_SCHEMA_SRC: &str = include_str!("../../../../config/policies/cedar-schema.json");
+pub const CEDAR_SCHEMA_SRC: &str = include_str!("../../../config/policies/cedar-schema.json");
 
 /// Esquema Cedar del proceso — compilado una sola vez.
 pub fn cedar_schema() -> &'static Schema {

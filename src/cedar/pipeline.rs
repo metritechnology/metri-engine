@@ -6,31 +6,33 @@
 
 use chrono::Utc;
 
-use crate::cedar::ports::{EntityReader, PrincipalCache};
+use crate::cedar::ports::{EntityReader, PolicyStore, PrincipalCache};
 use crate::cedar::request::AuthRequest;
 use crate::cedar::types::{CedarContext, PrincipalData};
-use crate::cedar::authorizer::step3b_validate_time_window;
+use crate::cedar::authn::step1_extract_token;
+use crate::cedar::principal_graph::{step2_query_oltp, step3_consolidate};
+use crate::cedar::rules::step3b_validate_time_window;
 use crate::domain::errors::DomainError;
 use crate::domain::protocols::ISessionStore;
 
 /// Resuelve y consolida el principal para la sesión de la petición:
 /// autenticación (step1), grafo de roles/grupos (step2), intersección de
 /// perímetros (step3) y ventana horaria (step3b).
-pub(crate) async fn resolve_principal(
+pub async fn resolve_principal(
     auth: &AuthRequest<'_>,
     valkey_store: &dyn ISessionStore,
     eav_reader: &dyn EntityReader,
     cache: &dyn PrincipalCache,
 ) -> Result<PrincipalData, DomainError> {
-    let session = crate::cedar::authorizer::step1_extract_token(auth, valkey_store).await?;
-    let raw_principal = crate::cedar::authorizer::step2_query_oltp(
+    let session = step1_extract_token(auth, valkey_store).await?;
+    let raw_principal = step2_query_oltp(
         eav_reader,
         &session.tenant_id,
         &session.user_id,
         cache,
     )
     .await?;
-    let principal = crate::cedar::authorizer::step3_consolidate(
+    let principal = step3_consolidate(
         eav_reader,
         &session.tenant_id,
         raw_principal,
@@ -81,3 +83,59 @@ pub(crate) fn cedar_context(
         domain_boundaries,
     }
 }
+
+// ── Fachadas públicas de la pipeline ────────────────────────────────────────
+
+use crate::cedar::engine::CedarAuthorizer;
+use crate::cedar::evaluator::step4_evaluate_cedar;
+
+pub async fn intercept<T>(
+    req: &tonic::Request<T>,
+    valkey_store: &dyn ISessionStore,
+    eav_reader: &dyn EntityReader,
+    cache: &dyn PrincipalCache,
+    cedar_engine: &CedarAuthorizer,
+    policy_cache: &dyn PolicyStore,
+) -> Result<CedarContext, DomainError> {
+    let auth = AuthRequest::from_tonic(req);
+
+    let principal = resolve_principal(&auth, valkey_store, eav_reader, cache).await?;
+
+    let action = auth.cedar_action();
+    let mut resource = auth.cedar_resource();
+    crate::cedar::resource_hydrator::hydrate_company_assignment(eav_reader, &principal.tenant_id, &mut resource)
+        .await;
+
+    let domain_dict = step4_evaluate_cedar(
+        cedar_engine,
+        policy_cache,
+        &principal,
+        &action,
+        &resource,
+    )?;
+
+    Ok(cedar_context(
+        principal.tenant_id,
+        principal.user_id,
+        principal.roles,
+        domain_dict,
+    ))
+}
+
+pub async fn get_principal_data<T>(
+    req: &tonic::Request<T>,
+    valkey_store: &dyn ISessionStore,
+    eav_reader: &dyn EntityReader,
+    cache: &dyn PrincipalCache,
+    dev_auth_bypass: bool,
+) -> Result<PrincipalData, DomainError> {
+    // Costura explícita de desarrollo: `dev_auth_bypass` lo decide la raíz de
+    // composición vía `resolve_dev_auth_bypass` (fail-closed) — nunca el
+    // entorno por petición. En producción es siempre `false`.
+    let auth = AuthRequest::from_tonic(req);
+    if dev_auth_bypass {
+        return Ok(dev_bypass_principal(&auth));
+    }
+    resolve_principal(&auth, valkey_store, eav_reader, cache).await
+}
+

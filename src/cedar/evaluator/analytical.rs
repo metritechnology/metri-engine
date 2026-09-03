@@ -5,8 +5,10 @@
 // dejar pasar el intercept: el chequeo de servicio (SystemSecurityRules)
 // impone el PermissionDenied con el mensaje canónico.
 
-use crate::cedar::authorizer::evaluator::grants::grant_allows_action;
-use crate::cedar::authorizer::{is_master_tenant, CedarAuthorizer, PrincipalData};
+use crate::cedar::evaluator::grants::grant_allows_action;
+use crate::cedar::engine::CedarAuthorizer;
+use crate::cedar::rules::is_master_tenant;
+use crate::cedar::types::PrincipalData;
 use crate::domain::errors::{DomainError, ErrorCode};
 
 pub(crate) fn step4_analytical(
@@ -34,18 +36,18 @@ pub(crate) fn step4_analytical(
                 for boundary in &principal.roles_boundaries {
                     for grant in &boundary.grants {
                         let grant_domain = grant.get("domain").and_then(|v| v.as_str());
-                        if grant_domain == Some(domain) || grant_domain == Some("*") {
-                            if grant_allows_action(grant, action) {
-                                let scope = grant
-                                    .get("scope")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("NONE");
-                                boundaries_json.push(serde_json::json!({
-                                    "query_scope": scope,
-                                    "permitted_locations": boundary.permitted_locations,
-                                    "permitted_assets": boundary.permitted_assets,
-                                }));
-                            }
+                        if (grant_domain == Some(domain) || grant_domain == Some("*"))
+                            && grant_allows_action(grant, action)
+                        {
+                            let scope = grant
+                                .get("scope")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("NONE");
+                            boundaries_json.push(serde_json::json!({
+                                "query_scope": scope,
+                                "permitted_locations": boundary.permitted_locations,
+                                "permitted_assets": boundary.permitted_assets,
+                            }));
                         }
                     }
                 }
@@ -71,7 +73,7 @@ pub(crate) fn step4_analytical(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cedar::authorizer::RoleBoundary;
+    use crate::cedar::types::RoleBoundary;
     use std::collections::HashSet;
 
     fn principal_with_grants(grants: Vec<serde_json::Value>) -> PrincipalData {

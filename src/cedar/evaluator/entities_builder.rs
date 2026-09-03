@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 
 use cedar_policy::{Entity, Entities, EntityUid, RestrictedExpression};
 
-use crate::cedar::authorizer::PrincipalData;
-use crate::cedar::authorizer::evaluator::action_registry::{base_action_entities, cedar_schema};
+use crate::cedar::types::PrincipalData;
+use crate::cedar::evaluator::action_registry::{base_action_entities, cedar_schema};
 use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Atributos del Resource para el camino mutacional: el grant que la política

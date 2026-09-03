@@ -3,7 +3,7 @@
 
 use serde_json::{json, Value};
 
-use crate::cedar::authorizer::is_master_tenant;
+use crate::cedar::is_master_tenant;
 use crate::domain::errors::DomainError;
 use crate::janus::abac_clauses;
 use crate::janus::fbs::{FilterGroup_Conjunction, FilterOperator};

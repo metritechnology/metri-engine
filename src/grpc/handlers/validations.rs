@@ -153,10 +153,10 @@ impl MetriGrpcService {
         entity_type: &str,
         action: &str,
         payload: &serde_json::Value,
-        principal: &crate::cedar::authorizer::PrincipalData,
+        principal: &crate::cedar::PrincipalData,
     ) -> Result<(), Status> {
         // Enforce tenant isolation (bypass for master tenant or system BFF account)
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
+        if let Err(e) = crate::cedar::SystemSecurityRules::check_tenant_isolation(
             tenant_id,
             &principal.tenant_id,
             &principal.user_id,
@@ -167,7 +167,7 @@ impl MetriGrpcService {
         let entity_id = extract_entity_id(payload).unwrap_or_default();
 
         if entity_type == "tenant" {
-            if let Err(_) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
+            if let Err(_) = crate::cedar::SystemSecurityRules::check_tenant_isolation(
                 &entity_id,
                 &principal.tenant_id,
                 &principal.user_id,
@@ -179,7 +179,7 @@ impl MetriGrpcService {
         }
 
         // Enforce that only master tenant users or system BFF account can mutate tenants and quotas
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_crud_authorization(
+        if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
             entity_type,
             &principal.tenant_id,
             &principal.user_id,
@@ -253,7 +253,7 @@ impl MetriGrpcService {
             return Ok(());
         }
 
-        crate::cedar::authorizer::step4_evaluate_cedar(
+        crate::cedar::step4_evaluate_cedar(
             &self.cedar_engine,
             &self.policy_cache,
             principal,
@@ -334,12 +334,12 @@ impl MetriGrpcService {
                 extract_entity_id(actual_payload)
             };
             if let Some(eid) = entity_id_opt {
-                let msg = crate::cedar::authorizer::InvalidationMsg {
+                let msg = crate::cedar::InvalidationMsg {
                     tenant_id,
                     entity_type,
                     entity_id: eid,
                 };
-                let _ = crate::cedar::authorizer::INVALIDATION_TX.send(msg);
+                let _ = crate::cedar::INVALIDATION_TX.send(msg);
             }
         }
     }

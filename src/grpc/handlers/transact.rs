@@ -12,7 +12,7 @@ impl MetriGrpcService {
         &self,
         request: Request<TransactionRequest>,
     ) -> Result<Response<TransactionResponse>, Status> {
-        let principal = crate::cedar::authorizer::get_principal_data(
+        let principal = crate::cedar::get_principal_data(
             &request,
             self.valkey_store.as_ref(),
             self.oltp_executor.pull_reader(),

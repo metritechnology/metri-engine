@@ -2,7 +2,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use metri_engine::aegis::oltp::executor::OltpExecutor;
-use metri_engine::cedar::authorizer::InMemoryPrincipalCache;
+use metri_engine::cedar::InMemoryPrincipalCache;
 use metri_engine::codice::registry::EngineChannel;
 use metri_engine::domain::error_catalog::{
     init_global as init_error_catalog, try_global, ErrorCatalog,

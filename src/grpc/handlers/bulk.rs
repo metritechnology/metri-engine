@@ -12,7 +12,7 @@ impl MetriGrpcService {
         &self,
         request: Request<BulkRequest>,
     ) -> Result<Response<BulkResponse>, Status> {
-        let principal = crate::cedar::authorizer::get_principal_data(
+        let principal = crate::cedar::get_principal_data(
             &request,
             self.valkey_store.as_ref(),
             self.oltp_executor.pull_reader(),
@@ -234,12 +234,12 @@ impl MetriGrpcService {
 
                     // Invalidate caches upon successful ingest
                     for eid in entity_ids {
-                        let msg = crate::cedar::authorizer::InvalidationMsg {
+                        let msg = crate::cedar::InvalidationMsg {
                             tenant_id: req.tenant_id.clone(),
                             entity_type: req.entity_type.clone(),
                             entity_id: eid,
                         };
-                        let _ = crate::cedar::authorizer::INVALIDATION_TX.send(msg);
+                        let _ = crate::cedar::INVALIDATION_TX.send(msg);
                     }
                 }
             }

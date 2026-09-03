@@ -192,7 +192,7 @@ async fn test_group_cycle_prevention() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -254,7 +254,7 @@ async fn test_group_cycle_prevention() {
 
 #[tokio::test]
 async fn test_cache_invalidation_pubsub() {
-    use crate::cedar::authorizer::{
+    use crate::cedar::{
         InMemoryPrincipalCache, InvalidationMsg, PrincipalCache, PrincipalData, INVALIDATION_TX,
     };
     use crate::eav::reader::pull::{CacheEntry, EAV_CACHE};
@@ -359,7 +359,7 @@ async fn test_batch_transaction_granular_security() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -456,7 +456,7 @@ async fn test_invalid_role_grant_format() {
         ddb_client,
         "table".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -545,7 +545,7 @@ async fn test_invalid_role_grant_format() {
 
 #[tokio::test]
 async fn test_tenant_and_quota_master_crud_gates() {
-    use crate::cedar::authorizer::PrincipalCache;
+    use crate::cedar::PrincipalCache;
     use std::sync::Arc;
 
     std::env::set_var("HMAC_SECRET", "secret-key-development-metri-256-bits!!!");
@@ -585,17 +585,17 @@ async fn test_tenant_and_quota_master_crud_gates() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
 
     // Popular Principal Cache para usr_regular
-    let regular_principal = crate::cedar::authorizer::PrincipalData {
+    let regular_principal = crate::cedar::PrincipalData {
         user_id: "usr_regular".to_string(),
         tenant_id: "tnt_regular".to_string(),
         status: "ACTIVE".to_string(),
         user_type: "INTERNAL".to_string(),
         company_id: String::new(),
         roles: ["regular-role".to_string()].into_iter().collect(),
-        roles_boundaries: vec![crate::cedar::authorizer::RoleBoundary {
+        roles_boundaries: vec![crate::cedar::RoleBoundary {
             role_id: "regular-role".to_string(),
             grants: vec![serde_json::json!({
                 "domain": "*",

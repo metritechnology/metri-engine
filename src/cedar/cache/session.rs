@@ -19,6 +19,12 @@ pub struct InMemorySessionStore {
     revoked: RwLock<HashSet<String>>,
 }
 
+impl Default for InMemorySessionStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemorySessionStore {
     pub fn new() -> Self {
         Self {

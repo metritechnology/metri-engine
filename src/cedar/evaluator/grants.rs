@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use crate::cedar::authorizer::PrincipalData;
+use crate::cedar::types::PrincipalData;
 
 /// Acciones de negocio posibles cuando un grant declara wildcard.
 pub const ALL_ACTIONS: &[&str] = &["VIEW", "CREATE", "UPDATE", "DELETE", "EXECUTE", "EXPORT"];
@@ -114,7 +114,7 @@ pub fn grant_allows_action(grant: &serde_json::Value, action: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cedar::authorizer::RoleBoundary;
+    use crate::cedar::types::RoleBoundary;
     use std::collections::HashSet;
 
     fn principal_with_grants(grants: Vec<serde_json::Value>) -> PrincipalData {

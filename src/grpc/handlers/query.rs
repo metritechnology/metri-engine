@@ -82,7 +82,7 @@ impl MetriGrpcService {
 
         // Only master tenant users (or system BFF) can query tenants or quotas
         for entity in &query_entities {
-            if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_crud_authorization(
+            if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
                 entity,
                 &authenticated_ctx.tenant_id,
                 &authenticated_ctx.user_id,
@@ -125,7 +125,7 @@ impl MetriGrpcService {
 
             // Construir el contexto ABAC para este request a partir de la sesión autenticada real
             let is_master =
-                crate::cedar::authorizer::is_master_tenant(&authenticated_ctx_clone.tenant_id);
+                crate::cedar::is_master_tenant(&authenticated_ctx_clone.tenant_id);
             let cedar_ctx = CedarCtx {
                 tenant_id: tenant_id.clone(),
                 user_id: authenticated_ctx_clone.user_id.clone(),

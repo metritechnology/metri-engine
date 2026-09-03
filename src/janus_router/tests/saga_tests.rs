@@ -277,3 +277,47 @@ async fn test_preventive_maintenance_saga_projection_extensions() {
         json!("01PM_PARENT")
     );
 }
+
+/// Regresión de producción (2026-09-03): el CREATE de una pauta desde el panel
+/// llegaba al engine con el cron en `null` y el motor rechazaba con JNS_001;
+/// corregido el cron por el lado del panel, la validación de la entidad pasaba
+/// a quejarse de que `template_id` «está ausente» con el atributo presente en
+/// el payload. Este test congela el payload EXACTO que envía metri-app —con la
+/// referencia escalar, el `advance_notice_meter_value` nulo de la sección
+/// oculta y sin `id` de cliente (ADR-006)— y exige que valide y proyecte.
+#[tokio::test]
+async fn el_payload_de_create_del_panel_valida_y_proyecta() {
+    let m = model("preventive_maintenance");
+    let payload = json!({
+        "asset_id": "01M1F9PB4RW8X73SP4F55Q7TED",
+        "template_id": "01M1EYF5MPFCH65NRRAGJJ8KY6",
+        "status": "ACTIVE",
+        "cron_expression": "0 9 * * *",
+        "iana_timezone": "UTC",
+        "advance_notice_meter_value": null,
+        "advance_notice_days": 7.0,
+        "tenant_id": "01M12AGKPCR3YDYW9HG9ZQYXS6"
+    });
+
+    // 1. La validación de la entidad acepta el payload completo y la
+    //    referencia escalar sobrevive como Str (el síntoma en producción era
+    //    un CDX_001 que no la veía).
+    let attrs = crate::codice::validator::validate_payload(&m, &payload, "tnt_1", true)
+        .expect("el payload de Create PM Plan debe validar contra el Códice");
+    assert!(
+        matches!(attrs.get("template_id"), Some(DatomValue::Str(s)) if s == "01M1EYF5MPFCH65NRRAGJJ8KY6"),
+        "template_id debe sobrevivir a la validación: {:?}",
+        attrs.get("template_id")
+    );
+
+    // 2. Y el SagaBuilder deriva el disparo sin quejarse de fuentes de trigger.
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .expect("el saga debe proyectar con el cron presente");
+    assert_eq!(jobs.len(), 1);
+    assert!(matches!(jobs[0].attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "CRON"));
+    assert!(matches!(
+        jobs[0].attrs.get("trigger_expression"),
+        Some(DatomValue::Str(s)) if s == "0 9 * * *"
+    ));
+}

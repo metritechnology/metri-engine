@@ -159,7 +159,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         Arc::clone(&ddb_client),
         eav_table.clone(),
     ));
-    let principal_cache = Arc::new(crate::cedar::authorizer::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
 
     // ── Sherlog / EventBridge Notifier ───────────────────────────────────────
     let eb_mode = std::env::var("EVENTBRIDGE_MODE").unwrap_or_default();

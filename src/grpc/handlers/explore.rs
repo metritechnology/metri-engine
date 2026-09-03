@@ -193,7 +193,7 @@ impl MetriGrpcService {
             .await?;
 
         // Only master tenant users (or system BFF) can explore tenants or quotas
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_crud_authorization(
+        if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
             &req.entity,
             &authenticated_ctx.tenant_id,
             &authenticated_ctx.user_id,
@@ -244,7 +244,7 @@ impl MetriGrpcService {
 
         if is_olap {
             let is_master =
-                crate::cedar::authorizer::is_master_tenant(&authenticated_ctx.tenant_id);
+                crate::cedar::is_master_tenant(&authenticated_ctx.tenant_id);
             let cedar_ctx = crate::janus::router::CedarCtx {
                 tenant_id: req.tenant_id.clone(),
                 user_id: authenticated_ctx.user_id.clone(),
@@ -437,7 +437,7 @@ impl MetriGrpcService {
             )
             .await?;
 
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_crud_authorization(
+        if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
             &req.entity_type,
             &authenticated_ctx.tenant_id,
             &authenticated_ctx.user_id,

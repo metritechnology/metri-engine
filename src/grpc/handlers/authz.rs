@@ -25,7 +25,7 @@ impl MetriGrpcService {
         error_entity: Option<String>,
         cedar_denial_is_permission: bool,
         emit_on_isolation: bool,
-    ) -> Result<crate::cedar::authorizer::CedarContext, Status> {
+    ) -> Result<crate::cedar::CedarContext, Status> {
         let mut dummy_req = tonic::Request::new(());
         if !auth_header.is_empty() {
             if let Ok(m_val) = auth_header.parse() {
@@ -44,7 +44,7 @@ impl MetriGrpcService {
             dummy_req.metadata_mut().insert("x-metri-domains", m_val);
         }
 
-        let ctx = match crate::cedar::authorizer::intercept(
+        let ctx = match crate::cedar::intercept(
             &dummy_req,
             self.valkey_store.as_ref(),
             self.oltp_executor.pull_reader(),
@@ -72,7 +72,7 @@ impl MetriGrpcService {
             }
         };
 
-        if let Err(e) = crate::cedar::authorizer::SystemSecurityRules::check_tenant_isolation(
+        if let Err(e) = crate::cedar::SystemSecurityRules::check_tenant_isolation(
             tenant_id,
             &ctx.tenant_id,
             &ctx.user_id,
