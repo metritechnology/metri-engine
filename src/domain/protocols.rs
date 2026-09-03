@@ -96,6 +96,16 @@ pub trait IStreamWriter: Send + Sync {
         partition_key: &str,
         data: Vec<u8>,
     ) -> DomainResult<String>;
+
+    /// Escribe un lote de records en una sola llamada PutRecordBatch.
+    /// Fase 1 PLAN_COSTO_OLAP: el canal OLAP emite ⌈N/50⌉ llamadas en vez de
+    /// N. Cada payload sigue siendo UN JSON válido por record — el destino
+    /// Iceberg no admite varios objetos por record (MEDICION_COSTO_OLAP.md §4).
+    async fn put_records(
+        &self,
+        stream_name: &str,
+        batch: Vec<(String, Vec<u8>)>,
+    ) -> DomainResult<Vec<String>>;
 }
 
 // ── Event Bus (EventBridge) ───────────────────────────────────────────────────

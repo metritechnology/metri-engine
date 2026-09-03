@@ -91,6 +91,72 @@ impl IStreamWriter for KinesisFirehoseWriter {
         // Retorna record_id como identificador del record
         Ok(resp.record_id)
     }
+
+    /// Escribe un lote en una sola llamada PutRecordBatch.
+    /// Cada payload se entrega con el mismo contrato que put_record:
+    /// JSON + newline (byte a byte idéntico a nivel de record).
+    async fn put_records(
+        &self,
+        stream_name: &str,
+        mut batch: Vec<(String, Vec<u8>)>,
+    ) -> Result<Vec<String>, DomainError> {
+        if batch.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut record_ids = Vec::with_capacity(batch.len());
+
+        // PutRecordBatch admite hasta 500 records por llamada; el canal ya
+        // parte en chunks de 50, pero el guard protege a cualquier otro
+        // llamador del trait que supere el tope del API.
+        for sub_batch in batch.chunks_mut(500) {
+            let mut records = Vec::with_capacity(sub_batch.len());
+            for (_, data) in sub_batch.iter_mut() {
+                data.push(b'\n');
+                let record = Record::builder()
+                    .data(Blob::new(std::mem::take(data)))
+                    .build()
+                    .map_err(|e| {
+                        DomainError::infra(
+                            ErrorCode::Infra005,
+                            format!("Failed to build Firehose record: {e:?}"),
+                        )
+                    })?;
+                records.push(record);
+            }
+
+            let resp = self
+                .client
+                .put_record_batch()
+                .delivery_stream_name(stream_name)
+                .set_records(Some(records))
+                .send()
+                .await
+                .map_err(|e| {
+                    let msg = format!("{e:?}");
+                    DomainError::infra(
+                        ErrorCode::Infra005,
+                        format!("Firehose PutRecordBatch falló en '{stream_name}': {msg}"),
+                    )
+                })?;
+
+            // Firehose reporta fallos parciales por record: un record que no
+            // entró es una falla del lote, no un éxito con pérdida silenciosa.
+            if resp.failed_put_count() > 0 {
+                return Err(DomainError::infra(
+                    ErrorCode::Infra005,
+                    format!(
+                        "Firehose PutRecordBatch: {} records fallidos en '{stream_name}'",
+                        resp.failed_put_count()
+                    ),
+                ));
+            }
+
+            record_ids.extend(resp.request_responses.into_iter().filter_map(|r| r.record_id));
+        }
+
+        Ok(record_ids)
+    }
 }
 
 use std::sync::{Arc, Mutex};
@@ -125,6 +191,21 @@ impl IStreamWriter for StubStreamWriter {
         );
         Ok(format!("stub-record-{}", uuid::Uuid::new_v4()))
     }
+
+    async fn put_records(
+        &self,
+        stream_name: &str,
+        batch: Vec<(String, Vec<u8>)>,
+    ) -> Result<Vec<String>, DomainError> {
+        info!(
+            stream = %stream_name,
+            count = batch.len(),
+            "[StubStreamWriter] Batch inyectado exitosamente en local"
+        );
+        Ok((0..batch.len())
+            .map(|_| format!("stub-record-{}", uuid::Uuid::new_v4()))
+            .collect())
+    }
 }
 
 /// Test-only stream writer that captures all records in memory.
@@ -132,6 +213,7 @@ impl IStreamWriter for StubStreamWriter {
 #[derive(Clone)]
 pub struct SpyStreamWriter {
     captured: Arc<Mutex<Vec<CapturedRecord>>>,
+    batch_calls: Arc<Mutex<usize>>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,12 +233,19 @@ impl SpyStreamWriter {
     pub fn new() -> Self {
         Self {
             captured: Arc::new(Mutex::new(Vec::new())),
+            batch_calls: Arc::new(Mutex::new(0)),
         }
     }
 
     /// Returns a clone of the shared capture buffer for assertion.
     pub fn captured(&self) -> Arc<Mutex<Vec<CapturedRecord>>> {
         self.captured.clone()
+    }
+
+    /// Número de llamadas a put_records recibidas — la aserción de la Puerta 1
+    /// (⌈N/50⌉ llamadas en vez de N).
+    pub fn batch_calls(&self) -> usize {
+        *self.batch_calls.lock().unwrap()
     }
 
     /// Drains all captured records, clearing the buffer.
@@ -184,5 +273,30 @@ impl IStreamWriter for SpyStreamWriter {
             "[SpyStreamWriter] Captured record for stream: {}", stream_name
         );
         Ok(format!("spy-record-{}", uuid::Uuid::new_v4()))
+    }
+
+    /// Captura el lote aplastado: un CapturedRecord por record lógico, de modo
+    /// que las aserciones de la suite e2e (drain + JSON por record) siguen
+    /// viendo exactamente los mismos records que en el camino put_record.
+    /// Añade el newline final igual que KinesisFirehoseWriter: el spy debe
+    /// entregar los mismos bytes que recibiría Firehose.
+    async fn put_records(
+        &self,
+        stream_name: &str,
+        batch: Vec<(String, Vec<u8>)>,
+    ) -> Result<Vec<String>, DomainError> {
+        *self.batch_calls.lock().unwrap() += 1;
+        let mut guard = self.captured.lock().unwrap();
+        let mut ids = Vec::with_capacity(batch.len());
+        for (partition_key, mut data) in batch {
+            data.push(b'\n');
+            guard.push(CapturedRecord {
+                stream_name: stream_name.to_string(),
+                partition_key,
+                data,
+            });
+            ids.push(format!("spy-record-{}", uuid::Uuid::new_v4()));
+        }
+        Ok(ids)
     }
 }

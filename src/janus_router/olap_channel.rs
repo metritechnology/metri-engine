@@ -29,6 +29,10 @@ use crate::janus_router::ulid;
 use crate::domain::protocols::IStreamWriter;
 use std::sync::Arc;
 
+#[cfg(test)]
+#[path = "tests/olap_channel_tests.rs"]
+mod olap_channel_tests;
+
 // ── OlapChannel ───────────────────────────────────────────────────────────────
 
 /// Canal de escritura OLAP vía Kinesis Firehose (Columnar Nativo).
@@ -101,9 +105,14 @@ impl IWriteChannel for OlapChannel {
 
         let mut ingested = 0usize;
 
-        // Procesar en chunks de 50 para evitar saturar el pool de conexiones del servidor LocalStack/AWS
+        // Fase 1 PLAN_COSTO_OLAP: un chunk de 50 records emite UNA llamada
+        // PutRecordBatch (antes: 50 PutRecord concurrentes que saturaban el
+        // pool de conexiones). El tamaño del chunk queda por debajo del tope
+        // de 500 records del API de Firehose. Cada payload sigue siendo UN
+        // JSON válido por record — el destino Iceberg no admite empaquetar
+        // varios records (MEDICION_COSTO_OLAP.md §4).
         for chunk in records.chunks(50) {
-            let mut tasks = Vec::new();
+            let mut batch: Vec<(String, Vec<u8>)> = Vec::with_capacity(chunk.len());
 
             for record in chunk {
                 let record_ulid = ulid::generate();
@@ -114,7 +123,6 @@ impl IWriteChannel for OlapChannel {
                 // 2. Aplanar: campos de dominio + metadatos del sistema.
                 let decorated = decorate_record(coerced, tenant_id, created_at, &record_ulid);
 
-                // FASE 4: Real Firehose PutRecord
                 let payload_bytes = serde_json::to_vec(&decorated).map_err(|e| {
                     DomainError::janus(
                         ErrorCode::Jns001,
@@ -122,20 +130,14 @@ impl IWriteChannel for OlapChannel {
                     )
                 })?;
 
-                let writer = Arc::clone(&self.stream_writer);
-                let stream_name_clone = stream_name.clone();
-                tasks.push(async move {
-                    writer
-                        .put_record(&stream_name_clone, &record_ulid, payload_bytes)
-                        .await
-                });
+                batch.push((record_ulid, payload_bytes));
             }
 
-            let results = futures::future::join_all(tasks).await;
-            for res in results {
-                res?;
-                ingested += 1;
-            }
+            // El error se propaga como antes de la agregación: un chunk
+            // fallido aborta la llamada route() completa. El lote vive dentro
+            // de una sola invocación — no se amplía la ventana de pérdida.
+            let record_ids = self.stream_writer.put_records(&stream_name, batch).await?;
+            ingested += record_ids.len();
         }
 
         info!(
