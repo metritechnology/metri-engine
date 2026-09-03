@@ -4,7 +4,10 @@
 // copiada en `intercept` y `get_principal_data`. Las fachadas públicas
 // (`intercept`, `get_principal_data` en authorizer.rs) delegan aquí.
 
+use std::time::Instant;
+
 use chrono::Utc;
+use tracing::Instrument;
 
 use crate::cedar::ports::{EntityReader, PolicyStore, PrincipalCache};
 use crate::cedar::request::AuthRequest;
@@ -24,22 +27,37 @@ pub async fn resolve_principal(
     eav_reader: &dyn EntityReader,
     cache: &dyn PrincipalCache,
 ) -> Result<PrincipalData, DomainError> {
-    let session = step1_extract_token(auth, valkey_store).await?;
-    let raw_principal = step2_query_oltp(
-        eav_reader,
-        &session.tenant_id,
-        &session.user_id,
-        cache,
-    )
-    .await?;
-    let principal = step3_consolidate(
-        eav_reader,
-        &session.tenant_id,
-        raw_principal,
-        true,
-    )
-    .await?;
-    step3b_validate_time_window(&principal, Utc::now())?;
+    // Observabilidad por paso (5C): cada etapa emite su latencia como evento
+    // tracing estructurado — agregable por el colector de logs sin necesitar
+    // un SDK de métricas propio.
+    let started = Instant::now();
+
+    let session = step1_extract_token(auth, valkey_store)
+        .instrument(tracing::info_span!("cedar", step = "1_authn"))
+        .await?;
+    tracing::debug!(target: "cedar", step = "1_authn", elapsed_ms = started.elapsed().as_millis() as u64);
+
+    let raw_principal = step2_query_oltp(eav_reader, &session.tenant_id, &session.user_id, cache)
+        .instrument(tracing::info_span!("cedar", step = "2_principal"))
+        .await?;
+
+    let principal = step3_consolidate(eav_reader, &session.tenant_id, raw_principal, true)
+        .instrument(tracing::info_span!("cedar", step = "3_consolidate"))
+        .await?;
+
+    // step3b es síncrona — el span se entra y se suelta en la misma línea.
+    {
+        let _step = tracing::info_span!("cedar", step = "3b_time_window").entered();
+        step3b_validate_time_window(&principal, Utc::now())?;
+    }
+
+    tracing::info!(
+        target: "cedar",
+        metric = "pipeline_latency",
+        step = "principal_resuelto",
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "principal resuelto y consolidado"
+    );
     Ok(principal)
 }
 
@@ -99,6 +117,7 @@ pub async fn intercept<T>(
 ) -> Result<CedarContext, DomainError> {
     let auth = AuthRequest::from_tonic(req);
 
+    let started = Instant::now();
     let principal = resolve_principal(&auth, valkey_store, eav_reader, cache).await?;
 
     let action = auth.cedar_action();
@@ -106,13 +125,39 @@ pub async fn intercept<T>(
     crate::cedar::resource_hydrator::hydrate_company_assignment(eav_reader, &principal.tenant_id, &mut resource)
         .await;
 
-    let domain_dict = step4_evaluate_cedar(
+    let domain_dict = match step4_evaluate_cedar(
         cedar_engine,
         policy_cache,
         &principal,
         &action,
         &resource,
-    )?;
+    ) {
+        Ok(dict) => {
+            tracing::info!(
+                target: "cedar",
+                metric = "decision",
+                decision = "allow",
+                action = %action,
+                tenant = %principal.tenant_id,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "Cedar ALLOW"
+            );
+            dict
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "cedar",
+                metric = "decision",
+                decision = "deny",
+                action = %action,
+                tenant = %principal.tenant_id,
+                stage = %e.stage,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "Cedar DENY"
+            );
+            return Err(e);
+        }
+    };
 
     Ok(cedar_context(
         principal.tenant_id,

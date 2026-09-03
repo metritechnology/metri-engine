@@ -258,6 +258,7 @@ async fn test_cache_invalidation_pubsub() {
     use crate::cedar::{
         BroadcastBus, InMemoryPrincipalCache, InvalidationMsg, PrincipalCache, PrincipalData,
     };
+    use crate::cedar::ports::InvalidationBus;
     use crate::eav::reader::pull::{CacheEntry, EAV_CACHE};
     use std::collections::HashMap;
 
@@ -275,8 +276,7 @@ async fn test_cache_invalidation_pubsub() {
     }
 
     // Populate PrincipalCache — bus compartido entre publicador y caché
-    let bus: std::sync::Arc<dyn crate::cedar::ports::InvalidationBus> =
-        std::sync::Arc::new(crate::cedar::BroadcastBus::new(100));
+    let bus: std::sync::Arc<dyn InvalidationBus> = std::sync::Arc::new(BroadcastBus::new(100));
     let cache = InMemoryPrincipalCache::new(std::sync::Arc::clone(&bus));
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     let principal = PrincipalData {
@@ -310,7 +310,6 @@ async fn test_cache_invalidation_pubsub() {
         entity_type: "user".to_string(),
         entity_id: "usr_inval_001".to_string(),
     };
-    use crate::cedar::ports::InvalidationBus;
     bus.publish(msg);
 
     // Wait a bit for processing
