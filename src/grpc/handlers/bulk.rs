@@ -239,7 +239,7 @@ impl MetriGrpcService {
                             entity_type: req.entity_type.clone(),
                             entity_id: eid,
                         };
-                        let _ = crate::cedar::INVALIDATION_TX.send(msg);
+                        self.invalidation_bus.publish(msg);
                     }
                 }
             }

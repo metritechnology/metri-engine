@@ -1,6 +1,8 @@
 // grpc/service.rs — Implementación de gRPC (Tonic)
 // SRP: Implementa la interfaz gRPC `MetriService`.
 
+use std::sync::Arc;
+
 use crate::grpc::pb::metri_service_server::MetriService;
 use crate::grpc::pb::{
     BulkRequest, BulkResponse, DiscoveryRequest, DiscoveryResponse, ExploreRequest,
@@ -34,6 +36,8 @@ pub struct ServiceDeps {
     /// (`domain::config::resolve_dev_auth_bypass`, fail-closed);
     /// los tests lo fijan explícitamente. Nunca llega activo a producción.
     pub dev_auth_bypass: crate::cedar::AuthenticationPolicy,
+    /// Bus de invalidación compartido con la caché de principals.
+    pub invalidation_bus: Arc<dyn crate::cedar::ports::InvalidationBus>,
 }
 
 pub struct MetriGrpcService {
@@ -48,6 +52,7 @@ pub struct MetriGrpcService {
     pub(crate) olap_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
     pub(crate) export_storage: Option<std::sync::Arc<dyn crate::domain::protocols::IExportStorage>>,
     pub(crate) dev_auth_bypass: crate::cedar::AuthenticationPolicy,
+    pub(crate) invalidation_bus: Arc<dyn crate::cedar::ports::InvalidationBus>,
 }
 
 impl MetriGrpcService {
@@ -65,6 +70,7 @@ impl MetriGrpcService {
             olap_channel,
             export_storage,
             dev_auth_bypass,
+            invalidation_bus,
         } = deps;
 
         // Inicializar pasos del IOP con dependencias reales de Cedar Zero-Trust
@@ -109,6 +115,7 @@ impl MetriGrpcService {
             olap_channel,
             export_storage,
             dev_auth_bypass,
+            invalidation_bus,
         }
     }
 }

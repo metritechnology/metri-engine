@@ -159,7 +159,13 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         Arc::clone(&ddb_client),
         eav_table.clone(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
+    // Bus de invalidación compartido: lo usan los mutadores (bulk/transact)
+    // para publicar y la caché de principals para suscribirse.
+    let invalidation_bus: Arc<dyn crate::cedar::ports::InvalidationBus> =
+        Arc::new(crate::cedar::BroadcastBus::new(100));
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(Arc::clone(
+        &invalidation_bus,
+    )));
 
     // ── Sherlog / EventBridge Notifier ───────────────────────────────────────
     let eb_mode = std::env::var("EVENTBRIDGE_MODE").unwrap_or_default();
@@ -229,6 +235,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         olap_channel: Arc::clone(&olap_channel),
         export_storage,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::from_bool(dev_auth_bypass),
+        invalidation_bus,
     });
     let auth_interceptor = super::interceptors::auth_waf_interceptor;
     let service = MetriServiceServer::with_interceptor(grpc_service, auth_interceptor);

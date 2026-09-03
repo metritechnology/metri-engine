@@ -25,7 +25,7 @@ async fn test_user_suspended() {
         },
     );
 
-    let cache = InMemoryPrincipalCache::new();
+    let cache = InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)));
     let principal = PrincipalData {
         user_id: "usr_susp".to_string(),
         tenant_id: "tnt_01".to_string(),
@@ -50,7 +50,7 @@ async fn test_user_suspended() {
 
 #[tokio::test]
 async fn test_cache_hit_prevents_db_query() {
-    let cache = InMemoryPrincipalCache::new();
+    let cache = InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)));
     let principal = PrincipalData {
         user_id: "usr_cached".to_string(),
         tenant_id: "tnt_01".to_string(),

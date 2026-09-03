@@ -192,7 +192,7 @@ async fn test_group_cycle_prevention() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -207,6 +207,7 @@ async fn test_group_cycle_prevention() {
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
+        invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
     });
 
     // Scenario 1: A group cannot be its own parent
@@ -255,7 +256,7 @@ async fn test_group_cycle_prevention() {
 #[tokio::test]
 async fn test_cache_invalidation_pubsub() {
     use crate::cedar::{
-        InMemoryPrincipalCache, InvalidationMsg, PrincipalCache, PrincipalData, INVALIDATION_TX,
+        BroadcastBus, InMemoryPrincipalCache, InvalidationMsg, PrincipalCache, PrincipalData,
     };
     use crate::eav::reader::pull::{CacheEntry, EAV_CACHE};
     use std::collections::HashMap;
@@ -273,8 +274,10 @@ async fn test_cache_invalidation_pubsub() {
         );
     }
 
-    // Populate PrincipalCache
-    let cache = InMemoryPrincipalCache::new();
+    // Populate PrincipalCache — bus compartido entre publicador y caché
+    let bus: std::sync::Arc<dyn crate::cedar::ports::InvalidationBus> =
+        std::sync::Arc::new(crate::cedar::BroadcastBus::new(100));
+    let cache = InMemoryPrincipalCache::new(std::sync::Arc::clone(&bus));
     tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
     let principal = PrincipalData {
         user_id: "usr_inval_001".to_string(),
@@ -307,7 +310,8 @@ async fn test_cache_invalidation_pubsub() {
         entity_type: "user".to_string(),
         entity_id: "usr_inval_001".to_string(),
     };
-    INVALIDATION_TX.send(msg).unwrap();
+    use crate::cedar::ports::InvalidationBus;
+    bus.publish(msg);
 
     // Wait a bit for processing
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -359,7 +363,7 @@ async fn test_batch_transaction_granular_security() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -374,6 +378,7 @@ async fn test_batch_transaction_granular_security() {
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
+        invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
     });
 
     // Scenario: A transaction containing mixed valid (matching tenant) and invalid (mismatched tenant) operations
@@ -456,7 +461,7 @@ async fn test_invalid_role_grant_format() {
         ddb_client,
         "table".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -471,6 +476,7 @@ async fn test_invalid_role_grant_format() {
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
+        invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
     });
 
     // Test invalid formats for grants in role payload
@@ -585,7 +591,7 @@ async fn test_tenant_and_quota_master_crud_gates() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
 
     // Popular Principal Cache para usr_regular
     let regular_principal = crate::cedar::PrincipalData {
@@ -656,6 +662,7 @@ async fn test_tenant_and_quota_master_crud_gates() {
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
+        invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
     });
 
     // 1. Mutate 'tenant' as non-master user -> Expect PermissionDenied (Auth403)

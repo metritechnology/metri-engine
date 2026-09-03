@@ -87,6 +87,16 @@ pub trait PrincipalCache: Send + Sync {
     async fn evict_by_role(&self, role_id: &str) -> Result<(), DomainError>;
 }
 
+
+/// Bus de invalidación de cachés: los mutadores publican y los suscriptores
+/// expulsan. Sin canal global — la instancia la crea la raíz de composición y
+/// se comparte entre publicadores y caché.
+pub trait InvalidationBus: Send + Sync {
+    /// Publica un mensaje; no falla si no hay suscriptores.
+    fn publish(&self, msg: crate::cedar::types::InvalidationMsg);
+    fn subscribe(&self) -> tokio::sync::broadcast::Receiver<crate::cedar::types::InvalidationMsg>;
+}
+
 /// Políticas Cedar compiladas por rol.
 ///
 /// Sustituye al `&HashMap<String, PolicySet>` crudo en las firmas: el

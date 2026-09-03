@@ -15,7 +15,7 @@ async fn test_cedar_step_instantiation() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
 
     let step = CedarAuthorizerStep::new(valkey_store, pull_read, principal_cache);
 

@@ -201,43 +201,17 @@ pub async fn step3_consolidate(
     let mut consolidated_boundaries = Vec::new();
 
     for boundary in &user_data.roles_boundaries {
-        let locs_handle = spawn_expand(
-            eav_reader,
-            tenant_id,
-            "location",
-            boundary.permitted_locations.clone(),
-            expand_children,
+        consolidated_boundaries.push(
+            consolidate_boundary(
+                eav_reader,
+                tenant_id,
+                boundary,
+                &expanded_group_locations,
+                &expanded_group_assets,
+                expand_children,
+            )
+            .await?,
         );
-        let assets_handle = spawn_expand(
-            eav_reader,
-            tenant_id,
-            "asset",
-            boundary.permitted_assets.clone(),
-            expand_children,
-        );
-        let (locs_res, assets_res) = tokio::join!(locs_handle, assets_handle);
-
-        let expanded_locations: HashSet<String> = locs_res
-            .map_err(|e| DomainError::new(ErrorCode::Infra001, e.to_string()))??
-            .into_iter()
-            .collect();
-        let expanded_assets: HashSet<String> = assets_res
-            .map_err(|e| DomainError::new(ErrorCode::Infra001, e.to_string()))??
-            .into_iter()
-            .collect();
-
-        consolidated_boundaries.push(RoleBoundary {
-            role_id: boundary.role_id.clone(),
-            grants: boundary.grants.clone(),
-            permitted_locations: intersect_or_inherit(
-                expanded_locations,
-                expanded_group_locations.clone(),
-            ),
-            permitted_assets: intersect_or_inherit(
-                expanded_assets,
-                expanded_group_assets.clone(),
-            ),
-        });
     }
 
     let mut final_principal = user_data;
@@ -347,7 +321,37 @@ pub async fn assemble_principal_graph(
         _ => "ACTIVE".to_string(),
     };
 
-    // ── Roles: pull concurrente (antes era secuencial, N+1 en el login path) ──
+    let (roles, roles_boundaries) = assemble_roles(eav_reader, tenant_id, &user_map).await?;
+    let (group_allowed_locations, group_allowed_assets, mut time_restrictions, groups) =
+        assemble_groups(eav_reader, tenant_id, &user_map).await?;
+
+    if let Some(DatomValue::Str(s)) = attr(&user_map, "user", "time_restrictions") {
+        if let Ok(res) = serde_json::from_str::<Vec<TimeRestriction>>(s) {
+            time_restrictions = res;
+        }
+    }
+
+    Ok(PrincipalData {
+        user_id: user_id.to_string(),
+        tenant_id: tenant_id.to_string(),
+        status,
+        user_type,
+        company_id,
+        roles,
+        roles_boundaries,
+        time_restrictions,
+        group_allowed_locations: group_allowed_locations.into_iter().collect(),
+        group_allowed_assets: group_allowed_assets.into_iter().collect(),
+        groups,
+    })
+}
+
+/// Roles del usuario: ids, grants parseados y perímetros — pulls concurrentes.
+async fn assemble_roles(
+    eav_reader: &dyn EntityReader,
+    tenant_id: &str,
+    user_map: &EntityMap,
+) -> Result<(HashSet<String>, Vec<RoleBoundary>), DomainError> {
     let mut roles = HashSet::new();
     let role_ids: Vec<String> =
         id_list(user_map.get("role_ids").or_else(|| user_map.get("user/role_ids")));
@@ -372,7 +376,24 @@ pub async fn assemble_principal_graph(
         });
     }
 
-    // ── Grupos: BFS por olas — cada ola de pulls corre en paralelo ──────────
+    Ok((roles, roles_boundaries))
+}
+
+/// Grupos del usuario en BFS por olas paralelas: unión de perímetros,
+/// restricciones temporales heredadas y el conjunto visitado (ciclos fuera).
+async fn assemble_groups(
+    eav_reader: &dyn EntityReader,
+    tenant_id: &str,
+    user_map: &EntityMap,
+) -> Result<
+    (
+        HashSet<String>,
+        HashSet<String>,
+        Vec<TimeRestriction>,
+        HashSet<String>,
+    ),
+    DomainError,
+> {
     let mut group_allowed_locations = HashSet::new();
     let mut group_allowed_assets = HashSet::new();
     let mut group_time_restrictions = Vec::new();
@@ -403,53 +424,99 @@ pub async fn assemble_principal_graph(
         let mut next_level = Vec::new();
         for (_g_id, group_map_res) in level.into_iter().zip(pulls) {
             let group_map = group_map_res?;
-            if group_map.is_empty() {
-                continue;
-            }
-
-            for loc in str_list(attr(&group_map, "user_group", "allowed_locations")) {
-                group_allowed_locations.insert(loc);
-            }
-            for asset in str_list(attr(&group_map, "user_group", "allowed_assets")) {
-                group_allowed_assets.insert(asset);
-            }
-
-            if let Some(DatomValue::Str(s)) = attr(&group_map, "user_group", "time_restrictions") {
-                if let Ok(res) = serde_json::from_str::<Vec<TimeRestriction>>(s) {
-                    group_time_restrictions.extend(res);
-                }
-            }
-
-            if let Some(DatomValue::Str(parent_id)) =
-                attr(&group_map, "user_group", "parent_user_group_id")
-            {
-                if !parent_id.is_empty() && !visited_groups.contains(parent_id) {
-                    next_level.push(parent_id.clone());
-                }
-            }
+            absorb_group(
+                &group_map,
+                &mut group_allowed_locations,
+                &mut group_allowed_assets,
+                &mut group_time_restrictions,
+                &visited_groups,
+                &mut next_level,
+            );
         }
         queue = next_level;
     }
 
-    let mut time_restrictions = Vec::new();
-    if let Some(DatomValue::Str(s)) = attr(&user_map, "user", "time_restrictions") {
+    Ok((
+        group_allowed_locations,
+        group_allowed_assets,
+        group_time_restrictions,
+        visited_groups,
+    ))
+}
+
+/// Absorbe los atributos de un grupo del BFS: unión de perímetros,
+/// restricciones temporales heredadas y encolo del padre si no es visitado.
+fn absorb_group(
+    group_map: &EntityMap,
+    locations: &mut HashSet<String>,
+    assets: &mut HashSet<String>,
+    time_restrictions: &mut Vec<TimeRestriction>,
+    visited: &HashSet<String>,
+    next_level: &mut Vec<String>,
+) {
+    if group_map.is_empty() {
+        return;
+    }
+
+    for loc in str_list(attr(group_map, "user_group", "allowed_locations")) {
+        locations.insert(loc);
+    }
+    for asset in str_list(attr(group_map, "user_group", "allowed_assets")) {
+        assets.insert(asset);
+    }
+
+    if let Some(DatomValue::Str(s)) = attr(group_map, "user_group", "time_restrictions") {
         if let Ok(res) = serde_json::from_str::<Vec<TimeRestriction>>(s) {
-            time_restrictions = res;
+            time_restrictions.extend(res);
         }
     }
-    time_restrictions.extend(group_time_restrictions);
 
-    Ok(PrincipalData {
-        user_id: user_id.to_string(),
-        tenant_id: tenant_id.to_string(),
-        status,
-        user_type,
-        company_id,
-        roles,
-        roles_boundaries,
-        time_restrictions,
-        group_allowed_locations: group_allowed_locations.into_iter().collect(),
-        group_allowed_assets: group_allowed_assets.into_iter().collect(),
-        groups: visited_groups,
+    if let Some(DatomValue::Str(parent_id)) = attr(group_map, "user_group", "parent_user_group_id")
+    {
+        if !parent_id.is_empty() && !visited.contains(parent_id) {
+            next_level.push(parent_id.clone());
+        }
+    }
+}
+
+/// Expande y consolida UN boundary de rol contra los perímetros del grupo.
+async fn consolidate_boundary(
+    eav_reader: &dyn EntityReader,
+    tenant_id: &str,
+    boundary: &RoleBoundary,
+    group_locations: &HashSet<String>,
+    group_assets: &HashSet<String>,
+    expand_children: bool,
+) -> Result<RoleBoundary, DomainError> {
+    let locs_handle = spawn_expand(
+        eav_reader,
+        tenant_id,
+        "location",
+        boundary.permitted_locations.clone(),
+        expand_children,
+    );
+    let assets_handle = spawn_expand(
+        eav_reader,
+        tenant_id,
+        "asset",
+        boundary.permitted_assets.clone(),
+        expand_children,
+    );
+    let (locs_res, assets_res) = tokio::join!(locs_handle, assets_handle);
+
+    let expanded_locations: HashSet<String> = locs_res
+        .map_err(|e| DomainError::new(ErrorCode::Infra001, e.to_string()))??
+        .into_iter()
+        .collect();
+    let expanded_assets: HashSet<String> = assets_res
+        .map_err(|e| DomainError::new(ErrorCode::Infra001, e.to_string()))??
+        .into_iter()
+        .collect();
+
+    Ok(RoleBoundary {
+        role_id: boundary.role_id.clone(),
+        grants: boundary.grants.clone(),
+        permitted_locations: intersect_or_inherit(expanded_locations, group_locations.clone()),
+        permitted_assets: intersect_or_inherit(expanded_assets, group_assets.clone()),
     })
 }

@@ -32,14 +32,16 @@ pub struct InMemoryPrincipalCache {
 
 impl Default for InMemoryPrincipalCache {
     fn default() -> Self {
-        Self::new()
+        Self::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)))
     }
 }
 
 impl InMemoryPrincipalCache {
-    pub fn new() -> Self {
+    /// `bus` es la instancia compartida con los mutadores que publican la
+    /// invalidación — sin canales globales.
+    pub fn new(bus: std::sync::Arc<dyn crate::cedar::ports::InvalidationBus>) -> Self {
         let cache = Arc::new(RwLock::new(HashMap::<String, Entry>::new()));
-        spawn_invalidation_task(Arc::clone(&cache));
+        spawn_invalidation_task(bus, Arc::clone(&cache));
         Self { cache }
     }
 }

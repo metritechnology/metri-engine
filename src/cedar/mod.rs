@@ -25,7 +25,7 @@ pub mod types;
 mod tests;
 
 pub use authn::{step1_extract_token, verify_hmac_token_local_in_step, HmacTokenVerifier};
-pub use cache::invalidation::INVALIDATION_TX;
+pub use cache::invalidation::BroadcastBus;
 pub use cache::principal::{InMemoryPrincipalCache, MAX_PRINCIPAL_CACHE_SIZE};
 pub use cache::session::{InMemorySessionStore, MAX_SESSION_CACHE_SIZE};
 pub use engine::CedarAuthorizer;

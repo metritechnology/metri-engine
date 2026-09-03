@@ -17,17 +17,38 @@ use tracing::info;
 use crate::cedar::cache::principal::Entry;
 use crate::cedar::types::InvalidationMsg;
 
-pub static INVALIDATION_TX: once_cell::sync::Lazy<tokio::sync::broadcast::Sender<InvalidationMsg>> =
-    once_cell::sync::Lazy::new(|| {
-        let (tx, _rx) = tokio::sync::broadcast::channel(100);
-        tx
-    });
+/// Bus concreto sobre un canal broadcast de tokio.
+pub struct BroadcastBus {
+    tx: tokio::sync::broadcast::Sender<InvalidationMsg>,
+}
+
+impl BroadcastBus {
+    pub fn new(capacity: usize) -> Self {
+        let (tx, _rx) = tokio::sync::broadcast::channel(capacity);
+        BroadcastBus { tx }
+    }
+}
+
+impl crate::cedar::ports::InvalidationBus for BroadcastBus {
+    fn publish(&self, msg: InvalidationMsg) {
+        // Sin suscriptores no hay nada que invalidar — no es un error.
+        let _ = self.tx.send(msg);
+    }
+
+    fn subscribe(&self) -> tokio::sync::broadcast::Receiver<InvalidationMsg> {
+        self.tx.subscribe()
+    }
+}
 
 /// Levanta el suscriptor de invalidación para UNA caché de principals. Se
-/// llama explícitamente al construir `InMemoryPrincipalCache`.
-pub(crate) fn spawn_invalidation_task(cache: Arc<RwLock<HashMap<String, Entry>>>) {
+/// llama explícitamente al construir `InMemoryPrincipalCache`, con el bus
+/// inyectado por la raíz de composición.
+pub(crate) fn spawn_invalidation_task(
+    bus: Arc<dyn crate::cedar::ports::InvalidationBus>,
+    cache: Arc<RwLock<HashMap<String, Entry>>>,
+) {
     tokio::spawn(async move {
-        let mut rx = INVALIDATION_TX.subscribe();
+        let mut rx = bus.subscribe();
         loop {
             match rx.recv().await {
                 Ok(msg) => evict(&cache, msg),

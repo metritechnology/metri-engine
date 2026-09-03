@@ -87,7 +87,9 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
         Arc::clone(&ddb_client),
         table_name.clone(),
     ));
-    let principal_cache = Arc::new(InMemoryPrincipalCache::new());
+    let principal_cache = Arc::new(InMemoryPrincipalCache::new(std::sync::Arc::new(
+        metri_engine::cedar::BroadcastBus::new(100),
+    )));
 
     let service = MetriGrpcService::new(metri_engine::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -104,6 +106,7 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
         // El e2e construye el servicio por inyección: el bypass de desarrollo
         // se pide aquí de forma explícita, no con variables de entorno.
         dev_auth_bypass: metri_engine::cedar::AuthenticationPolicy::DevBypass,
+        invalidation_bus: std::sync::Arc::new(metri_engine::cedar::BroadcastBus::new(100)),
     });
 
     // Generate a valid HMAC session token for the bypass credentials
