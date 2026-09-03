@@ -57,7 +57,7 @@ impl CedarAuthorizerStep {
 
 #[async_trait::async_trait]
 impl IopStep for CedarAuthorizerStep {
-    /// Evalúa autorización Zero-Trust usando cedar::authorizer::intercept real.
+    /// Evalúa autorización Zero-Trust usando cedar::pipeline::intercept real.
     #[tracing::instrument(
         name = "iop.step1.cedar.start",
         skip(self, ctx),
