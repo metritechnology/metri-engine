@@ -749,19 +749,15 @@ Resources:
               Resource: !GetAtt MetriEavTable.Arn
 
             # ── OLAP: Kinesis Firehose (todos los streams de entidades OLAP) ──
+            # Fase 1 PLAN_COSTO_OLAP: el bloque kinesis:* (PutRecord/PutRecords/
+            # DescribeStream sobre stream/metri-olap-stream-*) se retiró — el
+            # motor solo habla Firehose y ningún stream Data Stream lleva ese
+            # nombre. El inventario de la Fase 0 no encontró consumidores.
             - Effect: Allow
               Action:
                 - firehose:PutRecord
                 - firehose:PutRecordBatch
               Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/metri-olap-*"
-
-            # ── OLAP: Kinesis Data Stream ──
-            - Effect: Allow
-              Action:
-                - kinesis:PutRecord
-                - kinesis:PutRecords
-                - kinesis:DescribeStream
-              Resource: !Sub "arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/metri-olap-stream-*"
 
             # ── EDA: EventBridge (domain & fault events) ──
             - Effect: Allow
