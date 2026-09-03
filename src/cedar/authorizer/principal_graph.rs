@@ -5,15 +5,15 @@
 use std::collections::HashSet;
 
 use crate::cedar::authorizer::{
-    PrincipalCache, PrincipalData, RoleBoundary, TimeRestriction, MAX_HIERARCHY_DEPTH,
+    is_master_tenant, PrincipalCache, PrincipalData, RoleBoundary, TimeRestriction,
+    EntityReader, MAX_HIERARCHY_DEPTH,
 };
 use crate::domain::errors::{DomainError, ErrorCode};
-use crate::eav::reader::pull::{EavReader, EntityMap};
-use crate::eav::reader::query::{EavQueryExecutor, NativeQueryPlan};
+use crate::eav::reader::pull::EntityMap;
 use crate::eav::types::datom::DatomValue;
 
 pub async fn step2_query_oltp(
-    eav_reader: &EavReader,
+    eav_reader: &dyn EntityReader,
     tenant_id: &str,
     user_id: &str,
     cache: &dyn PrincipalCache,
@@ -91,7 +91,7 @@ pub async fn step2_query_oltp(
 }
 
 pub async fn step3_consolidate(
-    eav_reader: &EavReader,
+    eav_reader: &dyn EntityReader,
     tenant_id: &str,
     user_data: PrincipalData,
     expand_children: bool,
@@ -107,13 +107,13 @@ pub async fn step3_consolidate(
     // caché, así que la expansión por índice AVET se omite y el conjunto
     // expandido es exactamente las raíces. En producción siempre es `true`.
     // 1. Expand group-level allowed locations and assets (in parallel)
-    let eav_reader_g1 = eav_reader.clone();
+    let reader_g1 = eav_reader.clone_reader();
     let tenant_g1 = tenant_id.to_string();
     let group_locations_roots = user_data.group_allowed_locations.clone();
     let group_locs_handle = tokio::spawn(async move {
         if expand_children {
             expand_hierarchy(
-                &eav_reader_g1,
+                reader_g1.as_ref(),
                 &tenant_g1,
                 "location",
                 group_locations_roots,
@@ -124,12 +124,12 @@ pub async fn step3_consolidate(
         }
     });
 
-    let eav_reader_g2 = eav_reader.clone();
+    let reader_g2 = eav_reader.clone_reader();
     let tenant_g2 = tenant_id.to_string();
     let group_assets_roots = user_data.group_allowed_assets.clone();
     let group_assets_handle = tokio::spawn(async move {
         if expand_children {
-            expand_hierarchy(&eav_reader_g2, &tenant_g2, "asset", group_assets_roots).await
+            expand_hierarchy(reader_g2.as_ref(), &tenant_g2, "asset", group_assets_roots).await
         } else {
             Ok(group_assets_roots)
         }
@@ -149,15 +149,15 @@ pub async fn step3_consolidate(
 
     // 2. Expand role boundaries and intersect with group boundaries
     for boundary in &user_data.roles_boundaries {
-        let eav_reader_clone = eav_reader.clone();
-        let tenant_clone = tenant_id.to_string();
+        let reader_locs = eav_reader.clone_reader();
+        let tenant_locs = tenant_id.to_string();
         let roots_locations = boundary.permitted_locations.clone();
 
         let locs_handle = tokio::spawn(async move {
             if expand_children {
                 expand_hierarchy(
-                    &eav_reader_clone,
-                    &tenant_clone,
+                    reader_locs.as_ref(),
+                    &tenant_locs,
                     "location",
                     roots_locations,
                 )
@@ -167,13 +167,14 @@ pub async fn step3_consolidate(
             }
         });
 
-        let eav_reader_clone2 = eav_reader.clone();
-        let tenant_clone2 = tenant_id.to_string();
+        let reader_assets = eav_reader.clone_reader();
+        let tenant_assets = tenant_id.to_string();
         let roots_assets = boundary.permitted_assets.clone();
 
         let assets_handle = tokio::spawn(async move {
             if expand_children {
-                expand_hierarchy(&eav_reader_clone2, &tenant_clone2, "asset", roots_assets).await
+                expand_hierarchy(reader_assets.as_ref(), &tenant_assets, "asset", roots_assets)
+                    .await
             } else {
                 Ok(roots_assets)
             }
@@ -236,9 +237,9 @@ pub async fn step3_consolidate(
 }
 
 async fn expand_hierarchy(
-    eav_reader: &EavReader,
+    eav_reader: &dyn EntityReader,
     tenant_id: &str,
-    entity_type: &str,
+    _entity_type: &str,
     roots: Vec<String>,
 ) -> Result<Vec<String>, DomainError> {
     if roots.is_empty() {
@@ -256,7 +257,9 @@ async fn expand_hierarchy(
         let mut next_level = Vec::new();
         for id in queue {
             if expanded.insert(id.clone()) {
-                let children = fetch_children_eav(eav_reader, tenant_id, entity_type, &id).await?;
+                let children = eav_reader
+                    .children_with_attr(tenant_id, "parent_id", &DatomValue::Str(id.clone()))
+                    .await?;
                 next_level.extend(children);
             }
         }
@@ -266,24 +269,8 @@ async fn expand_hierarchy(
     Ok(expanded.into_iter().collect())
 }
 
-async fn fetch_children_eav(
-    eav_reader: &EavReader,
-    tenant_id: &str,
-    _entity_type: &str,
-    parent_id: &str,
-) -> Result<Vec<String>, DomainError> {
-    let query_executor = EavQueryExecutor::new(eav_reader.ddb.clone(), eav_reader.table.clone());
-    let plan = NativeQueryPlan::AvetSingle {
-        tenant_id: tenant_id.to_string(),
-        attr_name: "parent_id".to_string(),
-        value: DatomValue::Str(parent_id.to_string()),
-    };
-
-    query_executor.execute_native_plan(&plan).await
-}
-
 pub async fn assemble_principal_graph(
-    eav_reader: &EavReader,
+    eav_reader: &dyn EntityReader,
     tenant_id: &str,
     user_id: &str,
     user_map: EntityMap,
@@ -336,9 +323,11 @@ pub async fn assemble_principal_graph(
 
             let mut role_map = eav_reader.pull(tenant_id, &r_id, None).await?;
             if role_map.is_empty() {
-                let master_tenant_id = std::env::var("METRI_MASTER_TENANT_ID")
-                    .unwrap_or_else(|_| "system".to_string());
-                if tenant_id != master_tenant_id {
+                // Un solo concepto de tenant maestro (S4): la configuración del
+                // arranque vía engine_config, no el entorno por petición.
+                let master_tenant_id =
+                    crate::domain::config::engine_config().master_tenant_id.clone();
+                if !is_master_tenant(tenant_id) {
                     role_map = eav_reader.pull(&master_tenant_id, &r_id, None).await?;
                 }
             }

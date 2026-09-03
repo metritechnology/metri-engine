@@ -2,17 +2,17 @@
 // step4: decisiones para camino analítico y mutacional, esquema Cedar y
 // recolección de grants del principal.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::str::FromStr;
 
-use cedar_policy::{Context, Entities, EntityUid, PolicySet, Request, Schema};
+use cedar_policy::{Context, Entities, EntityUid, Request, Schema};
 
-use crate::cedar::authorizer::{CedarAuthorizer, PrincipalData};
+use crate::cedar::authorizer::{is_master_tenant, CedarAuthorizer, PrincipalData, PolicyStore};
 use crate::domain::errors::{DomainError, ErrorCode};
 
 pub fn step4_evaluate_cedar(
     cedar_engine: &CedarAuthorizer,
-    policy_cache: &HashMap<String, PolicySet>,
+    policy_cache: &dyn PolicyStore,
     principal: &PrincipalData,
     action: &str,
     resource: &serde_json::Value,
@@ -143,7 +143,7 @@ fn collect_user_grants(principal: &PrincipalData) -> HashSet<String> {
 
 pub(crate) fn step4_mutational(
     cedar_engine: &CedarAuthorizer,
-    policy_cache: &HashMap<String, PolicySet>,
+    policy_cache: &dyn PolicyStore,
     principal: &PrincipalData,
     action: &str,
     resource: &serde_json::Value,
@@ -449,8 +449,8 @@ pub(crate) fn step4_mutational(
 
     if principal.roles_boundaries.is_empty() {
         if let Some(policy_set) = policy_cache
-            .get("admin")
-            .or_else(|| policy_cache.values().next())
+            .policy_for("admin")
+            .or_else(|| policy_cache.any_policy())
         {
             let request = Request::new(
                 Some(principal_uid.clone()),
@@ -469,10 +469,10 @@ pub(crate) fn step4_mutational(
     } else {
         for boundary in &principal.roles_boundaries {
             let policy_set = policy_cache
-                .get(&boundary.role_id)
-                .or_else(|| policy_cache.get("admin"))
-                .or_else(|| policy_cache.get("tenant-admin"))
-                .or_else(|| policy_cache.values().next())
+                .policy_for(&boundary.role_id)
+                .or_else(|| policy_cache.policy_for("admin"))
+                .or_else(|| policy_cache.policy_for("tenant-admin"))
+                .or_else(|| policy_cache.any_policy())
                 .ok_or_else(|| {
                     DomainError::new(ErrorCode::Auth403, "PolicySet not compiled for role")
                         .with_stage("cedar")
@@ -541,13 +541,13 @@ pub(crate) fn step4_analytical(
             let domain = d_val.as_str().unwrap_or("");
             let mut boundaries_json = Vec::new();
 
-            let master_tenant_id =
-                std::env::var("METRI_MASTER_TENANT_ID").unwrap_or_else(|_| "system".to_string());
+            // Un solo concepto de tenant maestro (S4): `is_master_tenant` sobre
+            // la configuración del arranque. Auto-autorizar aquí solo deja
+            // pasar el intercept; el chequeo de servicio (SystemSecurityRules)
+            // impone el PermissionDenied con el mensaje de sistema correcto.
             if (domain == "tenant" || domain == "domain_quota" || domain == "quota")
-                && principal.tenant_id != master_tenant_id
+                && !is_master_tenant(&principal.tenant_id)
             {
-                // Auto-authorize to pass intercept phase, service-level check (SystemSecurityRules)
-                // will enforce PermissionDenied with the correct system message.
                 boundaries_json.push(serde_json::json!({
                     "query_scope": "ALL",
                     "permitted_locations": Vec::<String>::new(),
@@ -602,6 +602,7 @@ fn is_mutational_action(action: &str) -> bool {
 mod tests {
     use super::*;
     use crate::cedar::authorizer::RoleBoundary;
+    use std::collections::HashMap;
 
     fn principal_with_grants(grants: Vec<serde_json::Value>) -> PrincipalData {
         PrincipalData {

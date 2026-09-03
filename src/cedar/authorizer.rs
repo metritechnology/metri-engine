@@ -5,61 +5,32 @@
 // Fase 2: el grafo de principal vive en authorizer/principal_graph.rs y la
 // evaluación step4 en authorizer/evaluator.rs; este archivo conserva el
 // pipeline (step1/step3b/intercept), las reglas del sistema y los tipos.
+//
+// Desmonte (fase 1 del plan cedar): los tipos de dominio viven en
+// cedar/types.rs y los puertos (EntityReader, PolicyStore) en cedar/ports.rs;
+// este archivo re-exporta para que las rutas crate::cedar::authorizer::* de
+// los consumidores sigan siendo estables.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use cedar_policy::{Authorizer, Decision, Entities, PolicySet, Request};
 
 use crate::domain::errors::{DomainError, ErrorCode};
-use crate::eav::reader::pull::EavReader;
 use crate::eav::types::datom::DatomValue;
+pub use crate::cedar::ports::{EntityReader, PolicyStore};
+pub use crate::cedar::types::{
+    CedarContext, InvalidationMsg, PrincipalData, RoleBoundary, TimeRestriction,
+};
+
 // --- Constants ---
 const MAX_HIERARCHY_DEPTH: usize = 10;
 
 // --- Structs & Traits ---
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoleBoundary {
-    pub role_id: String,
-    pub grants: Vec<serde_json::Value>,
-    pub permitted_locations: Vec<String>,
-    pub permitted_assets: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimeRestriction {
-    pub days_of_week: Vec<i32>,
-    pub start_minute: u32,
-    pub end_minute: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrincipalData {
-    pub user_id: String,
-    pub tenant_id: String,
-    pub status: String,
-    pub user_type: String,
-    pub company_id: String,
-    pub roles: HashSet<String>,
-    pub roles_boundaries: Vec<RoleBoundary>,
-    pub time_restrictions: Vec<TimeRestriction>,
-    pub group_allowed_locations: Vec<String>,
-    pub group_allowed_assets: Vec<String>,
-    pub groups: HashSet<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct InvalidationMsg {
-    pub tenant_id: String,
-    pub entity_type: String,
-    pub entity_id: String,
-}
 
 pub static INVALIDATION_TX: once_cell::sync::Lazy<tokio::sync::broadcast::Sender<InvalidationMsg>> =
     once_cell::sync::Lazy::new(|| {
@@ -465,21 +436,13 @@ pub fn step3b_validate_time_window(
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-pub struct CedarContext {
-    pub tenant_id: String,
-    pub user_id: String,
-    pub roles: HashSet<String>,
-    pub domain_boundaries: serde_json::Value,
-}
-
 pub async fn intercept<T>(
     req: &tonic::Request<T>,
     valkey_store: &dyn ISessionStore,
-    eav_reader: &EavReader,
+    eav_reader: &dyn EntityReader,
     cache: &dyn PrincipalCache,
     cedar_engine: &CedarAuthorizer,
-    policy_cache: &HashMap<String, PolicySet>,
+    policy_cache: &dyn PolicyStore,
 ) -> Result<CedarContext, DomainError> {
     let session = step1_extract_token(req, valkey_store).await?;
     let raw_principal =
@@ -596,7 +559,7 @@ fn extract_req_body<T>(_req: &tonic::Request<T>) -> Result<serde_json::Value, Do
 pub async fn get_principal_data<T>(
     req: &tonic::Request<T>,
     valkey_store: &dyn ISessionStore,
-    eav_reader: &EavReader,
+    eav_reader: &dyn EntityReader,
     cache: &dyn PrincipalCache,
     dev_auth_bypass: bool,
 ) -> Result<PrincipalData, DomainError> {
@@ -659,7 +622,8 @@ pub fn always_allow_stub(tenant_id: &str) -> Result<bool, DomainError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::eav::reader::pull::{CacheEntry, EAV_CACHE};
+    use crate::eav::reader::pull::{CacheEntry, EAV_CACHE, EavReader};
+    use std::collections::HashSet;
     use cedar_policy::EntityUid;
     use cedar_policy::{Context, Schema};
     use chrono::TimeZone;
