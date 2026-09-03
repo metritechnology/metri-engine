@@ -424,11 +424,27 @@ Resources:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: aws:kms
               KMSMasterKeyID: !Ref MetriKmsMasterKey
+            # Bucket key: una GenerateDataKey por bucket en vez de una por
+            # objeto — reduce ~70% las llamadas KMS del volumen que escribe
+            # Firehose (Fase 1 PLAN_COSTO_OLAP).
+            BucketKeyEnabled: true
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      # Fase 1 PLAN_COSTO_OLAP: transición a Glacier Instant Retrieval a los
+      # 90 días. Sin ExpirationInDays: la retención regulatoria del sector
+      # salud exige alargar la vida del dato, nunca acortarla por aquí.
+      # Glacier IR es de lectura en milisegundos: Athena sigue leyendo sin
+      # restauración previa.
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacierIR90d
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER_IR
+                TransitionInDays: 90
 
   # ── Glue Data Catalog — OLAP Schema Registry (Columnar Nativo) ────────────────────────────
   # Una base de datos por ambiente — las tablas Iceberg se crean via iceberg-seeder (CI/CD).
