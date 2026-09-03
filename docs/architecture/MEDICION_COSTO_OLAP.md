@@ -27,7 +27,7 @@ aws logs describe-log-groups
 |---|---|---|
 | **Athena** (workgroup `metri-analytics`) | `ProcessedBytes` = **0 bytes**; `athena-results/` vacío; el lake entero son **254 objetos / 575 KiB** | **≈ $0** |
 | **Firehose** | `IncomingRecords`: audit-log **525**, domain-fault **27**, inventory-ledger **0**, meter-reading **0** → 552 records ≈ 2,8 MB facturados (redondeo 5 KB/record) | ≈ $0 |
-| **Data Streams** | `metri-iot-telemetry-stream`: **2 shards PROVISIONED**, 0 records en agosto, **0 consumidores**, 0 referencias en el repo | **≈ $21,90 fijos** (2 × $10,95) — el único desperdicio real medido, y está fuera del camino OLAP que el plan atacaba |
+| **Data Streams** | `metri-iot-telemetry-stream`: 2 shards PROVISIONED. ~~Huérfano~~ **corregido en la sección 5**: es el sumidero de la regla IoT Core **habilitada** `metri_telemetry_generic_rule` (MQTT `metri/telemetry/+/+`); recibió **291.037 records de por vida** (julio) y 0 en agosto | ~$21,90 fijos — el coste del pipeline IoT inactivo; el investigable es el silencio de los dispositivos, no el stream |
 | **CloudWatch Logs** | Ningún LogGroup del stack declara retención (32 grupos listados; solo 2 de stacks ajenos tienen 7 días). Función engine viva: **155,4 MB ingeridos en agosto**, 338,4 MB almacenados | ~$0,08/mes ingesta, almacenamiento creciente sin techo |
 | **Lambda** | 59.275 invocaciones en agosto (función `metri-engine-MetriEngineFunction-nzuDmeFu5usS`) | centavos |
 | **Cost Explorer** | Julio $0,0000040; agosto $0,0000089 (UnblendedCost total) | **No fiable**: contradice el uso observado (2 shards aprovisionados solos cuestan ~$22). Posible cuenta con facturación no visible por CE. Los números de decisión de este documento son métricas de uso, no CE |
@@ -61,9 +61,23 @@ Lo que sí se ejecuta del ítem 5, sin romper la entrega:
 
 ## 5. Acciones operativas resultantes (fuera del repo)
 
+### 5a. HALLAZGO MAYOR (2026-09-03): la entrega Firehose → Iceberg NUNCA funcionó
+
+La investigación de los objetos `errors/firehose/iceberg-failed/` que motivó esta sección terminó en un hallazgo que reordena el diagnóstico completo:
+
+- **El lake está vacío de verdad**: los únicos objetos del bucket (256) son errores, desde el **30 de julio** (el primer error es de `audit-log`). No existe ni un solo dato entregado a Iceberg: no hay prefijo `iceberg-data/`, ni `firehose-backup/`, ni `athena-results/`.
+- **Causa raíz** (`Iceberg.UnsupportedSchemaEvolution`): *"Warehouse location does not exist. Ensure that WarehouseLocation under CatalogConfiguration is existing S3 location."* Los streams no declaran `WarehouseLocation` en su `CatalogConfiguration`; Firehose deriva la ubicación de la tabla Glue (`s3://…/iceberg-data/<tabla>`), un prefijo que **no existía en S3**, y rechaza cada record.
+- **Impacto**: 236 objetos de error de `audit-log` y 20 de `domain-fault` — **todo audit_log y domain_fault ingerido desde el 30-jul se perdió del camino analítico** (sobrevive solo embebido en los objetos de error). El `ProcessedBytes = 0` de Athena no es solo "poco volumen": no había nada que escanear ni datos sobre los que consultar.
+- **Remedio aplicado (2026-09-03)**: creados los prefijos que exige el propio mensaje de error — `iceberg-data/{audit_log,domain_fault,inventory_ledger,meter_reading}/` —, aditivo y reversible. **Pendiente de verificar** con el primer record nuevo (buffer Firehose: 300 s). Si Firehose sigue rechazando, el paso siguiente es `update-delivery-stream` fijando `WarehouseLocation` explícito o re-ejecutar el seeder de Iceberg (que ya no existe en este repo: el target `sync-firehose` citado por el template desapareció — deriva de infraestructura aparte).
+- Este hallazgo **refuerza el veredicto** de la sección 3 (no hay volumen OLAP que justifique DataFusion) y añade una deuda real fuera del alcance de este plan: la pérdida de datos desde julio y la herramienta de seeding desaparecida.
+
+### 5b. Acciones
+
 | Acción | Impacto | Estado |
 |---|---|---|
-| Borrar el Data Stream huérfano `metri-iot-telemetry-stream` (2 shards, sin consumidor ni tráfico; ~$21,90/mes) | Único ahorro real medido | **Pendiente de aprobación** — acción destructiva en AWS: `aws kinesis delete-stream --stream-name metri-iot-telemetry-stream`. Puede estar escrito por reglas de IoT Core de otro repo (agosto sin tráfico, pero confirmar antes de borrar) |
-| `aws logs put-retention-policy --log-group <engine> --retention-in-days 14` sobre los 3 LogGroups vivos de `metri-engine` | Los existentes no heredan la retención del template hasta el redeploy; el abandonado de stacks anteriores seguiría creciendo | **Aplicado el 2026-09-02** (ver §6) |
-| Investigar los `errors/firehose/iceberg-failed/` del stream `domain-fault` (objetos de hoy) | Posible pérdida silenciosa de faults en Iceberg | Pendiente — separado de este plan |
+| ~~Borrar el Data Stream huérfano~~ **Corregido**: `metri-iot-telemetry-stream` es el sumidero de la regla IoT habilitada `metri_telemetry_generic_rule` y recibió 291K records en julio. **NO borrar.** | El investigable es por qué la telemetría dejó de publicar en agosto (dispositivos) | Retirado como acción |
+| Crear prefijos `iceberg-data/<tabla>/` (remedio del error de Firehose) | Reabre la entrega del camino OLAP | **Aplicado 2026-09-03** — verificar con el primer record |
+| `aws logs put-retention-policy --log-group <engine> --retention-in-days 14` sobre los 3 LogGroups vivos de `metri-engine` | Los existentes no heredan la retención del template hasta el redeploy; el abandonado de stacks anteriores seguiría creciendo | **Aplicado el 2026-09-02** |
+| Evaluar reingesta de los 256 objetos de error (`iceberg-failed`) a las tablas Iceberg | Recupera el audit_log/domain_fault perdido desde el 30-jul (los records viajan embebidos en `rawData`) | Pendiente de decisión |
+| Restaurar el seeder de Firehose/Iceberg (`sync-firehose` citado por el template ya no existe en el repo) | Sin herramienta de seeding, cualquier reconfiguración de streams es manual | Pendiente — deriva de infraestructura del plan mayor |
 | Si se confirma otra cuenta productiva, repetir esta medición allí | — | Pendiente de confirmación |
