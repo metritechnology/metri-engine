@@ -31,6 +31,18 @@ pub const MAX_EAV_CACHE_SIZE: usize = 10_000;
 pub static EAV_CACHE: Lazy<RwLock<HashMap<String, CacheEntry>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+/// Expulsa una entidad de la caché local de point-lookups.
+///
+/// Punto de entrada explícito para la invalidación cruzada de cachés (el bus
+/// de cedar/cache): las otras capas no tocan este candado directamente.
+pub fn evict_cached_entity(tenant_id: &str, entity_id: &str) {
+    let pk = format!("T#{}#E#{}", tenant_id, entity_id);
+    if let Ok(mut lock) = EAV_CACHE.write() {
+        lock.remove(&pk);
+        tracing::info!("[CacheInvalidation] Evicted from EAV_CACHE: {}", pk);
+    }
+}
+
 /// Inserta una entrada en EAV_CACHE asegurando que el número total de entradas no exceda MAX_EAV_CACHE_SIZE.
 pub fn insert_eav_cache_entry(
     cache: &mut HashMap<String, CacheEntry>,

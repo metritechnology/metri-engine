@@ -11,193 +11,26 @@
 // este archivo re-exporta para que las rutas crate::cedar::authorizer::* de
 // los consumidores sigan siendo estables.
 
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-
-use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use tracing::{info, warn};
 
 use cedar_policy::{Authorizer, Decision, Entities, PolicySet, Request};
 
 use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::protocols::{ISessionStore, Session};
 use crate::eav::types::datom::DatomValue;
-pub use crate::cedar::ports::{EntityReader, PolicyStore};
+pub use crate::cedar::authn::HmacTokenVerifier;
+pub use crate::cedar::cache::invalidation::INVALIDATION_TX;
+pub use crate::cedar::cache::principal::{InMemoryPrincipalCache, MAX_PRINCIPAL_CACHE_SIZE};
+pub use crate::cedar::cache::session::{InMemorySessionStore, MAX_SESSION_CACHE_SIZE};
+pub use crate::cedar::ports::{EntityReader, PolicyStore, PrincipalCache};
+pub use crate::cedar::rules::{is_master_tenant, SystemSecurityRules};
 pub use crate::cedar::types::{
     CedarContext, InvalidationMsg, PrincipalData, RoleBoundary, TimeRestriction,
 };
 
 // --- Constants ---
 const MAX_HIERARCHY_DEPTH: usize = 10;
-
-// --- Structs & Traits ---
-
-pub static INVALIDATION_TX: once_cell::sync::Lazy<tokio::sync::broadcast::Sender<InvalidationMsg>> =
-    once_cell::sync::Lazy::new(|| {
-        let (tx, _rx) = tokio::sync::broadcast::channel(100);
-        tx
-    });
-
-use crate::domain::protocols::{ISessionStore, Session};
-
-pub const MAX_SESSION_CACHE_SIZE: usize = 10_000;
-pub const MAX_PRINCIPAL_CACHE_SIZE: usize = 5_000;
-
-pub struct InMemorySessionStore {
-    sessions: RwLock<HashMap<String, Session>>,
-}
-
-impl InMemorySessionStore {
-    pub fn new() -> Self {
-        Self {
-            sessions: RwLock::new(HashMap::new()),
-        }
-    }
-
-    pub fn insert(&self, token: &str, session: Session) {
-        if let Ok(mut lock) = self.sessions.write() {
-            if lock.len() >= MAX_SESSION_CACHE_SIZE && !lock.contains_key(token) {
-                let to_remove: Vec<String> = lock
-                    .keys()
-                    .take(MAX_SESSION_CACHE_SIZE / 5)
-                    .cloned()
-                    .collect();
-                for k in to_remove {
-                    lock.remove(&k);
-                }
-            }
-            lock.insert(token.to_string(), session);
-        }
-    }
-}
-
-#[async_trait]
-impl ISessionStore for InMemorySessionStore {
-    async fn get_session(&self, token: &str) -> Result<Option<Session>, DomainError> {
-        if let Ok(lock) = self.sessions.read() {
-            Ok(lock.get(token).cloned())
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn revoke_session(&self, _jti: &str, _ttl_seconds: u64) -> Result<(), DomainError> {
-        Ok(())
-    }
-
-    async fn unrevoke_session(&self, _jti: &str) -> Result<(), DomainError> {
-        Ok(())
-    }
-}
-
-#[async_trait]
-pub trait PrincipalCache: Send + Sync {
-    async fn lookup_principal(&self, user_id: &str) -> Option<PrincipalData>;
-    async fn store_principal(
-        &self,
-        user_id: &str,
-        principal: PrincipalData,
-    ) -> Result<(), DomainError>;
-    async fn evict_user(&self, user_id: &str) -> Result<(), DomainError>;
-    async fn evict_by_role(&self, role_id: &str) -> Result<(), DomainError>;
-}
-
-pub struct InMemoryPrincipalCache {
-    cache: Arc<RwLock<HashMap<String, PrincipalData>>>,
-}
-
-impl InMemoryPrincipalCache {
-    pub fn new() -> Self {
-        let cache = Arc::new(RwLock::new(HashMap::<String, PrincipalData>::new()));
-        let cache_clone = cache.clone();
-
-        tokio::spawn(async move {
-            let mut rx = INVALIDATION_TX.subscribe();
-            while let Ok(msg) = rx.recv().await {
-                // Evict from EAV_CACHE
-                let eav_pk = format!("T#{}#E#{}", msg.tenant_id, msg.entity_id);
-                if let Ok(mut eav_lock) = crate::eav::reader::pull::EAV_CACHE.write() {
-                    eav_lock.remove(&eav_pk);
-                    tracing::info!("[CacheInvalidation] Evicted from EAV_CACHE: {}", eav_pk);
-                }
-
-                // Evict from InMemoryPrincipalCache
-                if let Ok(mut principal_lock) = cache_clone.write() {
-                    match msg.entity_type.as_str() {
-                        "user" => {
-                            principal_lock.remove(&msg.entity_id);
-                            tracing::info!(
-                                "[CacheInvalidation] Evicted User {} from Principal Cache",
-                                msg.entity_id
-                            );
-                        }
-                        "role" => {
-                            let before_len = principal_lock.len();
-                            principal_lock.retain(|_, v| !v.roles.contains(&msg.entity_id));
-                            let evicted_count = before_len - principal_lock.len();
-                            tracing::info!("[CacheInvalidation] Evicted {} users having Role {} from Principal Cache", evicted_count, msg.entity_id);
-                        }
-                        "user_group" => {
-                            let before_len = principal_lock.len();
-                            principal_lock.retain(|_, v| !v.groups.contains(&msg.entity_id));
-                            let evicted_count = before_len - principal_lock.len();
-                            tracing::info!("[CacheInvalidation] Evicted {} users in Group {} from Principal Cache", evicted_count, msg.entity_id);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        });
-
-        Self { cache }
-    }
-}
-
-#[async_trait]
-impl PrincipalCache for InMemoryPrincipalCache {
-    async fn lookup_principal(&self, user_id: &str) -> Option<PrincipalData> {
-        if let Ok(lock) = self.cache.read() {
-            lock.get(user_id).cloned()
-        } else {
-            None
-        }
-    }
-
-    async fn store_principal(
-        &self,
-        user_id: &str,
-        principal: PrincipalData,
-    ) -> Result<(), DomainError> {
-        if let Ok(mut lock) = self.cache.write() {
-            if lock.len() >= MAX_PRINCIPAL_CACHE_SIZE && !lock.contains_key(user_id) {
-                let to_remove: Vec<String> = lock
-                    .keys()
-                    .take(MAX_PRINCIPAL_CACHE_SIZE / 5)
-                    .cloned()
-                    .collect();
-                for k in to_remove {
-                    lock.remove(&k);
-                }
-            }
-            lock.insert(user_id.to_string(), principal);
-        }
-        Ok(())
-    }
-
-    async fn evict_user(&self, user_id: &str) -> Result<(), DomainError> {
-        if let Ok(mut lock) = self.cache.write() {
-            lock.remove(user_id);
-        }
-        Ok(())
-    }
-
-    async fn evict_by_role(&self, role_id: &str) -> Result<(), DomainError> {
-        if let Ok(mut lock) = self.cache.write() {
-            lock.retain(|_, v| !v.roles.contains(role_id));
-        }
-        Ok(())
-    }
-}
 
 // --- CedarAuthorizer ---
 
@@ -236,126 +69,29 @@ impl CedarAuthorizer {
     }
 }
 
+/// Verificación HMAC estricta del camino Cedar (sin tolerancia de reloj).
+///
+/// Envoltorio fino sobre `authn::HmacTokenVerifier` — la implementación única
+/// del formato mk_ (D1). El secreto viene de la configuración del arranque.
 pub fn verify_hmac_token_local_in_step(raw_token: &str) -> Option<Session> {
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-    use constant_time_eq::constant_time_eq;
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
-
-    type HmacSha256 = Hmac<Sha256>;
-
-    let token = raw_token.strip_prefix("mk_")?;
-    let dot = token.find('.')?;
-    let (payload_b64, sig_b64) = token.split_at(dot);
-    let sig_b64 = &sig_b64[1..];
-
-    let payload_bytes = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
-    let hmac_secret = std::env::var("HMAC_SECRET")
-        .unwrap_or_else(|_| "secret-key-development-metri-256-bits!!!".to_string());
-
-    let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes()).ok()?;
-    mac.update(&payload_bytes);
-    let expected_sig = mac.finalize().into_bytes();
-    let provided_sig = URL_SAFE_NO_PAD.decode(sig_b64).ok()?;
-
-    if !constant_time_eq(&expected_sig, &provided_sig) {
-        return None;
-    }
-
-    let claims: serde_json::Value = serde_json::from_slice(&payload_bytes).ok()?;
-    let now = chrono::Utc::now().timestamp();
-    let exp = claims["exp"].as_i64()?;
-    if exp <= now {
-        return None;
-    }
-
-    Some(Session {
-        tenant_id: claims["tid"].as_str()?.to_string(),
-        user_id: claims["uid"].as_str()?.to_string(),
-        jti: claims["jti"].as_str()?.to_string(),
-        exp,
-    })
-}
-
-pub fn is_master_tenant(tenant_id: &str) -> bool {
-    let env_master: &str = &crate::domain::config::engine_config().master_tenant_id;
-    tenant_id == "system" || tenant_id == "tnt_master" || tenant_id == env_master
-}
-
-/// Rules for system and master tenant entities (like `tenant` and `domain_quota`).
-pub struct SystemSecurityRules;
-
-impl SystemSecurityRules {
-    /// Returns true if the entity type is a master-only system entity.
-    pub fn is_master_only_entity(entity_type: &str) -> bool {
-        matches!(
-            entity_type,
-            "tenant" | "domain_quota" | "quota" | "domain_plugin" | "tenant_plugin"
+    HmacTokenVerifier::from_engine_config()
+        .verify(raw_token, 0)
+        .map(
+            |VerifiedToken {
+                 tenant_id,
+                 user_id,
+                 jti,
+                 exp,
+             }| Session {
+                tenant_id,
+                user_id,
+                jti,
+                exp,
+            },
         )
-    }
-
-    /// Checks if a user is authorized to perform CRUD operations (Query, Explore, Mutation)
-    /// on a given entity type.
-    /// Master-only entities can only be accessed by master tenant users or the system BFF account.
-    pub fn check_crud_authorization(
-        entity_type: &str,
-        tenant_id: &str,
-        user_id: &str,
-        action: &str,
-    ) -> Result<(), DomainError> {
-        if Self::is_master_only_entity(entity_type) {
-            let is_master = is_master_tenant(tenant_id);
-            let is_system_bff = user_id == "usr_system_bff";
-            if !is_master && !is_system_bff {
-                let msg = match action {
-                    "mutate" => format!(
-                        "Auth403: Only master tenant users can mutate {}",
-                        entity_type
-                    ),
-                    "read" => {
-                        "Auth403: Only master tenant users can read tenants or quotas".to_string()
-                    }
-                    "explore" => format!(
-                        "Auth403: Only master tenant users can explore {}",
-                        entity_type
-                    ),
-                    _ => format!(
-                        "Auth403: Only master tenant users can access {}",
-                        entity_type
-                    ),
-                };
-                return Err(DomainError::new(ErrorCode::Auth403, msg).with_stage("security_rules"));
-            }
-        }
-        Ok(())
-    }
-
-    /// Checks tenant isolation for a mutation or query.
-    /// Restricts cross-tenant actions unless the caller is master or system BFF.
-    pub fn check_tenant_isolation(
-        target_tenant_id: &str,
-        caller_tenant_id: &str,
-        caller_user_id: &str,
-    ) -> Result<(), DomainError> {
-        let is_master = is_master_tenant(caller_tenant_id);
-        let is_system_bff = caller_user_id == "usr_system_bff";
-        if target_tenant_id != caller_tenant_id && !is_master && !is_system_bff {
-            return Err(
-                DomainError::new(ErrorCode::Auth403, "Auth403: Tenant mismatch")
-                    .with_stage("security_rules"),
-            );
-        }
-        Ok(())
-    }
-
-    /// Returns true if the entity type is exempt from quota validation and usage increment (unlimited).
-    pub fn is_quota_exempt(entity_type: &str) -> bool {
-        matches!(
-            entity_type,
-            "tenant" | "domain_quota" | "quota" | "domain_plugin" | "tenant_plugin"
-        )
-    }
 }
+
+use crate::cedar::authn::VerifiedToken;
 
 // --- Public Helper Interceptor Methods ---
 
@@ -383,10 +119,13 @@ pub async fn step1_extract_token<T>(
         );
     };
 
-    if token.starts_with("mk_") {
-        if let Some(session) = verify_hmac_token_local_in_step(&token) {
-            return Ok(session);
-        }
+    // Rechazo temprano sin red de tokens mk_ mal firmados o expirados.
+    // S1: el fast-path YA NO devuelve la sesión aquí — la revocación (blacklist
+    // por jti) vive en el session store y ninguna firma válida se la salta.
+    if token.starts_with("mk_") && verify_hmac_token_local_in_step(&token).is_none() {
+        return Err(
+            DomainError::new(ErrorCode::Auth401, "Invalid or expired token").with_stage("cedar"),
+        );
     }
 
     let session = valkey_store.get_session(&token).await?.ok_or_else(|| {
@@ -452,7 +191,6 @@ pub async fn intercept<T>(
 
     let action = extract_cedar_action(req)?;
     let mut resource = extract_cedar_resource(req)?;
-    let body = extract_req_body(req)?;
 
     let resource_id = resource
         .get("entity_id")
@@ -498,7 +236,6 @@ pub async fn intercept<T>(
         &principal,
         &action,
         &resource,
-        &body,
     )?;
 
     Ok(CedarContext {
@@ -550,10 +287,6 @@ fn extract_cedar_resource<T>(req: &tonic::Request<T>) -> Result<serde_json::Valu
         "entity_id": entity_id,
         "domains": domains,
     }))
-}
-
-fn extract_req_body<T>(_req: &tonic::Request<T>) -> Result<serde_json::Value, DomainError> {
-    Ok(serde_json::json!({}))
 }
 
 pub async fn get_principal_data<T>(
@@ -608,22 +341,14 @@ pub async fn get_principal_data<T>(
     Ok(principal)
 }
 
-// --- Temporal Stub Legacy Method ---
-pub fn always_allow_stub(tenant_id: &str) -> Result<bool, DomainError> {
-    if tenant_id == "evil-tenant" {
-        warn!("[Cedar STUB] Access Denied para evil-tenant");
-        Err(DomainError::new(ErrorCode::Janus403, "access-denied").with_stage("cedar"))
-    } else {
-        info!("[Cedar STUB] AlwaysAllow activo");
-        Ok(true)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::eav::reader::pull::{CacheEntry, EAV_CACHE, EavReader};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+
+    use crate::eav::types::datom::DatomValue;
     use cedar_policy::EntityUid;
     use cedar_policy::{Context, Schema};
     use chrono::TimeZone;
@@ -1281,7 +1006,6 @@ mod tests {
             &principal,
             "CREATE",
             &resource_ok,
-            &serde_json::json!({}),
         );
         assert!(
             res_create.is_ok(),
@@ -1296,7 +1020,6 @@ mod tests {
             &principal,
             "DELETE",
             &resource_ok,
-            &serde_json::json!({}),
         );
         assert!(
             res_delete.is_err(),
@@ -1347,7 +1070,6 @@ mod tests {
             &principal,
             "UPDATE",
             &resource_matching,
-            &serde_json::json!({}),
         );
         assert!(
             res_matching.is_ok(),
@@ -1366,7 +1088,6 @@ mod tests {
             &principal,
             "UPDATE",
             &resource_different,
-            &serde_json::json!({}),
         );
         assert!(
             res_different.is_err(),
@@ -1385,7 +1106,6 @@ mod tests {
             &principal,
             "UPDATE",
             &resource_none,
-            &serde_json::json!({}),
         );
         assert!(
             res_none.is_err(),
@@ -1395,36 +1115,38 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_hmac_token_debug() {
-        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-        use hmac::{Hmac, Mac};
-        use sha2::Sha256;
-        type HmacSha256 = Hmac<Sha256>;
-
+    fn test_verify_hmac_token() {
+        // El verificador se construye con el secreto explícito — sin tocar el
+        // entorno global (set_var es una carrera entre tests en paralelo).
         let secret = "c3ab8ff13720e8ad9047dd39466b3c8974e592c2fa383d4a3960714caef0c4f2";
-        std::env::set_var("HMAC_SECRET", secret);
-
+        let verifier = HmacTokenVerifier::new(secret);
         let exp = chrono::Utc::now().timestamp() + 3600;
-        let claims = serde_json::json!({
-            "exp": exp,
-            "iat": exp - 3600,
-            "jti": "e2575d40e197f5180121dcfb9470b3dc",
-            "tid": "system",
-            "uid": "usr_system_bff"
-        });
-        let payload_bytes = serde_json::to_vec(&claims).unwrap();
-        let payload_b64 = URL_SAFE_NO_PAD.encode(&payload_bytes);
+        let token = crate::cedar::authn::tests::mint_for_tests(
+            &verifier,
+            exp,
+            "e2575d40e197f5180121dcfb9470b3dc",
+            "system",
+            "usr_system_bff",
+        );
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
-        mac.update(&payload_bytes);
-        let sig = mac.finalize().into_bytes();
-        let sig_b64 = URL_SAFE_NO_PAD.encode(sig);
-
-        let token = format!("mk_{}.{}", payload_b64, sig_b64);
-
-        let res = verify_hmac_token_local_in_step(&token);
-        println!("DEBUG TOKEN RESULT: {:?}", res);
+        // Verificación estricta del camino Cedar (skew 0).
+        let res = verifier.verify(&token, 0);
         assert!(res.is_some());
+        let verified = res.unwrap();
+        assert_eq!(verified.tenant_id, "system");
+        assert_eq!(verified.user_id, "usr_system_bff");
+
+        // Un token firmado con un secreto distinto al de la configuración del
+        // proceso jamás verifica en el envoltorio estricto del camino Cedar
+        // (aserción determinista: el secreto de test es único en el proceso).
+        let wrapper = crate::cedar::authn::tests::mint_for_tests(
+            &verifier,
+            chrono::Utc::now().timestamp() + 3600,
+            "jti_2",
+            "tnt_01",
+            "usr_2",
+        );
+        assert!(verify_hmac_token_local_in_step(&wrapper).is_none());
     }
 
     #[test]

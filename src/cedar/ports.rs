@@ -70,6 +70,23 @@ impl EntityReader for EavReader {
     }
 }
 
+/// Caché de principals consolidados por user_id.
+///
+/// Puerto del desmonte fase 2: la pipeline resuelve el principal a través de
+/// este contrato; las implementaciones (hoy `InMemoryPrincipalCache`, mañana
+/// Redis/Valkey) deciden expiración y expulsión.
+#[async_trait]
+pub trait PrincipalCache: Send + Sync {
+    async fn lookup_principal(&self, user_id: &str) -> Option<crate::cedar::types::PrincipalData>;
+    async fn store_principal(
+        &self,
+        user_id: &str,
+        principal: crate::cedar::types::PrincipalData,
+    ) -> Result<(), DomainError>;
+    async fn evict_user(&self, user_id: &str) -> Result<(), DomainError>;
+    async fn evict_by_role(&self, role_id: &str) -> Result<(), DomainError>;
+}
+
 /// Políticas Cedar compiladas por rol.
 ///
 /// Sustituye al `&HashMap<String, PolicySet>` crudo en las firmas: el

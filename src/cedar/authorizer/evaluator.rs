@@ -16,7 +16,6 @@ pub fn step4_evaluate_cedar(
     principal: &PrincipalData,
     action: &str,
     resource: &serde_json::Value,
-    body: &serde_json::Value,
 ) -> Result<serde_json::Value, DomainError> {
     if principal.user_id == "usr_system_bff" {
         if is_mutational_action(action) {
@@ -47,7 +46,6 @@ pub fn step4_evaluate_cedar(
             principal,
             action,
             resource,
-            body,
         )
     } else {
         step4_analytical(cedar_engine, principal, action, resource)
@@ -147,7 +145,6 @@ pub(crate) fn step4_mutational(
     principal: &PrincipalData,
     action: &str,
     resource: &serde_json::Value,
-    _body: &serde_json::Value,
 ) -> Result<serde_json::Value, DomainError> {
     let mut allowed = false;
 
@@ -722,7 +719,6 @@ mod tests {
             &principal,
             "CREATE",
             &resource(&["project"]),
-            &serde_json::json!({}),
         );
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), serde_json::json!({}));
@@ -740,7 +736,6 @@ mod tests {
             &principal,
             "VIEW",
             &resource(&["project", "asset"]),
-            &serde_json::json!({}),
         );
         assert!(res.is_ok());
         let dict = res.unwrap();

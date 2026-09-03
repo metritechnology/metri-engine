@@ -253,14 +253,12 @@ impl MetriGrpcService {
             return Ok(());
         }
 
-        let body = serde_json::json!({});
         crate::cedar::authorizer::step4_evaluate_cedar(
             &self.cedar_engine,
             &self.policy_cache,
             principal,
             action,
             &resource,
-            &body,
         )
         .map_err(|err| Status::permission_denied(format!("Auth403: {}", err.detail)))?;
 

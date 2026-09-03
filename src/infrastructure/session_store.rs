@@ -9,20 +9,20 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
+use crate::cedar::authn::{HmacTokenVerifier, VerifiedToken};
+
+type HmacSha256 = Hmac<Sha256>;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::{ISessionStore, Session};
 use crate::infrastructure::dynamodb::DynamoClient;
 
-type HmacSha256 = Hmac<Sha256>;
-
 /// HMACTokenStore — verificación local sub-0.1ms, revocación en DynamoDB.
 pub struct HmacTokenStore {
-    secret: Vec<u8>, // HMAC-SHA256 secret
+    verifier: HmacTokenVerifier,
     ddb: Arc<DynamoClient>,
     table_name: String, // tabla de blacklist (REVOKED#<jti>)
 }
@@ -32,54 +32,31 @@ impl HmacTokenStore {
     pub fn new(secret: Vec<u8>, ddb: Arc<DynamoClient>, table_name: impl Into<String>) -> Self {
         info!("[HMAC] Session store activo — verificación local, sin red");
         HmacTokenStore {
-            secret,
+            verifier: HmacTokenVerifier::new(secret),
             ddb,
             table_name: table_name.into(),
         }
     }
 
-    /// Verifica la firma y la expiración del token. No consulta blacklist.
+    /// Verifica la firma y la expiración del token (estricto, sin skew). No
+    /// consulta blacklist — la implementación única del formato vive en
+    /// cedar::authn.
     fn verify_signature(&self, raw_token: &str) -> Option<Session> {
-        // El token tiene formato: mk_<base64url(payload)>.<base64url(HMAC)>
-        let token = raw_token.strip_prefix("mk_")?;
-        let dot = token.find('.')?;
-        let (payload_b64, sig_b64) = token.split_at(dot);
-        let sig_b64 = &sig_b64[1..]; // quitar el punto
-
-        // Decodificar payload
-        let payload_bytes = URL_SAFE_NO_PAD.decode(payload_b64).ok()?;
-
-        // Calcular HMAC esperado
-        let mut mac = HmacSha256::new_from_slice(&self.secret).ok()?;
-        mac.update(&payload_bytes);
-        let expected_sig = mac.finalize().into_bytes();
-
-        // Decodificar firma provista
-        let provided_sig = URL_SAFE_NO_PAD.decode(sig_b64).ok()?;
-
-        // Comparación en tiempo constante — previene timing attacks
-        if !constant_time_eq(&expected_sig, &provided_sig) {
-            debug!("[HMAC] Firma inválida");
-            return None;
-        }
-
-        // Parsear claims
-        let claims: serde_json::Value = serde_json::from_slice(&payload_bytes).ok()?;
-        let now = chrono::Utc::now().timestamp();
-
-        // Verificar expiración
-        let exp = claims["exp"].as_i64()?;
-        if exp <= now {
-            debug!("[HMAC] Token expirado");
-            return None;
-        }
-
-        Some(Session {
-            tenant_id: claims["tid"].as_str()?.to_string(),
-            user_id: claims["uid"].as_str()?.to_string(),
-            jti: claims["jti"].as_str()?.to_string(),
-            exp,
-        })
+        self.verifier
+            .verify(raw_token, 0)
+            .map(
+                |VerifiedToken {
+                     tenant_id,
+                     user_id,
+                     jti,
+                     exp,
+                 }| Session {
+                    tenant_id,
+                    user_id,
+                    jti,
+                    exp,
+                },
+            )
     }
 
     /// Verifica si un jti está en la blacklist de DynamoDB.
