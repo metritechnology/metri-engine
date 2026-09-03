@@ -118,6 +118,17 @@ build-MetriEngineFunction: build-lambda
 	cp -r config/errors $(ARTIFACTS_DIR)/errors
 	cp -r config/prompts $(ARTIFACTS_DIR)/prompts
 
+# ── Seeder de infraestructura OLAP (Fase 4 PLAN_CORRECCIONES_PENDIENTES) ──────
+# Ambos son idempotentes: correrlos dos veces no cambia nada.
+sync-iceberg: ## Materializa las tablas Iceberg de las entidades engine:olap (preflight + DDL Athena)
+	cargo run --quiet --bin firehose-seeder -- --apply --only-iceberg
+
+sync-firehose: ## Reconcilia los delivery streams Firehose (WarehouseLocation explícito, logging ON)
+	cargo run --quiet --bin firehose-seeder -- --apply --only-firehose
+
+sync-drift: ## Reporte de drift sin escribir nada (dry-run de ambos)
+	cargo run --quiet --bin firehose-seeder
+
 # ── Limpieza ──────────────────────────────────────────────────────────────────
 
 clean: ## Limpia binarios compilados

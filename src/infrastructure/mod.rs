@@ -7,5 +7,6 @@ pub mod kinesis;
 pub mod local_s3_query_engine;
 pub mod s3_export;
 pub mod session_store;
+pub mod seeder;
 pub mod sqs;
 pub mod tenant_guard;
