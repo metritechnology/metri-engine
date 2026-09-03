@@ -663,6 +663,12 @@ Resources:
         AuthType: NONE
         InvokeMode: RESPONSE_STREAM # Requerido para gRPC (soporte de HTTP Trailers)
 
+      # LogGroup explícito: sin este recurso, Lambda crea el grupo implícito y
+      # sin retención — los logs crecen indefinidamente (Fase 1 PLAN_COSTO_OLAP).
+      LoggingConfig:
+        LogGroup: !Ref MetriEngineLogGroup
+        LogFormat: JSON
+
       # Sin VpcConfig: Lambda accede a servicios AWS via API publica + IAM (sin costo de red)
 
       # Reglas de Cero Confianza (Minimum Least Privilege)
@@ -763,7 +769,7 @@ Resources:
           AWS_LWA_INVOKE_MODE: "response_stream" # Soporte gRPC trailers y streaming
           AWS_LAMBDA_EXEC_WRAPPER: "/opt/bootstrap" # REQUERIDO para provided.al2023
           # ── Rust Engine — variables de arranque ──
-          RUST_LOG: "info" # Cambiar a "debug" solo para troubleshooting
+          RUST_LOG: "warn" # Fase 1 PLAN_COSTO_OLAP: "info" emitía ~15 MB/mes de ruido por ingesta; "debug" solo para troubleshooting
           GRPC_PORT: "9090" # Puerto interno Lambda (Function URL redirige aquí)
           CODICE_MODELS_DIR: "models" # <-- Directorio donde el Makefile empaquetó los modelos # Path relativo al binario; S3 sync en FASE 4
           ERROR_CATALOG_PATH: "errors/error_catalog.toml" # Path relativo al binario (Makefile copia config/errors → errors/)
@@ -786,6 +792,16 @@ Resources:
           METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
           # Incrementar para forzar re-deploy limpio (invalida cache de modelos en cold start)
           FORCE_DEPLOY: "1"
+
+  # ── Retención de logs del engine (Fase 1 PLAN_COSTO_OLAP) ──
+  # El grupo se declara explícito para poder fijar RetentionInDays; el que
+  # SAM crea implícitamente no admite retención y retiene indefinidamente.
+  # 14 días cubre toda ventana razonable de troubleshooting de faults.
+  MetriEngineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-metri-engine"
+      RetentionInDays: 14
 
 Outputs:
   MetriEngineFunctionPublicUrl:
