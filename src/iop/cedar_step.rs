@@ -3,10 +3,10 @@
 //
 // Conecta con cedar-policy real y realiza evaluación Zero-Trust.
 
-use cedar_policy::PolicySet;
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
+
+use cedar_policy::PolicySet;
 use tracing::info;
 
 use crate::cedar::{intercept, is_master_tenant, CedarAuthorizer, PrincipalCache};
@@ -32,18 +32,7 @@ impl CedarAuthorizerStep {
     ) -> Self {
         info!("[CedarStep] Inicializando con motor real Cedar ABAC (Zero-Trust)");
 
-        let policies_src = include_str!("../../config/policies/metri.cedar");
-        let policies = PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
-
-        let mut policy_cache = HashMap::new();
-        // Registrar para roles conocidos y soportados
-        policy_cache.insert("admin".to_string(), policies.clone());
-        policy_cache.insert("tenant-admin".to_string(), policies.clone());
-        policy_cache.insert("contractor".to_string(), policies.clone());
-        policy_cache.insert("user".to_string(), policies.clone());
-        policy_cache.insert("system-bff".to_string(), policies.clone());
-        policy_cache.insert("system-admin".to_string(), policies.clone());
-        policy_cache.insert("role_super_master".to_string(), policies.clone());
+        let policy_cache = crate::cedar::engine::default_policy_cache();
 
         Self {
             valkey_store,

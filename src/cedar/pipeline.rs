@@ -127,13 +127,13 @@ pub async fn get_principal_data<T>(
     valkey_store: &dyn ISessionStore,
     eav_reader: &dyn EntityReader,
     cache: &dyn PrincipalCache,
-    dev_auth_bypass: bool,
+    policy: crate::cedar::rules::AuthenticationPolicy,
 ) -> Result<PrincipalData, DomainError> {
-    // Costura explícita de desarrollo: `dev_auth_bypass` lo decide la raíz de
+    // Costura explícita de desarrollo: la política la decide la raíz de
     // composición vía `resolve_dev_auth_bypass` (fail-closed) — nunca el
-    // entorno por petición. En producción es siempre `false`.
+    // entorno por petición. En producción es siempre `Production`.
     let auth = AuthRequest::from_tonic(req);
-    if dev_auth_bypass {
+    if policy.is_bypass() {
         return Ok(dev_bypass_principal(&auth));
     }
     resolve_principal(&auth, valkey_store, eav_reader, cache).await

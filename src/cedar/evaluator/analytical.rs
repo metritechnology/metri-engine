@@ -6,13 +6,11 @@
 // impone el PermissionDenied con el mensaje canónico.
 
 use crate::cedar::evaluator::grants::grant_allows_action;
-use crate::cedar::engine::CedarAuthorizer;
 use crate::cedar::rules::is_master_tenant;
 use crate::cedar::types::PrincipalData;
 use crate::domain::errors::{DomainError, ErrorCode};
 
 pub(crate) fn step4_analytical(
-    _cedar_engine: &CedarAuthorizer,
     principal: &PrincipalData,
     action: &str,
     resource: &serde_json::Value,
@@ -110,8 +108,7 @@ mod tests {
         let principal = principal_with_grants(vec![serde_json::json!({
             "domain": "project", "actions": ["VIEW"], "scope": "OWN"
         })]);
-        let engine = CedarAuthorizer::new();
-        let res = step4_analytical(&engine, &principal, "DELETE", &resource(&["project"]));
+        let res = step4_analytical(&principal, "DELETE", &resource(&["project"]));
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().code, ErrorCode::Auth403);
     }
@@ -124,8 +121,7 @@ mod tests {
         principal.roles_boundaries[0].permitted_locations = vec!["loc_1".to_string()];
         principal.roles_boundaries[0].permitted_assets = vec!["asset_1".to_string()];
 
-        let engine = CedarAuthorizer::new();
-        let res = step4_analytical(&engine, &principal, "VIEW", &resource(&["project"]));
+        let res = step4_analytical(&principal, "VIEW", &resource(&["project"]));
         assert!(res.is_ok());
         let dict = res.unwrap();
         let boundaries = dict["project"].as_array().unwrap();
@@ -139,8 +135,7 @@ mod tests {
         let principal = principal_with_grants(vec![serde_json::json!({
             "domain": "*", "actions": ["VIEW"], "scope": "ALL"
         })]);
-        let engine = CedarAuthorizer::new();
-        let res = step4_analytical(&engine, &principal, "VIEW", &resource(&["webhook_endpoint"]));
+        let res = step4_analytical(&principal, "VIEW", &resource(&["webhook_endpoint"]));
         assert!(res.is_ok());
         let dict = res.unwrap();
         assert_eq!(dict["webhook_endpoint"][0]["query_scope"], "ALL");
@@ -149,8 +144,7 @@ mod tests {
     #[test]
     fn char_analytical_resource_without_domains_is_empty_ok() {
         let principal = principal_with_grants(vec![]);
-        let engine = CedarAuthorizer::new();
-        let res = step4_analytical(&engine, &principal, "VIEW", &serde_json::json!({}));
+        let res = step4_analytical(&principal, "VIEW", &serde_json::json!({}));
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), serde_json::json!({}));
     }

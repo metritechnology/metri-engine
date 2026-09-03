@@ -55,7 +55,7 @@ pub fn step4_evaluate_cedar(
     if is_mutational_action(action) {
         step4_mutational(cedar_engine, policy_cache, principal, action, resource)
     } else {
-        step4_analytical(cedar_engine, principal, action, resource)
+        step4_analytical(principal, action, resource)
     }
 }
 

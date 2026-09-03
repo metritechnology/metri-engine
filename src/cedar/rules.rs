@@ -131,6 +131,32 @@ pub fn step3b_validate_time_window(
 }
 
 
+
+/// Política de autenticación decidida UNA vez en la raíz de composición
+/// (`resolve_dev_auth_bypass`, fail-closed). Sustituye al bool
+/// `dev_auth_bypass` hilado por toda la pila: el bypass es un valor explícito,
+/// no un flag implícito — en producción siempre es `Production`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthenticationPolicy {
+    Production,
+    DevBypass,
+}
+
+impl AuthenticationPolicy {
+    pub fn is_bypass(&self) -> bool {
+        matches!(self, AuthenticationPolicy::DevBypass)
+    }
+
+    /// Desde el bool que resuelve `resolve_dev_auth_bypass` en el arranque.
+    pub fn from_bool(bypass: bool) -> Self {
+        if bypass {
+            AuthenticationPolicy::DevBypass
+        } else {
+            AuthenticationPolicy::Production
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -228,7 +228,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         fault_notifier,
         olap_channel: Arc::clone(&olap_channel),
         export_storage,
-        dev_auth_bypass,
+        dev_auth_bypass: crate::cedar::AuthenticationPolicy::from_bool(dev_auth_bypass),
     });
     let auth_interceptor = super::interceptors::auth_waf_interceptor;
     let service = MetriServiceServer::with_interceptor(grpc_service, auth_interceptor);

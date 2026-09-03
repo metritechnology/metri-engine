@@ -206,7 +206,7 @@ async fn test_group_cycle_prevention() {
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
-        dev_auth_bypass: true,
+        dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
     });
 
     // Scenario 1: A group cannot be its own parent
@@ -373,7 +373,7 @@ async fn test_batch_transaction_granular_security() {
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
-        dev_auth_bypass: true,
+        dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
     });
 
     // Scenario: A transaction containing mixed valid (matching tenant) and invalid (mismatched tenant) operations
@@ -470,7 +470,7 @@ async fn test_invalid_role_grant_format() {
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
-        dev_auth_bypass: true,
+        dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
     });
 
     // Test invalid formats for grants in role payload
@@ -655,7 +655,7 @@ async fn test_tenant_and_quota_master_crud_gates() {
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
         olap_channel: Arc::clone(&oltp_channel),
         export_storage: None,
-        dev_auth_bypass: true,
+        dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
     });
 
     // 1. Mutate 'tenant' as non-master user -> Expect PermissionDenied (Auth403)

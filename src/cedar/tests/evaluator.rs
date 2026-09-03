@@ -472,25 +472,23 @@ fn test_csv_export_action_authorization() {
         "domains": ["asset"]
     });
 
-    let cedar_auth = CedarAuthorizer::new();
-
     // 1. Viewer only -> VIEW should be Ok, EXPORT should be Err
-    let res_view_ok = step4_analytical(&cedar_auth, &principal_view_only, "VIEW", &resource);
+    let res_view_ok = step4_analytical(&principal_view_only, "VIEW", &resource);
     assert!(res_view_ok.is_ok());
-    let res_view_err = step4_analytical(&cedar_auth, &principal_view_only, "EXPORT", &resource);
+    let res_view_err = step4_analytical(&principal_view_only, "EXPORT", &resource);
     assert!(res_view_err.is_err());
     assert_eq!(res_view_err.unwrap_err().code, ErrorCode::Auth403);
 
     // 2. Exporter only -> EXPORT should be Ok, VIEW should be Err
-    let res_exp_ok = step4_analytical(&cedar_auth, &principal_export_only, "EXPORT", &resource);
+    let res_exp_ok = step4_analytical(&principal_export_only, "EXPORT", &resource);
     assert!(res_exp_ok.is_ok());
-    let res_exp_err = step4_analytical(&cedar_auth, &principal_export_only, "VIEW", &resource);
+    let res_exp_err = step4_analytical(&principal_export_only, "VIEW", &resource);
     assert!(res_exp_err.is_err());
     assert_eq!(res_exp_err.unwrap_err().code, ErrorCode::Auth403);
 
     // 3. Wildcard -> both should be Ok
-    let res_wild_view = step4_analytical(&cedar_auth, &principal_wildcard, "VIEW", &resource);
+    let res_wild_view = step4_analytical(&principal_wildcard, "VIEW", &resource);
     assert!(res_wild_view.is_ok());
-    let res_wild_exp = step4_analytical(&cedar_auth, &principal_wildcard, "EXPORT", &resource);
+    let res_wild_exp = step4_analytical(&principal_wildcard, "EXPORT", &resource);
     assert!(res_wild_exp.is_ok());
 }

@@ -30,9 +30,10 @@ pub struct ServiceDeps {
     pub olap_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
     pub export_storage: Option<std::sync::Arc<dyn crate::domain::protocols::IExportStorage>>,
     /// Bypass de autorización para desarrollo y pruebas. Lo decide
-    /// `domain::config::resolve_dev_auth_bypass` (fail-closed) en producción;
+    /// Política de autenticación decidida en el arranque
+    /// (`domain::config::resolve_dev_auth_bypass`, fail-closed);
     /// los tests lo fijan explícitamente. Nunca llega activo a producción.
-    pub dev_auth_bypass: bool,
+    pub dev_auth_bypass: crate::cedar::AuthenticationPolicy,
 }
 
 pub struct MetriGrpcService {
@@ -46,7 +47,7 @@ pub struct MetriGrpcService {
     pub(crate) fault_notifier: std::sync::Arc<dyn crate::iop::sherlog::IFaultNotifier>,
     pub(crate) olap_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
     pub(crate) export_storage: Option<std::sync::Arc<dyn crate::domain::protocols::IExportStorage>>,
-    pub(crate) dev_auth_bypass: bool,
+    pub(crate) dev_auth_bypass: crate::cedar::AuthenticationPolicy,
 }
 
 impl MetriGrpcService {
@@ -92,20 +93,9 @@ impl MetriGrpcService {
             olap_channel.clone(),
         ));
 
-        // Compilar políticas de Cedar para el path de consultas analíticas
-        use std::str::FromStr;
-        let policies_src = include_str!("../../config/policies/metri.cedar");
-        let policies =
-            cedar_policy::PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
-
-        let mut policy_cache = std::collections::HashMap::new();
-        policy_cache.insert("admin".to_string(), policies.clone());
-        policy_cache.insert("tenant-admin".to_string(), policies.clone());
-        policy_cache.insert("contractor".to_string(), policies.clone());
-        policy_cache.insert("user".to_string(), policies.clone());
-        policy_cache.insert("system-bff".to_string(), policies.clone());
-        policy_cache.insert("system-admin".to_string(), policies.clone());
-        policy_cache.insert("role_super_master".to_string(), policies.clone());
+        // Políticas Cedar compiladas para los roles conocidos — bootstrap
+        // compartido con el CedarAuthorizerStep (D2).
+        let policy_cache = crate::cedar::engine::default_policy_cache();
 
         Self {
             oltp_executor,

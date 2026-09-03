@@ -103,7 +103,7 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
         export_storage: None,
         // El e2e construye el servicio por inyección: el bypass de desarrollo
         // se pide aquí de forma explícita, no con variables de entorno.
-        dev_auth_bypass: true,
+        dev_auth_bypass: metri_engine::cedar::AuthenticationPolicy::DevBypass,
     });
 
     // Generate a valid HMAC session token for the bypass credentials

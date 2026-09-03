@@ -34,5 +34,7 @@ pub use pipeline::{get_principal_data, intercept};
 pub use ports::{EntityReader, PolicyStore, PrincipalCache};
 pub use principal_graph::{assemble_principal_graph, step2_query_oltp, step3_consolidate};
 pub use request::AuthRequest;
-pub use rules::{is_master_tenant, step3b_validate_time_window, SystemSecurityRules};
+pub use rules::{
+    is_master_tenant, step3b_validate_time_window, AuthenticationPolicy, SystemSecurityRules,
+};
 pub use types::{CedarContext, InvalidationMsg, PrincipalData, RoleBoundary, TimeRestriction};

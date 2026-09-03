@@ -1,6 +1,5 @@
 // cedar/tests/rules.rs — Reglas de sistema, ventana horaria y dominios maestros.
 
-use crate::cedar::engine::CedarAuthorizer;
 use crate::cedar::evaluator::step4_analytical;
 use crate::cedar::rules::{step3b_validate_time_window, SystemSecurityRules};
 use crate::cedar::types::{PrincipalData, RoleBoundary, TimeRestriction};
@@ -65,7 +64,6 @@ fn test_tenant_domain_matrix_system_vs_normal() {
         groups: HashSet::new(),
     };
     let res = step4_analytical(
-        &CedarAuthorizer::new(),
         &system_principal_ok,
         "VIEW",
         &serde_json::json!({
@@ -103,7 +101,6 @@ fn test_tenant_domain_matrix_system_vs_normal() {
         groups: HashSet::new(),
     };
     let res = step4_analytical(
-        &CedarAuthorizer::new(),
         &system_principal_err,
         "VIEW",
         &serde_json::json!({
@@ -131,7 +128,6 @@ fn test_tenant_domain_matrix_system_vs_normal() {
         groups: HashSet::new(),
     };
     let res = step4_analytical(
-        &CedarAuthorizer::new(),
         &normal_principal,
         "VIEW",
         &serde_json::json!({
@@ -182,7 +178,6 @@ fn test_system_entities_authorization() {
     }
 
     // Test Cedar step4 evaluation for system vs non-system tenant with grants
-    let cedar_auth = CedarAuthorizer::new();
 
     // System tenant user WITH grant for domain_plugin
     let principal_sys_with_grant = PrincipalData {
@@ -240,7 +235,6 @@ fn test_system_entities_authorization() {
 
     // 1. System tenant user with grant -> authorized
     let view_res = step4_analytical(
-        &cedar_auth,
         &principal_sys_with_grant,
         "VIEW",
         &resource_domain_plugin,
@@ -252,7 +246,6 @@ fn test_system_entities_authorization() {
 
     // 2. System tenant user without grant -> unauthorized
     let view_no_grant_res = step4_analytical(
-        &cedar_auth,
         &principal_sys_no_grant,
         "VIEW",
         &resource_domain_plugin,

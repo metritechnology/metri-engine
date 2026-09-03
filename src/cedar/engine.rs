@@ -52,3 +52,28 @@ impl CedarAuthorizer {
     }
 }
 
+/// Roles para los que se compila la política base al arranque.
+pub const POLICY_ROLES: &[&str] = &[
+    "admin",
+    "tenant-admin",
+    "contractor",
+    "user",
+    "system-bff",
+    "system-admin",
+    "role_super_master",
+];
+
+/// Cache de políticas compiladas para los roles conocidos — el bootstrap
+/// estaba copiado en grpc/service.rs e iop/cedar_step.rs (D2). Una sola
+/// fuente: mismo include, mismo parse, mismos roles.
+pub fn default_policy_cache() -> std::collections::HashMap<String, PolicySet> {
+    use std::str::FromStr;
+
+    let policies_src = include_str!("../../config/policies/metri.cedar");
+    let policies = PolicySet::from_str(policies_src).expect("Failed to parse metri.cedar");
+
+    POLICY_ROLES
+        .iter()
+        .map(|role| (role.to_string(), policies.clone()))
+        .collect()
+}

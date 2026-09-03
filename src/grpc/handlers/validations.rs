@@ -249,7 +249,7 @@ impl MetriGrpcService {
             }
         }
 
-        if self.dev_auth_bypass {
+        if self.dev_auth_bypass.is_bypass() {
             return Ok(());
         }
 
