@@ -10,23 +10,25 @@
 // Fase 5 (PLAN_CORRECCIONES_PENDIENTES): descompuesto en módulos por
 // responsabilidad, cada uno con su red propia:
 //   - sql_parse: parseo del SQL de Aegis (entidad, proyecciones, filtros, CTEs)
-//   - el pipeline en memoria (filtros, agregación, proyección) y la lectura
-//     de S3 se extraen en commits propios sobre este mismo árbol.
+//   - pipeline: el camino en memoria (filtros, rango temporal, agregación,
+//     proyección) — puro, testeado sin S3
+//   - este archivo queda como orquestador + la lectura de S3 (que se extrae
+//     en el commit siguiente)
 
+mod pipeline;
 mod sql_parse;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use chrono::{Datelike, TimeZone, Timelike};
 use serde_json::Value;
 use tracing::info;
 
-use crate::codice::registry::{self as codice_registry, AttrType};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::{IQueryEngine, QueryResults};
 
+pub(crate) use pipeline::*;
 pub(crate) use sql_parse::*;
 
 /// Motor de consultas local que lee datos de S3 escritos por Firehose.
@@ -67,21 +69,6 @@ impl LocalS3QueryEngine {
             cache: Mutex::new(HashMap::new()),
         }
     }
-}
-
-#[derive(Clone)]
-struct GroupState {
-    group_values: Vec<Value>,
-    agg_states: Vec<AggState>,
-}
-
-#[derive(Clone)]
-struct AggState {
-    count: i64,
-    sum: f64,
-    min: f64,
-    max: f64,
-    has_values: bool,
 }
 
 #[async_trait]
@@ -192,7 +179,8 @@ impl IQueryEngine for LocalS3QueryEngine {
 }
 
 impl LocalS3QueryEngine {
-    /// Ejecuta una única consulta analítica estándar no-CTE y retorna los resultados aggregados.
+    /// Ejecuta una única consulta analítica estándar no-CTE: parsea el SQL,
+    /// lee el lake de S3 y delega el pipeline en memoria.
     async fn execute_single_query(&self, sql: &str) -> Result<QueryResults, DomainError> {
         // 1. Extraer entidad del SQL (FROM {db}.{entity} o FROM {entity})
         let entity = extract_entity_from_sql(sql).ok_or_else(|| {
@@ -218,7 +206,7 @@ impl LocalS3QueryEngine {
 
         // 5. Determinar filtros y rango temporal del SQL
         let filters = extract_filters_from_sql(sql);
-        let (start_ts, end_ts) = extract_timestamp_range_from_sql(sql);
+        let time_range = extract_timestamp_range_from_sql(sql);
 
         let any_is_aggregate = projected_info.iter().any(|c| c.is_aggregate);
 
@@ -229,6 +217,67 @@ impl LocalS3QueryEngine {
             self.bucket, prefix, entity, projected_columns, limit, any_is_aggregate
         );
 
+        let all_objects = self.list_objects(&prefix).await?;
+
+        // Límite de escaneo alto pero seguro para desarrollo local
+        let max_scan_records = if any_is_aggregate {
+            50000
+        } else {
+            limit.unwrap_or(2000) as usize
+        };
+
+        // Ordenar por fecha de modificación descendente (más recientes primero)
+        let mut all_objects = all_objects;
+        all_objects.sort_by(|a, b| b.last_modified().cmp(&a.last_modified()));
+
+        let raw_records = self.fetch_records(all_objects).await?;
+
+        // 7. Pipeline en memoria: filtros → agregación o proyección
+        let filtered = apply_filters_and_range(
+            &raw_records,
+            &filters,
+            time_range,
+            &attr_types,
+            max_scan_records,
+        );
+
+        let mut rows = if any_is_aggregate {
+            aggregate(&filtered, &projected_info, &attr_types)
+        } else {
+            project_rows(&filtered, &projected_info, &attr_types)
+        };
+
+        // Ordenar por timestamp descendente
+        rows.sort_by(|a, b| {
+            let ts_a = extract_ts(a);
+            let ts_b = extract_ts(b);
+            ts_b.cmp(&ts_a)
+        });
+
+        if let Some(lim) = limit {
+            rows.truncate(lim as usize);
+        }
+
+        info!(
+            "[LocalS3QueryEngine] Retornando {} filas procesadas para entity={}",
+            rows.len(),
+            entity
+        );
+
+        Ok(QueryResults {
+            columns: projected_columns,
+            rows,
+        })
+    }
+}
+
+// ─── Lectura de S3 (se extrae a su módulo en el commit siguiente) ───────────
+
+impl LocalS3QueryEngine {
+    async fn list_objects(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<aws_sdk_s3::types::Object>, DomainError> {
         let mut all_objects = Vec::new();
         let mut continuation_token: Option<String> = None;
         loop {
@@ -236,7 +285,7 @@ impl LocalS3QueryEngine {
                 .s3_client
                 .list_objects_v2()
                 .bucket(&self.bucket)
-                .prefix(&prefix);
+                .prefix(prefix);
             if let Some(token) = &continuation_token {
                 req = req.continuation_token(token);
             }
@@ -254,18 +303,16 @@ impl LocalS3QueryEngine {
                 break;
             }
         }
+        Ok(all_objects)
+    }
 
-        let mut fail_log_count = 0;
+    /// Descarga con caché: las llaves ya vistas salen de memoria, el resto en
+    /// paralelo (40 concurrentes).
+    async fn fetch_records(
+        &self,
+        all_objects: Vec<aws_sdk_s3::types::Object>,
+    ) -> Result<Vec<serde_json::Map<String, Value>>, DomainError> {
         let mut raw_records: Vec<serde_json::Map<String, Value>> = Vec::new();
-        // Límite de escaneo alto pero seguro para desarrollo local
-        let max_scan_records = if any_is_aggregate {
-            50000
-        } else {
-            limit.unwrap_or(2000) as usize
-        };
-
-        // Ordenar por fecha de modificación descendente (más recientes primero)
-        all_objects.sort_by(|a, b| b.last_modified().cmp(&a.last_modified()));
 
         // 1. Identificar qué llaves ya están en caché y cuáles necesitamos descargar
         let mut keys_to_fetch = Vec::new();
@@ -308,15 +355,13 @@ impl LocalS3QueryEngine {
                     async move {
                         let get_res = s3.get_object().bucket(&b).key(&key).send().await;
                         match get_res {
-                            Ok(res) => {
-                                match res.body.collect().await {
-                                    Ok(data) => Some((key, data.into_bytes())),
-                                    Err(e) => {
-                                        tracing::warn!("[LocalS3QueryEngine] body collect falló para key {}: {:?}", key, e);
-                                        None
-                                    }
+                            Ok(res) => match res.body.collect().await {
+                                Ok(data) => Some((key, data.into_bytes())),
+                                Err(e) => {
+                                    tracing::warn!("[LocalS3QueryEngine] body collect falló para key {}: {:?}", key, e);
+                                    None
                                 }
-                            }
+                            },
                             Err(e) => {
                                 tracing::warn!("[LocalS3QueryEngine] get_object falló para key {}: {:?}", key, e);
                                 None
@@ -360,489 +405,8 @@ impl LocalS3QueryEngine {
         }
 
         raw_records.extend(new_records);
-
-        // 3. Aplicar filtros y rango de tiempo en memoria sobre todos los registros
-        let mut filtered_records = Vec::new();
-        for obj_map in &raw_records {
-            if filtered_records.len() >= max_scan_records {
-                break;
-            }
-
-            // Aplicar filtros en memoria (igualdad e IN de campos de filtros)
-            let mut matches_filters = true;
-            for (col, filter_val) in &filters {
-                let cleaned_col = clean_expr_field(col);
-                if cleaned_col == "1" || cleaned_col == "true" {
-                    continue;
-                }
-                if let Some(record_val) = obj_map.get(&cleaned_col) {
-                    let coerced = coerce_value(record_val, &cleaned_col, &attr_types);
-                    match filter_val {
-                        Value::Array(arr) => {
-                            if !arr.contains(&coerced) {
-                                if fail_log_count < 10 {
-                                    tracing::info!("[LocalS3QueryEngine] Filtro IN falló: col={} cleaned_col={} record_val={:?} coerced={:?} filter_val={:?}", col, cleaned_col, record_val, coerced, filter_val);
-                                    fail_log_count += 1;
-                                }
-                                matches_filters = false;
-                                break;
-                            }
-                        }
-                        _ => {
-                            if coerced != *filter_val {
-                                if fail_log_count < 10 {
-                                    tracing::info!("[LocalS3QueryEngine] Filtro EQ falló: col={} cleaned_col={} record_val={:?} coerced={:?} filter_val={:?}", col, cleaned_col, record_val, coerced, filter_val);
-                                    fail_log_count += 1;
-                                }
-                                matches_filters = false;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    match filter_val {
-                        Value::Array(arr) => {
-                            if !arr.contains(&Value::Null) {
-                                if fail_log_count < 10 {
-                                    tracing::info!("[LocalS3QueryEngine] Filtro IN (no col) falló: col={} cleaned_col={} filter_val={:?}", col, cleaned_col, filter_val);
-                                    fail_log_count += 1;
-                                }
-                                matches_filters = false;
-                                break;
-                            }
-                        }
-                        _ => {
-                            if *filter_val != Value::Null {
-                                if fail_log_count < 10 {
-                                    tracing::info!("[LocalS3QueryEngine] Filtro EQ (no col) falló: col={} cleaned_col={} filter_val={:?}", col, cleaned_col, filter_val);
-                                    fail_log_count += 1;
-                                }
-                                matches_filters = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if !matches_filters {
-                continue;
-            }
-
-            // Filtrar por rango de tiempo si se especifica
-            if start_ts.is_some() || end_ts.is_some() {
-                let record_ts = obj_map
-                    .get("timestamp")
-                    .or_else(|| obj_map.get("created_at"))
-                    .and_then(|v| match v {
-                        Value::Number(n) => n.as_i64(),
-                        Value::String(s) => s.parse::<i64>().ok(),
-                        _ => None,
-                    });
-                if let Some(r_ts) = record_ts {
-                    let r_ts_sec = if r_ts > 100000000000 {
-                        r_ts / 1000
-                    } else {
-                        r_ts
-                    };
-                    if let Some(start) = start_ts {
-                        let start_sec = if start > 100000000000 {
-                            start / 1000
-                        } else {
-                            start
-                        };
-                        if r_ts_sec < start_sec {
-                            continue;
-                        }
-                    }
-                    if let Some(end) = end_ts {
-                        let end_sec = if end > 100000000000 { end / 1000 } else { end };
-                        if r_ts_sec > end_sec {
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            filtered_records.push(obj_map.clone());
-        }
-
-        let raw_records = filtered_records;
-
-        let mut rows: Vec<HashMap<String, Value>> = Vec::new();
-
-        if any_is_aggregate {
-            let group_cols: Vec<&ProjectedColumn> =
-                projected_info.iter().filter(|c| !c.is_aggregate).collect();
-            let agg_cols: Vec<&ProjectedColumn> =
-                projected_info.iter().filter(|c| c.is_aggregate).collect();
-
-            let mut groups: HashMap<Vec<String>, GroupState> = HashMap::new();
-
-            for obj_map in &raw_records {
-                let mut group_key = Vec::new();
-                let mut group_values = Vec::new();
-                for col in &group_cols {
-                    let val = evaluate_column(col, obj_map, &attr_types);
-                    group_key.push(serde_json::to_string(&val).unwrap_or_default());
-                    group_values.push(val);
-                }
-
-                let state = groups.entry(group_key).or_insert_with(|| GroupState {
-                    group_values,
-                    agg_states: vec![
-                        AggState {
-                            count: 0,
-                            sum: 0.0,
-                            min: f64::MAX,
-                            max: f64::MIN,
-                            has_values: false,
-                        };
-                        agg_cols.len()
-                    ],
-                });
-
-                for (i, col) in agg_cols.iter().enumerate() {
-                    let agg_state = &mut state.agg_states[i];
-                    let field_name = col.agg_field.as_deref().unwrap_or("*");
-                    let cleaned_field = clean_expr_field(field_name);
-
-                    if col.agg_fn.as_deref() == Some("COUNT") {
-                        let should_count = if field_name == "*" {
-                            true
-                        } else {
-                            obj_map
-                                .get(&cleaned_field)
-                                .map(|v| !v.is_null())
-                                .unwrap_or(false)
-                        };
-                        if should_count {
-                            agg_state.count += 1;
-                            agg_state.has_values = true;
-                        }
-                    } else {
-                        let val_opt = obj_map.get(&cleaned_field).and_then(|v| match v {
-                            Value::Number(n) => n.as_f64(),
-                            Value::String(s) => s.parse::<f64>().ok(),
-                            Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
-                            _ => None,
-                        });
-
-                        if let Some(v) = val_opt {
-                            match col.agg_fn.as_deref() {
-                                Some("SUM") => {
-                                    agg_state.sum += v;
-                                    agg_state.has_values = true;
-                                }
-                                Some("AVG") => {
-                                    agg_state.sum += v;
-                                    agg_state.count += 1;
-                                    agg_state.has_values = true;
-                                }
-                                Some("MIN") => {
-                                    if v < agg_state.min {
-                                        agg_state.min = v;
-                                    }
-                                    agg_state.has_values = true;
-                                }
-                                Some("MAX") => {
-                                    if v > agg_state.max {
-                                        agg_state.max = v;
-                                    }
-                                    agg_state.has_values = true;
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-            }
-
-            let is_groups_empty = groups.is_empty();
-            for state in groups.into_values() {
-                let mut row = HashMap::new();
-                for (i, col) in group_cols.iter().enumerate() {
-                    let val = &state.group_values[i];
-                    row.insert(col.alias.clone(), val.clone());
-                }
-                for (i, col) in agg_cols.iter().enumerate() {
-                    let agg_state = &state.agg_states[i];
-                    let val = match col.agg_fn.as_deref() {
-                        Some("COUNT") => Value::Number(serde_json::Number::from(agg_state.count)),
-                        Some("SUM") => {
-                            if agg_state.has_values {
-                                Value::Number(
-                                    serde_json::Number::from_f64(agg_state.sum)
-                                        .unwrap_or(serde_json::Number::from(0)),
-                                )
-                            } else {
-                                Value::Null
-                            }
-                        }
-                        Some("AVG") => {
-                            if agg_state.has_values && agg_state.count > 0 {
-                                let avg = agg_state.sum / (agg_state.count as f64);
-                                Value::Number(
-                                    serde_json::Number::from_f64(avg)
-                                        .unwrap_or(serde_json::Number::from(0)),
-                                )
-                            } else {
-                                Value::Null
-                            }
-                        }
-                        Some("MIN") => {
-                            if agg_state.has_values {
-                                Value::Number(
-                                    serde_json::Number::from_f64(agg_state.min)
-                                        .unwrap_or(serde_json::Number::from(0)),
-                                )
-                            } else {
-                                Value::Null
-                            }
-                        }
-                        Some("MAX") => {
-                            if agg_state.has_values {
-                                Value::Number(
-                                    serde_json::Number::from_f64(agg_state.max)
-                                        .unwrap_or(serde_json::Number::from(0)),
-                                )
-                            } else {
-                                Value::Null
-                            }
-                        }
-                        _ => Value::Null,
-                    };
-                    row.insert(col.alias.clone(), val);
-                }
-                rows.push(row);
-            }
-            if is_groups_empty && group_cols.is_empty() {
-                let mut row = HashMap::new();
-                for col in &agg_cols {
-                    let val = match col.agg_fn.as_deref() {
-                        Some("COUNT") => Value::Number(serde_json::Number::from(0)),
-                        _ => Value::Null,
-                    };
-                    row.insert(col.alias.clone(), val);
-                }
-                rows.push(row);
-            }
-        } else {
-            // Ruta normal no agregada
-            for obj_map in &raw_records {
-                let mut row = HashMap::new();
-                for col in &projected_info {
-                    let field_val = evaluate_column(col, obj_map, &attr_types);
-                    row.insert(col.alias.clone(), field_val);
-                }
-                rows.push(row);
-            }
-        }
-
-        // Ordenar por timestamp descendente
-        rows.sort_by(|a, b| {
-            let ts_a = extract_ts(a);
-            let ts_b = extract_ts(b);
-            ts_b.cmp(&ts_a)
-        });
-
-        if let Some(lim) = limit {
-            rows.truncate(lim as usize);
-        }
-
-        info!(
-            "[LocalS3QueryEngine] Retornando {} filas procesadas para entity={}",
-            rows.len(),
-            entity
-        );
-
-        Ok(QueryResults {
-            columns: projected_columns,
-            rows,
-        })
+        Ok(raw_records)
     }
-}
-
-// ─── Funciones auxiliares internas (pipeline en memoria — se extraen en commit propio) ───
-
-/// Trunca el timestamp (ms o sec) al intervalo indicado.
-fn truncate_timestamp(ts_ms_or_sec: i64, interval: &str) -> i64 {
-    let ts_sec = if ts_ms_or_sec > 100000000000 {
-        ts_ms_or_sec / 1000
-    } else {
-        ts_ms_or_sec
-    };
-
-    let dt = chrono::Utc.timestamp_opt(ts_sec, 0).unwrap();
-    let truncated_dt = match interval.to_lowercase().as_str() {
-        "minute" => dt
-            .with_second(0)
-            .and_then(|t| t.with_nanosecond(0))
-            .unwrap_or(dt),
-        "hour" => dt
-            .with_minute(0)
-            .and_then(|t| t.with_second(0))
-            .and_then(|t| t.with_nanosecond(0))
-            .unwrap_or(dt),
-        "day" => dt
-            .with_hour(0)
-            .and_then(|t| t.with_minute(0))
-            .and_then(|t| t.with_second(0))
-            .and_then(|t| t.with_nanosecond(0))
-            .unwrap_or(dt),
-        "week" => {
-            let days_from_monday = match dt.weekday() {
-                chrono::Weekday::Mon => 0,
-                chrono::Weekday::Tue => 1,
-                chrono::Weekday::Wed => 2,
-                chrono::Weekday::Thu => 3,
-                chrono::Weekday::Fri => 4,
-                chrono::Weekday::Sat => 5,
-                chrono::Weekday::Sun => 6,
-            };
-            let truncated = dt - chrono::Duration::days(days_from_monday);
-            truncated
-                .with_hour(0)
-                .and_then(|t| t.with_minute(0))
-                .and_then(|t| t.with_second(0))
-                .and_then(|t| t.with_nanosecond(0))
-                .unwrap_or(dt)
-        }
-        "month" => dt
-            .with_day(1)
-            .and_then(|t| t.with_hour(0))
-            .and_then(|t| t.with_minute(0))
-            .and_then(|t| t.with_second(0))
-            .and_then(|t| t.with_nanosecond(0))
-            .unwrap_or(dt),
-        "year" => dt
-            .with_month(1)
-            .and_then(|t| t.with_day(1))
-            .and_then(|t| t.with_hour(0))
-            .and_then(|t| t.with_minute(0))
-            .and_then(|t| t.with_second(0))
-            .and_then(|t| t.with_nanosecond(0))
-            .unwrap_or(dt),
-        _ => dt,
-    };
-
-    if ts_ms_or_sec > 100000000000 {
-        truncated_dt.timestamp() * 1000
-    } else {
-        truncated_dt.timestamp()
-    }
-}
-
-/// Evalúa el valor de la columna para un registro de S3.
-fn evaluate_column(
-    col: &ProjectedColumn,
-    obj_map: &serde_json::Map<String, Value>,
-    attr_types: &HashMap<String, AttrType>,
-) -> Value {
-    let lower_expr = col.expr.to_lowercase();
-    if lower_expr.contains("date_trunc") {
-        let interval = if lower_expr.contains("'minute'") {
-            "minute"
-        } else if lower_expr.contains("'hour'") {
-            "hour"
-        } else if lower_expr.contains("'week'") {
-            "week"
-        } else if lower_expr.contains("'month'") {
-            "month"
-        } else if lower_expr.contains("'year'") {
-            "year"
-        } else {
-            "day"
-        };
-
-        let field_name = if lower_expr.contains("created_at") {
-            "created_at"
-        } else if lower_expr.contains("event_ts") {
-            "event_ts"
-        } else {
-            "timestamp"
-        };
-
-        if let Some(raw_val) = obj_map.get(field_name) {
-            let ts = match raw_val {
-                Value::Number(n) => n.as_i64().unwrap_or(0),
-                Value::String(s) => s.parse::<i64>().unwrap_or(0),
-                _ => 0,
-            };
-            if ts > 0 {
-                let truncated = truncate_timestamp(ts, interval);
-                return Value::Number(serde_json::Number::from(truncated));
-            }
-        }
-        Value::Null
-    } else {
-        let field_name = clean_expr_field(&col.expr);
-        if let Some(val) = obj_map.get(&field_name) {
-            coerce_value(val, &field_name, attr_types)
-        } else {
-            Value::Null
-        }
-    }
-}
-
-/// Construye un mapa de nombre_campo → AttrType desde el schema Codice.
-fn build_attr_type_map(entity: &str) -> HashMap<String, AttrType> {
-    let mut map = HashMap::new();
-    if let Some(reg) = codice_registry::global_opt() {
-        if let Some(attrs) = reg.get_attributes(entity) {
-            for attr in attrs.iter() {
-                map.insert(attr.name.clone(), attr.attr_type.clone());
-            }
-        }
-    }
-    map.insert("id".to_string(), AttrType::String);
-    map.insert("_tenant".to_string(), AttrType::String);
-    map.insert("tenant_id".to_string(), AttrType::String);
-    map.insert("created_at".to_string(), AttrType::Epoch);
-    map
-}
-
-/// Coerción de valor JSON usando el schema Codice.
-fn coerce_value(val: &Value, col: &str, attr_types: &HashMap<String, AttrType>) -> Value {
-    let attr_type = attr_types.get(col);
-
-    match attr_type {
-        Some(AttrType::Epoch) => match val {
-            Value::Number(_) => val.clone(),
-            Value::String(s) => s.parse::<i64>().map(Value::from).unwrap_or(val.clone()),
-            _ => val.clone(),
-        },
-        Some(AttrType::Number) | Some(AttrType::Decimal) => match val {
-            Value::Number(_) => val.clone(),
-            Value::String(s) => {
-                if let Ok(n) = s.parse::<f64>() {
-                    Value::from(n)
-                } else {
-                    val.clone()
-                }
-            }
-            _ => val.clone(),
-        },
-        Some(AttrType::Boolean) => match val {
-            Value::Bool(_) => val.clone(),
-            Value::String(s) => Value::Bool(s.eq_ignore_ascii_case("true")),
-            _ => val.clone(),
-        },
-        _ => val.clone(),
-    }
-}
-
-/// Extrae timestamp de un row para ordenamiento.
-fn extract_ts(row: &HashMap<String, Value>) -> i64 {
-    row.get("timestamp")
-        .or_else(|| row.get("created_at"))
-        .or_else(|| row.get("bucket"))
-        .or_else(|| row.get("current_bucket"))
-        .and_then(|v| match v {
-            Value::Number(n) => n.as_i64(),
-            Value::String(s) => s.parse::<i64>().ok(),
-            _ => None,
-        })
-        .unwrap_or(0)
 }
 
 #[cfg(test)]
