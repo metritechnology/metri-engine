@@ -1553,3 +1553,7 @@ fn extract_cte_name(expr: &str, prefix: &str) -> String {
         prefix.to_string()
     }
 }
+
+#[cfg(test)]
+#[path = "tests/local_s3_query_engine_tests.rs"]
+mod local_s3_query_engine_tests;
