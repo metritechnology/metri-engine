@@ -181,14 +181,22 @@ impl MetriGrpcService {
             }
         }
 
-        // Enforce that only master tenant users or system BFF account can mutate tenants and quotas
-        if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
+        // Enforce that only master tenant users or system BFF account can mutate tenants and quotas.
+        // Excepción de autoservicio: la fila `tenant_plugin` PROPIA se muta
+        // desde el panel de módulos del tenant (rules.rs::is_self_service_row).
+        if !crate::cedar::SystemSecurityRules::is_self_service_row(
             entity_type,
+            tenant_id,
             &principal.tenant_id,
-            &principal.user_id,
-            "mutate",
         ) {
-            return Err(Status::permission_denied(e.detail));
+            if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
+                entity_type,
+                &principal.tenant_id,
+                &principal.user_id,
+                "mutate",
+            ) {
+                return Err(Status::permission_denied(e.detail));
+            }
         }
 
         let mut resource = serde_json::json!({
@@ -250,6 +258,19 @@ impl MetriGrpcService {
                     serde_json::json!(comp_id),
                 );
             }
+        }
+
+        // Autoservicio de módulos: la fila `tenant_plugin` PROPIA no pasa por
+        // el ABAC de roles de dominio — esas políticas gobiernan entidades del
+        // negocio, no la configuración de módulos del propio tenant. El gate
+        // maestro (is_self_service_row) ya la autorizó, y el aislamiento de
+        // tenant garantiza que la fila es del llamante.
+        if crate::cedar::SystemSecurityRules::is_self_service_row(
+            entity_type,
+            tenant_id,
+            &principal.tenant_id,
+        ) {
+            return Ok(());
         }
 
         if self.dev_auth_bypass.is_bypass() {

@@ -38,6 +38,20 @@ impl SystemSecurityRules {
         MASTER_ONLY_ENTITIES.contains(&entity_type)
     }
 
+    /// Autoservicio de módulos: la config de plugins del tenant vive en filas
+    /// `tenant_plugin` y su gestión es parte del producto (el panel
+    /// `/settings/plugins` de metri-app la persiste desde el navegador del
+    /// tenant). Un NO-maestro puede leer y mutar la fila `tenant_plugin`
+    /// PROPIA — el aislamiento de tenant ya garantiza que la fila tocada es
+    /// la del llamante. Lo que sigue cerrado: acceso cruzado y exploración.
+    pub fn is_self_service_row(
+        entity_type: &str,
+        row_tenant_id: &str,
+        caller_tenant_id: &str,
+    ) -> bool {
+        entity_type == "tenant_plugin" && row_tenant_id == caller_tenant_id
+    }
+
     /// Autorización CRUD (Query, Explore, Mutation) sobre un tipo de entidad.
     /// Las entidades maestro-only solo son accesibles a usuarios del tenant
     /// maestro o a la cuenta BFF de sistema.

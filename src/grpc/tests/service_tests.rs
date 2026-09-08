@@ -734,6 +734,102 @@ async fn test_tenant_and_quota_master_crud_gates() {
         .message()
         .contains("Only master tenant users can mutate domain_quota"));
 
+    // 3.5 Autoservicio: un tenant NO maestro muta SU PROPIA fila 'tenant_plugin'
+    // -> el gate maestro NO debe bloquearlo (la config de módulos del panel
+    // /settings/plugins de metri-app persiste aquí). Puede fallar después por
+    // validación de EAV, jamás por PermissionDenied del gate.
+    {
+        let payload = serde_json::json!({
+            "tenant_id": "tnt_regular",
+            "plugin_id": "cmms",
+            "status": "active",
+            "config": "{}"
+        });
+        let req = crate::grpc::pb::TransactionRequest {
+            tenant_id: "tnt_regular".to_string(),
+            entity_type: "tenant_plugin".to_string(),
+            entity_id: "tplug_self".to_string(),
+            action: 1, // CREATE
+            payload: Some(translator::value_to_struct(&payload)),
+            suppress_events: false,
+        };
+        let mut grpc_req = tonic::Request::new(req);
+        grpc_req
+            .metadata_mut()
+            .insert("test-tenant", "tnt_regular".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-user", "usr_regular".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-roles", "regular-role".parse().unwrap());
+
+        let res = service.transact(grpc_req).await;
+        if let Err(err) = res {
+            assert_ne!(
+                err.code(),
+                tonic::Code::PermissionDenied,
+                "la fila tenant_plugin propia no debe bloquearse por el gate maestro: {}",
+                err.message()
+            );
+        }
+    }
+
+    // 3.6 Lectura propia: un tenant NO maestro consulta SU 'tenant_plugin'
+    // -> el gate de lectura NO debe bloquearlo (el panel de módulos carga así
+    // su configuración guardada). El acceso cruzado ni siquiera existe a nivel
+    // de handler: para no-maestros `req.tenant_id` se reescribe con el del
+    // principal (transact_impl/query_impl).
+    {
+        let q_req = crate::grpc::pb::QueryRequest {
+            tenant_id: "tnt_regular".to_string(),
+            queries: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    "q1".to_string(),
+                    crate::grpc::pb::AnalyticsRequest {
+                        tenant_id: "tnt_regular".to_string(),
+                        entity: "tenant_plugin".to_string(),
+                        ..Default::default()
+                    },
+                );
+                m
+            },
+            ..Default::default()
+        };
+        let mut grpc_req = tonic::Request::new(q_req);
+        grpc_req
+            .metadata_mut()
+            .insert("test-tenant", "tnt_regular".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-user", "usr_regular".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-roles", "regular-role".parse().unwrap());
+        let token = generate_test_token("tnt_regular", "usr_regular");
+        grpc_req
+            .metadata_mut()
+            .insert("authorization", token.parse().unwrap());
+        grpc_req
+            .extensions_mut()
+            .insert(crate::grpc::interceptors::AuthenticatedSession {
+                tenant_id: "tnt_regular".to_string(),
+                user_id: "usr_regular".to_string(),
+                jti: "test-jti-self".to_string(),
+            });
+
+        let res = service.query(grpc_req).await;
+        if let Err(err) = &res {
+            assert_ne!(
+                err.code(),
+                tonic::Code::PermissionDenied,
+                "leer la fila tenant_plugin propia no debe bloquearse por el gate: {}",
+                err
+            );
+        }
+    }
+
     // 3. Mutate 'tenant' as master user -> Expect success (or at least EAV error, not gate block)
     let payload = serde_json::json!({
         "id": "tnt_regular"

@@ -49,6 +49,18 @@ pub(crate) fn step4_mutational(
         .get("entity_type")
         .and_then(|v| v.as_str())
         .unwrap_or("project");
+
+    // Autoservicio de módulos: la config de plugins del tenant vive en filas
+    // `tenant_plugin` y la gestiona el PROPIO tenant desde su panel
+    // (/settings/plugins). El ABAC de roles de dominio no define políticas
+    // para entidades de sistema — ningún rol las menciona — así que evaluarse
+    // aquí solo puede DENY. La autorización real de esta fila es doble: el
+    // gate maestro (rules.rs::is_self_service_row) y el aislamiento de tenant
+    // (el handler reescribe el scope con el tenant del llamante).
+    if entity_type == "tenant_plugin" {
+        return Ok(serde_json::json!({}));
+    }
+
     let entities = mutational_entities(
         principal,
         &user_grants.into_iter().collect::<Vec<_>>(),
