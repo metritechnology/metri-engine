@@ -204,7 +204,7 @@ fn test_dashboard_bi_entity_registered() {
 
 /// Candado de la familia de procedimientos formales (estilo MaintainX) y de la
 /// jerarquía OT → sub-OTs: el registry REAL debe compilar con las entidades
-/// nuevas. La instanciación vive en metri-cmms-iot; aquí sólo esquema.
+/// nuevas. La instanciación vive en metri-cmms-plugin; aquí sólo esquema.
 #[test]
 fn test_procedure_family_and_wo_hierarchy_registered() {
     let models_dir = std::path::Path::new("config/models");

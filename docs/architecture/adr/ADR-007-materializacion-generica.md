@@ -1,5 +1,5 @@
 > **ESTADO: SUPERADO (2026-09-08).** La materialización por eventos vive en
-> metri-cmms-iot (`wo-composer`): el motor es plano de datos — Códice +
+> metri-cmms-plugin (`wo-composer`): el motor es plano de datos — Códice +
 > Transact/Query + eventos que ya emite — sin ningún acoplamiento a
 > `work_order`. El stack de materialización (materializers, subject_resolver,
 > planner, OrchestrationService, COD_MAT_001) fue eliminado. R5 queda
