@@ -152,7 +152,11 @@ impl IStreamWriter for KinesisFirehoseWriter {
                 ));
             }
 
-            record_ids.extend(resp.request_responses.into_iter().filter_map(|r| r.record_id));
+            record_ids.extend(
+                resp.request_responses
+                    .into_iter()
+                    .filter_map(|r| r.record_id),
+            );
         }
 
         Ok(record_ids)
@@ -245,12 +249,18 @@ impl SpyStreamWriter {
     /// Número de llamadas a put_records recibidas — la aserción de la Puerta 1
     /// (⌈N/50⌉ llamadas en vez de N).
     pub fn batch_calls(&self) -> usize {
-        *self.batch_calls.lock().unwrap()
+        *self
+            .batch_calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Drains all captured records, clearing the buffer.
     pub fn drain(&self) -> Vec<CapturedRecord> {
-        let mut guard = self.captured.lock().unwrap();
+        let mut guard = self
+            .captured
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::mem::take(&mut *guard)
     }
 }
@@ -263,11 +273,14 @@ impl IStreamWriter for SpyStreamWriter {
         partition_key: &str,
         data: Vec<u8>,
     ) -> Result<String, DomainError> {
-        self.captured.lock().unwrap().push(CapturedRecord {
-            stream_name: stream_name.to_string(),
-            partition_key: partition_key.to_string(),
-            data,
-        });
+        self.captured
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(CapturedRecord {
+                stream_name: stream_name.to_string(),
+                partition_key: partition_key.to_string(),
+                data,
+            });
         info!(
             stream = %stream_name,
             "[SpyStreamWriter] Captured record for stream: {}", stream_name
@@ -285,8 +298,14 @@ impl IStreamWriter for SpyStreamWriter {
         stream_name: &str,
         batch: Vec<(String, Vec<u8>)>,
     ) -> Result<Vec<String>, DomainError> {
-        *self.batch_calls.lock().unwrap() += 1;
-        let mut guard = self.captured.lock().unwrap();
+        *self
+            .batch_calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) += 1;
+        let mut guard = self
+            .captured
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut ids = Vec::with_capacity(batch.len());
         for (partition_key, mut data) in batch {
             data.push(b'\n');

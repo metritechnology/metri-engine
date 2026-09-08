@@ -162,7 +162,7 @@ pub fn compile_sql_with_dialect(
         ));
     }
 
-    let ast = AstIr::from_value(ast_ir).map_err(|e| DomainError::aegis(ErrorCode::Aeg001, e))?;
+    let ast = AstIr::from_value(ast_ir)?;
 
     let entity = &ast.entity;
     let output_cast_str = match ast.output_cast {
@@ -204,11 +204,9 @@ pub fn compile_sql_with_dialect(
     };
 
     let sql = if has_cte_comps {
-        build_comparison_cte_query(&ast, &table_expr, time_range, dialect, limit)
-            .map_err(|e| DomainError::aegis(ErrorCode::Aeg001, e))?
+        build_comparison_cte_query(&ast, &table_expr, time_range, dialect, limit)?
     } else {
-        build_base_query(&ast, &table_expr, tenant_id, time_range, dialect, limit)
-            .map_err(|e| DomainError::aegis(ErrorCode::Aeg001, e))?
+        build_base_query(&ast, &table_expr, tenant_id, time_range, dialect, limit)?
     };
 
     debug!("[Aegis Compiler] SQL compilado con dialecto | entity: {entity} | output_cast: {output_cast_str}");
@@ -228,7 +226,7 @@ pub fn build_base_query(
     time_range: &TimeRange,
     dialect: &dyn SqlDialect,
     limit: Option<u64>,
-) -> Result<String, String> {
+) -> Result<String, DomainError> {
     let mut select_stmt = sea_query::Query::select();
 
     let mut sel_exprs = build_select_exprs(ast, dialect)?;

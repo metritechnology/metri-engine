@@ -12,7 +12,10 @@ use aws_sdk_dynamodb::types::AttributeValue;
 use tracing::debug;
 
 use crate::domain::errors::{DomainError, ErrorCode};
-use crate::eav::types::{datom::DatomValue, encoding::eavt_sk_as_of};
+use crate::eav::types::{
+    datom::DatomValue,
+    encoding::{decode_eavt_sk, eavt_sk_as_of},
+};
 use crate::infrastructure::dynamodb::DynamoClient;
 
 use once_cell::sync::Lazy;
@@ -355,12 +358,7 @@ impl EavReader {
                     Some(AttributeValue::B(blob)) => blob.as_ref(),
                     _ => return None,
                 };
-                if sk.len() != 11 {
-                    return None;
-                }
-                let attr_id = u16::from_be_bytes(sk[0..2].try_into().unwrap());
-                let tx_id = u64::from_be_bytes(sk[2..10].try_into().unwrap());
-                let op = sk[10] != 0;
+                let (attr_id, tx_id, op) = decode_eavt_sk(sk)?;
 
                 let attr = crate::codice::global()
                     .get_attr_name(attr_id)
@@ -497,11 +495,9 @@ impl EavReader {
                         Some(AttributeValue::B(blob)) => blob.as_ref(),
                         _ => continue,
                     };
-                    if sk.len() != 11 {
+                    let Some((_attr_id, tx_id, op)) = decode_eavt_sk(sk) else {
                         continue;
-                    }
-                    let tx_id = u64::from_be_bytes(sk[2..10].try_into().unwrap());
-                    let op = sk[10] != 0;
+                    };
 
                     let value = extract_datom_value(&item).unwrap_or(DatomValue::Null);
 
@@ -628,13 +624,9 @@ fn assemble_current_state(
             Some(AttributeValue::B(blob)) => blob.as_ref(),
             _ => continue,
         };
-        if sk.len() != 11 {
+        let Some((attr_id, tx_id, op)) = decode_eavt_sk(sk) else {
             continue;
-        }
-
-        let attr_id = u16::from_be_bytes(sk[0..2].try_into().unwrap());
-        let tx_id = u64::from_be_bytes(sk[2..10].try_into().unwrap());
-        let op = sk[10] != 0;
+        };
 
         let attr_name = match crate::codice::global().get_attr_name(attr_id) {
             Some(n) => n.to_string(),

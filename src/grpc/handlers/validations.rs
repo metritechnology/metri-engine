@@ -4,15 +4,18 @@ use tonic::Status;
 
 // Handlers del MetriGrpcService — fase 2: service.rs delega, aquí vive el cuerpo.
 
+/// Formato canónico de un grant `dominio:accion` — patrón literal.
+#[allow(clippy::unwrap_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
+static GRANT_FORMAT_RE: once_cell::sync::Lazy<regex::Regex> = once_cell::sync::Lazy::new(|| {
+    regex::Regex::new(r"^([a-zA-Z0-9_\-]+|\*):[a-zA-Z0-9_\-*]+$").unwrap()
+});
+
 impl MetriGrpcService {
     pub(crate) fn validate_role_grants(
         &self,
         grants_value: &serde_json::Value,
     ) -> Result<(), Status> {
-        use regex::Regex;
-        // Strict regex pattern for grant format validation
-        let re = Regex::new(r"^([a-zA-Z0-9_\-]+|\*):[a-zA-Z0-9_\-*]+$").unwrap();
-
+        let re = &*GRANT_FORMAT_RE;
         let validate_pair = |domain: &str, action: &str| -> Result<(), Status> {
             let pair = format!("{}:{}", domain, action);
             if !re.is_match(&pair) {

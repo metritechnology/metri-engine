@@ -7,6 +7,9 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(clippy::all)]
+// Los lints de restricción (unwrap_used…) NO vienen en clippy::all: el código
+// generado por flatc usa unwrap() por diseño y queda exento (PLAN_PATRON_RESULT.md §4.4).
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 include!(concat!(env!("OUT_DIR"), "/janus_ir_ast_generated.rs"));
 

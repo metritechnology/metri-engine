@@ -72,8 +72,9 @@ hex-literal    = "0.4"
 constant_time_eq = "0.3"       # constant-time HMAC comparison (timing-safe)
 
 # ─── Errores ─────────────────────────────────────────────────────────────────
+# thiserror only — R4 de PLAN_PATRON_RESULT.md: prohibido anyhow (error dinámico
+# sin catálogo). Todo error transitable es DomainError.
 thiserror      = "1"
-anyhow         = "1"
 
 # ─── Utilidades ──────────────────────────────────────────────────────────────
 once_cell      = "1"           # OnceLock estático para CodeRegistry + FLAG_STORE

@@ -68,7 +68,7 @@ pub fn validate_analytics_request_fbs(req: &AnalyticsRequestT) -> Result<(), Dom
     if req.entity.as_deref().unwrap_or("").is_empty() {
         return Err(DomainError::janus(
             ErrorCode::JanusVal001,
-            "entity vacío — se requiere una entidad base (ej. 'work_order')",
+            "entity vacío — se requiere una entidad base (ej. 'asset')",
         ));
     }
 

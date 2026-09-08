@@ -26,6 +26,21 @@ pub fn build_eavt_sk(attr_id: u16, tx_id: u64, op: bool) -> Vec<u8> {
     buf
 }
 
+/// Decodifica el SK binario canónico producido por [`build_eavt_sk`]:
+/// `[attr_id: u16 | tx_id: u64 | op: u8]`.
+///
+/// Retorna `None` si la longitud no es la canónica (11 bytes) — el llamador
+/// decide si saltar el ítem (`continue`) o descartar la página. Sin `unwrap`:
+/// la decodificación es total (PLAN_PATRON_RESULT.md, regla R2).
+pub fn decode_eavt_sk(sk: &[u8]) -> Option<(u16, u64, bool)> {
+    if sk.len() != 11 {
+        return None;
+    }
+    let attr_id = u16::from_be_bytes([sk[0], sk[1]]);
+    let tx_id = u64::from_be_bytes([sk[2], sk[3], sk[4], sk[5], sk[6], sk[7], sk[8], sk[9]]);
+    Some((attr_id, tx_id, sk[10] != 0))
+}
+
 /// Prefijo de SK para buscar todos los datoms de un atributo específico.
 /// Usado en Query: SK begins_with [attr_id: 2B]
 pub fn eavt_sk_attr_prefix(attr_id: u16) -> Vec<u8> {

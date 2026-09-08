@@ -33,6 +33,13 @@
       "description": "Número de serie asignado por el fabricante del equipo (único por tenant)."
     },
     {
+      "name": "barcode_qr_code",
+      "type": "string",
+      "unique": "tenant",
+      "fts": true,
+      "description": "Código de barras o QR que el técnico escanea en campo (ASSETS.md §6.4). Es el código de operación, no el ULID interno; conecta con la identificación de equipos de las inspecciones."
+    },
+    {
       "name": "status",
       "type": "enum",
       "options": [
@@ -82,19 +89,29 @@
       "name": "category",
       "type": "string",
       "is_dimension": true,
-      "description": "Categoría funcional del activo (ej: 'Rotativos', 'Eléctricos', 'HVAC')."
+      "deprecated": true,
+      "description": "DEPRECATO (ASSETS.md §6.4): clasificación en texto libre que duplica omniclass_code. Migrar su contenido a la taxonomía antes de retirar; ventana de doble lectura vigente (AST-R9, AST-R10)."
     },
     {
       "name": "type",
       "type": "string",
       "is_dimension": true,
-      "description": "Subtipo específico del equipo (ej: 'Bomba Centrífuga', 'Motor Trifásico')."
+      "deprecated": true,
+      "description": "DEPRECATO (ASSETS.md §6.4): subtipo en texto libre que duplica omniclass_code. Migrar su contenido a la taxonomía antes de retirar; ventana de doble lectura vigente (AST-R9, AST-R10)."
     },
     {
       "name": "manufacturer",
       "type": "string",
       "is_dimension": true,
-      "description": "Marca o fabricante del equipo (ej: 'Siemens', 'Grundfos', 'ABB')."
+      "deprecated": true,
+      "description": "DEPRECATO (ASSETS.md §6.4): sustituido por manufacturer_company_id. Resolver cada cadena contra una company; ventana de doble lectura vigente (AST-R10)."
+    },
+    {
+      "name": "manufacturer_company_id",
+      "type": "reference",
+      "entityRef": "company",
+      "cardinality": "one",
+      "description": "Fabricante del equipo como company (company_type MANUFACTURER). Sustituye al texto libre `manufacturer` (ASSETS.md §6.4)."
     },
     {
       "name": "model_number",
@@ -160,21 +177,32 @@
       "description": "Código de divisa ISO 4217, validado contra el sistema terminológico."
     },
     {
+      "name": "cost_center",
+      "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:cost_center",
+      "is_dimension": true,
+      "required": false,
+      "description": "Centro de costos propietario del activo, para depreciación e imputación de mantenimiento. Si está vacío, se resuelve por la ubicación (ASSETS.md §3)."
+    },
+    {
       "name": "expected_lifespan_months",
       "type": "integer",
       "description": "Vida útil proyectada en meses según fabricante."
     },
     {
-      "name": "health_score",
-      "type": "number",
-      "is_measure": true,
-      "description": "Score de salud calculado (0.0 a 100.0) derivado de modelos predictivos / Metri Q Assistant."
+      "name": "iot_device_profile_id",
+      "type": "reference",
+      "entityRef": "iot_device_profile",
+      "cardinality": "one",
+      "description": "Perfil de dispositivo IoT que declara cómo se decodifica la telemetría del activo (ASSETS.md §6.4, §7)."
     },
     {
-      "name": "current_meter_reading",
-      "type": "number",
-      "is_measure": true,
-      "description": "Valor actual del horómetro o contador acumulado principal."
+      "name": "iot_harvester_config_id",
+      "type": "reference",
+      "entityRef": "iot_harvester_config",
+      "cardinality": "one",
+      "description": "Configuración de cosecha de telemetría asociada al activo (ASSETS.md §6.4, §7)."
     },
     {
       "name": "specifications",
@@ -194,7 +222,8 @@
       "type": "reference",
       "entityRef": "file",
       "cardinality": "many",
-      "description": "Fotos o imágenes adjuntas del activo."
+      "deprecated": true,
+      "description": "DEPRECATO (ASSETS.md §6.4): `file` ya es polimórfico (owner_entity_type + owner_entity_id) y la lista dedicada duplica ese patrón. Reapuntar las referencias existentes antes de retirar; ventana de doble lectura vigente (AST-R10)."
     }
   ],
   "event_rules": [

@@ -109,7 +109,7 @@ pub fn apply_bucket(config: &BucketConfig, epoch_val: i64) -> Option<i64> {
     if epoch_val == 0 {
         return None;
     }
-    let unit = config.interval.parse::<CalUnit>().unwrap();
+    let unit = config.interval.parse::<CalUnit>().ok()?;
     // Normalizar: si > 1e11 → está en ms → convertir a s
     let epoch_s = if epoch_val > 100_000_000_000 {
         epoch_val / 1_000

@@ -1,4 +1,5 @@
 use crate::aegis::oltp::executor::OltpExecutor;
+use crate::domain::errors::{DomainError, ErrorCode};
 use crate::janus_router::router::IWriteChannel;
 use serde_json::json;
 use std::sync::Arc;
@@ -8,7 +9,7 @@ use tracing::{error, info};
 pub async fn check_and_bootstrap_master(
     oltp_exec: &OltpExecutor,
     oltp_channel: &Arc<dyn IWriteChannel>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), DomainError> {
     // 1. Validar si ya existen usuarios registrados en el tenant maestro "system"
     let query_users = json!({
         "entity": "user",
@@ -73,11 +74,12 @@ async fn seed_master(
     email: &str,
     username: &str,
     password: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(), DomainError> {
     info!("[Bootstrap] Iniciando creación de semilla para el Administrador Master...");
 
     // 1. Hashear la contraseña con bcrypt (cost = 12)
-    let password_hash = bcrypt::hash(password, 12)?;
+    let password_hash = bcrypt::hash(password, 12)
+        .map_err(|e| DomainError::new(ErrorCode::Janus500, format!("bcrypt hash falló: {e}")))?;
 
     // 4. Crear el Tenant Semilla ("system")
     let mut tenant_req = serde_json::Map::new();
@@ -105,7 +107,7 @@ async fn seed_master(
         Ok(_) => info!("[Bootstrap] Tenant 'system' creado con éxito."),
         Err(e) => {
             error!("[Bootstrap] Error creando el tenant semilla: {:?}", e);
-            return Err(Box::new(e));
+            return Err(e);
         }
     }
 
@@ -128,7 +130,7 @@ async fn seed_master(
         Ok(_) => info!("[Bootstrap] Rol 'role_super_master' creado con éxito."),
         Err(e) => {
             error!("[Bootstrap] Error creando el rol semilla: {:?}", e);
-            return Err(Box::new(e));
+            return Err(e);
         }
     }
 
@@ -156,7 +158,7 @@ async fn seed_master(
         Ok(_) => info!("[Bootstrap] Rol 'system-bff' creado con éxito."),
         Err(e) => {
             error!("[Bootstrap] Error creando el rol system-bff: {:?}", e);
-            return Err(Box::new(e));
+            return Err(e);
         }
     }
 
@@ -188,7 +190,7 @@ async fn seed_master(
                 "[Bootstrap] Error creando el usuario administrador: {:?}",
                 e
             );
-            return Err(Box::new(e));
+            return Err(e);
         }
     }
 
@@ -225,7 +227,7 @@ async fn seed_master(
                 "[Bootstrap] Error creando el usuario de servicio bff: {:?}",
                 e
             );
-            return Err(Box::new(e));
+            return Err(e);
         }
     }
 

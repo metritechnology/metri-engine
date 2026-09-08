@@ -9,12 +9,12 @@ use std::time::Instant;
 use chrono::Utc;
 use tracing::Instrument;
 
-use crate::cedar::ports::{EntityReader, PolicyStore, PrincipalCache};
-use crate::cedar::request::AuthRequest;
-use crate::cedar::types::{CedarContext, PrincipalData};
 use crate::cedar::authn::step1_extract_token;
+use crate::cedar::ports::{EntityReader, PolicyStore, PrincipalCache};
 use crate::cedar::principal_graph::{step2_query_oltp, step3_consolidate};
+use crate::cedar::request::AuthRequest;
 use crate::cedar::rules::step3b_validate_time_window;
+use crate::cedar::types::{CedarContext, PrincipalData};
 use crate::domain::errors::DomainError;
 use crate::domain::protocols::ISessionStore;
 
@@ -122,42 +122,41 @@ pub async fn intercept<T>(
 
     let action = auth.cedar_action();
     let mut resource = auth.cedar_resource();
-    crate::cedar::resource_hydrator::hydrate_company_assignment(eav_reader, &principal.tenant_id, &mut resource)
-        .await;
+    crate::cedar::resource_hydrator::hydrate_company_assignment(
+        eav_reader,
+        &principal.tenant_id,
+        &mut resource,
+    )
+    .await;
 
-    let domain_dict = match step4_evaluate_cedar(
-        cedar_engine,
-        policy_cache,
-        &principal,
-        &action,
-        &resource,
-    ) {
-        Ok(dict) => {
-            tracing::info!(
-                target: "cedar",
-                metric = "decision",
-                decision = "allow",
-                action = %action,
-                tenant = %principal.tenant_id,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                "Cedar ALLOW"
-            );
-            dict
-        }
-        Err(e) => {
-            tracing::warn!(
-                target: "cedar",
-                metric = "decision",
-                decision = "deny",
-                action = %action,
-                tenant = %principal.tenant_id,
-                stage = %e.stage,
-                elapsed_ms = started.elapsed().as_millis() as u64,
-                "Cedar DENY"
-            );
-            return Err(e);
-        }
-    };
+    let domain_dict =
+        match step4_evaluate_cedar(cedar_engine, policy_cache, &principal, &action, &resource) {
+            Ok(dict) => {
+                tracing::info!(
+                    target: "cedar",
+                    metric = "decision",
+                    decision = "allow",
+                    action = %action,
+                    tenant = %principal.tenant_id,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "Cedar ALLOW"
+                );
+                dict
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "cedar",
+                    metric = "decision",
+                    decision = "deny",
+                    action = %action,
+                    tenant = %principal.tenant_id,
+                    stage = %e.stage,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "Cedar DENY"
+                );
+                return Err(e);
+            }
+        };
 
     Ok(cedar_context(
         principal.tenant_id,
@@ -183,4 +182,3 @@ pub async fn get_principal_data<T>(
     }
     resolve_principal(&auth, valkey_store, eav_reader, cache).await
 }
-

@@ -266,7 +266,7 @@ impl MemoryReservationStore {
     pub fn open_count(&self) -> usize {
         self.items
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .values()
             .filter(|s| s.status == ReservationStatus::Open)
             .count()
@@ -276,7 +276,10 @@ impl MemoryReservationStore {
 #[async_trait::async_trait]
 impl ReservationStore for MemoryReservationStore {
     async fn open(&self, reservation: &Reservation) -> Result<(), DomainError> {
-        let mut items = self.items.lock().unwrap();
+        let mut items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         items.insert(
             Self::key(&reservation.tenant_id, &reservation.id),
             Stored {
@@ -290,7 +293,10 @@ impl ReservationStore for MemoryReservationStore {
     }
 
     async fn mark_debited(&self, tenant_id: &str, id: &str) -> Result<(), DomainError> {
-        let mut items = self.items.lock().unwrap();
+        let mut items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(stored) = items.get_mut(&Self::key(tenant_id, id)) {
             stored.reservation.debited = true;
         }
@@ -304,7 +310,10 @@ impl ReservationStore for MemoryReservationStore {
         lease: Duration,
     ) -> Result<ClaimResult, DomainError> {
         let now = chrono::Utc::now().timestamp();
-        let mut items = self.items.lock().unwrap();
+        let mut items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let Some(stored) = items.get_mut(&Self::key(tenant_id, id)) else {
             return Ok(ClaimResult::NotFound);
@@ -329,7 +338,10 @@ impl ReservationStore for MemoryReservationStore {
         id: &str,
         reason: CloseReason,
     ) -> Result<(), DomainError> {
-        let mut items = self.items.lock().unwrap();
+        let mut items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(stored) = items.get_mut(&Self::key(tenant_id, id)) {
             stored.status = ReservationStatus::Closed;
             stored.close_reason = reason;
@@ -344,7 +356,10 @@ impl ReservationStore for MemoryReservationStore {
         now: i64,
         limit: i32,
     ) -> Result<Vec<Reservation>, DomainError> {
-        let items = self.items.lock().unwrap();
+        let items = self
+            .items
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Ok(items
             .values()
             .filter(|s| s.status == ReservationStatus::Open)

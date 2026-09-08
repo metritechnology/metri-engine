@@ -40,13 +40,13 @@ fn test_tokenize_unary_minus() {
 
 #[test]
 fn test_tokenize_variables_and_namespaces() {
-    let tokens = tokenize("asset/revenue - work_order/total-cost").unwrap();
+    let tokens = tokenize("asset/revenue - invoice/total-cost").unwrap();
     assert_eq!(
         tokens,
         vec![
             Token::Variable("asset/revenue".to_string()),
             Token::Operator(Operator::Sub),
-            Token::Variable("work_order/total-cost".to_string()),
+            Token::Variable("invoice/total-cost".to_string()),
         ]
     );
 }

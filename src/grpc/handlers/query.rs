@@ -124,8 +124,7 @@ impl MetriGrpcService {
             tracing::debug!("QUERIES_MAP LEN: {}", queries_map.len());
 
             // Construir el contexto ABAC para este request a partir de la sesión autenticada real
-            let is_master =
-                crate::cedar::is_master_tenant(&authenticated_ctx_clone.tenant_id);
+            let is_master = crate::cedar::is_master_tenant(&authenticated_ctx_clone.tenant_id);
             let cedar_ctx = CedarCtx {
                 tenant_id: tenant_id.clone(),
                 user_id: authenticated_ctx_clone.user_id.clone(),

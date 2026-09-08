@@ -6,8 +6,8 @@
 use crate::cedar::ports::EntityReader;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::reader::pull::EntityMap;
-use std::collections::HashMap;
 use crate::eav::types::datom::DatomValue;
+use std::collections::HashMap;
 
 /// Lector EAV en memoria: mapas de atributos por `tenant/entity_id`.
 /// Suficiente para el grafo de principal — los tests seedean directamente.

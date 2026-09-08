@@ -1,6 +1,22 @@
+// Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
+// unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
+// invariantes documentadas en scripts/dev/result_pattern_allowlist.json, cada
+// una con su #[allow] y comentario. Bajo cfg(test) se desactiva: los tests
+// usan unwrap/expect libremente.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
 extern crate alloc;
 
 pub mod aegis; // FASE 3 — SQL/Datalog compiler
+pub mod application; // Puertos de aplicación (DIP) — contratos metri-contracts
 pub mod cedar;
 pub mod codice;
 pub mod domain;

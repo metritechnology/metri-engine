@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-09-07",
+  "plan": "docs/architecture/PLAN_PATRON_RESULT.md",
+  "code": {
+    "unwrap": {},
+    "expect": {},
+    "panic_macro": {},
+    "assert_macro": {},
+    "string_result": {},
+    "anyhow": {}
+  },
+  "catalog": {
+    "enum_vs_all": 0,
+    "variant_without_mapping": 0,
+    "missing_in_toml": 0,
+    "duplicate_targets": 0,
+    "unused_toml": 0,
+    "toml_duplicates": 0,
+    "retryable_fallback_mismatch": 0
+  }
+}

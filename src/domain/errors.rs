@@ -56,6 +56,7 @@ pub enum ErrorCode {
     Cod002,      // Duplicate entity in registry
     Cod003,      // SHA-256 fingerprint collision
     CodScope001, // Sequence scope provider not found
+    CodMat001,   // Materialization spec references unknown entity/attribute/hook
 
     // ── IOP Pipeline ─────────────────────────────────────────────────────────
     Iop001, // Integrity validation failed
@@ -67,11 +68,15 @@ pub enum ErrorCode {
     Quota001, // Tenant quota exhausted
 
     // ── Infraestructura ──────────────────────────────────────────────────────
-    Infra001, // DynamoDB client error
-    Infra002, // S3 client error
-    Infra003, // SQS client error
-    Infra004, // EventBridge client error
-    Infra005, // Kinesis client error
+    Infra001,         // DynamoDB client error
+    Infra002,         // S3 client error
+    Infra003,         // SQS client error
+    Infra004,         // EventBridge client error
+    Infra005,         // Kinesis client error
+    InfraCatalog001,  // Error catalog TOML failed to load/validate at bootstrap
+    InfraConfig001,   // Engine configuration failed to resolve/validate at bootstrap
+    InfraGlue001,     // Glue SDK error — Iceberg table sync failed
+    InfraFirehose001, // Firehose SDK error — delivery stream operation failed
 
     // ── Auth / Tenant ────────────────────────────────────────────────────────
     Auth401,     // Token inválido o expirado
@@ -141,6 +146,7 @@ impl ErrorCode {
         ErrorCode::Cod002,
         ErrorCode::Cod003,
         ErrorCode::CodScope001,
+        ErrorCode::CodMat001,
         ErrorCode::Iop001,
         ErrorCode::Iop002,
         ErrorCode::Iop003,
@@ -151,6 +157,10 @@ impl ErrorCode {
         ErrorCode::Infra003,
         ErrorCode::Infra004,
         ErrorCode::Infra005,
+        ErrorCode::InfraCatalog001,
+        ErrorCode::InfraConfig001,
+        ErrorCode::InfraGlue001,
+        ErrorCode::InfraFirehose001,
         ErrorCode::Auth401,
         ErrorCode::Auth403,
         ErrorCode::AuthRevoked,
@@ -180,13 +190,18 @@ impl ErrorCode {
     ];
 
     /// Obtiene el código canónico correspondiente en el catálogo de errores (TOML).
+    ///
+    /// Mapeo 1:1 (PLAN_PATRON_RESULT.md §3.2, catálogo v3.0.0): cada variante
+    /// tiene un código propio y semánticamente correcto. El guard
+    /// `codigos_canonicos_son_unicos` impide compartir códigos; el guard
+    /// `todo_codigo_canonico_esta_en_el_catalogo` impide códigos fuera del TOML.
     pub fn canonical_code(&self) -> &'static str {
         match self {
             ErrorCode::Janus400 => "JANUS_400",
-            ErrorCode::Janus401 => "GRPC_AUTH_001",
+            ErrorCode::Janus401 => "JANUS_401",
             ErrorCode::Janus403 => "JANUS_403",
-            ErrorCode::Janus404 => "INFRA_DDB_003",
-            ErrorCode::Janus422 => "JNS_REF_001",
+            ErrorCode::Janus404 => "JANUS_404",
+            ErrorCode::Janus422 => "JANUS_422",
             ErrorCode::Janus500 => "GRPC_500",
             ErrorCode::JanusAstCompileError => "AEG_COMPILE_001",
             ErrorCode::JanusFilterCompileError => "AEG_COMPILE_002",
@@ -199,40 +214,47 @@ impl ErrorCode {
             ErrorCode::JnsOlap001 => "JNS_OLAP_003",
             ErrorCode::JnsTx001 => "JNS_TX_001",
 
-            ErrorCode::Aeg001 => "AEG_001",
+            ErrorCode::Aeg001 => "AEG_COMPILE_003",
             ErrorCode::Aeg002 => "AEG_002",
-            ErrorCode::Aeg003 => "AEG_003",
-            ErrorCode::Aeg004 => "AEG_004",
-            ErrorCode::Aeg005 => "AEG_005",
+            ErrorCode::Aeg003 => "AEG_006",
+            ErrorCode::Aeg004 => "AEG_007",
+            ErrorCode::Aeg005 => "AEG_008",
 
             ErrorCode::Eav001 => "EAV_001",
-            ErrorCode::Eav002 => "EAV_002",
+            ErrorCode::Eav002 => "EAV_005",
+            // Contrato histórico: los clientes conocen EAV_TX_003 para cursor
+            // obsoleto aunque la entrada EAV_003 (deprecada) lo describiera. ADR-005.
             ErrorCode::Eav003 => "EAV_TX_003",
             ErrorCode::Eav004 => "EAV_004",
-            ErrorCode::Eav005 => "EAV_TX_002",
-            ErrorCode::EavFts001 => "EAV_001",
+            ErrorCode::Eav005 => "EAV_KEY_001",
+            ErrorCode::EavFts001 => "EAV_FTS_001",
 
             ErrorCode::Cod001 => "CDX_001",
             ErrorCode::Cod002 => "CDX_002",
-            ErrorCode::Cod003 => "CDX_003",
+            ErrorCode::Cod003 => "CDX_004",
             ErrorCode::CodScope001 => "JNS_SCOPE_001",
+            ErrorCode::CodMat001 => "COD_MAT_001",
 
-            ErrorCode::Iop001 => "JANUS_VAL_001",
-            ErrorCode::Iop002 => "JNS_001",
-            ErrorCode::Iop003 => "JNS_TX_001",
-            ErrorCode::Iop004 => "INFRA_CEDAR_001",
+            ErrorCode::Iop001 => "IOP_001",
+            ErrorCode::Iop002 => "IOP_002",
+            ErrorCode::Iop003 => "IOP_003",
+            ErrorCode::Iop004 => "IOP_004",
 
-            ErrorCode::Quota001 => "INFRA_DDB_002",
+            ErrorCode::Quota001 => "QUOTA_001",
 
             ErrorCode::Infra001 => "INFRA_DDB_001",
-            ErrorCode::Infra002 => "INFRA_ATHENA_003",
-            ErrorCode::Infra003 => "INFRA_ATHENA_001",
-            ErrorCode::Infra004 => "INFRA_ATHENA_002",
-            ErrorCode::Infra005 => "INFRA_ATHENA_004",
+            ErrorCode::Infra002 => "INFRA_S3_001",
+            ErrorCode::Infra003 => "INFRA_SQS_001",
+            ErrorCode::Infra004 => "INFRA_EB_001",
+            ErrorCode::Infra005 => "INFRA_KIN_001",
+            ErrorCode::InfraCatalog001 => "INFRA_CATALOG_001",
+            ErrorCode::InfraConfig001 => "INFRA_CONFIG_001",
+            ErrorCode::InfraGlue001 => "INFRA_GLUE_001",
+            ErrorCode::InfraFirehose001 => "INFRA_FIREHOSE_001",
 
             ErrorCode::Auth401 => "GRPC_AUTH_001",
-            ErrorCode::Auth403 => "GRPC_AUTH_002",
-            ErrorCode::AuthRevoked => "GRPC_AUTH_001",
+            ErrorCode::Auth403 => "GRPC_AUTH_004",
+            ErrorCode::AuthRevoked => "GRPC_AUTH_003",
 
             ErrorCode::Aud001 => "AUD_001",
             ErrorCode::Aud002 => "AUD_002",
@@ -263,27 +285,39 @@ impl ErrorCode {
     }
 
     /// Retorna true si el error admite reintento por el cliente.
-    /// Mapea :retryable? del error_catalog.edn
+    ///
+    /// Consulta el catálogo global (TOML, fuente canónica); antes del bootstrap
+    /// usa [`ErrorCode::fallback_is_retryable`].
     pub fn is_retryable(&self) -> bool {
-        if let Some(catalog) = crate::domain::error_catalog::try_global() {
-            catalog.is_retryable(self.canonical_code())
-        } else {
-            // fallback a la lista estática sincronizada con error_catalog.toml
-            matches!(
-                self,
-                ErrorCode::JnsTx001
-                    | ErrorCode::JnsOlap001
-                    | ErrorCode::Eav002
-                    | ErrorCode::Eav003
-                    | ErrorCode::Eav005
-                    | ErrorCode::EavTx004
-                    | ErrorCode::Aeg003
-                    | ErrorCode::Aeg005
-                    | ErrorCode::Infra001
-                    | ErrorCode::Quota001
-                    | ErrorCode::Infra003
-            )
+        match crate::domain::error_catalog::try_global() {
+            Some(catalog) => catalog.is_retryable(self.canonical_code()),
+            None => self.fallback_is_retryable(),
         }
+    }
+
+    /// Fallback estático previo al bootstrap.
+    ///
+    /// DEBE coincidir con el campo `retryable` de `error_catalog.toml`: el
+    /// guard `fallback_retryable_coincide_con_el_catalogo` rompe el build si
+    /// diverge (PLAN_PATRON_RESULT.md, regla C4).
+    pub fn fallback_is_retryable(&self) -> bool {
+        matches!(
+            self,
+            ErrorCode::JnsTx001
+                | ErrorCode::CodScope001
+                | ErrorCode::Eav003
+                | ErrorCode::EavTx001
+                | ErrorCode::EavTx004
+                | ErrorCode::Aeg002
+                | ErrorCode::Iop003
+                | ErrorCode::Quota001
+                | ErrorCode::Infra001
+                | ErrorCode::Infra002
+                | ErrorCode::Infra003
+                | ErrorCode::InfraGlue001
+                | ErrorCode::InfraFirehose001
+                | ErrorCode::Mcp503
+        )
     }
 
     /// Stage del pipeline donde ocurrió el error.
@@ -321,9 +355,11 @@ impl ErrorCode {
             | ErrorCode::EavFts001
             | ErrorCode::EavTx001
             | ErrorCode::EavTx004 => "eav",
-            ErrorCode::Cod001 | ErrorCode::Cod002 | ErrorCode::Cod003 | ErrorCode::CodScope001 => {
-                "codice"
-            }
+            ErrorCode::Cod001
+            | ErrorCode::Cod002
+            | ErrorCode::Cod003
+            | ErrorCode::CodScope001
+            | ErrorCode::CodMat001 => "codice",
             ErrorCode::Iop001 | ErrorCode::Iop002 | ErrorCode::Iop003 | ErrorCode::Iop004 => "iop",
             ErrorCode::Quota001 => "quota",
             ErrorCode::Infra001
@@ -331,6 +367,10 @@ impl ErrorCode {
             | ErrorCode::Infra003
             | ErrorCode::Infra004
             | ErrorCode::Infra005
+            | ErrorCode::InfraCatalog001
+            | ErrorCode::InfraConfig001
+            | ErrorCode::InfraGlue001
+            | ErrorCode::InfraFirehose001
             | ErrorCode::InfraAthena005
             | ErrorCode::InfraCedar002 => "infrastructure",
             ErrorCode::Auth401 | ErrorCode::Auth403 | ErrorCode::AuthRevoked => "auth",
@@ -433,3 +473,7 @@ impl DomainError {
 #[cfg(test)]
 #[path = "tests/errors_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/catalog_parity_tests.rs"]
+mod catalog_parity_tests;

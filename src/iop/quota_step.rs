@@ -162,10 +162,12 @@ where
             return Ok(ctx);
         }
 
+        // El fast-path de arriba ya filtró el resto de operaciones; este
+        // brazo es defensivo: pass-through en vez de pánico (R3).
         let limit_type = match op.as_str() {
             "CREATE" => "WRITE_COUNT",
             "GET" => "READ_COUNT",
-            _ => unreachable!(),
+            _ => return Ok(ctx),
         };
 
         let domain = &ctx.entity_type;

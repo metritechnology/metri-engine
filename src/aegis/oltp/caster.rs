@@ -268,8 +268,18 @@ pub fn apply_output_cast_fbs(
 
 /// Trunca epoch-segundos al inicio del intervalo dado (UTC).
 pub fn truncate_to_interval(epoch_secs: i64, interval: &str) -> i64 {
-    let unit = interval.parse::<crate::temporal::core::CalUnit>().unwrap();
-    crate::temporal::core::truncate_to_unit(epoch_secs, unit, "UTC")
+    match interval.parse::<crate::temporal::core::CalUnit>() {
+        Ok(unit) => crate::temporal::core::truncate_to_unit(epoch_secs, unit, "UTC"),
+        // Intervalo inválido en la definición de la dimensión: se degrada a
+        // bucketing por segundo (cada ts su bucket, sin mezclar filas) y se
+        // deja rastro — nunca pánico con input del request (R2/R3).
+        Err(_) => {
+            tracing::warn!(
+                "intervalo de bucketing no válido: '{interval}' — degradando a segundos"
+            );
+            epoch_secs
+        }
+    }
 }
 
 /// Bucketing TIMESERIES completo.

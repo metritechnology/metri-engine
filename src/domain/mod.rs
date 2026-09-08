@@ -2,6 +2,7 @@ pub mod audit;
 pub mod config;
 pub mod error_catalog;
 pub mod errors;
+pub mod events;
 pub mod pipeline;
 pub mod protocols;
 

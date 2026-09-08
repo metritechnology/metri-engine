@@ -4,6 +4,7 @@
 use crate::aegis::ast_ir::{MetricDef, WhereNode};
 use crate::aegis::sql::dialect::SqlDialect;
 use crate::aegis::sql::where_compiler::{col_id_str, compile_where_node};
+use crate::domain::errors::DomainError;
 use sea_query::{Expr, SimpleExpr};
 
 pub fn format_condition(cond: &sea_query::Condition) -> String {
@@ -21,7 +22,7 @@ pub fn compile_metric(
     m: &MetricDef,
     dialect: &dyn SqlDialect,
     entity: &str,
-) -> Result<(SimpleExpr, String), String> {
+) -> Result<(SimpleExpr, String), DomainError> {
     let fn_raw = m.aggregation.as_deref().unwrap_or("COUNT");
     let mut fn_str = fn_raw.to_uppercase();
 

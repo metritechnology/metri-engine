@@ -487,6 +487,9 @@ impl CodeRegistry {
 
     // ── Validación post-build ────────────────────────────────────────────────
 
+    /// Valida las specs de materialización contra el grafo ya cargado:
+    /// entidades, atributos, generadores y hooks referenciados deben existir.
+    /// Fail-fast — una spec rota no despliega (COD_MAT_001).
     /// Valida que los atributos con is_sequence_scope apunten a un
     /// entityRef que sea is_sequence_scope_provider: true.
     fn validate_scope_providers(&self) -> Result<(), DomainError> {
@@ -520,6 +523,7 @@ impl CodeRegistry {
 static REGISTRY: OnceLock<CodeRegistry> = OnceLock::new();
 
 /// Inicializa el registry global. Llamado UNA sola vez en main.rs.
+#[allow(clippy::panic)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 pub fn init_global(registry: CodeRegistry) {
     REGISTRY.set(registry).unwrap_or_else(|_| {
         panic!("CodeRegistry ya fue inicializado — no llamar init_global dos veces")
@@ -532,6 +536,7 @@ pub fn global_opt() -> Option<&'static CodeRegistry> {
 }
 
 /// Accede al registry global. Panics si no fue inicializado.
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 pub fn global() -> &'static CodeRegistry {
     REGISTRY
         .get()

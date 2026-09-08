@@ -243,8 +243,7 @@ impl MetriGrpcService {
         let mut values = Vec::new();
 
         if is_olap {
-            let is_master =
-                crate::cedar::is_master_tenant(&authenticated_ctx.tenant_id);
+            let is_master = crate::cedar::is_master_tenant(&authenticated_ctx.tenant_id);
             let cedar_ctx = crate::janus::router::CedarCtx {
                 tenant_id: req.tenant_id.clone(),
                 user_id: authenticated_ctx.user_id.clone(),
@@ -456,8 +455,8 @@ impl MetriGrpcService {
         })?;
 
         let filter_names: Vec<&str> = req.filters.keys().map(|k| k.as_str()).collect();
-        if let Err(msg) = validate_list_filters(model, &filter_names) {
-            return Err(Status::invalid_argument(msg));
+        if let Err(e) = validate_list_filters(model, &filter_names) {
+            return Err(Status::from(e));
         }
 
         // ── Ejecucion ──

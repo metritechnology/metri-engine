@@ -47,7 +47,7 @@ pub enum AttrStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttributeDescriptor {
     pub id: u16,
-    pub name: String, // "work_order/status"
+    pub name: String, // "asset/status"
     pub entity_type: String,
     pub value_type: ValueType,
     pub cardinality: Cardinality,

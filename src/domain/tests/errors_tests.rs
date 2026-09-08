@@ -3,8 +3,11 @@ use super::*;
 #[test]
 fn test_error_code_canonical_lookup() {
     assert_eq!(ErrorCode::Janus400.canonical_code(), "JANUS_400");
-    assert_eq!(ErrorCode::Eav002.canonical_code(), "EAV_002");
-    assert_eq!(ErrorCode::Auth403.canonical_code(), "GRPC_AUTH_002");
+    assert_eq!(ErrorCode::Eav002.canonical_code(), "EAV_005");
+    assert_eq!(ErrorCode::Auth403.canonical_code(), "GRPC_AUTH_004");
+    assert_eq!(ErrorCode::Quota001.canonical_code(), "QUOTA_001");
+    assert_eq!(ErrorCode::Infra002.canonical_code(), "INFRA_S3_001");
+    assert_eq!(ErrorCode::CodMat001.canonical_code(), "COD_MAT_001");
 }
 
 #[test]

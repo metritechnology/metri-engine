@@ -171,7 +171,9 @@ pub fn resolve_comparison_period(
 
     match comp.comp_type {
         ComparisonType::TimeShiftRelative => {
-            let unit = comp.relative_granularity.parse::<CalUnit>().unwrap();
+            // Granularidad inválida en la definición de la comparación → sin
+            // período previo (None), nunca pánico (R2).
+            let unit = comp.relative_granularity.parse::<CalUnit>().ok()?;
             let amount = comp.relative_amount.max(1);
             Some(ComparisonPeriod {
                 prev_start: shift_by_calendar(time_range.start_ts.unwrap_or(0), -amount, unit, tz),

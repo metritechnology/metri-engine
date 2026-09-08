@@ -1,3 +1,4 @@
+use crate::domain::errors::{DomainError, ErrorCode};
 use crate::grpc::pb::{TransactionRequest, TransactionResponse};
 use crate::grpc::service::MetriGrpcService;
 use crate::grpc::translator;
@@ -157,6 +158,13 @@ impl MetriGrpcService {
             "operation".to_string(),
             serde_json::Value::String(operation_str.to_string()),
         );
+        // §10.4 (metri-schedulers): el ejecutor del Hub escribe bitácora del
+        // Job sin disparar eventos — el campo ya estaba en el proto pero moría
+        // aquí. El canal OLTP lo lee y suprime outbox + emisiones.
+        request_map.insert(
+            "suppress_events".to_string(),
+            serde_json::Value::Bool(req.suppress_events),
+        );
 
         // Inyección controlada y programática de metadatos para autorización Cedar
         if !auth_header.is_empty() {
@@ -196,7 +204,15 @@ impl MetriGrpcService {
         let response_value = self.iop_orchestrator.run(ctx).await;
 
         if let Some("error") = response_value.get("status").and_then(|s| s.as_str()) {
-            let error_obj = response_value.get("error").unwrap();
+            let Some(error_obj) = response_value.get("error") else {
+                // status=error sin objeto 'error': DTO malformado del
+                // pipeline — Status interno vía el mapeo único (R6), nunca
+                // pánico (R2).
+                return Err(Status::from(DomainError::new(
+                    ErrorCode::Janus500,
+                    "IOP devolvió status=error sin objeto 'error'",
+                )));
+            };
             let code = error_obj
                 .get("code")
                 .and_then(|c| c.as_str())

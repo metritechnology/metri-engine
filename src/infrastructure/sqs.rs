@@ -169,16 +169,22 @@ impl ISqsBus for StubSqsBus {
             "[StubSqsBus] Mensaje publicado en local"
         );
         let msg_id = format!("stub-msg-{}", uuid::Uuid::new_v4());
-        self.messages.lock().unwrap().push(SqsMessage {
-            receipt_handle: format!("receipt-{}", msg_id),
-            body: payload.to_string(),
-            message_id: msg_id.clone(),
-        });
+        self.messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(SqsMessage {
+                receipt_handle: format!("receipt-{}", msg_id),
+                body: payload.to_string(),
+                message_id: msg_id.clone(),
+            });
         Ok(msg_id)
     }
 
     async fn receive_messages(&self, max_count: u32) -> Result<Vec<SqsMessage>, DomainError> {
-        let mut msgs = self.messages.lock().unwrap();
+        let mut msgs = self
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let count = (max_count as usize).min(msgs.len());
         let drained = msgs.drain(..count).collect();
         Ok(drained)

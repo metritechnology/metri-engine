@@ -6,6 +6,7 @@ use crate::aegis::sql::dialect::SqlDialect;
 use crate::aegis::sql::metric_compiler::compile_metric;
 use crate::aegis::sql::select_compiler::build_select_exprs;
 use crate::aegis::sql::where_compiler::{col_id_str, compile_where_node};
+use crate::domain::errors::DomainError;
 use crate::temporal::comparison::{
     resolve_comparison_period, smart_history_window, AnalyticalComparison, ComparisonType,
     ShiftShortcut,
@@ -110,7 +111,7 @@ pub fn build_comparison_cte_query(
     time_range: &TimeRange,
     dialect: &dyn SqlDialect,
     limit: Option<u64>,
-) -> Result<String, String> {
+) -> Result<String, DomainError> {
     let ts_col = resolve_ts_col(ast);
 
     let mut metric_exprs = Vec::new();

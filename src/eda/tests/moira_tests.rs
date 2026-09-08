@@ -46,6 +46,9 @@ impl EavTransacter for MockTransacter {
             tx_id: 1,
             datoms: 1,
             outbox_count: 0,
+            mutation_ulid: String::new(),
+            delta: None,
+            deleted_attrs: None,
         })
     }
 }
@@ -389,6 +392,9 @@ async fn test_moira_emitter_concurrency_10_cases() {
                 tx_id: 1622000000000,
                 datoms: datom_count,
                 outbox_count: 0,
+                mutation_ulid: String::new(),
+                delta: None,
+                deleted_attrs: None,
             })
         }
     }
@@ -599,6 +605,7 @@ async fn test_moira_emitter_concurrency_10_cases_real() {
             entity_type: "outbox_event".to_string(),
             attrs,
             op: TransactOp::Create,
+            suppress_events: false,
         };
         eav_writer_clone.transact(transact).await.unwrap();
 
@@ -722,6 +729,7 @@ async fn test_seed_production_quotas() {
         entity_type: "domain_quota".to_string(),
         attrs: attrs_loc,
         op: TransactOp::Create,
+        suppress_events: false,
     };
     eav_writer.transact(transact_loc).await.unwrap();
     println!("✓ Location quota seeded!");
@@ -754,6 +762,7 @@ async fn test_seed_production_quotas() {
         entity_type: "domain_quota".to_string(),
         attrs: attrs_asset,
         op: TransactOp::Create,
+        suppress_events: false,
     };
     eav_writer.transact(transact_asset).await.unwrap();
     println!("✓ Asset quota seeded!");
@@ -833,6 +842,7 @@ async fn test_seed_and_emit_production_outbox_events() {
             entity_type: "outbox_event".to_string(),
             attrs,
             op: TransactOp::Create,
+            suppress_events: false,
         };
         eav_writer.transact(transact).await.unwrap();
         println!("  ✓ Seeded event {i}: {outbox_id}");
@@ -924,6 +934,7 @@ async fn test_seed_rules_and_webhooks_production() {
         entity_type: "event_routing_rule".to_string(),
         attrs: attrs_rule,
         op: TransactOp::Create,
+        suppress_events: false,
     };
     eav_writer.transact(transact_rule).await.unwrap();
     println!("✓ Event routing rule seeded!");
@@ -962,6 +973,7 @@ async fn test_seed_rules_and_webhooks_production() {
         entity_type: "webhook_endpoint".to_string(),
         attrs: attrs_webhook,
         op: TransactOp::Create,
+        suppress_events: false,
     };
     eav_writer.transact(transact_webhook).await.unwrap();
     println!("✓ Webhook endpoint seeded!");
@@ -1051,6 +1063,7 @@ async fn test_seed_cmms_rules_and_events_production() {
                 entity_type: "event_routing_rule".to_string(),
                 attrs: HashMap::new(),
                 op: TransactOp::Delete,
+                suppress_events: false,
             })
             .await;
 
@@ -1081,6 +1094,7 @@ async fn test_seed_cmms_rules_and_events_production() {
             entity_type: "event_routing_rule".to_string(),
             attrs,
             op: TransactOp::Create,
+            suppress_events: false,
         };
         eav_writer.transact(transact_rule).await.unwrap();
         seeded_rule_ids.push(id.to_string());
@@ -1095,6 +1109,7 @@ async fn test_seed_cmms_rules_and_events_production() {
             entity_type: "webhook_endpoint".to_string(),
             attrs: HashMap::new(),
             op: TransactOp::Delete,
+            suppress_events: false,
         })
         .await;
 
@@ -1131,6 +1146,7 @@ async fn test_seed_cmms_rules_and_events_production() {
         entity_type: "webhook_endpoint".to_string(),
         attrs: attrs_webhook,
         op: TransactOp::Create,
+        suppress_events: false,
     };
     eav_writer.transact(transact_webhook).await.unwrap();
     println!("✓ Webhook endpoint seeded!");
@@ -1241,6 +1257,7 @@ async fn test_seed_cmms_rules_and_events_production() {
                 entity_type: "outbox_event".to_string(),
                 attrs: HashMap::new(),
                 op: TransactOp::Delete,
+                suppress_events: false,
             })
             .await;
 
@@ -1268,6 +1285,7 @@ async fn test_seed_cmms_rules_and_events_production() {
             entity_type: "outbox_event".to_string(),
             attrs,
             op: TransactOp::Create,
+            suppress_events: false,
         };
         eav_writer.transact(transact).await.unwrap();
         seeded_outbox_ids.push(outbox_id.clone());

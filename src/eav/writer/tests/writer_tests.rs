@@ -49,6 +49,7 @@ fn payload_nueva(tenant: &str) -> TransactPayload {
         entity_type: "work_order".to_string(),
         attrs,
         op: TransactOp::Create,
+        suppress_events: false,
     }
 }
 
@@ -95,6 +96,7 @@ async fn update_genera_retract_y_el_pull_muestra_el_nuevo_valor() {
         entity_type: "work_order".to_string(),
         attrs,
         op: TransactOp::Update,
+        suppress_events: false,
     };
     let res2 = w.transact(upd).await.expect("Update");
     assert!(res2.datoms >= 2, "Update genera retract + assert");
@@ -124,6 +126,7 @@ async fn delete_retracta_los_atributos() {
         entity_type: "work_order".to_string(),
         attrs: HashMap::new(),
         op: TransactOp::Delete,
+        suppress_events: false,
     };
     w.transact(del).await.expect("Delete");
 
@@ -191,6 +194,7 @@ async fn entity_type_desconocido_rechaza_con_eav004() {
         entity_type: "entidad_inexistente_en_codice".to_string(),
         attrs,
         op: TransactOp::Create,
+        suppress_events: false,
     };
     let err = w.transact(payload).await.expect_err("Debe rechazar");
     assert_eq!(err.code, crate::domain::errors::ErrorCode::Eav004);
@@ -210,6 +214,7 @@ async fn update_de_entidad_inexistente_falla_con_eav002() {
         entity_type: "work_order".to_string(),
         attrs,
         op: TransactOp::Update,
+        suppress_events: false,
     };
 
     let err = w
@@ -238,6 +243,7 @@ async fn colision_de_tx_se_rechaza_y_el_historico_queda_intacto() {
         entity_type: "work_order".to_string(),
         attrs,
         op: TransactOp::Update,
+        suppress_events: false,
     };
     let err = w
         .transact_with_tx(upd, Vec::new(), None, tx_create)
@@ -273,6 +279,7 @@ async fn update_preserva_el_historico_con_par_retract_assert() {
         entity_type: "work_order".to_string(),
         attrs,
         op: TransactOp::Update,
+        suppress_events: false,
     };
     w.transact(upd).await.expect("Update");
 

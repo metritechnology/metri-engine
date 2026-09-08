@@ -8,6 +8,7 @@ use aws_sdk_glue::Client;
 use tracing::{error, info, warn};
 
 use crate::codice::{AttrType, CodeRegistry, EngineChannel};
+use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Mapeo de tipos Códice → tipos Glue.
 fn codice_to_glue_type(attr_type: &AttrType) -> &'static str {
@@ -70,7 +71,7 @@ impl GlueSyncClient {
         &self,
         entity_name: &str,
         registry: &CodeRegistry,
-    ) -> Result<(), String> {
+    ) -> Result<(), DomainError> {
         let table_name = entity_name.replace('-', "_");
         let new_columns = self.build_entity_columns(entity_name, registry);
 
@@ -88,7 +89,12 @@ impl GlueSyncClient {
                 Ok(())
             }
             Ok(resp) => {
-                let table = resp.table.ok_or("Sin tabla en GetTable")?;
+                let table = resp.table.ok_or_else(|| {
+                    DomainError::infra(
+                        ErrorCode::InfraGlue001,
+                        format!("Sin tabla en GetTable: {table_name}"),
+                    )
+                })?;
 
                 let current_cols: HashSet<String> = table
                     .storage_descriptor()
@@ -121,7 +127,12 @@ impl GlueSyncClient {
                     .name(&table_name)
                     .storage_descriptor(sd)
                     .build()
-                    .map_err(|e| format!("TableInput error: {e}"))?;
+                    .map_err(|e| {
+                        DomainError::infra(
+                            ErrorCode::InfraGlue001,
+                            format!("TableInput error: {e}"),
+                        )
+                    })?;
 
                 self.client
                     .update_table()
@@ -129,7 +140,12 @@ impl GlueSyncClient {
                     .table_input(table_input)
                     .send()
                     .await
-                    .map_err(|e| format!("UpdateTable falló: {e}"))?;
+                    .map_err(|e| {
+                        DomainError::infra(
+                            ErrorCode::InfraGlue001,
+                            format!("UpdateTable falló: {e}"),
+                        )
+                    })?;
 
                 info!("[Glue Sync] '{}' — sincronizado", table_name);
                 Ok(())

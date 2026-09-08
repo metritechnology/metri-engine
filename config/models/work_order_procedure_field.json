@@ -1,0 +1,136 @@
+{
+  "entity": "work_order_procedure_field",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "work_order_procedure_id",
+      "type": "reference",
+      "entityRef": "work_order_procedure",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "procedure_field_id",
+      "type": "reference",
+      "entityRef": "procedure_field",
+      "cardinality": "one",
+      "description": "Provenance campo a campo (el procedureTemplateFieldId de MaintainX): qué fila de plantilla originó este campo. Vital para inteligencia de negocio: agrupar métricas sobre este paso específico nacido de una plantilla."
+    },
+    {
+      "name": "parent_field_id",
+      "type": "reference",
+      "entityRef": "work_order_procedure_field",
+      "cardinality": "one",
+      "description": "Campo padre en la instancia cuando el paso cuelga de una sección (HEADING). Espejo de procedure_field.parent_field_id."
+    },
+    {
+      "name": "label",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "Etiqueta copiada de la plantilla al instanciar."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true
+    },
+    {
+      "name": "field_type",
+      "type": "enum",
+      "options": [
+        "TEXT",
+        "NUMBER",
+        "AMOUNT",
+        "DATE",
+        "HEADING",
+        "FILE",
+        "SIGNATURE",
+        "MULTIPLE_CHOICE",
+        "INSPECTION_CHECK",
+        "YES_NO_NA",
+        "CHECKBOX",
+        "CHECKLIST"
+      ],
+      "required": true,
+      "is_dimension": true,
+      "description": "Tipo congelado al instanciar: aunque la plantilla cambie después, la OT ejecutada conserva el formulario que el técnico vio."
+    },
+    {
+      "name": "choices",
+      "type": "array",
+      "description": "Opciones copiadas de la plantilla para MULTIPLE_CHOICE."
+    },
+    {
+      "name": "is_required",
+      "type": "boolean",
+      "default_value": false,
+      "is_dimension": true
+    },
+    {
+      "name": "field_order",
+      "type": "integer",
+      "index": true
+    },
+    {
+      "name": "score",
+      "type": "number",
+      "is_measure": true,
+      "description": "Puntaje obtenido en este campo al responderlo."
+    },
+    {
+      "name": "max_score",
+      "type": "number",
+      "is_measure": true,
+      "description": "Peso máximo del campo, copiado de la plantilla al instanciar."
+    },
+    {
+      "name": "value_text",
+      "type": "string",
+      "fts": true,
+      "description": "Respuesta para field_type TEXT."
+    },
+    {
+      "name": "value_number",
+      "type": "number",
+      "description": "Respuesta para field_type NUMBER o AMOUNT."
+    },
+    {
+      "name": "value_boolean",
+      "type": "boolean",
+      "description": "Respuesta para field_type CHECKBOX, INSPECTION_CHECK o CHECKLIST."
+    },
+    {
+      "name": "value_epoch",
+      "type": "epoch",
+      "description": "Respuesta para field_type DATE (epoch ms)."
+    },
+    {
+      "name": "value_choice",
+      "type": "string",
+      "description": "Opción elegida para field_type MULTIPLE_CHOICE o YES_NO_NA."
+    },
+    {
+      "name": "value_file_ids",
+      "type": "reference",
+      "entityRef": "file",
+      "cardinality": "many",
+      "description": "Evidencia adjunta al campo: fotos (FILE) y firma capturada (SIGNATURE)."
+    },
+    {
+      "name": "answered_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one"
+    },
+    {
+      "name": "answered_at",
+      "type": "epoch",
+      "description": "Momento de la respuesta del técnico para este campo."
+    }
+  ]
+}

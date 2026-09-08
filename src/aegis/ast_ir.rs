@@ -1,6 +1,7 @@
 // aegis/ast_ir.rs
 // Typed AST IR representation to decouple from raw JSON values and provide compile-time safety.
 
+use crate::domain::errors::{DomainError, ErrorCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -41,25 +42,30 @@ pub enum WhereNode {
 }
 
 impl WhereNode {
-    pub fn from_value(v: &Value) -> Result<Self, String> {
+    pub fn from_value(v: &Value) -> Result<Self, DomainError> {
         if v.is_null() {
             return Ok(WhereNode::Empty);
         }
         let arr = v
             .as_array()
-            .ok_or_else(|| "WHERE node must be an array".to_string())?;
+            .ok_or_else(|| DomainError::aegis(ErrorCode::Aeg001, "WHERE node must be an array"))?;
         if arr.is_empty() {
             return Ok(WhereNode::Empty);
         }
-        let op = arr[0]
-            .as_str()
-            .ok_or_else(|| "First element of WHERE array must be a string operator".to_string())?;
+        let op = arr[0].as_str().ok_or_else(|| {
+            DomainError::aegis(
+                ErrorCode::Aeg001,
+                "First element of WHERE array must be a string operator",
+            )
+        })?;
         match op {
             "=" => {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("= operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "= operator requires column name")
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Eq(col, val))
@@ -68,7 +74,9 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("not= operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "not= operator requires column name")
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::NotEq(col, val))
@@ -77,7 +85,9 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("> operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "> operator requires column name")
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Gt(col, val))
@@ -86,7 +96,9 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("< operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "< operator requires column name")
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Lt(col, val))
@@ -95,7 +107,9 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or(">= operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, ">= operator requires column name")
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Gte(col, val))
@@ -104,7 +118,9 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("<= operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "<= operator requires column name")
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Lte(col, val))
@@ -113,7 +129,9 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("in operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "in operator requires column name")
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::In(col, val))
@@ -122,7 +140,12 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("not-in operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "not-in operator requires column name",
+                        )
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::NotIn(col, val))
@@ -131,7 +154,12 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("between operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "between operator requires column name",
+                        )
+                    })?
                     .to_string();
                 let val = arr.get(2).cloned().unwrap_or(Value::Null);
                 Ok(WhereNode::Between(col, val))
@@ -140,12 +168,22 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("matches operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "matches operator requires column name",
+                        )
+                    })?
                     .to_string();
                 let pattern = arr
                     .get(2)
                     .and_then(|v| v.as_str())
-                    .ok_or("matches operator requires pattern string")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "matches operator requires pattern string",
+                        )
+                    })?
                     .to_string();
                 Ok(WhereNode::Matches(col, pattern))
             }
@@ -153,12 +191,19 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("like operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "like operator requires column name")
+                    })?
                     .to_string();
                 let pattern = arr
                     .get(2)
                     .and_then(|v| v.as_str())
-                    .ok_or("like operator requires pattern string")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "like operator requires pattern string",
+                        )
+                    })?
                     .to_string();
                 Ok(WhereNode::Like(col, pattern))
             }
@@ -166,12 +211,22 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("contains operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "contains operator requires column name",
+                        )
+                    })?
                     .to_string();
                 let val = arr
                     .get(2)
                     .and_then(|v| v.as_str())
-                    .ok_or("contains operator requires search string")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "contains operator requires search string",
+                        )
+                    })?
                     .to_string();
                 Ok(WhereNode::Contains(col, val))
             }
@@ -179,7 +234,12 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("is-null operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "is-null operator requires column name",
+                        )
+                    })?
                     .to_string();
                 Ok(WhereNode::IsNull(col))
             }
@@ -187,7 +247,12 @@ impl WhereNode {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("is-not-null operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "is-not-null operator requires column name",
+                        )
+                    })?
                     .to_string();
                 Ok(WhereNode::IsNotNull(col))
             }
@@ -206,19 +271,25 @@ impl WhereNode {
                 Ok(WhereNode::Or(children))
             }
             "not" => {
-                let child = arr.get(1).ok_or("not operator requires child node")?;
+                let child = arr.get(1).ok_or_else(|| {
+                    DomainError::aegis(ErrorCode::Aeg001, "not operator requires child node")
+                })?;
                 Ok(WhereNode::Not(Box::new(Self::from_value(child)?)))
             }
             "fuzzy" => {
                 let col = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("fuzzy operator requires column name")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "fuzzy operator requires column name")
+                    })?
                     .to_string();
                 let term = arr
                     .get(2)
                     .and_then(|v| v.as_str())
-                    .ok_or("fuzzy operator requires search term")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "fuzzy operator requires search term")
+                    })?
                     .to_string();
                 Ok(WhereNode::Fuzzy(col, term))
             }
@@ -226,7 +297,9 @@ impl WhereNode {
                 let term = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("fts operator requires search term")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(ErrorCode::Aeg001, "fts operator requires search term")
+                    })?
                     .to_string();
                 Ok(WhereNode::Fts(term))
             }
@@ -234,17 +307,28 @@ impl WhereNode {
                 let ref_field = arr
                     .get(1)
                     .and_then(|v| v.as_str())
-                    .ok_or("ref-filter operator requires reference field")?
+                    .ok_or_else(|| {
+                        DomainError::aegis(
+                            ErrorCode::Aeg001,
+                            "ref-filter operator requires reference field",
+                        )
+                    })?
                     .to_string();
-                let inner = arr
-                    .get(2)
-                    .ok_or("ref-filter operator requires inner condition")?;
+                let inner = arr.get(2).ok_or_else(|| {
+                    DomainError::aegis(
+                        ErrorCode::Aeg001,
+                        "ref-filter operator requires inner condition",
+                    )
+                })?;
                 Ok(WhereNode::RefFilter(
                     ref_field,
                     Box::new(Self::from_value(inner)?),
                 ))
             }
-            other => Err(format!("Unsupported WHERE operator: {other}")),
+            other => Err(DomainError::aegis(
+                ErrorCode::Aeg001,
+                format!("Unsupported WHERE operator: {other}"),
+            )),
         }
     }
 }
@@ -338,11 +422,11 @@ pub struct AstIr {
 }
 
 impl AstIr {
-    pub fn from_value(v: &Value) -> Result<Self, String> {
+    pub fn from_value(v: &Value) -> Result<Self, DomainError> {
         let entity = v
             .get("entity")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "Missing 'entity' field in AST".to_string())?
+            .ok_or_else(|| DomainError::aegis(ErrorCode::Aeg001, "Missing 'entity' field in AST"))?
             .to_string();
 
         let output_cast_str = v

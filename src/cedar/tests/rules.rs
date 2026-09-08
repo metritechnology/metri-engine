@@ -41,7 +41,6 @@ fn test_time_window_validation() {
 
 #[test]
 fn test_tenant_domain_matrix_system_vs_normal() {
-
     // Case A: System Tenant user with matching grant
     let system_principal_ok = PrincipalData {
         user_id: "usr_sys_ok".to_string(),
@@ -153,9 +152,8 @@ fn test_system_entities_authorization() {
         assert!(SystemSecurityRules::is_quota_exempt(entity));
 
         // System tenant user should pass check_crud_authorization
-        let sys_res = SystemSecurityRules::check_crud_authorization(
-            entity, "system", "usr_sys", "mutate",
-        );
+        let sys_res =
+            SystemSecurityRules::check_crud_authorization(entity, "system", "usr_sys", "mutate");
         assert!(
             sys_res.is_ok(),
             "Expected system tenant to be authorized for {}",
@@ -234,22 +232,15 @@ fn test_system_entities_authorization() {
     });
 
     // 1. System tenant user with grant -> authorized
-    let view_res = step4_analytical(
-        &principal_sys_with_grant,
-        "VIEW",
-        &resource_domain_plugin,
-    );
+    let view_res = step4_analytical(&principal_sys_with_grant, "VIEW", &resource_domain_plugin);
     assert!(
         view_res.is_ok(),
         "System user with grant should view domain_plugin"
     );
 
     // 2. System tenant user without grant -> unauthorized
-    let view_no_grant_res = step4_analytical(
-        &principal_sys_no_grant,
-        "VIEW",
-        &resource_domain_plugin,
-    );
+    let view_no_grant_res =
+        step4_analytical(&principal_sys_no_grant, "VIEW", &resource_domain_plugin);
     assert!(
         view_no_grant_res.is_err(),
         "System user without grant should be rejected"

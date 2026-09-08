@@ -5,6 +5,7 @@
       "attributes": {
         "name": "Name",
         "serial_number": "Serial Number",
+        "barcode_qr_code": "QR / Barcode",
         "tag": "Tag",
         "status": "Status",
         "location_id": "Location",
@@ -14,11 +15,13 @@
         "category": "Category",
         "criticality": "Criticality",
         "manufacturer": "Manufacturer",
+        "manufacturer_company_id": "Manufacturer (Company)",
         "model": "Model",
         "omniclass_code": "OmniClass Code",
         "omniclass_name": "OmniClass Name",
-        "health_score": "Health Score",
-        "current_meter_reading": "Current Meter Reading",
+        "cost_center": "Cost Center",
+        "iot_device_profile_id": "IoT Device Profile",
+        "iot_harvester_config_id": "IoT Harvester Config",
         "telemetry_config": "Telemetry Config",
         "timestamp": "Timestamp"
       }

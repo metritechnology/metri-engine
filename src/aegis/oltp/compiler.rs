@@ -14,7 +14,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use crate::aegis::temporal_bridge::resolve_fbs_time_frame;
-use crate::domain::errors::DomainError;
+use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::reader::query::{IndexStrategy, NativeQueryPlan, QueryExecutionPlan};
 use crate::eav::types::datom::DatomValue;
 use crate::janus::plan_selector::{select_plan, EavQueryPlan};
@@ -224,7 +224,7 @@ use crate::janus::fbs;
 pub fn compile_native_plan_fbs(
     ast_ir: &fbs::AnalyticsRequestT,
     tenant_id: &str,
-) -> NativeQueryPlan {
+) -> Result<NativeQueryPlan, DomainError> {
     let abstract_plan = crate::janus::plan_selector::select_plan_fbs(ast_ir);
 
     // Resolver y loggear el TimeRange para trazabilidad
@@ -239,45 +239,49 @@ pub fn compile_native_plan_fbs(
 
     match abstract_plan {
         crate::janus::plan_selector::EavQueryPlan::PointLookup { entity_id } => {
-            NativeQueryPlan::PointLookup { entity_id }
+            Ok(NativeQueryPlan::PointLookup { entity_id })
         }
         crate::janus::plan_selector::EavQueryPlan::AvetSingleFilter { attr_name, value } => {
-            NativeQueryPlan::AvetSingle {
+            Ok(NativeQueryPlan::AvetSingle {
                 tenant_id: tenant_id.to_string(),
                 attr_name,
                 value,
-            }
+            })
         }
         crate::janus::plan_selector::EavQueryPlan::AvetIntersection { filters } => {
-            NativeQueryPlan::AvetIntersect {
+            Ok(NativeQueryPlan::AvetIntersect {
                 tenant_id: tenant_id.to_string(),
                 filters,
-            }
+            })
         }
         crate::janus::plan_selector::EavQueryPlan::AevtScan {
             entity_type,
             shard_total: _,
-        } => NativeQueryPlan::AevtScan {
+        } => Ok(NativeQueryPlan::AevtScan {
             tenant_id: tenant_id.to_string(),
             entity_type,
-        },
+        }),
         crate::janus::plan_selector::EavQueryPlan::FtsSearch { term } => {
-            NativeQueryPlan::FtsSearch {
+            Ok(NativeQueryPlan::FtsSearch {
                 tenant_id: tenant_id.to_string(),
                 term,
-            }
+            })
         }
         crate::janus::plan_selector::EavQueryPlan::VaetLookup {
             ref_entity_id,
             attr_name,
-        } => NativeQueryPlan::AvetSingle {
+        } => Ok(NativeQueryPlan::AvetSingle {
             tenant_id: tenant_id.to_string(),
             attr_name: attr_name.unwrap_or_default(),
             value: DatomValue::Str(ref_entity_id),
-        },
-        crate::janus::plan_selector::EavQueryPlan::AsOfSnapshot { .. } => {
-            unreachable!("AsOfSnapshot se maneja en OltpExecutor directamente")
-        }
+        }),
+        // AsOfSnapshot se maneja en OltpExecutor (fetch_as_of_snapshot) antes
+        // de llegar aquí. Este brazo es defensivo ante un cambio del plan
+        // selector: error de compilación, nunca pánico (R3).
+        crate::janus::plan_selector::EavQueryPlan::AsOfSnapshot { .. } => Err(DomainError::aegis(
+            ErrorCode::Aeg001,
+            "AsOfSnapshot debe manejarse vía fetch_as_of_snapshot — contrato del plan selector",
+        )),
     }
 }
 

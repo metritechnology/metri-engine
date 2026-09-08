@@ -182,10 +182,7 @@ fn coercion_decimal_string_a_numero() {
         "reading_value": "12.5"
     }))
     .unwrap();
-    assert_eq!(
-        evaluate_column(&col, &obj, &types()),
-        json!(12.5)
-    );
+    assert_eq!(evaluate_column(&col, &obj, &types()), json!(12.5));
 }
 
 #[test]
@@ -198,7 +195,10 @@ fn campo_ausente_es_null() {
         agg_field: None,
     };
     let obj = serde_json::Map::new();
-    assert_eq!(evaluate_column(&col, &obj, &types()), serde_json::Value::Null);
+    assert_eq!(
+        evaluate_column(&col, &obj, &types()),
+        serde_json::Value::Null
+    );
 }
 
 // ── parse_cte_queries + evaluate_final_expression ───────────────────────────
@@ -238,10 +238,7 @@ fn expresion_final_lee_prev_por_indice() {
     let mut prev_row = HashMap::new();
     prev_row.insert("v".to_string(), json!(9));
     let mut prev = HashMap::new();
-    prev.insert(
-        "prev_0".to_string(),
-        vec![prev_row],
-    );
+    prev.insert("prev_0".to_string(), vec![prev_row]);
     let smart: HashMap<String, Vec<HashMap<String, serde_json::Value>>> = HashMap::new();
     let val = evaluate_final_expression("prev_0.v", None, &prev, &smart, 0);
     assert_eq!(val, json!(9));

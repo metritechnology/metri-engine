@@ -4,8 +4,10 @@
 # PROHIBIDO definir códigos fuera de este archivo.
 # El motor NO acepta requests hasta que todos los entries pasen validación.
 
-version      = "2.0.0"
-generated_at = "2026-05-13"
+version      = "3.0.0"
+generated_at = "2026-09-07"
+# v3.0.0 (PLAN_PATRON_RESULT.md §3.2): reparación 1:1 — una variante ErrorCode
+# = un código canónico = una entrada. Códigos sin variante: reserved/deprecated.
 description  = "Catálogo canónico de errores de Metri Engine — Rust Native"
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -33,6 +35,8 @@ grpc_status      = "INVALID_ARGUMENT"
 description      = "Referenced entity UUID does not exist in the EAV store"
 context_required = ["field", "uuid", "entity_type"]
 retryable        = false
+# v3.0.0: reservado — referencia UUID inexistente la reportará janus en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "JNS_REF_002"
@@ -136,6 +140,8 @@ grpc_status      = "INTERNAL"
 description      = "EAV query execution failed — DynamoDB GSI query returned error (AVET/AEVT/VAET)"
 context_required = ["index", "tenant_id", "cause"]
 retryable        = true
+# v3.0.0: reservado — fallos de query del lector EAV (hoy reportados con variantes genéricas)
+reserved         = true
 
 [[errors]]
 code             = "EAV_003"
@@ -147,6 +153,8 @@ grpc_status      = "INVALID_ARGUMENT"
 description      = "Cursor stale or invalid — query fingerprint changed between pages or cursor is malformed"
 context_required = ["cursor_token"]
 retryable        = false
+# v3.0.0: deprecado — cursor obsoleto se reporta con EAV_TX_003 — contrato histórico (ADR-005)
+deprecated       = true
 
 [[errors]]
 code             = "EAV_004"
@@ -180,6 +188,8 @@ grpc_status      = "RESOURCE_EXHAUSTED"
 description      = "EAV transaction exceeded 100-item DynamoDB limit after chunking — degraded consistency mode activated"
 context_required = ["total_items", "entity_id"]
 retryable        = false
+# v3.0.0: reservado — el chunker >100 items lo reportará eav en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "EAV_TX_003"
@@ -254,6 +264,8 @@ grpc_status      = "INVALID_ARGUMENT"
 description      = "Aegis received AST IR with unknown engine type — must be oltp or olap"
 context_required = ["engine", "tenant_id"]
 retryable        = false
+# v3.0.0: reservado — el caso engine desconocido lo reportará aegis en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "AEG_002"
@@ -276,6 +288,8 @@ grpc_status      = "NOT_FOUND"
 description      = "Aegis OLTP pull: entity_id not found or belongs to a different tenant"
 context_required = ["entity_id", "tenant_id"]
 retryable        = false
+# v3.0.0: deprecado — describía pull entity-not-found (ahora EAV_005)
+deprecated       = true
 
 [[errors]]
 code             = "AEG_004"
@@ -287,6 +301,8 @@ grpc_status      = "INTERNAL"
 description      = "Aegis OLAP: IQueryEngine.start_query failed — Athena could not initiate execution"
 context_required = ["detail", "tenant_id"]
 retryable        = true
+# v3.0.0: deprecado — describía start_query fallido (ahora INFRA_ATHENA_001)
+deprecated       = true
 
 [[errors]]
 code             = "AEG_005"
@@ -298,6 +314,8 @@ grpc_status      = "INTERNAL"
 description      = "Aegis OLAP: IQueryEngine.get_query_results failed — Athena execution error or timeout"
 context_required = ["execution_id", "tenant_id"]
 retryable        = false
+# v3.0.0: deprecado — describía get_results fallido (ahora INFRA_ATHENA_003)
+deprecated       = true
 
 [[errors]]
 code             = "AEG_COMPILE_001"
@@ -357,6 +375,8 @@ grpc_status      = "UNAUTHENTICATED"
 description      = "Authorization header missing or malformed — Bearer token not found"
 context_required = ["method"]
 retryable        = false
+# v3.0.0: reservado — header ausente/malformado lo reportará grpc en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "GRPC_TENANT_001"
@@ -405,6 +425,8 @@ grpc_status      = "RESOURCE_EXHAUSTED"
 description      = "DynamoDB ProvisionedThroughputExceededException — read/write capacity exhausted on partition"
 context_required = ["table", "index", "tenant_id"]
 retryable        = true
+# v3.0.0: reservado — throughput excedido lo reportará infrastructure en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "INFRA_DDB_003"
@@ -416,6 +438,8 @@ grpc_status      = "NOT_FOUND"
 description      = "DynamoDB item not found — entity may not exist or tenant isolation filtered it out"
 context_required = ["pk", "sk", "table"]
 retryable        = false
+# v3.0.0: reservado — item inexistente en DDB lo reportará infrastructure en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "INFRA_ATHENA_001"
@@ -427,6 +451,8 @@ grpc_status      = "INTERNAL"
 description      = "Athena StartQueryExecution failed — SDK error or quota exceeded"
 context_required = ["workgroup", "query_prefix", "cause"]
 retryable        = true
+# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "INFRA_ATHENA_002"
@@ -438,6 +464,8 @@ grpc_status      = "INTERNAL"
 description      = "Athena query FAILED state — query execution error returned by Athena engine"
 context_required = ["execution_id", "state_change_reason"]
 retryable        = false
+# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "INFRA_ATHENA_003"
@@ -449,6 +477,8 @@ grpc_status      = "INTERNAL"
 description      = "Athena GetQueryResults failed — cannot retrieve results after successful execution"
 context_required = ["execution_id", "cause"]
 retryable        = false
+# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "INFRA_ATHENA_004"
@@ -460,6 +490,8 @@ grpc_status      = "DEADLINE_EXCEEDED"
 description      = "Athena query exceeded polling timeout — execution_id preserved for async reconciliation"
 context_required = ["execution_id", "timeout_ms"]
 retryable        = false
+# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "INFRA_ATHENA_005"
@@ -482,6 +514,8 @@ grpc_status      = "UNAVAILABLE"
 description      = "Cedar Policy Engine unavailable or policy parsing error — authorization cannot be evaluated"
 context_required = ["action", "resource", "cause"]
 retryable        = false
+# v3.0.0: reservado — cedar indisponible lo reportará cedar en su fase de cierre
+reserved         = true
 
 [[errors]]
 code             = "INFRA_CEDAR_002"
@@ -719,3 +753,306 @@ description      = "Empty formula string received"
 context_required = []
 retryable        = false
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# v3.0.0 — Reparación 1:1 del catálogo (PLAN_PATRON_RESULT.md §3.2).
+# Cada variante ErrorCode pasa a tener un código propio y semánticamente
+# correcto. No se reutilizan cadenas: las nuevas son aditivas.
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "COD_MAT_001"
+family           = "cdx"
+stage            = "codice"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Materialization spec references unknown entity/attribute/hook"
+context_required = ["spec", "target"]
+retryable        = false
+
+[[errors]]
+code             = "JANUS_401"
+family           = "janus"
+stage            = "janus-cerebro"
+severity         = "warning"
+http_status      = 401
+grpc_status      = "UNAUTHENTICATED"
+description      = "Janus rejected request — authentication token invalid or expired"
+context_required = ["tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "JANUS_404"
+family           = "janus"
+stage            = "janus-cerebro"
+severity         = "warning"
+http_status      = 404
+grpc_status      = "NOT_FOUND"
+description      = "Janus request target not found"
+context_required = ["reason", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "JANUS_422"
+family           = "janus"
+stage            = "janus-cerebro"
+severity         = "warning"
+http_status      = 422
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Janus request semantically invalid — payload or reference failed validation"
+context_required = ["reason", "field"]
+retryable        = false
+
+[[errors]]
+code             = "GRPC_AUTH_003"
+family           = "grpc"
+stage            = "grpc-interceptor"
+severity         = "warning"
+http_status      = 401
+grpc_status      = "UNAUTHENTICATED"
+description      = "Token revoked — present in the revocation blacklist"
+context_required = ["tenant_id", "token_prefix"]
+retryable        = false
+
+[[errors]]
+code             = "GRPC_AUTH_004"
+family           = "grpc"
+stage            = "grpc-interceptor"
+severity         = "warning"
+http_status      = 403
+grpc_status      = "PERMISSION_DENIED"
+description      = "Tenant mismatch — authenticated principal denied access to the requested tenant"
+context_required = ["tenant_id", "expected_tenant"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_COMPILE_003"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Aegis SQL compilation failed — query could not be compiled"
+context_required = ["detail", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_006"
+family           = "aeg"
+stage            = "aegis"
+severity         = "warning"
+http_status      = 504
+grpc_status      = "DEADLINE_EXCEEDED"
+description      = "Aegis OLAP: Athena polling timeout — execution_id preserved for reconciliation"
+context_required = ["execution_id", "timeout_ms"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_007"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Aegis: Athena output parse error — unexpected result shape"
+context_required = ["execution_id", "detail"]
+retryable        = false
+
+[[errors]]
+code             = "AEG_008"
+family           = "aeg"
+stage            = "aegis"
+severity         = "error"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "Aegis: aggregation function not supported"
+context_required = ["function"]
+retryable        = false
+
+[[errors]]
+code             = "EAV_005"
+family           = "eav"
+stage            = "eav-reader"
+severity         = "error"
+http_status      = 404
+grpc_status      = "NOT_FOUND"
+description      = "EAV entity not found for the given entity_id/tenant"
+context_required = ["entity_id", "tenant_id"]
+retryable        = false
+
+[[errors]]
+code             = "EAV_KEY_001"
+family           = "eav"
+stage            = "eav-writer"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "EAV sort key overflow — key exceeds 1024 bytes"
+context_required = ["entity_id", "attribute", "size_bytes"]
+retryable        = false
+
+[[errors]]
+code             = "EAV_FTS_001"
+family           = "eav"
+stage            = "eav-fts"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "EAV FTS index write failed — trigram batch rejected"
+context_required = ["entity_id", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "CDX_004"
+family           = "cdx"
+stage            = "codice"
+severity         = "fatal"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Códice SHA-256 fingerprint collision detected — registry integrity compromised"
+context_required = ["entity_type", "fingerprint"]
+retryable        = false
+
+[[errors]]
+code             = "IOP_001"
+family           = "iop"
+stage            = "iop"
+severity         = "warning"
+http_status      = 400
+grpc_status      = "INVALID_ARGUMENT"
+description      = "IOP integrity validation failed — payload rejected before Janus"
+context_required = ["reason"]
+retryable        = false
+
+[[errors]]
+code             = "IOP_002"
+family           = "iop"
+stage            = "iop"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "IOP enrichment failed"
+context_required = ["entity_type", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "IOP_003"
+family           = "iop"
+stage            = "iop"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "IOP ACID transaction failed — full write rolled back"
+context_required = ["tx_data_size"]
+retryable        = true
+
+[[errors]]
+code             = "IOP_004"
+family           = "iop"
+stage            = "iop"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "IOP outbox publish failed — event delivery at risk"
+context_required = ["event_type", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "QUOTA_001"
+family           = "quota"
+stage            = "quota"
+severity         = "error"
+http_status      = 429
+grpc_status      = "RESOURCE_EXHAUSTED"
+description      = "Tenant quota exhausted — request rejected by the quota ledger"
+context_required = ["tenant_id", "quota_type"]
+retryable        = true
+
+[[errors]]
+code             = "INFRA_S3_001"
+family           = "infra"
+stage            = "s3"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "S3 SDK error — unexpected failure on S3 operation"
+context_required = ["operation", "bucket", "cause"]
+retryable        = true
+
+[[errors]]
+code             = "INFRA_SQS_001"
+family           = "infra"
+stage            = "sqs"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "SQS SDK error — unexpected failure on SQS operation"
+context_required = ["operation", "queue", "cause"]
+retryable        = true
+
+[[errors]]
+code             = "INFRA_EB_001"
+family           = "infra"
+stage            = "eventbridge"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "EventBridge SDK error — event put failed"
+context_required = ["operation", "bus", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_KIN_001"
+family           = "infra"
+stage            = "kinesis"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Kinesis SDK error — record put failed"
+context_required = ["operation", "stream", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_CATALOG_001"
+family           = "infra"
+stage            = "error-catalog"
+severity         = "fatal"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Error catalog failed to load or validate at bootstrap — engine halted"
+context_required = ["path", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_CONFIG_001"
+family           = "infra"
+stage            = "config"
+severity         = "fatal"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Engine configuration failed to resolve or validate at bootstrap — engine halted"
+context_required = ["key", "cause"]
+retryable        = false
+
+[[errors]]
+code             = "INFRA_GLUE_001"
+family           = "infra"
+stage            = "glue"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Glue SDK error — Iceberg table sync failed"
+context_required = ["database", "table", "cause"]
+retryable        = true
+
+[[errors]]
+code             = "INFRA_FIREHOSE_001"
+family           = "infra"
+stage            = "firehose"
+severity         = "error"
+http_status      = 500
+grpc_status      = "INTERNAL"
+description      = "Firehose SDK error — delivery stream operation failed"
+context_required = ["stream", "operation", "cause"]
+retryable        = true

@@ -1,8 +1,11 @@
 ---
 source: src/janus/testing/contract_tests.rs
+assertion_line: 498
 expression: native
 ---
-AevtScan {
-    tenant_id: "tnt_golden",
-    entity_type: "asset",
-}
+Ok(
+    AevtScan {
+        tenant_id: "tnt_golden",
+        entity_type: "asset",
+    },
+)

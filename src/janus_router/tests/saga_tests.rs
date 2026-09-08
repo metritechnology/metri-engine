@@ -321,3 +321,84 @@ async fn el_payload_de_create_del_panel_valida_y_proyecta() {
         Some(DatomValue::Str(s)) if s == "0 9 * * *"
     ));
 }
+
+// ── Contrato del loop PM cerrado (Tramo 2 de la integración metri-schedulers) ─
+
+/// El payload que la saga proyecta para cada scheduled_job debe validar
+/// completo contra el Códice. Es la costura exacta donde el fired del ejecutor
+/// toca al motor: si un atributo proyectado no existe en el modelo, la OT
+/// jamás se creará — y el fallo se descubriría meses después, el día que
+/// tocaba el mantenimiento.
+#[tokio::test]
+async fn saga_payload_valida_contra_el_codice() {
+    let m = model("preventive_maintenance");
+    let payload = json!({
+        "template_id": "01M1EYF5MPFCH65NRRAGJJ8KY6",
+        "asset_id": "01ASSET",
+        "cron_expression": "0 9 * * *",
+        "iana_timezone": "UTC",
+        "next_due_date": 1767225600000i64,
+        "recurrence_basis": "FIXED_CALENDAR"
+    });
+
+    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .expect("la proyección debe validar");
+    assert!(
+        !jobs.is_empty(),
+        "una pauta cron debe proyectar al menos el job principal"
+    );
+
+    let job_model = model("scheduled_job");
+    for job in &jobs {
+        let attrs_json = crate::eav::writer::outbox::datom_map_to_json(&job.attrs);
+        crate::codice::validator::validate_payload(&job_model, &attrs_json, "tnt_1", true)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "el payload proyectado del job debe validar contra el Códice: {e:?}\n{attrs_json}"
+                )
+            });
+    }
+}
+
+/// La trazabilidad del loop: una OT generada por un disparo lleva la pauta y
+/// el job que la engendraron. Ambas referencias deben existir en el modelo —
+/// antes del Tramo 2 el validador las rechazaría y el fired del Hub habría
+/// muerto con un CDX_001 el día del mantenimiento.
+#[test]
+fn work_order_de_trazabilidad_valida_contra_codice() {
+    let m = model("work_order");
+    let payload = json!({
+        "work_order_number": "WO-0042",
+        "title": "Cambio de aceite trimestral",
+        "category": "PREVENTIVE",
+        "preventive_maintenance_id": "01HZZZZZZZZZZZZZZZZZZZZZ04",
+        "scheduled_job_id": "01HZZZZZZZZZZZZZZZZZZZZZ01"
+    });
+
+    let attrs = crate::codice::validator::validate_payload(&m, &payload, "tnt_1", true)
+        .expect("la OT generada con trazabilidad debe validar contra el Códice");
+    assert!(attrs.contains_key("preventive_maintenance_id"));
+    assert!(attrs.contains_key("scheduled_job_id"));
+}
+
+/// El constraint composite (unique por tenant sobre scheduled_job_id+asset_id)
+/// debe haber compilado al registry: es la capa definitiva de idempotencia del
+/// loop — aunque Valkey falle y el bus duplique el fired, la segunda OT no
+/// existe. El par y no el job solo, porque una ruta ENUMERATED materializa N
+/// OTs del mismo job (una por parada).
+#[test]
+fn constraint_unico_de_trazabilidad_compila() {
+    let m = model("work_order");
+    let unique: Vec<_> = m
+        .constraints
+        .iter()
+        .filter(|c| c.attributes == ["scheduled_job_id", "asset_id"])
+        .collect();
+    assert_eq!(
+        unique.len(),
+        1,
+        "work_order debe declarar unique(tenant, [scheduled_job_id]): {:?}",
+        m.constraints
+    );
+}

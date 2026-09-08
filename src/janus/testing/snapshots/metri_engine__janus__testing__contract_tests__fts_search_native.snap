@@ -1,8 +1,11 @@
 ---
 source: src/janus/testing/contract_tests.rs
+assertion_line: 80
 expression: native_plan
 ---
-FtsSearch {
-    tenant_id: "tenant_999",
-    term: "bomba hidraulica",
-}
+Ok(
+    FtsSearch {
+        tenant_id: "tenant_999",
+        term: "bomba hidraulica",
+    },
+)

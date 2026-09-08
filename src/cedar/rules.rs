@@ -18,7 +18,9 @@ pub const MASTER_ONLY_ENTITIES: &[&str] = &[
 
 /// Tenant maestro vigente según la configuración del arranque.
 pub fn master_tenant_id() -> String {
-    crate::domain::config::engine_config().master_tenant_id.clone()
+    crate::domain::config::engine_config()
+        .master_tenant_id
+        .clone()
 }
 
 /// El tenant maestro canónico es `system`, además del configurado y su alias
@@ -98,7 +100,6 @@ impl SystemSecurityRules {
     }
 }
 
-
 // ── step3b: restricción temporal de acceso ─────────────────────────────────
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -129,8 +130,6 @@ pub fn step3b_validate_time_window(
 
     Ok(())
 }
-
-
 
 /// Política de autenticación decidida UNA vez en la raíz de composición
 /// (`resolve_dev_auth_bypass`, fail-closed). Sustituye al bool

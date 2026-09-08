@@ -44,10 +44,24 @@ pub fn parse_tz(tz: &str) -> Tz {
 }
 
 /// Convierte epoch-segundos → DateTime en la timezone dada.
+///
+/// Total: un epoch fuera del calendario soportado (años 0–9999) se clampan a
+/// los extremos y un hueco de DST se interpreta como UTC — nunca pánico
+/// (PLAN_PATRON_RESULT.md, regla R2).
 pub fn epoch_to_zdt(epoch_secs: i64, tz: Tz) -> DateTime<Tz> {
-    tz.timestamp_opt(epoch_secs, 0)
-        .single()
-        .unwrap_or_else(|| chrono_tz::UTC.timestamp_opt(epoch_secs, 0).unwrap())
+    const MIN_SECS: i64 = -62_135_596_800; // 0000-01-01T00:00:00Z
+    const MAX_SECS: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
+    let clamped = epoch_secs.clamp(MIN_SECS, MAX_SECS);
+    match tz.timestamp_opt(clamped, 0).single() {
+        Some(dt) => dt,
+        // Hueco de DST (la hora local no existe) o epoch clampeado: la
+        // conversión desde UTC naive es total — misma instantánea, sin pánico.
+        None => tz.from_utc_datetime(
+            &chrono::DateTime::<chrono::Utc>::from_timestamp(clamped, 0)
+                .unwrap_or(chrono::DateTime::UNIX_EPOCH)
+                .naive_utc(),
+        ),
+    }
 }
 
 /// Trunca un DateTime al inicio del día (00:00:00) en su timezone.
@@ -120,9 +134,12 @@ fn shift_months(dt: DateTime<Tz>, months: i64) -> DateTime<Tz> {
     let max_day = days_in_month(new_year, new_month);
     let new_day = dt.day().min(max_day);
 
+    // Clamp de año: un shift puede salirse del calendario (año 0–9999);
+    // se satura en el extremo en vez de paniquear (R2).
+    let new_year = new_year.clamp(0, 9999);
     let naive = NaiveDate::from_ymd_opt(new_year, new_month, new_day)
         .and_then(|d| d.and_hms_opt(dt.hour(), dt.minute(), dt.second()))
-        .expect("shift_months: fecha inválida");
+        .unwrap_or_else(|| dt.date_naive().and_time(dt.time()));
 
     dt.timezone()
         .from_local_datetime(&naive)

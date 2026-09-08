@@ -19,6 +19,7 @@ use cedar_policy::{Entities, Schema};
 pub const CEDAR_SCHEMA_SRC: &str = include_str!("../../../config/policies/cedar-schema.json");
 
 /// Esquema Cedar del proceso — compilado una sola vez.
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 pub fn cedar_schema() -> &'static Schema {
     static SCHEMA: OnceLock<Schema> = OnceLock::new();
     SCHEMA.get_or_init(|| {
@@ -37,6 +38,7 @@ struct Registry {
     groups: HashMap<String, String>,
 }
 
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 fn registry() -> &'static Registry {
     static REGISTRY: OnceLock<Registry> = OnceLock::new();
     REGISTRY.get_or_init(|| {
@@ -57,7 +59,11 @@ fn registry() -> &'static Registry {
                 .and_then(|m| m.first())
                 .and_then(|g| g.get("id"))
                 .and_then(|id| id.as_str())
-                .map(|id| id.trim_start_matches("ActionGroup::\"").trim_end_matches('"').to_string())
+                .map(|id| {
+                    id.trim_start_matches("ActionGroup::\"")
+                        .trim_end_matches('"')
+                        .to_string()
+                })
             {
                 groups.insert(name.clone(), group);
             }
@@ -76,6 +82,7 @@ pub fn group_of(action: &str) -> Option<&'static str> {
 /// el schema — el loader de Cedar los añade desde el schema mismo, con sus
 /// jerarquías `memberOf`. Solo varían User y Resource por petición; esta base
 /// se construye una vez por proceso y se clona.
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 pub fn base_action_entities() -> &'static Entities {
     static BASE: OnceLock<Entities> = OnceLock::new();
     BASE.get_or_init(|| {
@@ -116,7 +123,10 @@ mod tests {
         let query_metrics = "Metri::Action::\"QueryMetrics\""
             .parse::<cedar_policy::EntityUid>()
             .unwrap();
-        assert!(base.get(&query_metrics).is_some(), "QueryMetrics en la base");
+        assert!(
+            base.get(&query_metrics).is_some(),
+            "QueryMetrics en la base"
+        );
         let group = "Metri::Action::\"ActionGroup::\\\"analytical\\\"\""
             .parse::<cedar_policy::EntityUid>()
             .unwrap();

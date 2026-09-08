@@ -13,7 +13,7 @@ pub struct AttributeRegistry {
     by_id: Vec<Option<AttributeDescriptor>>,
     /// "entity/attr" → attr_id
     by_name: HashMap<String, u16>,
-    /// "work_order" → [attr_id1, attr_id2, ...]
+    /// "asset" → [attr_id1, attr_id2, ...]
     by_entity: HashMap<String, Vec<u16>>,
 }
 
@@ -44,7 +44,7 @@ impl AttributeRegistry {
         self.by_id.get(attr_id as usize)?.as_ref()
     }
 
-    /// Lookup por nombre completo (ej. "work_order/status").
+    /// Lookup por nombre completo (ej. "asset/status").
     pub fn get_by_name(&self, name: &str) -> Option<&AttributeDescriptor> {
         let id = *self.by_name.get(name)?;
         self.get_by_id(id)

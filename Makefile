@@ -1,5 +1,5 @@
 .PHONY: help infra infra-down engine dev watch build build-release test check \
-        seed smoke deploy clean fmt lint
+        seed smoke deploy clean fmt lint result-check result-strict
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Metri Engine — Makefile (Rust Native)
@@ -49,6 +49,12 @@ fmt: ## Formatea el código con rustfmt
 
 lint: ## Ejecuta clippy
 	cargo clippy -- -D warnings
+
+result-check: ## Auditoría del patrón Result en modo ratchet (no-regresión)
+	python3 scripts/dev/check_result_pattern.py
+
+result-strict: ## Auditoría del patrón Result estricta (lo que corre CI)
+	python3 scripts/dev/check_result_pattern.py --strict
 
 check: ## cargo check rápido
 	cargo check

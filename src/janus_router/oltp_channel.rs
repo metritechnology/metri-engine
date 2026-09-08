@@ -28,12 +28,32 @@ use crate::janus_router::ulid;
 /// Canal de escritura ACID via EAV/DynamoDB.
 pub struct OltpChannel {
     writer: EavWriter,
+    /// Puerto de eventos del contrato metri-contracts (DIP). `new` compone el
+    /// adaptador EventBridge detached; `new_with_publisher` permite fakes en
+    /// tests y un futuro publisher por outbox sin tocar este canal.
+    event_publisher: std::sync::Arc<dyn crate::application::ports::DomainEventPublisher>,
 }
 
 impl OltpChannel {
     pub fn new(writer: EavWriter) -> Self {
         info!("[OltpChannel] Canal OLTP EAV activo");
-        Self { writer }
+        Self {
+            writer,
+            event_publisher: std::sync::Arc::new(
+                crate::infrastructure::domain_event_bus::DetachedEventBridgePublisher,
+            ),
+        }
+    }
+
+    pub fn new_with_publisher(
+        writer: EavWriter,
+        event_publisher: std::sync::Arc<dyn crate::application::ports::DomainEventPublisher>,
+    ) -> Self {
+        info!("[OltpChannel] Canal OLTP EAV activo (publisher inyectado)");
+        Self {
+            writer,
+            event_publisher,
+        }
     }
 }
 
@@ -143,6 +163,7 @@ impl OltpChannel {
                         entity_type,
                         entity_id: Some(entity_id),
                         op: TransactOp::Create,
+                        suppress_events: false,
                         attrs: validated,
                     };
 
@@ -183,10 +204,7 @@ impl OltpChannel {
         }
 
         // Deferred cache invalidation: single invalidation for the entire bulk operation
-        if let Ok(mut cache) = crate::eav::reader::query::AEVT_SCAN_CACHE.write() {
-            let key = (tenant_id.clone(), entity_type.clone());
-            cache.remove(&key);
-        }
+        crate::eav::writer::cache_policy::invalidate_aevt_scan(tenant_id, entity_type);
 
         info!(
             entity   = %entity_type,
@@ -260,12 +278,23 @@ impl OltpChannel {
             }
         };
 
+        // §10.4 — primera barrera del ciclo de realimentación: el ejecutor del
+        // Hub escribe bitácora (last_run_at, run_count, last_error) sin generar
+        // eventos. La segunda barrera, independiente del escritor, es el guard
+        // de delta en el sobre.
+        let suppress_events = ctx
+            .request
+            .get("suppress_events")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
         let transact = TransactPayload {
             tenant_id: tenant_id.clone(),
             entity_type: entity_type.clone(),
             entity_id: Some(entity_id.clone()),
             op: op.clone(),
             attrs: validated,
+            suppress_events,
         };
 
         // Proyección de sagas: sólo en CREATE y sólo si la madre declara el mapping.
@@ -339,45 +368,67 @@ impl OltpChannel {
                     "[OltpChannel] ✅ TX ACID exitosa"
                 );
 
-                // Emite evento de dominio a EventBridge asíncronamente
-                let bus_name = std::env::var("EVENTBRIDGE_BUS_NAME")
-                    .unwrap_or_else(|_| "metri-events".to_string());
-                let source = "metri.engine".to_string();
-                let detail_type = if entity_type == "tenant" && op == TransactOp::Create {
-                    "system.tenant.created".to_string()
-                } else {
-                    format!("{entity_type}.{}", operation.to_lowercase())
-                };
+                // §10.4 — con suppress_events no hay outbox (writer) NI emisiones:
+                // son las escrituras de bitácora del ejecutor del Hub.
+                if !suppress_events {
+                    // Emite evento de dominio legacy a EventBridge asíncronamente
+                    let bus_name = std::env::var("EVENTBRIDGE_BUS_NAME")
+                        .unwrap_or_else(|_| "metri-events".to_string());
+                    let source = "metri.engine".to_string();
+                    let detail_type = if entity_type == "tenant" && op == TransactOp::Create {
+                        "system.tenant.created".to_string()
+                    } else {
+                        format!("{entity_type}.{}", operation.to_lowercase())
+                    };
 
-                let event_tenant_id = if entity_type == "tenant" && op == TransactOp::Create {
-                    result.entity_id.clone()
-                } else {
-                    tenant_id.clone()
-                };
+                    let event_tenant_id = if entity_type == "tenant" && op == TransactOp::Create {
+                        result.entity_id.clone()
+                    } else {
+                        tenant_id.clone()
+                    };
 
-                let mut detail_map = serde_json::Map::new();
-                detail_map.insert("tenant_id".to_string(), Value::String(event_tenant_id));
-                detail_map.insert(
-                    "entity_type".to_string(),
-                    Value::String(entity_type.clone()),
-                );
-                detail_map.insert(
-                    "entity_id".to_string(),
-                    Value::String(result.entity_id.clone()),
-                );
-                detail_map.insert("op".to_string(), Value::String(operation.to_string()));
-                if let Value::Object(ref p_map) = payload {
-                    for (k, v) in p_map {
-                        detail_map.insert(k.clone(), v.clone());
+                    let mut detail_map = serde_json::Map::new();
+                    detail_map.insert("tenant_id".to_string(), Value::String(event_tenant_id));
+                    detail_map.insert(
+                        "entity_type".to_string(),
+                        Value::String(entity_type.clone()),
+                    );
+                    detail_map.insert(
+                        "entity_id".to_string(),
+                        Value::String(result.entity_id.clone()),
+                    );
+                    detail_map.insert("op".to_string(), Value::String(operation.to_string()));
+                    if let Value::Object(ref p_map) = payload {
+                        for (k, v) in p_map {
+                            detail_map.insert(k.clone(), v.clone());
+                        }
+                    }
+
+                    crate::infrastructure::eventbridge::publish_domain_event_async(
+                        bus_name,
+                        source,
+                        detail_type,
+                        Value::Object(detail_map),
+                    );
+
+                    // Sobre del contrato metri-contracts v1.0 (Tramo 1) — lo que
+                    // metri-schedulers parsea. Aditivo al emit legacy: el Hub
+                    // ignora lo que no conoce, el motor no puede dejar de
+                    // publicar lo que el Hub ya consume.
+                    if entity_type == "scheduled_job" {
+                        if let Some((detail_type, detail)) =
+                            crate::infrastructure::domain_event_bus::build_scheduled_job_detail(
+                                &result, operation, &payload, tenant_id,
+                            )
+                        {
+                            crate::application::ports::publish_detached(
+                                self.event_publisher.clone(),
+                                detail_type,
+                                detail,
+                            );
+                        }
                     }
                 }
-
-                crate::infrastructure::eventbridge::publish_domain_event_async(
-                    bus_name,
-                    source,
-                    detail_type,
-                    Value::Object(detail_map),
-                );
 
                 if let Ok(mut cache) = crate::eav::reader::query::AEVT_SCAN_CACHE.write() {
                     cache.remove(&(tenant_id.clone(), entity_type.clone()));
@@ -576,7 +627,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints: vec![],
-        };
+                    };
 
         let normal_model = EntityModel {
             entity: "dashboardBI".to_string(),
@@ -593,7 +644,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints: vec![],
-        };
+                    };
 
         // Case 1: System model permits custom human-readable ID
         let payload = json!({ "id": "tnt_regular" });

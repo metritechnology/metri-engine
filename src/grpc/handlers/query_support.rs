@@ -720,14 +720,15 @@ pub(crate) async fn map_chunk_to_response(
 
     let output_cast = chunk.body.get("output_cast").and_then(|v| v.as_str());
 
-    let payload_strategy =
-        if output_cast == Some("CSV_EXPORT") && pb_rows.len() > 5000 && export_storage.is_some() {
+    let payload_strategy = match export_storage
+        .filter(|_| output_cast == Some("CSV_EXPORT") && pb_rows.len() > 5000)
+    {
+        Some(storage) => {
             tracing::info!(
                 "[Service] Output is CSV_EXPORT with {} rows (> 5000), uploading to S3...",
                 pb_rows.len()
             );
-            match export_storage
-                .unwrap()
+            match storage
                 .generate_presigned_url(tenant_id, &chunk.query_key, &pb_columns, &pb_rows)
                 .await
             {
@@ -750,11 +751,12 @@ pub(crate) async fn map_chunk_to_response(
                     ))
                 }
             }
-        } else {
-            Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(
-                crate::grpc::pb::DataRowList { iter: pb_rows },
-            ))
-        };
+        }
+        // Sin storage de export (o cast distinto de CSV_EXPORT): inline JSON.
+        None => Some(crate::grpc::pb::row_set::PayloadStrategy::RowsJson(
+            crate::grpc::pb::DataRowList { iter: pb_rows },
+        )),
+    };
 
     // ── 3. QueryMetadata ────────────────────────────────────────
     let pb_metadata = map_metadata(chunk.body.get("metadata"));

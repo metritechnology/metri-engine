@@ -1,3 +1,18 @@
+// Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
+// unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
+// invariantes documentadas en scripts/dev/result_pattern_allowlist.json, cada
+// una con su #[allow] y comentario. Bajo cfg(test) se desactiva: los tests
+// usan unwrap/expect libremente.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
 // bin/firehose-seeder.rs — Fase 4 de PLAN_CORRECCIONES_PENDIENTES.md
 //
 // Gestor idempotente de la infraestructura OLAP del Códice: para cada entidad
@@ -17,14 +32,14 @@ use std::time::Duration;
 
 use aws_config::BehaviorVersion;
 use aws_sdk_firehose::types::{
-    CatalogConfiguration, CloudWatchLoggingOptions, CompressionFormat, DestinationTableConfiguration,
-    EncryptionConfiguration, NoEncryptionConfig, RetryOptions, S3DestinationConfiguration,
-    DeliveryStreamType, BufferingHints, IcebergS3BackupMode,
+    BufferingHints, CatalogConfiguration, CloudWatchLoggingOptions, CompressionFormat,
+    DeliveryStreamType, DestinationTableConfiguration, EncryptionConfiguration,
+    IcebergS3BackupMode, NoEncryptionConfig, RetryOptions, S3DestinationConfiguration,
 };
 use metri_engine::codice::registry::{CodeRegistry, EngineChannel};
 use metri_engine::infrastructure::seeder::{
-    build_ddl, evaluate_drift, log_group, stream_name, table_name, DestinationSnapshot,
-    DesiredDestination, StreamDrift,
+    build_ddl, evaluate_drift, log_group, stream_name, table_name, DesiredDestination,
+    DestinationSnapshot, StreamDrift,
 };
 
 struct Args {
@@ -61,12 +76,14 @@ fn parse_args() -> Args {
             "--only-firehose" => args.only_firehose = true,
             "--only-iceberg" => args.only_iceberg = true,
             "--recreate-on-catalog-drift" => args.recreate_on_catalog_drift = true,
-            "--models-dir" => args.models_dir = PathBuf::from(it.next().expect("ruta")),
-            "--lake-bucket" => args.lake_bucket = it.next().expect("bucket"),
-            "--stream-prefix" => args.stream_prefix = it.next().expect("prefijo"),
-            "--database" => args.database = it.next().expect("database"),
-            "--entity" => args.entity = Some(it.next().expect("entidad")),
-            "--delivery-role-arn" => args.delivery_role_arn = Some(it.next().expect("arn")),
+            "--models-dir" => args.models_dir = PathBuf::from(next_arg(&mut it, "--models-dir")),
+            "--lake-bucket" => args.lake_bucket = next_arg(&mut it, "--lake-bucket"),
+            "--stream-prefix" => args.stream_prefix = next_arg(&mut it, "--stream-prefix"),
+            "--database" => args.database = next_arg(&mut it, "--database"),
+            "--entity" => args.entity = Some(next_arg(&mut it, "--entity")),
+            "--delivery-role-arn" => {
+                args.delivery_role_arn = Some(next_arg(&mut it, "--delivery-role-arn"))
+            }
             other => {
                 eprintln!("argumento desconocido: {other}");
                 std::process::exit(2);
@@ -97,7 +114,10 @@ async fn main() -> std::process::ExitCode {
         .filter(|e| args.entity.as_ref().map(|f| f == e).unwrap_or(true))
         .collect();
     if entities.is_empty() {
-        eprintln!("✗ ninguna entidad engine:olap en el Códice ({:?})", args.models_dir);
+        eprintln!(
+            "✗ ninguna entidad engine:olap en el Códice ({:?})",
+            args.models_dir
+        );
         return std::process::ExitCode::from(2);
     }
     println!(
@@ -145,7 +165,13 @@ async fn main() -> std::process::ExitCode {
                 );
                 continue;
             }
-            match glue.get_table().database_name(&args.database).name(&table).send().await {
+            match glue
+                .get_table()
+                .database_name(&args.database)
+                .name(&table)
+                .send()
+                .await
+            {
                 Ok(out) => {
                     let meta = out
                         .table()
@@ -161,13 +187,25 @@ async fn main() -> std::process::ExitCode {
                         .strip_prefix(&format!("s3://{}/", args.lake_bucket))
                         .unwrap_or(&meta)
                         .to_string();
-                    let meta_ok = s3.head_object().bucket(&args.lake_bucket).key(&key).send().await.is_ok();
+                    let meta_ok = s3
+                        .head_object()
+                        .bucket(&args.lake_bucket)
+                        .key(&key)
+                        .send()
+                        .await
+                        .is_ok();
                     if meta_ok {
                         println!("   ✓ tabla Iceberg válida");
                     } else {
                         println!("   ⚠ tabla HUECA (metadata borrada del lake: {key}) — recreando");
                         if args.apply {
-                            if let Err(e) = glue.delete_table().database_name(&args.database).name(&table).send().await {
+                            if let Err(e) = glue
+                                .delete_table()
+                                .database_name(&args.database)
+                                .name(&table)
+                                .send()
+                                .await
+                            {
                                 failures += 1;
                                 eprintln!("   ✗ no pude borrar la tabla hueca: {e}");
                                 continue;
@@ -230,8 +268,14 @@ async fn main() -> std::process::ExitCode {
                         StreamDrift::RecreateRequired => {
                             if args.recreate_on_catalog_drift && args.apply {
                                 println!("   ⚠ drift inmutable (sin WarehouseLocation) — recreando por flag explícito");
-                                if let Err(e) =
-                                    recreate_stream(&firehose, &stream, &args, &desc.role_arn, &desired).await
+                                if let Err(e) = recreate_stream(
+                                    &firehose,
+                                    &stream,
+                                    &args,
+                                    &desc.role_arn,
+                                    &desired,
+                                )
+                                .await
                                 {
                                     failures += 1;
                                     eprintln!("   ✗ recreación: {e}");
@@ -246,10 +290,16 @@ async fn main() -> std::process::ExitCode {
                                 );
                             }
                         }
-                        StreamDrift::NeedsUpdate { logging, buffering, retry } => {
+                        StreamDrift::NeedsUpdate {
+                            logging,
+                            buffering,
+                            retry,
+                        } => {
                             println!("   ⚠ drift actualizable (logging={logging} buffering={buffering} retry={retry})");
                             if args.apply {
-                                if let Err(e) = update_stream(&firehose, &stream, &desc, &desired).await {
+                                if let Err(e) =
+                                    update_stream(&firehose, &stream, &desc, &desired).await
+                                {
                                     failures += 1;
                                     eprintln!("   ✗ update-destination: {e}");
                                 } else {
@@ -267,7 +317,11 @@ async fn main() -> std::process::ExitCode {
         "\nResumen: {} entidades, {} fallos{}",
         entities.len(),
         failures,
-        if args.apply { "" } else { " — dry-run, nada escrito" }
+        if args.apply {
+            ""
+        } else {
+            " — dry-run, nada escrito"
+        }
     );
     if failures > 0 {
         std::process::ExitCode::FAILURE
@@ -300,7 +354,10 @@ async fn ensure_ddl(
     registry: &CodeRegistry,
     args: &Args,
 ) -> bool {
-    let attrs = registry.get_attributes(entity).map(|a| a.to_vec()).unwrap_or_default();
+    let attrs = registry
+        .get_attributes(entity)
+        .map(|a| a.to_vec())
+        .unwrap_or_default();
     let sql = build_ddl(entity, &attrs, &args.database, &args.lake_bucket);
     if !args.apply {
         println!("   · DDL (dry-run): {} …", sql.lines().next().unwrap_or(""));
@@ -330,8 +387,15 @@ async fn ensure_ddl(
     };
     for _ in 0..30 {
         tokio::time::sleep(Duration::from_secs(2)).await;
-        if let Ok(q) = athena.get_query_execution().query_execution_id(&qid).send().await {
-            let Some(exec) = q.query_execution() else { continue };
+        if let Ok(q) = athena
+            .get_query_execution()
+            .query_execution_id(&qid)
+            .send()
+            .await
+        {
+            let Some(exec) = q.query_execution() else {
+                continue;
+            };
             let state = exec.status().map(|s| s.state()).unwrap_or_default();
             let running = matches!(
                 state,
@@ -339,11 +403,17 @@ async fn ensure_ddl(
                     | Some(aws_sdk_athena::types::QueryExecutionState::Queued)
             );
             if !running {
-                let ok = matches!(state, Some(aws_sdk_athena::types::QueryExecutionState::Succeeded));
+                let ok = matches!(
+                    state,
+                    Some(aws_sdk_athena::types::QueryExecutionState::Succeeded)
+                );
                 if ok {
                     println!("   ✓ tabla creada por DDL");
                 } else {
-                    let reason = exec.status().and_then(|s| s.state_change_reason()).unwrap_or_default();
+                    let reason = exec
+                        .status()
+                        .and_then(|s| s.state_change_reason())
+                        .unwrap_or_default();
                     eprintln!("   ✗ DDL falló: {reason}");
                 }
                 return ok;
@@ -357,7 +427,10 @@ async fn ensure_ddl(
 // ── Streams: describe / update / create / recreate ──────────────────────────
 
 /// None = el stream no existe.
-async fn describe_stream(firehose: &aws_sdk_firehose::Client, stream: &str) -> Option<StreamDescription> {
+async fn describe_stream(
+    firehose: &aws_sdk_firehose::Client,
+    stream: &str,
+) -> Option<StreamDescription> {
     let out = match firehose
         .describe_delivery_stream()
         .delivery_stream_name(stream)
@@ -422,7 +495,7 @@ async fn update_stream(
     stream: &str,
     desc: &StreamDescription,
     desired: &DesiredDestination,
-) -> Result<(), String> {
+) -> Result<(), metri_engine::domain::errors::DomainError> {
     let ice = &desc.ice;
     let mut upd = IcebergDestinationUpdate::builder()
         .role_arn(desc.role_arn.clone())
@@ -487,7 +560,7 @@ async fn update_stream(
         }
         upd = upd.s3_configuration(
             s3u.build()
-                .map_err(|e| format!("S3DestinationUpdate incompleto: {e}"))?,
+                .map_err(|e| fe("S3DestinationUpdate incompleto", &e))?,
         );
     }
     let update = upd.build();
@@ -500,7 +573,7 @@ async fn update_stream(
         .send()
         .await
         .map(|_| ())
-        .map_err(|e| format!("{e}"))
+        .map_err(|e| fe("aws-sdk", &e))
 }
 
 async fn create_stream(
@@ -509,7 +582,7 @@ async fn create_stream(
     args: &Args,
     role_arn: &str,
     desired: &DesiredDestination,
-) -> Result<(), String> {
+) -> Result<(), metri_engine::domain::errors::DomainError> {
     let slug = stream
         .strip_prefix(&format!("{}-", args.stream_prefix))
         .unwrap_or(stream);
@@ -522,7 +595,7 @@ async fn create_stream(
             "errors/firehose/{slug}/!{{firehose:error-output-type}}/"
         ))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| fe("aws-sdk", &e))?;
     let config = IcebergDestinationConfiguration::builder()
         .destination_table_configuration_list(table_cfg)
         .buffering_hints(
@@ -579,10 +652,10 @@ async fn create_stream(
                         .build(),
                 )
                 .build()
-                .map_err(|e| e.to_string())?,
+                .map_err(|e| fe("aws-sdk", &e))?,
         )
         .build()
-        .map_err(|e| format!("IcebergDestinationConfiguration incompleta: {e}"))?;
+        .map_err(|e| fe("IcebergDestinationConfiguration incompleta", &e))?;
     firehose
         .create_delivery_stream()
         .delivery_stream_name(stream)
@@ -591,7 +664,7 @@ async fn create_stream(
         .send()
         .await
         .map(|_| ())
-        .map_err(|e| format!("{e}"))
+        .map_err(|e| fe("aws-sdk", &e))
 }
 
 async fn recreate_stream(
@@ -600,20 +673,23 @@ async fn recreate_stream(
     args: &Args,
     role_arn: &str,
     desired: &DesiredDestination,
-) -> Result<(), String> {
+) -> Result<(), metri_engine::domain::errors::DomainError> {
     firehose
         .delete_delivery_stream()
         .delivery_stream_name(stream)
         .send()
         .await
-        .map_err(|e| format!("delete: {e}"))?;
+        .map_err(|e| fe("delete", &e))?;
     for _ in 0..30 {
         tokio::time::sleep(Duration::from_secs(5)).await;
         if describe_stream(firehose, stream).await.is_none() {
             return create_stream(firehose, stream, args, role_arn, desired).await;
         }
     }
-    Err("el stream siguió DELETING más de 150 s".into())
+    Err(fe(
+        "wait-deleting",
+        "el stream siguió DELETING más de 150 s",
+    ))
 }
 
 fn catalog_arn_for(args: &Args) -> String {
@@ -626,3 +702,22 @@ fn catalog_arn_for(args: &Args) -> String {
 }
 
 use aws_sdk_firehose::types::{IcebergDestinationConfiguration, IcebergDestinationUpdate};
+
+/// Valor del flag CLI; sin valor → error de uso y exit(2), nunca pánico.
+fn next_arg(it: &mut impl Iterator<Item = String>, flag: &str) -> String {
+    match it.next() {
+        Some(v) => v,
+        None => {
+            eprintln!("flag '{flag}' requiere un valor");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Error de operación Firehose/S3 del seeder — INFRA_FIREHOSE_001.
+fn fe(context: &str, e: impl std::fmt::Display) -> metri_engine::domain::errors::DomainError {
+    metri_engine::domain::errors::DomainError::infra(
+        metri_engine::domain::errors::ErrorCode::InfraFirehose001,
+        format!("{context}: {e}"),
+    )
+}

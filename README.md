@@ -1,6 +1,6 @@
 # metri-engine
 
-Motor de datos de la plataforma **metri** — CMMS/BI SaaS multitenant para gestión de activos en el sector salud. **100% Rust**, desplegado como una única AWS Lambda ARM64 (`provided.al2023`) que expone un servidor **gRPC** (Tonic) detrás de Function URL + CloudFront + WAF.
+Motor de datos de la plataforma **metri** — CMMS/BI SaaS multitenant para gestión de activos, ordenes de trabajos, etc... .**100% Rust**, desplegado como una única AWS Lambda ARM64 (`provided.al2023`) que expone un servidor **gRPC** (Tonic) detrás de Function URL + CloudFront + WAF.
 
 Combina en un solo proceso:
 

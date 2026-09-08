@@ -1,3 +1,4 @@
+use crate::domain::errors::{DomainError, ErrorCode};
 use crate::grpc::pb::{BulkRequest, BulkResponse};
 use crate::grpc::service::MetriGrpcService;
 use crate::grpc::translator;
@@ -190,7 +191,15 @@ impl MetriGrpcService {
                 info!("BulkIngest response value: {:?}", response_value);
 
                 if let Some("error") = response_value.get("status").and_then(|s| s.as_str()) {
-                    let error_obj = response_value.get("error").unwrap();
+                    let Some(error_obj) = response_value.get("error") else {
+                        // status=error sin objeto 'error': DTO malformado del
+                        // pipeline — Status interno vía el mapeo único (R6),
+                        // nunca pánico (R2).
+                        return Err(Status::from(DomainError::new(
+                            ErrorCode::Janus500,
+                            "IOP devolvió status=error sin objeto 'error'",
+                        )));
+                    };
                     let code = error_obj
                         .get("code")
                         .and_then(|c| c.as_str())

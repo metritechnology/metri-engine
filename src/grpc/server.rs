@@ -12,10 +12,16 @@ use super::pb::agent_config_service_server::AgentConfigServiceServer;
 use super::pb::metri_service_server::MetriServiceServer;
 use super::pb::quota_service_server::QuotaServiceServer;
 use super::service::MetriGrpcService;
+use crate::domain::errors::{DomainError, ErrorCode};
 
-pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
     let port = std::env::var("GRPC_PORT").unwrap_or_else(|_| "9090".to_string());
-    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().map_err(|e| {
+        DomainError::new(
+            ErrorCode::InfraConfig001,
+            format!("GRPC_PORT inválido ('{port}'): {e}"),
+        )
+    })?;
 
     info!("Iniciando gRPC Server (Tonic-Web) en {}...", addr);
 
@@ -289,7 +295,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
     let reflection_service = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(super::pb::FILE_DESCRIPTOR_SET)
         .build()
-        .unwrap();
+        .map_err(|e| DomainError::new(ErrorCode::Janus500, format!("reflection: {e}")))?;
 
     // Ejecutar semilla de seguridad Master User si corresponde
     if let Err(e) = super::bootstrap::check_and_bootstrap_master(&oltp_exec, &oltp_channel).await {
@@ -310,8 +316,9 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
         .add_service(eda_web_service)
         .add_service(quota_web_service)
         .add_service(config_web_service)
-        .serve_with_shutdown(addr, shutdown_signal())
-        .await?;
+            .serve_with_shutdown(addr, shutdown_signal())
+        .await
+        .map_err(|e| DomainError::new(ErrorCode::Janus500, format!("serve falló: {e}")))?;
 
     info!("gRPC Server detenido de forma limpia (graceful shutdown completado)");
     Ok(())
@@ -320,17 +327,19 @@ pub async fn start_lambda_grpc_server() -> Result<(), Box<dyn std::error::Error 
 /// Helper para capturar señales asíncronas de parada (SIGINT o SIGTERM)
 async fn shutdown_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("falló al instalar manejador de Ctrl+C");
+        if tokio::signal::ctrl_c().await.is_err() {
+            tracing::warn!("sin manejador de Ctrl+C — el shutdown dependerá de SIGTERM/kill");
+        }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("falló al instalar manejador de señal terminate")
-            .recv()
-            .await;
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(e) => tracing::warn!("sin manejador de SIGTERM: {e}"),
+        }
     };
 
     #[cfg(not(unix))]

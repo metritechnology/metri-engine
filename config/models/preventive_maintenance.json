@@ -34,7 +34,7 @@
     {
       "name": "meter_based_trigger",
       "type": "json",
-      "description": "Rules for triggering PM based on meter readings. e.g. { meterId: uuid, condition: '>', value: 5000 }"
+      "description": "Rules for triggering PM based on meter readings. e.g. { meterId: uuid, condition: '>', value: 5000, meter_interval_value: 5000 }. El campo meter_interval_value (opcional) es el REARME del ciclo tras cada disparo: el CompleteOccurrence suma value += meter_interval_value (5000 → 10000) y la pauta actualizada reprovisiona la iot_alert_rule vía Kairos. Sin intervalo, el trigger es de un solo uso."
     },
     {
       "name": "advance_notice_meter_value",
@@ -56,6 +56,17 @@
       "name": "next_due_date",
       "type": "epoch",
       "index": true
+    },
+    {
+      "name": "recurrence_basis",
+      "type": "enum",
+      "options": [
+        "FIXED_CALENDAR",
+        "FROM_COMPLETION"
+      ],
+      "default_value": "FIXED_CALENDAR",
+      "is_dimension": true,
+      "description": "Política de recálculo del ciclo. FIXED_CALENDAR: el calendario manda — el 1 de marzo toca aunque la OT anterior se cerrara tarde (contratos, normativas). FROM_COMPLETION: el reloj arranca en el cierre real de la OT anterior (condicionados por uso real del equipo). El CompleteOccurrence del ejecutor lo consulta tras cada disparo."
     },
     {
       "name": "status",

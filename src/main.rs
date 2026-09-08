@@ -1,3 +1,18 @@
+// Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
+// unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
+// invariantes documentadas en scripts/dev/result_pattern_allowlist.json, cada
+// una con su #[allow] y comentario. Bajo cfg(test) se desactiva: los tests
+// usan unwrap/expect libremente.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
 // main.rs — Lambda entry point para AWS Lambda ARM64 (provided.al2023)
 // Runtime: Tonic gRPC server sobre Lambda Function URL
 
@@ -6,7 +21,7 @@ use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     // ── 1. Inicializar telemetría OTel ────────────────────────────────────────
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -59,9 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 3. Inicializar gRPC server (Tonic) ──────────────────────────────
     if let Err(e) = metri_engine::grpc::server::start_lambda_grpc_server().await {
-        error!("Error inicializando gRPC Server: {:?}", e);
+        error!("FATAL: gRPC Server falló: {e:?}");
+        std::process::exit(1);
     }
 
     info!("Metri Engine (Rust) — bootstrap completado");
-    Ok(())
 }

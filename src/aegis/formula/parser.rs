@@ -61,7 +61,9 @@ pub fn to_rpn(tokens: Vec<Token>, registry: &FunctionRegistry) -> Result<Vec<Tok
                     if matches!(top, Token::ParenOpen) {
                         break;
                     }
-                    output.push(op_stack.pop().unwrap());
+                    if let Some(op) = op_stack.pop() {
+                        output.push(op);
+                    }
                 }
                 if let Some(arity) = arity_stack.last_mut() {
                     *arity += 1;
@@ -76,12 +78,14 @@ pub fn to_rpn(tokens: Vec<Token>, registry: &FunctionRegistry) -> Result<Vec<Tok
                     }
                 }
                 while let Some(Token::Operator(top_op)) = op_stack.last() {
-                    if (op.is_left_associative() && op.precedence() <= top_op.precedence())
-                        || (!op.is_left_associative() && op.precedence() < top_op.precedence())
-                    {
-                        output.push(op_stack.pop().unwrap());
-                    } else {
+                    let should_pop = (op.is_left_associative()
+                        && op.precedence() <= top_op.precedence())
+                        || (!op.is_left_associative() && op.precedence() < top_op.precedence());
+                    if !should_pop {
                         break;
+                    }
+                    if let Some(popped) = op_stack.pop() {
+                        output.push(popped);
                     }
                 }
                 op_stack.push(token);

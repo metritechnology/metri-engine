@@ -99,7 +99,6 @@ impl HmacTokenVerifier {
     }
 }
 
-
 // ── step1: extracción de token y consulta de sesión ────────────────────────
 
 use crate::cedar::request::AuthRequest;
@@ -128,9 +127,7 @@ pub fn verify_hmac_token_local_in_step(raw_token: &str) -> Option<Session> {
         )
 }
 
-
 // --- Public Helper Interceptor Methods ---
-
 
 pub async fn step1_extract_token(
     auth: &AuthRequest<'_>,
@@ -165,7 +162,6 @@ pub async fn step1_extract_token(
 
     Ok(session)
 }
-
 
 #[cfg(test)]
 pub(crate) mod tests {

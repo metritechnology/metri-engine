@@ -60,7 +60,15 @@ impl FormulaEvaluator {
                                 }
                             }
                             Operator::Power => left.powf(right),
-                            Operator::Neg => unreachable!(),
+                            // Neg es unario y se evaluó arriba; este brazo es
+                            // defensivo ante una violación del contrato
+                            // parser→evaluador: error, nunca pánico (R3).
+                            Operator::Neg => {
+                                return Err(FormulaError::MathDomainError {
+                                    function: "neg".to_string(),
+                                    detail: "operador unario en evaluación binaria".to_string(),
+                                })
+                            }
                         };
                         stack.push(result);
                     }

@@ -94,7 +94,7 @@ where
     async fn fetch_pending_events(&self, tenant_id: &str) -> Result<Vec<Value>, DomainError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as i64;
 
         // Buscar status == "PENDING"
@@ -157,7 +157,7 @@ where
     ) -> Result<Option<Value>, DomainError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as i64;
 
         // 1. Pull del estado del evento
@@ -193,6 +193,7 @@ where
             entity_id: Some(event_id.to_string()),
             attrs,
             op: TransactOp::Update,
+            suppress_events: false,
         };
 
         self.eav_writer.transact(transact).await?;
@@ -222,6 +223,7 @@ where
             entity_id: Some(event_id.to_string()),
             attrs,
             op: TransactOp::Update,
+            suppress_events: false,
         };
         self.eav_writer.transact(transact).await?;
         Ok(())
@@ -235,7 +237,7 @@ where
     ) -> Result<(), DomainError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as i64;
 
         let event = self.eav_reader.pull(tenant_id, event_id, None).await?;
@@ -273,6 +275,7 @@ where
             entity_id: Some(event_id.to_string()),
             attrs,
             op: TransactOp::Update,
+            suppress_events: false,
         };
         self.eav_writer.transact(transact).await?;
 
@@ -294,7 +297,7 @@ where
     ) -> Result<usize, DomainError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as i64;
         let cutoff = now - ttl_ms;
 
@@ -330,6 +333,7 @@ where
                     entity_id: Some(event_id.to_string()),
                     attrs,
                     op: TransactOp::Update,
+                    suppress_events: false,
                 };
                 self.eav_writer.transact(transact).await?;
                 reset_count += 1;

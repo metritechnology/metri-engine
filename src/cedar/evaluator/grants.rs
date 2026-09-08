@@ -13,7 +13,6 @@ pub const ALL_ACTIONS: &[&str] = &["VIEW", "CREATE", "UPDATE", "DELETE", "EXECUT
 /// temprano). En producción la lista de dominios la provee el registry.
 pub const FALLBACK_DOMAINS: &[&str] = &[
     "project",
-    "work_order",
     "asset",
     "location",
     "user",
@@ -140,11 +139,15 @@ mod tests {
 
     #[test]
     fn wildcard_de_dominio_expande_todos_los_dominios_inyectados() {
-        let principal =
-            principal_with_grants(vec![serde_json::json!({"domain": "*", "actions": ["VIEW"]})]);
+        let principal = principal_with_grants(vec![
+            serde_json::json!({"domain": "*", "actions": ["VIEW"]}),
+        ]);
         let domains = vec!["a".to_string(), "b".to_string()];
         let grants = collect_user_grants(&principal, &domains);
-        assert_eq!(grants, ["a:VIEW", "b:VIEW"].into_iter().map(String::from).collect());
+        assert_eq!(
+            grants,
+            ["a:VIEW", "b:VIEW"].into_iter().map(String::from).collect()
+        );
     }
 
     #[test]

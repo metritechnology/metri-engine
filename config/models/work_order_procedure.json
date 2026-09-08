@@ -1,0 +1,70 @@
+{
+  "entity": "work_order_procedure",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "work_order_id",
+      "type": "reference",
+      "entityRef": "work_order",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "procedure_id",
+      "type": "reference",
+      "entityRef": "procedure",
+      "cardinality": "one",
+      "index": true,
+      "is_dimension": true,
+      "description": "Provenance de plantilla (el templateIds[] de MaintainX): qué procedure originó esta instancia. Permite agrupar métricas por procedimiento y evolucionar la plantilla sin perder el origen."
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "is_dimension": true,
+      "description": "Título copiado de la plantilla al instanciar. La OT guarda la foto del momento, no una referencia viva."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "PENDING",
+        "IN_PROGRESS",
+        "COMPLETED",
+        "SKIPPED"
+      ],
+      "default_value": "PENDING",
+      "is_dimension": true,
+      "description": "Avance del procedimiento dentro de la OT, en paridad con work_order_task.status."
+    },
+    {
+      "name": "score",
+      "type": "number",
+      "is_measure": true,
+      "description": "Puntaje obtenido al responder los campos con score > 0."
+    },
+    {
+      "name": "max_score",
+      "type": "number",
+      "is_measure": true,
+      "description": "Copia del max_score de la plantilla al instanciar: el máximo vigente ese día."
+    },
+    {
+      "name": "completed_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one"
+    },
+    {
+      "name": "completed_at",
+      "type": "epoch",
+      "index": true
+    }
+  ]
+}

@@ -13,6 +13,8 @@
 
 use std::sync::OnceLock;
 
+use crate::domain::errors::{DomainError, ErrorCode};
+
 /// Tope del RPC ListEntities: configuración de servicio, no una constante de
 /// código (Fase 4, ítem 5).
 pub const DEFAULT_MAX_LIST_LIMIT: i32 = 5_000;
@@ -90,19 +92,31 @@ const DEV_HMAC_SECRET: &str = "secret-key-development-metri-256-bits!!!";
 /// `test` usan el secreto por defecto; cualquier valor de `ENVIRONMENT`
 /// ausente, desconocido (un typo, un entorno nuevo) o productivo exige un
 /// secreto fuerte — y aborta el arranque si no lo hay.
+///
+/// # Errors
+///
+/// [`ErrorCode::InfraConfig001`] si el entorno productivo no tiene secreto, o
+/// lo tiene débil/por defecto — el llamador (bootstrap) hace fail-fast.
 pub fn resolve_hmac_secret(
     environment: Option<&str>,
     hmac_secret: Option<&str>,
-) -> Result<String, String> {
+) -> Result<String, DomainError> {
     let known_non_prod = matches!(environment, Some("development" | "dev" | "local" | "test"));
     if !known_non_prod {
-        let secret = hmac_secret
-            .ok_or("HMAC_SECRET ausente en entorno productivo (o ENVIRONMENT desconocido)")?;
+        let secret = hmac_secret.ok_or_else(|| {
+            DomainError::new(
+                ErrorCode::InfraConfig001,
+                "HMAC_SECRET ausente en entorno productivo (o ENVIRONMENT desconocido)",
+            )
+        })?;
         if secret == DEV_HMAC_SECRET
             || secret == "local-dev-secret-do-not-use-in-prod"
             || secret.len() < 32
         {
-            return Err("HMAC_SECRET débil o por defecto en entorno productivo".to_string());
+            return Err(DomainError::new(
+                ErrorCode::InfraConfig001,
+                "HMAC_SECRET débil o por defecto en entorno productivo",
+            ));
         }
         return Ok(secret.to_string());
     }
@@ -118,14 +132,22 @@ pub fn resolve_hmac_secret(
 /// `resolve_hmac_secret` — y el arranque aborta si se pide fuera de ellos.
 /// La decisión se toma UNA vez en la raíz de composición; nada la consulta
 /// por petición.
-pub fn resolve_dev_auth_bypass(environment: Option<&str>, requested: bool) -> Result<bool, String> {
+///
+/// # Errors
+///
+/// [`ErrorCode::InfraConfig001`] si se pide bypass fuera de los entornos no
+/// productivos conocidos.
+pub fn resolve_dev_auth_bypass(
+    environment: Option<&str>,
+    requested: bool,
+) -> Result<bool, DomainError> {
     let known_non_prod = matches!(environment, Some("development" | "dev" | "local" | "test"));
     if requested && !known_non_prod {
-        return Err(
+        return Err(DomainError::new(
+            ErrorCode::InfraConfig001,
             "METRI_DEV_AUTH_BYPASS solo es válido en entornos no productivos conocidos \
-             (development/dev/local/test)"
-                .to_string(),
-        );
+             (development/dev/local/test)",
+        ));
     }
     Ok(requested)
 }

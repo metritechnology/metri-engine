@@ -1,7 +1,10 @@
 ---
 source: src/janus/testing/contract_tests.rs
+assertion_line: 51
 expression: native_plan
 ---
-PointLookup {
-    entity_id: "01JTESTULID",
-}
+Ok(
+    PointLookup {
+        entity_id: "01JTESTULID",
+    },
+)

@@ -121,9 +121,17 @@ pub(crate) fn apply_filters_and_range(
                     _ => None,
                 });
             if let Some(r_ts) = record_ts {
-                let r_ts_sec = if r_ts > 100000000000 { r_ts / 1000 } else { r_ts };
+                let r_ts_sec = if r_ts > 100000000000 {
+                    r_ts / 1000
+                } else {
+                    r_ts
+                };
                 if let Some(start) = start_ts {
-                    let start_sec = if start > 100000000000 { start / 1000 } else { start };
+                    let start_sec = if start > 100000000000 {
+                        start / 1000
+                    } else {
+                        start
+                    };
                     if r_ts_sec < start_sec {
                         continue;
                     }
@@ -342,7 +350,13 @@ pub(crate) fn truncate_timestamp(ts_ms_or_sec: i64, interval: &str) -> i64 {
         ts_ms_or_sec
     };
 
-    let dt = chrono::Utc.timestamp_opt(ts_sec, 0).unwrap();
+    // Clamp al calendario soportado por chrono (años 0–9999): datos
+    // corruptos del lake degradan al extremo — nunca pánico (R2).
+    let clamped = ts_sec.clamp(-62_135_596_800, 253_402_300_799);
+    let dt = chrono::Utc
+        .timestamp_opt(clamped, 0)
+        .single()
+        .unwrap_or(chrono::DateTime::UNIX_EPOCH);
     let truncated_dt = match interval.to_lowercase().as_str() {
         "minute" => dt
             .with_second(0)
@@ -472,7 +486,11 @@ pub(crate) fn build_attr_type_map(entity: &str) -> HashMap<String, AttrType> {
 }
 
 /// Coerción de valor JSON usando el schema Codice.
-pub(crate) fn coerce_value(val: &Value, col: &str, attr_types: &HashMap<String, AttrType>) -> Value {
+pub(crate) fn coerce_value(
+    val: &Value,
+    col: &str,
+    attr_types: &HashMap<String, AttrType>,
+) -> Value {
     let attr_type = attr_types.get(col);
 
     match attr_type {
@@ -559,10 +577,7 @@ mod tests {
         assert!(out.iter().all(|r| r["action_type"] == json!("CREATE")));
 
         let mut filters = HashMap::new();
-        filters.insert(
-            "action_type".to_string(),
-            json!(["DELETE", "UPDATE"]),
-        );
+        filters.insert("action_type".to_string(), json!(["DELETE", "UPDATE"]));
         let out = apply_filters_and_range(&records, &filters, (None, None), &types(), 100);
         assert_eq!(out.len(), 1);
     }
@@ -623,10 +638,16 @@ mod tests {
         ];
         let rows = aggregate(&records, &cols, &types());
         assert_eq!(rows.len(), 2);
-        let create = rows.iter().find(|r| r["action_type"] == json!("CREATE")).unwrap();
+        let create = rows
+            .iter()
+            .find(|r| r["action_type"] == json!("CREATE"))
+            .unwrap();
         assert_eq!(create["total"], json!(2));
         assert_eq!(create["suma"], json!(15.0));
-        let delete = rows.iter().find(|r| r["action_type"] == json!("DELETE")).unwrap();
+        let delete = rows
+            .iter()
+            .find(|r| r["action_type"] == json!("DELETE"))
+            .unwrap();
         assert_eq!(delete["suma"], json!(3.0));
     }
 
@@ -664,7 +685,11 @@ mod tests {
     #[test]
     fn min_max_sin_valores_son_null() {
         let records = vec![obj(json!({"reading_value": "no-numero"}))];
-        let cols = vec![col("MIN(reading_value)", "min", Some(("MIN", "reading_value")))];
+        let cols = vec![col(
+            "MIN(reading_value)",
+            "min",
+            Some(("MIN", "reading_value")),
+        )];
         let rows = aggregate(&records, &cols, &types());
         assert_eq!(rows[0]["min"], serde_json::Value::Null);
     }

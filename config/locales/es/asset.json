@@ -5,6 +5,7 @@
       "attributes": {
         "name": "Nombre",
         "serial_number": "Número de Serie",
+        "barcode_qr_code": "Código QR / Barras",
         "tag": "Etiqueta",
         "status": "Estado",
         "location_id": "Ubicación",
@@ -14,11 +15,13 @@
         "category": "Categoría",
         "criticality": "Criticidad",
         "manufacturer": "Fabricante",
+        "manufacturer_company_id": "Fabricante (Empresa)",
         "model": "Modelo",
         "omniclass_code": "Código OmniClass",
         "omniclass_name": "Nombre OmniClass",
-        "health_score": "Salud",
-        "current_meter_reading": "Lectura de Medidor",
+        "cost_center": "Centro de Costos",
+        "iot_device_profile_id": "Perfil de Dispositivo IoT",
+        "iot_harvester_config_id": "Configuración de Cosecha IoT",
         "telemetry_config": "Configuración de Telemetría",
         "timestamp": "Fecha y Hora"
       }

@@ -87,7 +87,6 @@ pub trait PrincipalCache: Send + Sync {
     async fn evict_by_role(&self, role_id: &str) -> Result<(), DomainError>;
 }
 
-
 /// Bus de invalidación de cachés: los mutadores publican y los suscriptores
 /// expulsan. Sin canal global — la instancia la crea la raíz de composición y
 /// se comparte entre publicadores y caché.

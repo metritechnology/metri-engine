@@ -8,10 +8,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cedar_policy::{Entity, Entities, EntityUid, RestrictedExpression};
+use cedar_policy::{Entities, Entity, EntityUid, RestrictedExpression};
 
-use crate::cedar::types::PrincipalData;
 use crate::cedar::evaluator::action_registry::{base_action_entities, cedar_schema};
+use crate::cedar::types::PrincipalData;
 use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Atributos del Resource para el camino mutacional: el grant que la política
@@ -24,20 +24,27 @@ pub(crate) fn resource_attrs(
 ) -> serde_json::Value {
     let required_grant = format!("{}:{}", entity_type, action);
 
-    let mut attrs = serde_json::json!({
-        "tenant_id": principal.tenant_id,
-        "entity_type": entity_type,
-        "required_grant": required_grant,
-    });
+    // Map explícito en vez de json! + as_object_mut().unwrap(): la inserción
+    // condicional es total por construcción, sin pánico (R2).
+    let mut attrs = serde_json::Map::new();
+    attrs.insert(
+        "tenant_id".to_string(),
+        serde_json::json!(principal.tenant_id),
+    );
+    attrs.insert("entity_type".to_string(), serde_json::json!(entity_type));
+    attrs.insert(
+        "required_grant".to_string(),
+        serde_json::json!(required_grant),
+    );
 
     if let Some(company_id) = resource.get("assigned_company_id").and_then(|v| v.as_str()) {
-        attrs
-            .as_object_mut()
-            .unwrap()
-            .insert("assigned_company_id".to_string(), serde_json::json!(company_id));
+        attrs.insert(
+            "assigned_company_id".to_string(),
+            serde_json::json!(company_id),
+        );
     }
 
-    attrs
+    serde_json::Value::Object(attrs)
 }
 
 /// Entidades de una evaluación mutacional: base de acciones + User + Resource.

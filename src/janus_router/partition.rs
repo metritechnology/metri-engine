@@ -40,37 +40,42 @@ pub fn pre_evaluate_date_strategy(strategy: Option<&str>, timestamp_ms: i64) -> 
 /// Sanitización estricta: previene Path Traversal (../) e inyección S3.
 /// Solo permite [a-zA-Z0-9\-_] — el resto se reemplaza con '_'.
 ///
+/// Placeholder `{atributo}` en la estrategia de particionado — patrón literal.
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
+static PATH_PLACEHOLDER_RE: once_cell::sync::Lazy<regex::Regex> =
+    once_cell::sync::Lazy::new(|| {
+        regex::Regex::new(r"\{([^}]+)\}").expect("patrón literal de regex válida")
+    });
+
 pub fn build_dynamic_path(date_strategy: &str, record: &serde_json::Value) -> String {
     // Regex: {atributo} → atributo=valor_sanitizado
-    let result = regex::Regex::new(r"\{([^}]+)\}")
-        .expect("regex válida")
-        .replace_all(date_strategy, |caps: &regex::Captures| {
-            let key = &caps[1];
-            let raw = record
-                .get(key)
-                .and_then(|v| {
-                    if v.is_string() {
-                        Some(v.as_str().unwrap().to_string())
-                    } else {
-                        Some(v.to_string())
-                    }
-                })
-                .unwrap_or_else(|| "UNKNOWN".to_string());
+    let result = PATH_PLACEHOLDER_RE.replace_all(date_strategy, |caps: &regex::Captures| {
+        let key = &caps[1];
+        let raw = record
+            .get(key)
+            .map(|v| {
+                if let Some(s) = v.as_str() {
+                    s.to_string()
+                } else {
+                    v.to_string()
+                }
+            })
+            .unwrap_or_else(|| "UNKNOWN".to_string());
 
-            // Sanitización: solo [a-zA-Z0-9\-_]
-            let safe: String = raw
-                .chars()
-                .map(|c| {
-                    if c.is_alphanumeric() || c == '-' || c == '_' {
-                        c
-                    } else {
-                        '_'
-                    }
-                })
-                .collect();
+        // Sanitización: solo [a-zA-Z0-9\-_]
+        let safe: String = raw
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
 
-            format!("{key}={safe}")
-        });
+        format!("{key}={safe}")
+    });
 
     result.into_owned()
 }

@@ -5,6 +5,19 @@
   "track_history": true,
   "attributes": [
     {
+      "name": "work_order_template_id",
+      "type": "reference",
+      "entityRef": "work_order_template",
+      "cardinality": "one",
+      "index": true,
+      "description": "Plantilla a la que sirve este procedimiento en modo SINGLE. Vacío cuando el procedimiento se cuelga de una parada (work_order_template_stop.task_template_id) en rutas ENUMERATED/CRITERIA. Antes de este atributo, una plantilla SINGLE no tenía forma de declarar procedimientos: la OT generada nacía sin tareas."
+    },
+    {
+      "name": "procedure_order",
+      "type": "integer",
+      "description": "Orden del procedimiento dentro de una plantilla SINGLE (en rutas, el orden lo dan las paradas). El materializador ordena por este campo; empates por name para determinismo."
+    },
+    {
       "name": "name",
       "type": "string",
       "required": true,

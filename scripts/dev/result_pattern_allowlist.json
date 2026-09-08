@@ -1,0 +1,89 @@
+{
+  "comment": "Invariantes permanentes del patrón Result (PLAN_PATRON_RESULT.md §2, regla R7): pánicos deliberados de arranque/inicialización donde fallar ruidosamente ES el contrato. Solo se admite kind=invariante justificada; la deuda migrable vive en result_pattern_baseline.json, nunca aquí. El auditor avisa si una entrada deja de producir hallazgos.",
+  "entries": [
+    {
+      "check": "panic_macro",
+      "path": "src/domain/error_catalog.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "Fail-fast de bootstrap (ADR-005): un ErrorCode sin entrada en el catálogo TOML debe tumbar el despliegue, nunca degradar el servicio en marcha."
+    },
+    {
+      "check": "expect",
+      "path": "src/domain/error_catalog.rs",
+      "max": 2,
+      "kind": "invariante",
+      "reason": "Accesores OnceLock del catálogo: doble init_global y uso sin inicializar son errores de programación de bootstrap, no condiciones de error de dominio. El pánico es el contrato correcto (igual que OnceLock::get().expect() en std)."
+    },
+    {
+      "check": "expect",
+      "path": "src/codice/registry.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "global() del registro SSOT antes de init_global es un error de programación de bootstrap: sin registry no hay esquema y el engine no puede servir. Invariante gemela a la del catálogo."
+    },
+    {
+      "check": "expect",
+      "path": "src/domain/events/envelope.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "DomainEnvelope es serializable por construcción (derive Serialize, sin claves no-string): serde_json::to_value no puede fallar. Un fallback silencioso corrompería el contrato del sobre de eventos; el pánico documenta la invariante."
+    },
+    {
+      "check": "panic_macro",
+      "path": "src/codice/registry.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "Doble init_global del registro SSOT de esquemas es un error de programación no recuperable: el pánico en la segunda inicialización es el contrato correcto."
+    },
+    {
+      "check": "unwrap",
+      "path": "src/aegis/formula/security.rs",
+      "max": 2,
+      "kind": "invariante",
+      "reason": "Regex compiladas desde patrones literales en static (SQL_KEYWORD_RE, FUNCTION_CALL_RE): el crate regex 1.x no tiene constructor const, y un patrón literal roto es un error de build, no de runtime."
+    },
+    {
+      "check": "unwrap",
+      "path": "src/aegis/label_template.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "PLACEHOLDER_PATTERN: regex de patrón literal en lazy_static — misma invariante de construcción que security.rs."
+    },
+    {
+      "check": "expect",
+      "path": "src/janus_router/partition.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "PATH_PLACEHOLDER_RE: regex de patrón literal en static — invariante de construcción."
+    },
+    {
+      "check": "expect",
+      "path": "src/cedar/engine.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "Parseo de config/policies/metri.cedar embebido con include_str!: si el contrato de políticas está roto, el build/despliegue debe tumbarse (fail-closed, mismo criterio que el fail-fast del catálogo de errores)."
+    },
+    {
+      "check": "expect",
+      "path": "src/cedar/evaluator/action_registry.rs",
+      "max": 4,
+      "kind": "invariante",
+      "reason": "Parseo del cedar-schema.json embebido (Schema::from_str, serde_json, acciones y entidades del schema): recurso de build; roto = despliegue tumbado, nunca servicio degradado."
+    },
+    {
+      "check": "panic_macro",
+      "path": "src/application/scheduling/hooks.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "Los hooks del plan fueron validados por el Códice contra el registry en el build; un nombre ausente aquí es un bug de desincronización de los dos registros, no un caso de runtime. El pánico es el contrato correcto."
+    },
+    {
+      "check": "unwrap",
+      "path": "src/grpc/handlers/validations.rs",
+      "max": 1,
+      "kind": "invariante",
+      "reason": "GRANT_FORMAT_RE: regex de patrón literal en static — misma invariante de construcción que security.rs/label_template.rs/partition.rs."
+    }
+  ]
+}

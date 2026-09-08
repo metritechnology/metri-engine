@@ -19,11 +19,7 @@ pub struct AuthRequest<'a> {
 
 impl<'a> AuthRequest<'a> {
     pub fn from_tonic<T>(req: &'a tonic::Request<T>) -> Self {
-        let header = |name: &str| {
-            req.metadata()
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-        };
+        let header = |name: &str| req.metadata().get(name).and_then(|v| v.to_str().ok());
         AuthRequest {
             authorization: header("authorization"),
             sid: header("sid"),

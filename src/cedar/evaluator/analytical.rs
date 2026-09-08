@@ -61,7 +61,10 @@ pub(crate) fn step4_analytical(
                 .with_stage("cedar"));
             }
 
-            domain_dict.insert(domain.to_string(), serde_json::Value::Array(boundaries_json));
+            domain_dict.insert(
+                domain.to_string(),
+                serde_json::Value::Array(boundaries_json),
+            );
         }
     }
 

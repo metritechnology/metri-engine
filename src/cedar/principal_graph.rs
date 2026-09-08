@@ -263,10 +263,8 @@ fn parse_grants(role_map: &EntityMap) -> Vec<serde_json::Value> {
                 serde_json::Value::Array(
                     arr.into_iter()
                         .map(|item| match item {
-                            serde_json::Value::String(str_val) => {
-                                serde_json::from_str(&str_val)
-                                    .unwrap_or_else(|_| serde_json::json!(str_val))
-                            }
+                            serde_json::Value::String(str_val) => serde_json::from_str(&str_val)
+                                .unwrap_or_else(|_| serde_json::json!(str_val)),
                             _ => item,
                         })
                         .collect(),
@@ -294,7 +292,9 @@ async fn pull_role_map(
 ) -> Result<EntityMap, DomainError> {
     let role_map = eav_reader.pull(tenant_id, r_id, None).await?;
     if role_map.is_empty() && !is_master_tenant(tenant_id) {
-        let master_tenant_id = crate::domain::config::engine_config().master_tenant_id.clone();
+        let master_tenant_id = crate::domain::config::engine_config()
+            .master_tenant_id
+            .clone();
         return eav_reader.pull(&master_tenant_id, r_id, None).await;
     }
     Ok(role_map)
@@ -353,8 +353,11 @@ async fn assemble_roles(
     user_map: &EntityMap,
 ) -> Result<(HashSet<String>, Vec<RoleBoundary>), DomainError> {
     let mut roles = HashSet::new();
-    let role_ids: Vec<String> =
-        id_list(user_map.get("role_ids").or_else(|| user_map.get("user/role_ids")));
+    let role_ids: Vec<String> = id_list(
+        user_map
+            .get("role_ids")
+            .or_else(|| user_map.get("user/role_ids")),
+    );
 
     let role_maps = join_all(
         role_ids
@@ -399,8 +402,11 @@ async fn assemble_groups(
     let mut group_time_restrictions = Vec::new();
     let mut visited_groups = HashSet::new();
 
-    let mut queue: Vec<String> =
-        id_list(user_map.get("group_ids").or_else(|| user_map.get("user/group_ids")));
+    let mut queue: Vec<String> = id_list(
+        user_map
+            .get("group_ids")
+            .or_else(|| user_map.get("user/group_ids")),
+    );
 
     while !queue.is_empty() {
         // Marca visitados al armar la ola: un grupo alcanzable por dos padres

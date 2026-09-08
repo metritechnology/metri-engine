@@ -3,7 +3,7 @@
 // Reemplaza la referencia a errors/error_catalog.edn de el stack anterior.
 //
 // Uso:
-//   let catalog = ErrorCatalog::load("config/errors/error_catalog.toml").unwrap();
+//   let catalog = ErrorCatalog::load("config/errors/error_catalog.toml")?;
 //   let entry = catalog.get("EAV_002");
 
 use std::collections::HashMap;
@@ -12,6 +12,8 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 use tracing::info;
+
+use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Una entrada del catálogo de errores.
 #[derive(Debug, Clone, Deserialize)]
@@ -25,6 +27,13 @@ pub struct ErrorEntry {
     pub description: String,
     pub context_required: Vec<String>,
     pub retryable: bool,
+    /// Regla C5 (PLAN_PATRON_RESULT.md): definida para uso futuro, sin variante
+    /// que la use todavía. El auditor la acepta; `gen_reference.py` la anota.
+    #[serde(default)]
+    pub reserved: bool,
+    /// Ya publicada a clientes pero retirada del mapeo actual.
+    #[serde(default)]
+    pub deprecated: bool,
 }
 
 /// Catálogo completo — cargado una sola vez en bootstrap.
@@ -50,13 +59,25 @@ impl std::fmt::Debug for ErrorCatalog {
 
 impl ErrorCatalog {
     /// Carga y parsea el catálogo desde el archivo TOML.
-    /// Falla en bootstrap si el archivo no existe o está malformado.
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = std::fs::read_to_string(path.as_ref())
-            .map_err(|e| format!("ErrorCatalog: cannot read {:?}: {e}", path.as_ref()))?;
+    ///
+    /// # Errors
+    ///
+    /// Retorna [`ErrorCode::InfraCatalog001`] si el archivo no existe o el TOML
+    /// está malformado — en bootstrap el llamador hace fail-fast (`exit(1)`).
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, DomainError> {
+        let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
+            DomainError::new(
+                ErrorCode::InfraCatalog001,
+                format!("cannot read {:?}: {e}", path.as_ref()),
+            )
+        })?;
 
-        let raw: ErrorCatalogRaw = toml::from_str(&content)
-            .map_err(|e| format!("ErrorCatalog: TOML parse failed: {e}"))?;
+        let raw: ErrorCatalogRaw = toml::from_str(&content).map_err(|e| {
+            DomainError::new(
+                ErrorCode::InfraCatalog001,
+                format!("TOML parse failed: {e}"),
+            )
+        })?;
 
         let entry_count = raw.errors.len();
         let by_code: HashMap<String, ErrorEntry> = raw
@@ -102,6 +123,8 @@ impl ErrorCatalog {
 static GLOBAL_CATALOG: OnceLock<ErrorCatalog> = OnceLock::new();
 
 /// Inicializa el catálogo global. Llamar UNA VEZ en bootstrap.
+#[allow(clippy::panic)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 pub fn init_global(catalog: ErrorCatalog) {
     // Validar que cada código de error de Rust tiene su definición en el catálogo TOML
     for code in crate::domain::errors::ErrorCode::ALL {
@@ -116,6 +139,7 @@ pub fn init_global(catalog: ErrorCatalog) {
 }
 
 /// Accede al catálogo global (panic si no fue inicializado).
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 pub fn global() -> &'static ErrorCatalog {
     GLOBAL_CATALOG
         .get()

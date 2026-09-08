@@ -201,3 +201,110 @@ fn test_dashboard_bi_entity_registered() {
         .iter()
         .any(|a| a.name == "updated_at" && a.attr_type == AttrType::Epoch));
 }
+
+/// Candado de la familia de procedimientos formales (estilo MaintainX) y de la
+/// jerarquía OT → sub-OTs: el registry REAL debe compilar con las entidades
+/// nuevas. La instanciación vive en metri-cmms-iot; aquí sólo esquema.
+#[test]
+fn test_procedure_family_and_wo_hierarchy_registered() {
+    let models_dir = std::path::Path::new("config/models");
+    let (registry, _rules) = CodeRegistry::build(models_dir)
+        .expect("config/models debe compilar con la familia procedure");
+
+    let procedure = registry
+        .get_model("procedure")
+        .expect("procedure debe estar registrado");
+    assert!(procedure
+        .attributes
+        .iter()
+        .any(|a| a.name == "work_order_template_id" && a.attr_type == AttrType::Reference));
+    assert!(procedure
+        .attributes
+        .iter()
+        .any(|a| a.name == "lifecycle_state"
+            && a.attr_type == AttrType::Enum
+            && a.options.contains(&"PUBLISHED".to_string())));
+
+    let pfield = registry
+        .get_model("procedure_field")
+        .expect("procedure_field debe estar registrado");
+    assert!(pfield
+        .attributes
+        .iter()
+        .any(|a| a.name == "procedure_id" && a.required && a.indexed));
+    assert!(pfield
+        .attributes
+        .iter()
+        .any(|a| a.name == "field_type" && a.attr_type == AttrType::Enum));
+    assert!(pfield
+        .attributes
+        .iter()
+        .any(|a| a.name == "choices" && a.attr_type == AttrType::Array));
+    // Anidación de secciones: auto-referencia a la misma entidad.
+    assert!(
+        pfield
+            .attributes
+            .iter()
+            .any(|a| a.name == "parent_field_id"
+                && a.entity_ref.as_deref() == Some("procedure_field"))
+    );
+
+    let wop = registry
+        .get_model("work_order_procedure")
+        .expect("work_order_procedure debe estar registrado");
+    assert!(wop
+        .attributes
+        .iter()
+        .any(|a| a.name == "work_order_id" && a.required && a.indexed));
+    assert!(wop
+        .attributes
+        .iter()
+        .any(|a| a.name == "procedure_id" && a.entity_ref.as_deref() == Some("procedure")));
+    assert!(wop.attributes.iter().any(|a| a.name == "score"));
+    assert!(wop.attributes.iter().any(|a| a.name == "max_score"));
+
+    let wopf = registry
+        .get_model("work_order_procedure_field")
+        .expect("work_order_procedure_field debe estar registrado");
+    assert!(wopf
+        .attributes
+        .iter()
+        .any(|a| a.name == "work_order_procedure_id" && a.required && a.indexed));
+    assert!(wopf
+        .attributes
+        .iter()
+        .any(|a| a.name == "procedure_field_id"));
+    // Captura de valor tipada: un attr por familia de respuesta.
+    for value_attr in [
+        "value_text",
+        "value_number",
+        "value_boolean",
+        "value_epoch",
+        "value_choice",
+        "value_file_ids",
+    ] {
+        assert!(
+            wopf.attributes.iter().any(|a| a.name == value_attr),
+            "work_order_procedure_field debe declarar {value_attr}"
+        );
+    }
+
+    let wo = registry
+        .get_model("work_order")
+        .expect("work_order debe estar registrado");
+    assert!(wo
+        .attributes
+        .iter()
+        .any(|a| a.name == "parent_work_order_id"
+            && a.attr_type == AttrType::Reference
+            && a.indexed));
+    assert!(wo
+        .attributes
+        .iter()
+        .any(|a| a.name == "is_parent" && a.indexed));
+    assert!(wo
+        .attributes
+        .iter()
+        .any(|a| a.name == "completed_at" && a.indexed));
+
+}

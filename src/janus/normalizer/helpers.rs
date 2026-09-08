@@ -17,8 +17,13 @@ pub fn new_query_id() -> String {
 }
 
 /// Garantiza que :status esté presente en cualquier body.
+///
+/// Un body no-objeto (escalar/array) no admite la clave `:status`: se respeta
+/// su forma y se retorna sin cambios — nunca pánico (R2).
 pub fn ensure_status(body: &mut Value, success: bool) {
-    let obj = body.as_object_mut().expect("body debe ser un objeto JSON");
+    let Some(obj) = body.as_object_mut() else {
+        return;
+    };
     if !obj.contains_key("status") {
         if success {
             obj.insert("status".to_string(), json!({"success": true}));

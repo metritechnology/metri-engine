@@ -66,6 +66,7 @@ pub const POLICY_ROLES: &[&str] = &[
 /// Cache de políticas compiladas para los roles conocidos — el bootstrap
 /// estaba copiado en grpc/service.rs e iop/cedar_step.rs (D2). Una sola
 /// fuente: mismo include, mismo parse, mismos roles.
+#[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 pub fn default_policy_cache() -> std::collections::HashMap<String, PolicySet> {
     use std::str::FromStr;
 

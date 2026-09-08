@@ -169,19 +169,28 @@ fn sha256_hex(parts: &[&str]) -> String {
 /// Escribe `value` en `dest_path` dentro de `obj`; los puntos descienden en objetos anidados.
 fn assoc_path(obj: &mut Map<String, Value>, dest_path: &str, value: Value) {
     let parts: Vec<&str> = dest_path.split('.').collect();
+    assoc_path_inner(obj, &parts, value);
+}
+
+/// La recursión anida los préstamos por nivel: evita el conflicto de
+/// reborrows de un cursor iterativo a través de la ruta.
+fn assoc_path_inner(cursor: &mut Map<String, Value>, parts: &[&str], value: Value) {
     if parts.len() == 1 {
-        obj.insert(parts[0].to_string(), value);
+        cursor.insert(parts[0].to_string(), value);
         return;
     }
-    let mut cursor = obj;
-    for seg in &parts[..parts.len() - 1] {
-        cursor = cursor
-            .entry(seg.to_string())
-            .or_insert_with(|| Value::Object(Map::new()))
-            .as_object_mut()
-            .expect("segmento intermedio del mapping no es objeto");
+    // El mapping exige objetos en la ruta intermedia: un valor preexistente
+    // no-objeto se sobreescribe — total, sin pánico (R2).
+    let slot = cursor
+        .entry(parts[0].to_string())
+        .or_insert_with(|| Value::Object(Map::new()));
+    if !slot.is_object() {
+        *slot = Value::Object(Map::new());
     }
-    cursor.insert(parts[parts.len() - 1].to_string(), value);
+    if let Value::Object(map) = slot {
+        assoc_path_inner(map, &parts[1..], value);
+    }
+    // Inalcanzable tras el force: el brazo no-objeto no tiene nada que hacer.
 }
 
 /// Resuelve la ruta origen del mapping.
@@ -221,7 +230,7 @@ async fn resolve_source(
                 .ok()?;
             // Reutiliza el único conversor DatomValue→JSON del motor para no divergir
             // en el tratamiento de arrays, refs y json embebido.
-            let as_json = crate::eav::writer::transact::datom_map_to_json(&entity);
+            let as_json = crate::eav::writer::outbox::datom_map_to_json(&entity);
             as_json.get(target_attr).cloned().filter(|v| !v.is_null())
         }
     }

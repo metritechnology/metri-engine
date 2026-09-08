@@ -20,16 +20,9 @@ pub fn is_error<T>(result: &Railway<T>) -> bool {
     result.is_err()
 }
 
-/// unwrap — extrae el body de Ok(T). Panics si es Err.
-///
-/// Zero-Drop: el el stack anterior lanzaba ExceptionInfo con {:result result}.
-/// En Rust usamos expect con el mismo mensaje descriptivo.
-#[inline]
-pub fn unwrap_railway<T>(result: Railway<T>, context: &str) -> T {
-    result.unwrap_or_else(|err| {
-        panic!("Cannot unwrap an error result — context: {context} — error: {err:?}")
-    })
-}
+// Nota (PLAN_PATRON_RESULT.md Fase 1): `unwrap_railway` fue eliminado — un
+// pánico sobre un Err es un error sin código, stage ni contexto. Extraer el
+// valor de un Railway es trabajo de `match`/`?` o de tests (`.unwrap()` allí).
 
 /// Macro de conveniencia: construye un Ok Railway
 #[macro_export]

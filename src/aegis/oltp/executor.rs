@@ -530,7 +530,7 @@ impl OltpExecutor {
 
         // ── Plan normal vía PlanSelector FBS ──────────────────────────────────
         let native_plan =
-            crate::aegis::oltp::compiler::compile_native_plan_fbs(ast_ir, target_tenant);
+            crate::aegis::oltp::compiler::compile_native_plan_fbs(ast_ir, target_tenant)?;
         debug!("[Aegis OLTP FBS] Plan: {:?}", native_plan);
 
         // ── Cursor-based pagination: decodificar cursor ───────────────────────

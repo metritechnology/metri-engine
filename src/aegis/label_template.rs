@@ -1,14 +1,13 @@
 // aegis/label_template.rs — Interpolación de label templates Mustache-style.
 // SRP: resolución pura de templates — sin I/O, sin estado.
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
 
-lazy_static! {
-    /// Regex que captura {{campo}} en cualquier posición del template.
-    static ref PLACEHOLDER_PATTERN: Regex = Regex::new(r"\{\{([^}]+)\}\}").unwrap();
-}
+/// Regex que captura {{campo}} en cualquier posición del template.
+#[allow(clippy::unwrap_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
+static PLACEHOLDER_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{\{([^}]+)\}\}").unwrap());
 
 /// Busca un campo en el row tolerando diferencias de tipos (string/keyword) o estructura.
 fn coerce_key<'a>(row: &'a Value, field_str: &str) -> Option<&'a Value> {

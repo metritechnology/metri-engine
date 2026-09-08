@@ -44,6 +44,14 @@ pub enum FormulaError {
     FunctionNestingTooDeep { depth: usize, max: usize },
 }
 
+impl std::fmt::Display for FormulaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.detail())
+    }
+}
+
+impl std::error::Error for FormulaError {}
+
 impl FormulaError {
     /// Código de error del catálogo global (TOML).
     /// Usado por Sherlog para lookup de severidad y dispatch EDA.

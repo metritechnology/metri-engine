@@ -24,7 +24,7 @@ impl OlapFormulaCompiler {
     /// # Ejemplo
     /// ```ignore
     /// let sql = OlapFormulaCompiler::compile(
-    ///     "(asset/revenue - work_order/cost) / NULLIF(asset/revenue, 0)",
+    ///     "(asset/revenue - invoice/cost) / NULLIF(asset/revenue, 0)",
     ///     &registry,
     /// )?;
     /// // → "(revenue - cost) / NULLIF(revenue, 0)"

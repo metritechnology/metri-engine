@@ -42,21 +42,19 @@ impl HmacTokenStore {
     /// consulta blacklist — la implementación única del formato vive en
     /// cedar::authn.
     fn verify_signature(&self, raw_token: &str) -> Option<Session> {
-        self.verifier
-            .verify(raw_token, 0)
-            .map(
-                |VerifiedToken {
-                     tenant_id,
-                     user_id,
-                     jti,
-                     exp,
-                 }| Session {
-                    tenant_id,
-                    user_id,
-                    jti,
-                    exp,
-                },
-            )
+        self.verifier.verify(raw_token, 0).map(
+            |VerifiedToken {
+                 tenant_id,
+                 user_id,
+                 jti,
+                 exp,
+             }| Session {
+                tenant_id,
+                user_id,
+                jti,
+                exp,
+            },
+        )
     }
 
     /// Verifica si un jti está en la blacklist de DynamoDB.
@@ -153,7 +151,13 @@ pub fn issue_token(
     let payload_bytes = payload.to_string().into_bytes();
     let payload_b64 = URL_SAFE_NO_PAD.encode(&payload_bytes);
 
-    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC key de longitud inválida");
+    // Inalcanzable: resolve_hmac_secret garantiza secreto ≥ 32 bytes y
+    // HMAC-SHA256 acepta cualquier longitud no vacía. Clave cero como último
+    // recurso (KeyInit::new es infalible) — nunca pánico (R2).
+    let mut mac = HmacSha256::new_from_slice(secret).unwrap_or_else(|_| {
+        use hmac::digest::generic_array::GenericArray;
+        <HmacSha256 as hmac::digest::KeyInit>::new(GenericArray::from_slice(&[0u8; 32]))
+    });
     mac.update(&payload_bytes);
     let sig = mac.finalize().into_bytes();
     let sig_b64 = URL_SAFE_NO_PAD.encode(sig);

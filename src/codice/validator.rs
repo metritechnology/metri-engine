@@ -77,7 +77,7 @@ pub fn validate_payload(
                             attrs.insert(attr_name.clone(), datom_val);
                         }
                         Err(e) => {
-                            violations.push(format!("Campo '{}': {}", attr_name, e));
+                            violations.push(format!("Campo '{}': {}", attr_name, e.detail));
                         }
                     }
                 } else if attr_desc.required {
@@ -107,12 +107,12 @@ pub fn validate_payload(
     Ok(attrs)
 }
 
-pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValue, String> {
+pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValue, DomainError> {
     match attr_type {
         AttrType::String | AttrType::Enum => val
             .as_str()
             .map(|s| DatomValue::Str(s.to_string()))
-            .ok_or_else(|| "Debe ser un texto (string)".to_string()),
+            .ok_or_else(|| DomainError::codice(ErrorCode::Cod002, "Debe ser un texto (string)")),
         AttrType::Number | AttrType::Decimal => {
             if matches!(attr_type, AttrType::Number) {
                 if let Some(i) = val.as_i64() {
@@ -120,7 +120,10 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
                 } else if let Some(f) = val.as_f64() {
                     Ok(DatomValue::Long(f as i64))
                 } else {
-                    Err("Debe ser un número entero".to_string())
+                    Err(DomainError::codice(
+                        ErrorCode::Cod002,
+                        "Debe ser un número entero",
+                    ))
                 }
             } else {
                 if let Some(f) = val.as_f64() {
@@ -128,7 +131,10 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
                 } else if let Some(i) = val.as_i64() {
                     Ok(DatomValue::Double(i as f64))
                 } else {
-                    Err("Debe ser un número decimal".to_string())
+                    Err(DomainError::codice(
+                        ErrorCode::Cod002,
+                        "Debe ser un número decimal",
+                    ))
                 }
             }
         }
@@ -136,17 +142,19 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
             if let Some(i) = val.as_i64() {
                 Ok(DatomValue::Instant(i))
             } else if let Some(s) = val.as_str() {
-                s.parse::<i64>()
-                    .map(DatomValue::Instant)
-                    .map_err(|_| "Epoch debe ser un entero válido".to_string())
+                s.parse::<i64>().map(DatomValue::Instant).map_err(|_| {
+                    DomainError::codice(ErrorCode::Cod002, "Epoch debe ser un entero válido")
+                })
             } else {
-                Err("Debe ser un número entero (epoch ms)".to_string())
+                Err(DomainError::codice(
+                    ErrorCode::Cod002,
+                    "Debe ser un número entero (epoch ms)",
+                ))
             }
         }
-        AttrType::Boolean => val
-            .as_bool()
-            .map(DatomValue::Bool)
-            .ok_or_else(|| "Debe ser un booleano (true/false)".to_string()),
+        AttrType::Boolean => val.as_bool().map(DatomValue::Bool).ok_or_else(|| {
+            DomainError::codice(ErrorCode::Cod002, "Debe ser un booleano (true/false)")
+        }),
         AttrType::Array => {
             if let Some(arr) = val.as_array() {
                 let mut vec = Vec::new();
@@ -154,12 +162,18 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
                     if let Some(s) = item.as_str() {
                         vec.push(s.to_string());
                     } else {
-                        return Err("Array solo soporta elementos string".to_string());
+                        return Err(DomainError::codice(
+                            ErrorCode::Cod002,
+                            "Array solo soporta elementos string",
+                        ));
                     }
                 }
                 Ok(DatomValue::Array(vec))
             } else {
-                Err("Debe ser un arreglo (array)".to_string())
+                Err(DomainError::codice(
+                    ErrorCode::Cod002,
+                    "Debe ser un arreglo (array)",
+                ))
             }
         }
         AttrType::Reference => {
@@ -169,7 +183,10 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
                     if let Some(s) = item.as_str() {
                         vec.push(s.to_string());
                     } else {
-                        return Err("Referencia en array debe ser un string".to_string());
+                        return Err(DomainError::codice(
+                            ErrorCode::Cod002,
+                            "Referencia en array debe ser un string",
+                        ));
                     }
                 }
                 Ok(DatomValue::Array(vec))
@@ -177,19 +194,26 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
                 val.as_str()
                     .map(|s| DatomValue::Str(s.to_string()))
                     .ok_or_else(|| {
-                        "Referencia debe ser un string o un arreglo de strings".to_string()
+                        DomainError::codice(
+                            ErrorCode::Cod002,
+                            "Referencia debe ser un string o un arreglo de strings",
+                        )
                     })
             }
         }
         AttrType::Uuid => val
             .as_str()
             .map(|s| DatomValue::Uuid(s.to_string()))
-            .ok_or_else(|| "Debe ser un UUID válido".to_string()),
-        AttrType::Bytes => {
-            Err("Mapeo de Bytes no implementado directamente desde JSON".to_string())
-        }
+            .ok_or_else(|| DomainError::codice(ErrorCode::Cod002, "Debe ser un UUID válido")),
+        AttrType::Bytes => Err(DomainError::codice(
+            ErrorCode::Cod002,
+            "Mapeo de Bytes no implementado directamente desde JSON",
+        )),
         AttrType::Json => Ok(DatomValue::Str(val.to_string())),
-        AttrType::Unknown(u) => Err(format!("Tipo desconocido en esquema: {}", u)),
+        AttrType::Unknown(u) => Err(DomainError::codice(
+            ErrorCode::Cod002,
+            format!("Tipo desconocido en esquema: {u}"),
+        )),
     }
 }
 

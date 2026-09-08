@@ -38,6 +38,12 @@ jobs:
       - name: Referencia desactualizada (docs/reference)
         run: python3 scripts/docs/gen_reference.py --check
 
+      # PLAN_PATRON_RESULT.md — Fase 5 (cierre estricto): el auditor corre en
+      # modo --strict: cero violaciones de patrón Result y catálogo perfecto.
+      # La cerradura de compilación es el deny de clippy en lib.rs/main.rs.
+      - name: Patrón Result — auditoría estricta (cero violaciones)
+        run: python3 scripts/dev/check_result_pattern.py --strict
+
       # Fase 0: los ERRORES de clippy (deny-by-default o compilación) bloquean.
       # La salida se captura a archivo para que el gate decida, no `tee`.
       - name: Clippy (captura de hallazgos)

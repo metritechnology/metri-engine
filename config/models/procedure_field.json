@@ -1,0 +1,81 @@
+{
+  "entity": "procedure_field",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "procedure_id",
+      "type": "reference",
+      "entityRef": "procedure",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "parent_field_id",
+      "type": "reference",
+      "entityRef": "procedure_field",
+      "cardinality": "one",
+      "description": "Campo padre cuando este paso cuelga de una sección (field_type HEADING). Vacío: paso de primer nivel. Habilita la anidación tipo MaintainX (parentId en procedure fields)."
+    },
+    {
+      "name": "label",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Instrucción extendida del paso: qué medir, qué revisar, criterio de aceptación."
+    },
+    {
+      "name": "field_type",
+      "type": "enum",
+      "options": [
+        "TEXT",
+        "NUMBER",
+        "AMOUNT",
+        "DATE",
+        "HEADING",
+        "FILE",
+        "SIGNATURE",
+        "MULTIPLE_CHOICE",
+        "INSPECTION_CHECK",
+        "YES_NO_NA",
+        "CHECKBOX",
+        "CHECKLIST"
+      ],
+      "required": true,
+      "is_dimension": true,
+      "description": "Tipo del campo, recortado de los 15 de MaintainX: sin METER ni CYCLE_COUNT porque metri aún no tiene master de medidores, y sin UNSUPPORTED. Determina qué attr value_* captura la instancia."
+    },
+    {
+      "name": "choices",
+      "type": "array",
+      "description": "Opciones para MULTIPLE_CHOICE (ej: [\"OK\", \"Parcial\", \"No OK\"])."
+    },
+    {
+      "name": "is_required",
+      "type": "boolean",
+      "default_value": false,
+      "is_dimension": true,
+      "description": "El técnico no puede cerrar el procedimiento sin responder este campo."
+    },
+    {
+      "name": "score",
+      "type": "number",
+      "is_measure": true,
+      "description": "Peso del campo en el scoring del procedimiento (0 = informativo, no puntúa)."
+    },
+    {
+      "name": "field_order",
+      "type": "integer",
+      "index": true,
+      "description": "Orden del paso dentro del procedimiento. El materializador y la app ordenan por este campo."
+    }
+  ]
+}

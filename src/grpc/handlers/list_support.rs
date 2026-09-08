@@ -1,3 +1,4 @@
+use crate::domain::errors::DomainError;
 // Handlers del MetriGrpcService — fase 2: service.rs delega, aquí vive el cuerpo.
 
 /// Valida los filtros de `ListEntities` contra el Codice.
@@ -13,21 +14,22 @@
 pub(crate) fn validate_list_filters(
     model: &crate::codice::registry::EntityModel,
     filter_names: &[&str],
-) -> Result<(), String> {
+) -> Result<(), DomainError> {
     for name in filter_names {
         match model.attributes.iter().find(|a| a.name == *name) {
             None => {
-                return Err(format!(
-                    "'{}' no es un atributo de '{}'",
-                    name, model.entity
+                return Err(DomainError::janus(
+                    crate::domain::errors::ErrorCode::Janus400,
+                    format!("'{}' no es un atributo de '{}'", name, model.entity),
                 ));
             }
             Some(a) => {
                 // La regla vive en el escritor: la validación consulta, no reimplementa.
                 if !crate::eav::types::value_type::attr_type_is_avet_indexable(&a.attr_type) {
-                    return Err(format!(
-                        "'{}' es de tipo no indexable en AVET: no se puede filtrar por el",
-                        name
+                    return Err(DomainError::janus(
+                        crate::domain::errors::ErrorCode::Janus400,
+                        "'{}' es de tipo no indexable en AVET: no se puede filtrar por el"
+                            .replace("{}", name),
                     ));
                 }
             }

@@ -37,6 +37,18 @@ pub fn get_strategy(entity: &str) -> Option<Arc<dyn VirtualTableStrategy>> {
         .map(|config| Arc::new(GenericHybridStrategy { config }) as Arc<dyn VirtualTableStrategy>)
 }
 
+/// Día `YYYY-MM-DD` de un epoch-segundos. Timestamps fuera del calendario
+/// soportado por chrono (años 0–9999) se clampan a los extremos: la query
+/// degrada a incluir todo el histórico en vez de paniquear con input
+/// absurdo del request (PLAN_PATRON_RESULT.md, regla R2).
+fn epoch_to_day(ts: i64) -> String {
+    match Utc.timestamp_opt(ts, 0).single() {
+        Some(dt) => dt.format("%Y-%m-%d").to_string(),
+        None if ts < 0 => "0000-01-01".to_string(),
+        None => "9999-12-31".to_string(),
+    }
+}
+
 fn build_virtual_table(
     database: &str,
     tenant_id: &str,
@@ -46,10 +58,7 @@ fn build_virtual_table(
 ) -> SelectStatement {
     let now = Utc::now();
     let today_utc_start = Utc
-        .from_utc_datetime(
-            &now.date_naive()
-                .and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap()),
-        )
+        .from_utc_datetime(&now.date_naive().and_time(NaiveTime::MIN))
         .timestamp();
 
     let start_ts = time_range.start_ts.unwrap_or(today_utc_start - 30 * 86400);
@@ -97,16 +106,8 @@ fn build_virtual_table(
         select
     } else if end_ts < today_utc_start {
         // Scenario B: 100% Historical rollup query
-        let start_day = Utc
-            .timestamp_opt(start_ts, 0)
-            .unwrap()
-            .format("%Y-%m-%d")
-            .to_string();
-        let end_day = Utc
-            .timestamp_opt(end_ts, 0)
-            .unwrap()
-            .format("%Y-%m-%d")
-            .to_string();
+        let start_day = epoch_to_day(start_ts);
+        let end_day = epoch_to_day(end_ts);
 
         let id_expr = format!(
             "concat({})",
@@ -157,16 +158,8 @@ fn build_virtual_table(
         select
     } else {
         // Scenario C: Hybrid UNION ALL query (crosses boundaries)
-        let start_day = Utc
-            .timestamp_opt(start_ts, 0)
-            .unwrap()
-            .format("%Y-%m-%d")
-            .to_string();
-        let yesterday_day = Utc
-            .timestamp_opt(today_utc_start - 1, 0)
-            .unwrap()
-            .format("%Y-%m-%d")
-            .to_string();
+        let start_day = epoch_to_day(start_ts);
+        let yesterday_day = epoch_to_day(today_utc_start - 1);
 
         let id_expr = format!(
             "concat({})",

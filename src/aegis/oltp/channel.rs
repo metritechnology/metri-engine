@@ -83,6 +83,7 @@ impl IWriteChannel for OltpChannel {
             entity_id,
             op,
             attrs: validated_attrs,
+            suppress_events: false,
         };
 
         match self.writer.transact(transact_payload).await {

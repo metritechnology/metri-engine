@@ -1,0 +1,65 @@
+{
+  "entity": "procedure",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "work_order_template_id",
+      "type": "reference",
+      "entityRef": "work_order_template",
+      "cardinality": "one",
+      "index": true,
+      "description": "Plantilla de OT a la que sirve este procedimiento formal en modo SINGLE (paridad con task_template). Al materializar la OT, cada procedure PUBLISHED se instancia como work_order_procedure con sus campos tipados."
+    },
+    {
+      "name": "procedure_order",
+      "type": "integer",
+      "description": "Orden del procedimiento dentro de una plantilla SINGLE (en rutas, el orden lo dan las paradas). El materializador ordena por este campo; empates por name para determinismo."
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "is_dimension": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Propósito y alcance del procedimiento formal: un formulario de pasos tipados con scoring, al estilo de los Procedure Templates de MaintainX."
+    },
+    {
+      "name": "lifecycle_state",
+      "type": "enum",
+      "options": [
+        "DRAFT",
+        "PUBLISHED",
+        "RETIRED"
+      ],
+      "default_value": "DRAFT",
+      "is_dimension": true,
+      "description": "Un DRAFT no se instancia en órdenes de trabajo (regla de MaintainX): el materializador sólo expansiona PUBLISHED. RETIRED conserva el histórico sin ofrecerse a nuevas OTs."
+    },
+    {
+      "name": "max_score",
+      "type": "number",
+      "is_measure": true,
+      "description": "Puntaje máximo del procedimiento: suma de los score de sus campos. No lo edita el técnico: lo determina la plantilla."
+    },
+    {
+      "name": "estimated_duration_minutes",
+      "type": "decimal",
+      "is_measure": true,
+      "description": "Duración estimada del procedimiento completo en MINUTOS."
+    },
+    {
+      "name": "required_role_id",
+      "type": "reference",
+      "entityRef": "role",
+      "cardinality": "one",
+      "description": "Rol o skill mínimo requerido para ejecutar este procedimiento."
+    }
+  ]
+}

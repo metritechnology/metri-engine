@@ -16,6 +16,7 @@ const SQL_KEYWORD_BLACKLIST: &[&str] = &[
 const SQL_LITERAL_BLACKLIST: &[&str] = &["--", "/*", "*/", ";"];
 
 /// Regex pre-compilada para word-boundary matching de SQL keywords.
+#[allow(clippy::unwrap_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
 static SQL_KEYWORD_RE: Lazy<Regex> = Lazy::new(|| {
     let pattern = SQL_KEYWORD_BLACKLIST
         .iter()
@@ -53,10 +54,13 @@ pub fn validate_formula(formula: &str) -> Result<(), FormulaError> {
     Ok(())
 }
 
+/// Regex pre-compilada para detectar llamadas a funciones `NOMBRE(`.
+#[allow(clippy::unwrap_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
+static FUNCTION_CALL_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"([A-Z_]\w*)\s*\(").unwrap());
+
 /// Valida que todas las funciones invocadas estén registradas.
 pub fn validate_functions(formula: &str, registry: &FunctionRegistry) -> Result<(), FormulaError> {
-    let re = Regex::new(r"([A-Z_]\w*)\s*\(").unwrap();
-    for caps in re.captures_iter(&formula.to_uppercase()) {
+    for caps in FUNCTION_CALL_RE.captures_iter(&formula.to_uppercase()) {
         let fn_name = &caps[1];
         if !registry.is_registered(fn_name) {
             return Err(FormulaError::UnknownFunction {

@@ -3,6 +3,7 @@
 // Blueprint: Metri EAV §MÓDULO 3 writer/enricher.rs
 
 use crate::eav::types::datom::{Datom, DatomValue};
+use crate::eav::writer::system_attrs as sys;
 use ulid::Ulid;
 
 /// Enriquece la lista de datoms con atributos de sistema generados automáticamente.
@@ -12,7 +13,7 @@ use ulid::Ulid;
 ///   - entity/ulid: el ULID de la entidad (obligatorio)
 ///   - meta/created_at: epoch ms del momento de escritura (solo en Create)
 ///   - meta/updated_at: epoch ms de la última modificación
-///   - entity/type: tipo de la entidad (ej. "work_order")
+///   - entity/type: tipo de la entidad (ej. "asset")
 ///   - tenant/id: tenant_id (inyectado siempre, no puede venir del cliente)
 pub fn enrich_datoms(
     datoms: &mut Vec<Datom>,
@@ -32,8 +33,8 @@ pub fn enrich_datoms(
     datoms.push(Datom::assert(
         tenant_id,
         entity_id,
-        "entity/ulid",
-        0x0000,
+        sys::ULID_NAME,
+        sys::ULID_ID,
         DatomValue::Str(entity_id.to_string()),
         tx_id,
     ));
@@ -45,8 +46,8 @@ pub fn enrich_datoms(
                 datoms.push(Datom::retract(
                     tenant_id,
                     entity_id,
-                    "entity/type",
-                    0x0001,
+                    sys::TYPE_NAME,
+                    sys::TYPE_ID,
                     DatomValue::Str(old_type.clone()),
                     tx_id,
                 ));
@@ -56,8 +57,8 @@ pub fn enrich_datoms(
     datoms.push(Datom::assert(
         tenant_id,
         entity_id,
-        "entity/type",
-        0x0001,
+        sys::TYPE_NAME,
+        sys::TYPE_ID,
         DatomValue::Str(entity_type.to_string()),
         tx_id,
     ));
@@ -69,8 +70,8 @@ pub fn enrich_datoms(
                 datoms.push(Datom::retract(
                     tenant_id,
                     entity_id,
-                    "tenant/id",
-                    0x0002,
+                    sys::TENANT_NAME,
+                    sys::TENANT_ID,
                     DatomValue::Str(old_tenant.clone()),
                     tx_id,
                 ));
@@ -80,8 +81,8 @@ pub fn enrich_datoms(
     datoms.push(Datom::assert(
         tenant_id,
         entity_id,
-        "tenant/id",
-        0x0002,
+        sys::TENANT_NAME,
+        sys::TENANT_ID,
         DatomValue::Str(tenant_id.to_string()),
         tx_id,
     ));
@@ -91,8 +92,8 @@ pub fn enrich_datoms(
         datoms.push(Datom::assert(
             tenant_id,
             entity_id,
-            "meta/created_at",
-            0x0003,
+            sys::CREATED_AT_NAME,
+            sys::CREATED_AT_ID,
             DatomValue::Instant(now_ms),
             tx_id,
         ));
@@ -104,8 +105,8 @@ pub fn enrich_datoms(
             datoms.push(Datom::retract(
                 tenant_id,
                 entity_id,
-                "meta/updated_at",
-                0x0004,
+                sys::UPDATED_AT_NAME,
+                sys::UPDATED_AT_ID,
                 DatomValue::Instant(*old_updated),
                 tx_id,
             ));
@@ -114,8 +115,8 @@ pub fn enrich_datoms(
     datoms.push(Datom::assert(
         tenant_id,
         entity_id,
-        "meta/updated_at",
-        0x0004,
+        sys::UPDATED_AT_NAME,
+        sys::UPDATED_AT_ID,
         DatomValue::Instant(now_ms),
         tx_id,
     ));

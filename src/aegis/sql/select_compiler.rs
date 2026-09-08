@@ -7,6 +7,7 @@ use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::sql::dialect::SqlDialect;
 use crate::aegis::sql::metric_compiler::compile_metric;
 use crate::aegis::sql::where_compiler::col_id_str;
+use crate::domain::errors::{DomainError, ErrorCode};
 use sea_query::{Alias, Expr, SimpleExpr};
 
 pub fn dim_to_bucket_expr(d: &Dimension, dialect: &dyn SqlDialect) -> String {
@@ -28,7 +29,7 @@ pub fn dim_to_bucket_expr(d: &Dimension, dialect: &dyn SqlDialect) -> String {
 pub fn build_select_exprs(
     ast: &AstIr,
     dialect: &dyn SqlDialect,
-) -> Result<Vec<(SimpleExpr, Option<String>)>, String> {
+) -> Result<Vec<(SimpleExpr, Option<String>)>, DomainError> {
     let mut select_exprs = Vec::new();
     match ast.output_cast {
         OutputCast::TIMESERIES => {
@@ -68,7 +69,7 @@ pub fn build_select_exprs(
                 let registry = FunctionRegistry::standard();
                 for fe in measures {
                     let sql_expr = OlapFormulaCompiler::compile(&fe.formula, &registry)
-                        .map_err(|e| e.detail())?;
+                        .map_err(|e| DomainError::aegis(ErrorCode::Aeg001, e.detail()))?;
                     select_exprs.push((Expr::cust(&sql_expr), Some(fe.name.clone())));
                 }
             }

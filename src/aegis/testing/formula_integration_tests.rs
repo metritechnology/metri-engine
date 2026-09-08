@@ -11,7 +11,7 @@ fn test_integration_olap_compilation() {
     let reg = FunctionRegistry::standard();
 
     // 1. Basic namespace resolution and space formatting
-    let formula1 = "((asset/revenue - work_order/total-cost) / NULLIF(asset/revenue, 0)) * 100";
+    let formula1 = "((asset/revenue - invoice/total-cost) / NULLIF(asset/revenue, 0)) * 100";
     let sql1 = OlapFormulaCompiler::compile(formula1, &reg).unwrap();
     assert_eq!(sql1, "((revenue - total_cost) / NULLIF(revenue, 0)) * 100");
 
@@ -24,7 +24,7 @@ fn test_integration_olap_compilation() {
 #[test]
 fn test_integration_oltp_evaluation() {
     let reg = FunctionRegistry::standard();
-    let formula = "((asset/revenue - work_order/total-cost) / NULLIF(asset/revenue, 0)) * 100";
+    let formula = "((asset/revenue - invoice/total-cost) / NULLIF(asset/revenue, 0)) * 100";
 
     // 1. Tokens and RPN
     let tokens = tokenize(formula).unwrap();
@@ -34,7 +34,7 @@ fn test_integration_oltp_evaluation() {
     // 2. Evaluation with namespace keys
     let row1 = json!({
         "asset/revenue": 1000.0,
-        "work_order/total-cost": 400.0
+        "invoice/total-cost": 400.0
     });
     let resolver1 = OltpVariableResolver::new(row1.as_object().unwrap());
     let res1 = evaluator.evaluate(&resolver1, &reg).unwrap();

@@ -61,8 +61,13 @@ def gen_errores() -> str:
                 "| Código | Etapa | HTTP | gRPC | Reintentable | Descripción |",
                 "|---|---|---|---|---|---|"]
         for e in sorted(by_family[fam], key=lambda x: x["code"]):
+            flag = ""
+            if e.get("deprecated"):
+                flag = " ⚠ **deprecado**"
+            elif e.get("reserved"):
+                flag = " *(reservado)*"
             out.append(f"| `{e['code']}` | {e.get('stage','')} | {e.get('http_status','')} | "
-                       f"{e.get('grpc_status','')} | {'sí' if e.get('retryable') else 'no'} | {e.get('description','')} |")
+                       f"{e.get('grpc_status','')} | {'sí' if e.get('retryable') else 'no'} | {e.get('description','')}{flag} |")
         out.append("")
     return "\n".join(out)
 

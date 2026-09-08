@@ -190,7 +190,7 @@ fn make_test_model() -> EntityModel {
         disable_eda: false,
         shadow_sagas_mapping: None,
         constraints: vec![],
-    }
+            }
 }
 
 #[test]
@@ -310,4 +310,77 @@ fn test_validate_payload_pattern_validation() {
     let err = result.unwrap_err();
     assert_eq!(err.code, ErrorCode::Cod001);
     assert!(err.detail.contains("no cumple con el patrón"));
+}
+
+/// Los enums de la familia procedure (estilo MaintainX) se validan contra el
+/// Códice REAL: el catálogo de field_type es el del modelo JSON, no local.
+#[test]
+fn test_enum_field_type_de_procedure_rechaza_valores_fuera_de_catalogo() {
+    let dir = std::path::Path::new("config/models");
+    let (registry, _rules) =
+        crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
+    let model = registry
+        .get_model("work_order_procedure_field")
+        .expect("work_order_procedure_field registrado");
+
+    let ok = validate_payload(
+        model,
+        &json!({
+            "work_order_procedure_id": "01WOP",
+            "label": "Estado",
+            "field_type": "MULTIPLE_CHOICE",
+            "choices": ["OK", "No OK"],
+            "field_order": 2
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(ok.is_ok(), "MULTIPLE_CHOICE está en el catálogo: {ok:?}");
+
+    // METER existe en MaintainX pero metri no lo adoptó (sin master de
+    // medidores): el payload completo se rechaza, no se ignora el campo.
+    let bad = validate_payload(
+        model,
+        &json!({
+            "work_order_procedure_id": "01WOP",
+            "label": "Lectura",
+            "field_type": "METER",
+            "field_order": 3
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(bad.is_err(), "METER no está en el catálogo de metri");
+    let err = bad.unwrap_err();
+    assert_eq!(err.code, ErrorCode::Cod001);
+    assert!(err.detail.contains("METER"), "{err}");
+}
+
+/// lifecycle_state de procedure: un DRAFT se crea, pero el materializador
+/// sólo instanciará PUBLISHED — el catálogo del enum lo permite todo.
+#[test]
+fn test_lifecycle_state_de_procedure_acepta_sus_tres_estados() {
+    let dir = std::path::Path::new("config/models");
+    let (registry, _rules) =
+        crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
+    let model = registry
+        .get_model("procedure")
+        .expect("procedure registrado");
+
+    for state in ["DRAFT", "PUBLISHED", "RETIRED"] {
+        let ok = validate_payload(
+            model,
+            &json!({ "name": "Inspección semanal", "lifecycle_state": state }),
+            "tnt_01",
+            true,
+        );
+        assert!(ok.is_ok(), "{state} debe ser válido: {ok:?}");
+    }
+    let bad = validate_payload(
+        model,
+        &json!({ "name": "Fantasma", "lifecycle_state": "ARCHIVED" }),
+        "tnt_01",
+        true,
+    );
+    assert!(bad.is_err(), "ARCHIVED no está en el catálogo");
 }

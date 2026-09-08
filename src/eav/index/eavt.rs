@@ -2,12 +2,13 @@
 // GSI helpers para el índice EAVT (tabla principal).
 // Blueprint: Metri EAV §MÓDULO 5 + §II.2
 
+use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::datom::Datom;
 use crate::eav::types::encoding::build_eavt_sk;
 use aws_sdk_dynamodb::types::{AttributeValue, Put};
 
 /// Construye el Put para el índice EAVT (tabla principal).
-pub fn build_eavt_item(datom: &Datom, table: &str) -> Result<Put, String> {
+pub fn build_eavt_item(datom: &Datom, table: &str) -> Result<Put, DomainError> {
     let mut item = std::collections::HashMap::new();
     item.insert("PK".to_string(), AttributeValue::S(datom.eavt_pk()));
     item.insert(
@@ -27,5 +28,10 @@ pub fn build_eavt_item(datom: &Datom, table: &str) -> Result<Put, String> {
         .table_name(table)
         .set_item(Some(item))
         .build()
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            DomainError::eav(
+                ErrorCode::Eav001,
+                format!("EAVT put build failed sobre '{table}': {e}"),
+            )
+        })
 }

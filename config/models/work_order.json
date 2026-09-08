@@ -52,7 +52,7 @@
       "cardinality": "one",
       "is_dimension": true,
       "is_sequence_scope_via": "location_id",
-      "doc_scope_via": "Cuando el payload contiene asset_id pero NO location_id, el generador hace un READ del asset en Datahike, extrae su location_id, y lo usa como scope del contador aplicando la misma pol\u00edtica scope_resolution (nearest_registered). Prioridad: is_sequence_scope (directo) tiene preferencia sobre is_sequence_scope_via (indirecto)."
+      "doc_scope_via": "Cuando el payload contiene asset_id pero NO location_id, el generador hace un READ del asset en Datahike, extrae su location_id, y lo usa como scope del contador aplicando la misma política scope_resolution (nearest_registered). Prioridad: is_sequence_scope (directo) tiene preferencia sobre is_sequence_scope_via (indirecto)."
     },
     {
       "name": "location_id",
@@ -61,7 +61,7 @@
       "cardinality": "one",
       "is_dimension": true,
       "is_sequence_scope": true,
-      "doc_scope": "Cuando is_sequence_scope=true, este campo act\u00faa como scope autom\u00e1tico del contador secuencial. El OLTPChannel verifica que la entidad referenciada (location) declare is_sequence_scope_provider=true, resuelve su tag y lo usa en el sequence_code. Sin configuraci\u00f3n adicional."
+      "doc_scope": "Cuando is_sequence_scope=true, este campo actúa como scope automático del contador secuencial. El OLTPChannel verifica que la entidad referenciada (location) declare is_sequence_scope_provider=true, resuelve su tag y lo usa en el sequence_code. Sin configuración adicional."
     },
     {
       "name": "assignees",
@@ -229,6 +229,63 @@
       "index": true,
       "is_system": true,
       "description": "Máximo de los scheduled_end de sus tareas. Lo calcula el motor."
+    },
+    {
+      "name": "preventive_maintenance_id",
+      "type": "reference",
+      "entityRef": "preventive_maintenance",
+      "cardinality": "one",
+      "index": true,
+      "description": "Pauta preventiva que engendró esta OT. Lo inyecta el ejecutor al materializar el scheduled_job. Sin esta traza no existe cumplimiento de plan: es imposible saber qué OTs generó cada pauta ni su % de ejecución a plazo."
+    },
+    {
+      "name": "scheduled_job_id",
+      "type": "reference",
+      "entityRef": "scheduled_job",
+      "cardinality": "one",
+      "index": true,
+      "description": "Job puntual que disparó esta OT. Único por tenant vía constraint — la capa definitiva de idempotencia del loop: un reintento del bus puede repetir el fired, pero no puede duplicar la OT."
+    },
+    {
+      "name": "parent_work_order_id",
+      "type": "reference",
+      "entityRef": "work_order",
+      "cardinality": "one",
+      "index": true,
+      "is_dimension": true,
+      "description": "OT padre que organiza esta sub-OT (el parentId de MaintainX): parte el trabajo en hijos por activo o por oficio. Auto-referencia con el mismo patrón de asset.parent_asset_id. Los hijos de una OT se listan por este índice en O(1); el árbol completo, con el bloque hierarchy de MQL."
+    },
+    {
+      "name": "is_parent",
+      "type": "boolean",
+      "default_value": false,
+      "index": true,
+      "is_dimension": true,
+      "description": "Flag de contenedora (el isParent de MaintainX): true cuando la OT actúa como organizadora de sub-OTs. Permite filtrar PARENT / SUB_WORK_ORDER / STANDALONE en ListEntities sin negar un índice."
+    },
+    {
+      "name": "completed_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "description": "Usuario que marcó la OT como CLOSED (el completerId de MaintainX): el hecho de cierre, separado del enum de status."
+    },
+    {
+      "name": "completed_at",
+      "type": "epoch",
+      "index": true,
+      "description": "Momento del cierre efectivo de la OT (el completedAt de MaintainX). El KPI de cumplimiento a plazo compara este instante contra sla_resolution_due_date."
+    }
+  ],
+  "constraints": [
+    {
+      "type": "unique",
+      "scope": "tenant",
+      "attributes": [
+        "scheduled_job_id",
+        "asset_id"
+      ],
+      "description": "Una OT por (disparo, activo). El par —no el job solo— porque una ruta ENUMERATED materializa N OTs del MISMO job, una por parada: reclamar solo el job bloquearía la segunda parada. El reintento de una parada no duplica su OT ni toca las demás. Las OT manuales sin scheduled_job_id o con asset_id vacío no reclaman nada (huella_clave ignora claves con atributos ausentes)."
     }
   ],
   "event_rules": [
@@ -237,7 +294,7 @@
       "event_trigger_type": "on_create",
       "filter_conditions": [],
       "detail_type_output": "system.work_order.created",
-      "description": "Notificaci\u00f3n sist\u00e9mica global al crear una orden de trabajo."
+      "description": "Notificación sistémica global al crear una orden de trabajo."
     },
     {
       "rule_code": "WO_CLOSED",
@@ -250,7 +307,7 @@
         }
       ],
       "detail_type_output": "system.work_order.closed",
-      "description": "Evento cr\u00edtico de cierre de orden de trabajo para auditor\u00eda y KPIs."
+      "description": "Evento crítico de cierre de orden de trabajo para auditoría y KPIs."
     },
     {
       "rule_code": "WO_HIGH_COST_ALERT",

@@ -4,7 +4,9 @@ use super::fakes::{FailingReader, FakeEntityReader};
 use crate::cedar::cache::principal::InMemoryPrincipalCache;
 use crate::cedar::cache::session::InMemorySessionStore;
 use crate::cedar::ports::PrincipalCache;
-use crate::cedar::principal_graph::{assemble_principal_graph, step2_query_oltp, step3_consolidate};
+use crate::cedar::principal_graph::{
+    assemble_principal_graph, step2_query_oltp, step3_consolidate,
+};
 use crate::cedar::types::PrincipalData;
 use crate::domain::errors::ErrorCode;
 use crate::domain::protocols::Session;
@@ -25,7 +27,8 @@ async fn test_user_suspended() {
         },
     );
 
-    let cache = InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)));
+    let cache =
+        InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)));
     let principal = PrincipalData {
         user_id: "usr_susp".to_string(),
         tenant_id: "tnt_01".to_string(),
@@ -50,7 +53,8 @@ async fn test_user_suspended() {
 
 #[tokio::test]
 async fn test_cache_hit_prevents_db_query() {
-    let cache = InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)));
+    let cache =
+        InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)));
     let principal = PrincipalData {
         user_id: "usr_cached".to_string(),
         tenant_id: "tnt_01".to_string(),
@@ -140,8 +144,7 @@ async fn test_user_group_hierarchy_and_refinement() {
     group_parent_map.insert(
         "time_restrictions".to_string(),
         DatomValue::Str(
-            "[{\"days_of_week\":[1,2,3,4,5],\"start_minute\":480,\"end_minute\":1080}]"
-                .to_string(),
+            "[{\"days_of_week\":[1,2,3,4,5],\"start_minute\":480,\"end_minute\":1080}]".to_string(),
         ),
     );
 

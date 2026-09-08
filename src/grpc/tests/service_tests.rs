@@ -192,7 +192,9 @@ async fn test_group_cycle_prevention() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(
+        std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
+    ));
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -255,10 +257,10 @@ async fn test_group_cycle_prevention() {
 
 #[tokio::test]
 async fn test_cache_invalidation_pubsub() {
+    use crate::cedar::ports::InvalidationBus;
     use crate::cedar::{
         BroadcastBus, InMemoryPrincipalCache, InvalidationMsg, PrincipalCache, PrincipalData,
     };
-    use crate::cedar::ports::InvalidationBus;
     use crate::eav::reader::pull::{CacheEntry, EAV_CACHE};
     use std::collections::HashMap;
 
@@ -362,7 +364,9 @@ async fn test_batch_transaction_granular_security() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(
+        std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
+    ));
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -460,7 +464,9 @@ async fn test_invalid_role_grant_format() {
         ddb_client,
         "table".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(
+        std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
+    ));
 
     let service = MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
@@ -590,7 +596,9 @@ async fn test_tenant_and_quota_master_crud_gates() {
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
-    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(std::sync::Arc::new(crate::cedar::BroadcastBus::new(100))));
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(
+        std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
+    ));
 
     // Popular Principal Cache para usr_regular
     let regular_principal = crate::cedar::PrincipalData {
@@ -968,7 +976,7 @@ fn list_filters_rechaza_atributo_inexistente() {
     let model = reg.get_model("scheduled_job").unwrap();
     let err = crate::grpc::handlers::list_support::validate_list_filters(model, &["no_existe"]);
     assert!(err.is_err(), "un atributo inexistente debe rechazarse");
-    assert!(err.unwrap_err().contains("no_existe"));
+    assert!(err.unwrap_err().detail.contains("no_existe"));
 }
 
 #[test]
