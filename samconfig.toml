@@ -34,3 +34,26 @@ warm_containers = "EAGER"
 
 [default.local_start_lambda.parameters]
 warm_containers = "EAGER"
+
+# ── CI/CD (GitHub Actions) ────────────────────────────────────────────────────
+# El workflow deploy-production.yml usa `--config-env production`. Difiere del
+# perfil default en dos cosas: sin `profile` local (las credenciales llegan por
+# OIDC al rol metri-engine-github-deploy) y sin confirmación de changeset (el
+# gate humano vive en el environment "production" de GitHub). El deploy manual
+# (`make deploy`, config-env default, perfil metri-dev) sigue intacto.
+[production.global.parameters]
+stack_name = "metri-engine"
+region = "us-east-1"
+
+[production.build.parameters]
+cached = true
+parallel = true
+
+[production.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+s3_prefix = "metri-engine"
+region = "us-east-1"
+parameter_overrides = "EavTableName=\"metri-dynamo\" AthenaWorkGroup=\"metri-analytics\""
+image_repositories = []

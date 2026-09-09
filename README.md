@@ -155,6 +155,10 @@ Variables de entorno principales (el arranque falla rápido si falta algo críti
 
 ## Despliegue
 
+El deploy a producción corre por **GitHub Actions** (`.github/workflows/deploy-production.yml`): cada push a `main` compila, prueba y despliega vía SAM tras la aprobación del environment `production`. Credenciales por OIDC — sin access keys en secretos. Detalles, puesta en marcha y rollback en [`docs/guides/deployment.md`](docs/guides/deployment.md) (en inglés).
+
+Deploy manual de emergencia:
+
 ```bash
 make deploy   # cargo build --release + sam build + sam deploy (perfil metri-dev, us-east-1)
 ```

@@ -155,6 +155,10 @@ Main environment variables (boot fails fast if anything critical is missing in p
 
 ## Deployment
 
+Production deploys run on **GitHub Actions** (`.github/workflows/deploy-production.yml`): every push to `main` builds, tests and deploys via SAM after the `production` environment approval. Credentials come from OIDC — no access keys in secrets. Details, one-time setup and rollback in [`docs/guides/deployment.md`](docs/guides/deployment.md).
+
+Emergency manual deploy:
+
 ```bash
 make deploy   # cargo build --release + sam build + sam deploy (metri-dev profile, us-east-1)
 ```

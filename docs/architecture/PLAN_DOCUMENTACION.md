@@ -301,7 +301,7 @@ docs/
 │   ├── eav.md, aegis.md, janus.md, … (15 archivos)
 ├── guides/
 │   ├── desarrollo-local.md        # existe
-│   └── despliegue.md              # existe
+│   └── deployment.md              # existe (en inglés — deploy por GitHub Actions + OIDC)
 └── reference/
     ├── api-grpc.md                # existe — actualizar con RPCs nuevos
     ├── codigos-error.md           # existe — espejo del catálogo TOML (invariante 1:1 del auditor)

@@ -1,0 +1,154 @@
+name: Deploy producción
+
+# Despliegue a producción vía SAM (reemplaza el deploy manual con AWS CLI:
+# `make deploy`). Estrategia (docs/guides/despliegue.md):
+#
+#   push a main ──► build (tests + sam build, artefacto inmutable)
+#                ──► deploy (gate humano del environment "production"
+#                           + credenciales OIDC, sin access keys)
+#                ──► verificación (estado del stack + alias "live")
+#
+# El build y el deploy son jobs separados a propósito: lo que se probó es
+# exactamente lo que se despliega, y la aprobación humana vive en el
+# environment de GitHub — no en `confirm_changeset` de la CLI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "config/**"
+      - "proto/**"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Makefile"
+      - "template.yaml"
+      - "samconfig.toml"
+      - ".github/workflows/deploy-production.yml"
+  # Re-despliegue manual de cualquier commit — es el mecanismo de rollback:
+  # elegir el ref del commit previo conocido como bueno.
+  workflow_dispatch:
+
+# Un solo deploy a la vez; los pushes consecutivos a main encolan (no se
+# cancelan a mitad de un despliegue).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC → AWS (aws-actions/configure-aws-credentials)
+
+env:
+  AWS_REGION: us-east-1
+  # Rol de mínimo privilegio creado por scripts/ops/bootstrap_github_oidc.py.
+  # El ARN ya es público en template.yaml (ACM), no es un secreto.
+  ROLE_TO_ASSUME: arn:aws:iam::982592308819:role/metri-engine-github-deploy
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build + tests (ARM64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: flatc (FlatBuffers compiler)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq flatbuffers-compiler-dev
+
+      # cargo-lambda cruza de x86_64 a aarch64-musl usando zig como enlazador.
+      # --user: ubuntu-24.04 bloquea pip global (PEP 668).
+      - name: zig (enlazador cruzado de cargo-lambda)
+        run: |
+          python3 -m pip install --user ziglang \
+            || python3 -m pip install --user --break-system-packages ziglang
+          python3 -m ziglang version
+
+      # Binario precompilado vía cargo-binstall: ~10s frente a minutos de
+      # `cargo install cargo-lambda`.
+      - name: cargo-lambda (vía cargo-binstall)
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf \
+            https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh \
+            | bash
+          cargo binstall -y cargo-lambda
+          cargo lambda --version
+
+      - name: Tests unitarios
+        run: cargo test --lib
+
+      - name: sam build (Makefile → cargo lambda build --release --arm64)
+        run: |
+          sam --version
+          sam build --config-env production
+
+      # El artefacto construido (.aws-sam/build) es lo único que viaja al job
+      # de deploy: un binario probado, sin recompilación ni drift.
+      - name: Subir artefacto de build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sam-build
+          path: .aws-sam/build
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy SAM (us-east-1)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Gate humano: configurar "Required reviewers" en el environment
+    # production (Settings → Environments). Sustituye a confirm_changeset.
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Descargar artefacto de build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sam-build
+          path: .aws-sam/build
+
+      - name: Asumir rol de deploy (OIDC, sin access keys)
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # --config-env production: perfil local absent, confirm_changeset=false
+      # (el gate humano ya ocurrió), parámetros idénticos al deploy manual.
+      - name: sam deploy
+        run: sam deploy --config-env production
+
+      - name: Verificación post-deploy
+        run: |
+          STATUS=$(aws cloudformation describe-stacks --stack-name metri-engine \
+            --query 'Stacks[0].StackStatus' --output text)
+          echo "Estado del stack: $STATUS"
+          case "$STATUS" in
+            CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) ;;
+            # UPDATE_ROLLBACK_COMPLETE = el update falló y el stack quedó con
+            # la versión anterior (sana): señal para revertir, no pánico.
+            *) echo "::error::Stack en estado inesperado: $STATUS"; exit 1 ;;
+          esac
+
+          FN=$(aws cloudformation describe-stack-resource --stack-name metri-engine \
+            --logical-resource-id MetriEngineFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          echo "Función desplegada: $FN"
+          aws lambda get-alias --function-name "$FN" --name live \
+            --query '{version:FunctionVersion,last_updated:AliasArn}' --output table
+
+      - name: Salidas del stack
+        run: aws cloudformation describe-stacks --stack-name metri-engine \
+               --query 'Stacks[0].Outputs' --output table

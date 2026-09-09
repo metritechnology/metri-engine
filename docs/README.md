@@ -56,7 +56,7 @@
 | Documento | Cuándo consultarlo / When to read it |
 |---|---|
 | [desarrollo-local.md](guides/desarrollo-local.md) | Levantar el entorno local (DynamoDB Local, engine, seed) |
-| [despliegue.md](guides/despliegue.md) | Desplegar a AWS con SAM |
+| [deployment.md](guides/deployment.md) | Deploy to AWS: GitHub Actions + OIDC (manual SAM deploy as emergency) |
 
 ### Reference (`docs/reference/`)
 
