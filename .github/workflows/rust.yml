@@ -44,6 +44,11 @@ jobs:
       - name: Patrón Result — auditoría estricta (cero violaciones)
         run: python3 scripts/dev/check_result_pattern.py --strict
 
+      # PLAN_DOCUMENTACION.md — Fase 0: ratchet de cabeceras //! (§2.7).
+      # Corre en modo ratchet (no --strict) hasta cerrar la Fase 5.
+      - name: Documentación — auditor de cabeceras (ratchet)
+        run: python3 scripts/dev/check_docs.py
+
       # Fase 0: los ERRORES de clippy (deny-by-default o compilación) bloquean.
       # La salida se captura a archivo para que el gate decida, no `tee`.
       - name: Clippy (captura de hallazgos)

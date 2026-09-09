@@ -119,3 +119,9 @@ path = "src/main.rs"
 [dev-dependencies]
 insta = "1.47.2"
 proptest = "1.11.0"
+
+# ─── Documentación (PLAN_DOCUMENTACION.md §2.5) ─────────────────────────────
+# Los enlaces intra-doc rotos rompen `cargo doc`; missing_docs entra en la Fase 6.
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
