@@ -29,13 +29,13 @@
     {
       "name": "estimated_duration_minutes",
       "type": "integer",
-      "description": "Tiempo te\u00f3rico de ejecuci\u00f3n de la plantilla (Ej. 120 = 2 horas)."
+      "description": "Tiempo teórico de ejecución de la plantilla (Ej. 120 = 2 horas)."
     },
     {
       "name": "notification_template_code",
       "type": "string",
       "required": false,
-      "description": "El C\u00f3digo exacto (Ej: 'PM_NIVEL_1_CRITICO') que AWS usar\u00e1 para renderizar el texto f\u00edsico de Twilio o Push Firebase cuando despierte en el futuro."
+      "description": "El Código exacto (Ej: 'PM_NIVEL_1_CRITICO') que AWS usará para renderizar el texto físico de Twilio o Push Firebase cuando despierte en el futuro."
     },
     {
       "name": "status",
@@ -91,10 +91,5 @@
       ],
       "description": "Criticidad mínima. Vacío: todas."
     }
-  ],
-  "events": {
-    "create": "WORK_ORDER_TEMPLATE_CREATED",
-    "update": "WORK_ORDER_TEMPLATE_UPDATED",
-    "delete": "WORK_ORDER_TEMPLATE_DELETED"
-  }
+  ]
 }

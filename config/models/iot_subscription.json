@@ -45,21 +45,16 @@
         "SUSPENDED",
         "ERROR"
       ],
-      "default": "PENDING_PROVISIONING",
+      "default_value": "PENDING_PROVISIONING",
       "required": true
     },
     {
       "name": "batch_window_seconds",
       "type": "integer",
-      "default": 300,
+      "default_value": 300,
       "description": "Intervalo de amontonamiento SQS (Micro-Batching) en segundos. Permite granularidad extrema: 0 para ingesta cruda instantánea (Costo muy alto), 300 (5 mins) para balance logístico SQS. Dicta cuántos segundos Hephaestus retiene la fila."
     }
   ],
-  "events": {
-    "create": "IOT_SUBSCRIPTION_CREATED",
-    "update": "IOT_SUBSCRIPTION_UPDATED",
-    "delete": "IOT_SUBSCRIPTION_DELETED"
-  },
   "event_rules": [
     {
       "rule_code": "IOT_SUB_CREATED",

@@ -36,7 +36,7 @@
         "MODBUS_RTU",
         "HTTP_POST"
       ],
-      "default": "MQTT",
+      "default_value": "MQTT",
       "required": true,
       "is_dimension": true,
       "description": "El canal/protocolo utilizado para despachar la instrucción física."
@@ -55,7 +55,7 @@
         "DELIVERED",
         "FAILED"
       ],
-      "default": "PENDING",
+      "default_value": "PENDING",
       "required": true,
       "description": "Rastreo del ciclo de vida del comando. Lambda Command Dispatcher actualiza esto usando las confirmaciones Acks de MQTT (Device Shadow) o respuestas directas."
     },
@@ -71,10 +71,6 @@
       "description": "Temporalidad máxima para la instrucción. Si el dispositivo no se conecta antes, el comando CADUCA."
     }
   ],
-  "events": {
-    "create": "IOT_DEVICE_COMMAND_CREATED",
-    "update": "IOT_DEVICE_COMMAND_UPDATED"
-  },
   "event_rules": [
     {
       "rule_code": "IOT_COMMAND_CREATED",

@@ -35,7 +35,7 @@
     {
       "name": "polling_interval_seconds",
       "type": "integer",
-      "default": 300,
+      "default_value": 300,
       "required": false
     },
     {
@@ -45,7 +45,7 @@
         "INTERVAL",
         "CRON"
       ],
-      "default": "INTERVAL",
+      "default_value": "INTERVAL",
       "required": true
     },
     {
@@ -80,21 +80,21 @@
         "GRPC",
         "MODBUS_TCP"
       ],
-      "default": "JSON",
+      "default_value": "JSON",
       "required": true,
       "description": "El formato esperado de la respuesta de la API o protocolo para que la Lambda HTTP Harvester ensamble el decodificador correcto."
     },
     {
       "name": "http_method",
       "type": "string",
-      "default": "GET",
+      "default_value": "GET",
       "required": true,
-      "description": "M\u00e9todo HTTP utilizado para interrogar la API (GET, POST, etc.)."
+      "description": "Método HTTP utilizado para interrogar la API (GET, POST, etc.)."
     },
     {
       "name": "http_headers",
       "type": "json",
-      "description": "Cabeceras HTTP en formato JSON enviadas con la petici\u00f3n de interrogaci\u00f3n."
+      "description": "Cabeceras HTTP en formato JSON enviadas con la petición de interrogación."
     },
     {
       "name": "request_payload",
@@ -104,17 +104,12 @@
     {
       "name": "url_query_params",
       "type": "json",
-      "description": "Par\u00e1metros de consulta (Query Params) de la URL en formato JSON."
+      "description": "Parámetros de consulta (Query Params) de la URL en formato JSON."
     },
     {
       "name": "mapping_directive",
       "type": "json",
-      "description": "Regla de transmutaci\u00f3n para aplanar el JSON extra\u00f1o del tercero."
+      "description": "Regla de transmutación para aplanar el JSON extraño del tercero."
     }
-  ],
-  "events": {
-    "create": "IOT_HARVESTER_CONFIG_CREATED",
-    "update": "IOT_HARVESTER_CONFIG_UPDATED",
-    "delete": "IOT_HARVESTER_CONFIG_DELETED"
-  }
+  ]
 }

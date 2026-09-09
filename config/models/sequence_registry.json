@@ -47,6 +47,5 @@
       "required": false,
       "description": "Tag de la entidad padre usada como scope del contador. Cuando est\u00e1 presente, este registro representa un contador EXCLUSIVO de esa entidad (ej: 'L-K92MXA' para work_orders dentro de esa location). sequence_code en este caso = tenant_id:field_name:parent_scope_tag_seq. Cuando ausente, el contador es global por tenant."
     }
-  ],
-  "events": {}
+  ]
 }

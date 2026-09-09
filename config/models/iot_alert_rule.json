@@ -51,7 +51,7 @@
     {
       "name": "cooldown_seconds",
       "type": "integer",
-      "default": 300,
+      "default_value": 300,
       "required": true,
       "description": "Tiempo mínimo (anti-chatter) para re-evaluar e informar otra alerta de este tipo."
     },
@@ -63,7 +63,7 @@
         "CRITICAL",
         "FATAL"
       ],
-      "default": "WARNING",
+      "default_value": "WARNING",
       "required": true
     },
     {
@@ -85,7 +85,7 @@
     {
       "name": "is_multi_asset",
       "type": "boolean",
-      "default": false,
+      "default_value": false,
       "required": true,
       "description": "Define si la regla evalúa y compara múltiples activos de forma cruzada (Doble Camino)."
     },
@@ -109,7 +109,7 @@
     {
       "name": "evaluate_on_bad_quality",
       "type": "boolean",
-      "default": false,
+      "default_value": false,
       "required": true,
       "description": "Define si la regla debe evaluarse en caliente incluso cuando la lectura reporta calidad deficiente (evita tormentas de falsas alarmas por fallos de hardware o enlace)."
     },
@@ -122,11 +122,6 @@
       "description": "Llave de retorno cuando la regla fue aprovisionada por un scheduled_job de trigger_type TELEMETRY. Viaja en system.iot.alert.breach para que Metri Schedulers correlacione el breach físico con su Job y dispare el action_payload. Null en reglas creadas por el usuario."
     }
   ],
-  "events": {
-    "create": "IOT_ALERT_RULE_CREATED",
-    "update": "IOT_ALERT_RULE_UPDATED",
-    "delete": "IOT_ALERT_RULE_DELETED"
-  },
   "event_rules": [
     {
       "rule_code": "IOT_ALERT_CREATED",

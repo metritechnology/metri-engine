@@ -48,7 +48,7 @@
         {
           "name": "math_modifier",
           "type": "decimal",
-          "default": 1.0,
+          "default_value": 1.0,
           "description": "Multiplicador de ajuste algorítmico."
         }
       ]
@@ -58,7 +58,7 @@
       "type": "array",
       "of": "object",
       "required": false,
-      "description": "Vector decodificador categ\u00f3rico. Extirpa metadatos de texto libre del payload MQTT (Ej. Errores, Firmware) y los lanza al diccionario MAP del Data Lake.",
+      "description": "Vector decodificador categórico. Extirpa metadatos de texto libre del payload MQTT (Ej. Errores, Firmware) y los lanza al diccionario MAP del Data Lake.",
       "schema": [
         {
           "name": "source_key",
@@ -70,7 +70,7 @@
           "name": "target_key_name",
           "type": "string",
           "required": true,
-          "description": "Nombre sem\u00e1ntico para la llave JSON, Ej: 'firmware_version' o 'engine_mode'."
+          "description": "Nombre semántico para la llave JSON, Ej: 'firmware_version' o 'engine_mode'."
         }
       ]
     },
@@ -79,32 +79,27 @@
       "type": "array",
       "of": "object",
       "required": false,
-      "description": "Vector codificador. Transmuta comandos abstractos UI (ej 'TURN_OFF') al JSON espec\u00edfico que el PLC espera recibir en su AWS Device Shadow.",
+      "description": "Vector codificador. Transmuta comandos abstractos UI (ej 'TURN_OFF') al JSON específico que el PLC espera recibir en su AWS Device Shadow.",
       "schema": [
         {
           "name": "universal_command",
           "type": "string",
           "required": true,
-          "description": "El verbo o acci\u00f3n general dictaminada."
+          "description": "El verbo o acción general dictaminada."
         },
         {
           "name": "display_label",
           "type": "string",
           "required": true,
-          "description": "Texto amigable y legible para pintar el Bot\u00f3n en la interfaz React (Ej. 'Apagar Chiller')."
+          "description": "Texto amigable y legible para pintar el Botón en la interfaz React (Ej. 'Apagar Chiller')."
         },
         {
           "name": "device_payload_template",
           "type": "json",
           "required": true,
-          "description": "El bloque JSON en bruto que se enviar\u00e1 al AWS Shadow (Ej: {'cmd_id': 0, 'force': true})"
+          "description": "El bloque JSON en bruto que se enviará al AWS Shadow (Ej: {'cmd_id': 0, 'force': true})"
         }
       ]
     }
-  ],
-  "events": {
-    "create": "IOT_DEVICE_PROFILE_CREATED",
-    "update": "IOT_DEVICE_PROFILE_UPDATED",
-    "delete": "IOT_DEVICE_PROFILE_DELETED"
-  }
+  ]
 }

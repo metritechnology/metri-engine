@@ -64,6 +64,7 @@
 |---|---|
 | [api-grpc.md](reference/api-grpc.md) | Contrato gRPC para consumidores (metri-app, bff, agentes) |
 | [codigos-error.md](reference/codigos-error.md) | Catálogo canónico de errores y su mapeo gRPC |
+| [diagrama-modelo-datos.md](reference/diagrama-modelo-datos.md) | Mapa visual de dominios, relaciones y deudas del modelo Códice |
 | [glosario.md](reference/glosario.md) | Equivalencias EN↔ES de los términos del dominio |
 | [modelos-codice.md](reference/modelos-codice.md) | Esquemas de los modelos del Códice |
 

@@ -4,14 +4,14 @@
   "is_system": true,
   "track_history": false,
   "disable_eda": true,
-  "description": "Registro persistente de errores severos del sistema (WARNING, ERROR, FATAL). Consultable via Janus para BI de errores, an\u00e1lisis de tendencias y correlaci\u00f3n causal con telemetry_span por trace_id.",
+  "description": "Registro persistente de errores severos del sistema (WARNING, ERROR, FATAL). Consultable via Janus para BI de errores, análisis de tendencias y correlación causal con telemetry_span por trace_id.",
   "attributes": [
     {
       "name": "trace_id",
       "type": "string",
       "index": true,
       "required": true,
-      "description": "W3C trace_id del span OTel activo en el momento del error. Correlaciona con telemetry_span para diagn\u00f3stico causal completo."
+      "description": "W3C trace_id del span OTel activo en el momento del error. Correlaciona con telemetry_span para diagnóstico causal completo."
     },
     {
       "name": "tenant_id",
@@ -28,7 +28,7 @@
       "entityRef": "user",
       "cardinality": "one",
       "is_dimension": true,
-      "description": "Usuario que accion\u00f3 la operaci\u00f3n fallida. Opcional \u2014 puede ser M2M (machine-to-machine) sin usuario asociado."
+      "description": "Usuario que accionó la operación fallida. Opcional — puede ser M2M (machine-to-machine) sin usuario asociado."
     },
     {
       "name": "error_code",
@@ -36,7 +36,7 @@
       "index": true,
       "required": true,
       "is_dimension": true,
-      "description": "C\u00f3digo del cat\u00e1logo maestro (error_catalog.edn). Ej: JNS_REF_002, COD_VAL_001, SYS_000."
+      "description": "Código del catálogo maestro (error_catalog.edn). Ej: JNS_REF_002, COD_VAL_001, SYS_000."
     },
     {
       "name": "severity",
@@ -56,7 +56,7 @@
       "index": true,
       "is_dimension": true,
       "required": true,
-      "description": "Etapa interna del pipeline donde ocurri\u00f3 el error. Ej: janus, codice, auth, abac, kinesis."
+      "description": "Etapa interna del pipeline donde ocurrió el error. Ej: janus, codice, auth, abac, kinesis."
     },
     {
       "name": "component",
@@ -64,19 +64,19 @@
       "index": true,
       "is_dimension": true,
       "required": true,
-      "description": "Componente o microservicio donde se origin\u00f3 el error. Ej: metri-auth, metri-engine, metri-event-router, metri-notifications."
+      "description": "Componente o microservicio donde se originó el error. Ej: metri-auth, metri-engine, metri-event-router, metri-notifications."
     },
     {
       "name": "entity_type",
       "type": "string",
       "is_dimension": true,
-      "description": "Tipo de entidad involucrada en la operaci\u00f3n fallida. Ej: work_order, asset, location."
+      "description": "Tipo de entidad involucrada en la operación fallida. Ej: work_order, asset, location."
     },
     {
       "name": "retryable",
       "type": "boolean",
       "is_dimension": true,
-      "description": "Indica si el error es recuperable con un reintento. Derivado del cat\u00e1logo maestro."
+      "description": "Indica si el error es recuperable con un reintento. Derivado del catálogo maestro."
     },
     {
       "name": "occurred_at",
@@ -90,8 +90,5 @@
       "type": "string",
       "description": "Contexto forense completo del error — serializado como JSON string. Campos sensitive:true sustituidos por [REDACTED] antes de persistir."
     }
-  ],
-  "events": {
-    "create": "DOMAIN_FAULT_RECORDED"
-  }
+  ]
 }

@@ -9,7 +9,7 @@
       "type": "uuid",
       "required": false,
       "index": true,
-      "description": "El ID camale\u00f3nico de quien engendr\u00f3 este Job. Puede ser un Mantenimiento Preventivo, un Recordatorio, o un User UUID para env\u00edos de facturas."
+      "description": "El ID camaleónico de quien engendró este Job. Puede ser un Mantenimiento Preventivo, un Recordatorio, o un User UUID para envíos de facturas."
     },
     {
       "name": "created_by",
@@ -19,7 +19,7 @@
       "required": true,
       "index": true,
       "is_system": true,
-      "description": "Principal que engendr\u00f3 el Job. Cedar lo reeval\u00faa en T=0: la trampa puede disparar meses despu\u00e9s de su creaci\u00f3n, cuando el creador pudo ser desactivado o perder permisos. Sin este campo la autorizaci\u00f3n quedar\u00eda congelada en el instante de la creaci\u00f3n."
+      "description": "Principal que engendró el Job. Cedar lo reevalúa en T=0: la trampa puede disparar meses después de su creación, cuando el creador pudo ser desactivado o perder permisos. Sin este campo la autorización quedaría congelada en el instante de la creación."
     },
     {
       "name": "trigger_type",
@@ -30,18 +30,18 @@
         "TELEMETRY"
       ],
       "required": true,
-      "description": "La naturaleza de la trampa. Tiempo o Choque F\u00edsico."
+      "description": "La naturaleza de la trampa. Tiempo o Choque Físico."
     },
     {
       "name": "trigger_expression",
       "type": "string",
       "required": true,
-      "description": "El motor universal. CRON: expresi\u00f3n cron de 5 campos (ej. '0 8 1 */6 *'). EXACT_TIME: Epoch Unix en UTC. TELEMETRY: gram\u00e1tica '<METRIC_CODE> <OPERADOR> <VALOR>' (ej. 'VIBRATION > 5000'); la unidad se resuelve del iot_device_profile del asset."
+      "description": "El motor universal. CRON: expresión cron de 5 campos (ej. '0 8 1 */6 *'). EXACT_TIME: Epoch Unix en UTC. TELEMETRY: gramática '<METRIC_CODE> <OPERADOR> <VALOR>' (ej. 'VIBRATION > 5000'); la unidad se resuelve del iot_device_profile del asset."
     },
     {
       "name": "iana_timezone",
       "type": "string",
-      "description": "Zona Horaria Can\u00f3nica ISO (Ej. America/Bogota). Absolutamente cr\u00edtico para garantizar que AWS EventBridge preserve las l\u00f3gicas humanas saltando correctamente los cambios mundiales de Horario de Verano/Invierno DST."
+      "description": "Zona Horaria Canónica ISO (Ej. America/Bogota). Absolutamente crítico para garantizar que AWS EventBridge preserve las lógicas humanas saltando correctamente los cambios mundiales de Horario de Verano/Invierno DST."
     },
     {
       "name": "action_type",
@@ -53,28 +53,28 @@
         "EDA_BROADCAST"
       ],
       "required": true,
-      "description": "Lo que Schedulers har\u00e1 (ciegamente) cuando AWS lo despierte de su letargo."
+      "description": "Lo que Schedulers hará (ciegamente) cuando AWS lo despierte de su letargo."
     },
     {
       "name": "target_user_id",
       "type": "reference",
       "entityRef": "user",
       "cardinality": "one",
-      "description": "Si la alarma as\u00edncrona es para un humano aislado, el motor amarra el Job a \u00e9l para evitar punteros muertos (Null Pointers as\u00edncronos)."
+      "description": "Si la alarma asíncrona es para un humano aislado, el motor amarra el Job a él para evitar punteros muertos (Null Pointers asíncronos)."
     },
     {
       "name": "target_group_id",
       "type": "reference",
       "entityRef": "user_group",
       "cardinality": "one",
-      "description": "Si el Job invoca Broadcasting de Notificaciones en Masa, el motor protege y bloquea la eliminaci\u00f3n del User Group base."
+      "description": "Si el Job invoca Broadcasting de Notificaciones en Masa, el motor protege y bloquea la eliminación del User Group base."
     },
     {
       "name": "target_role_id",
       "type": "reference",
       "entityRef": "role",
       "cardinality": "one",
-      "description": "Resoluci\u00f3n de notificaciones encoladas basada netamente en el rol org\u00e1nico de planta."
+      "description": "Resolución de notificaciones encoladas basada netamente en el rol orgánico de planta."
     },
     {
       "name": "target_webhook_id",
@@ -82,19 +82,19 @@
       "entityRef": "webhook_endpoint",
       "cardinality": "one",
       "required": false,
-      "description": "Destino cuando action_type = WEBHOOK; obligatorio en ese caso. La URL nunca viaja en el action_payload: referenciar la entidad da allowlist por construcci\u00f3n, credenciales cifradas, interruptor is_active y pol\u00edtica max_retries. Una URL libre ser\u00eda un vector SSRF."
+      "description": "Destino cuando action_type = WEBHOOK; obligatorio en ese caso. La URL nunca viaja en el action_payload: referenciar la entidad da allowlist por construcción, credenciales cifradas, interruptor is_active y política max_retries. Una URL libre sería un vector SSRF."
     },
     {
       "name": "action_payload",
       "type": "json",
       "required": true,
-      "description": "El Boomerang Ciego. Metri Schedulers devolver\u00e1 esto \u00edntegro por red a quien corresponda ejecutarlo."
+      "description": "El Boomerang Ciego. Metri Schedulers devolverá esto íntegro por red a quien corresponda ejecutarlo."
     },
     {
       "name": "idempotency_hash",
       "type": "string",
       "is_system": true,
-      "description": "Huella dactilar EST\u00c1TICA por Job. NO se usa directamente como llave de deduplicaci\u00f3n: un hash constante deduplicar\u00eda entre s\u00ed todos los disparos de un CRON. El ejecutor deduplica por idempotency_key = sha256(idempotency_hash + instante de la ocurrencia)."
+      "description": "Huella dactilar ESTÁTICA por Job. NO se usa directamente como llave de deduplicación: un hash constante deduplicaría entre sí todos los disparos de un CRON. El ejecutor deduplica por idempotency_key = sha256(idempotency_hash + instante de la ocurrencia)."
     },
     {
       "name": "status",
@@ -114,49 +114,44 @@
       "type": "epoch",
       "required": false,
       "is_system": true,
-      "description": "Instante del \u00faltimo disparo ejecutado. Campo de bit\u00e1cora: su mutaci\u00f3n NO debe reprovisionar la trampa en AWS."
+      "description": "Instante del último disparo ejecutado. Campo de bitácora: su mutación NO debe reprovisionar la trampa en AWS."
     },
     {
       "name": "run_count",
       "type": "long",
       "default_value": 0,
       "is_system": true,
-      "description": "N\u00famero de disparos ejecutados. Campo de bit\u00e1cora: su mutaci\u00f3n NO debe reprovisionar la trampa en AWS."
+      "description": "Número de disparos ejecutados. Campo de bitácora: su mutación NO debe reprovisionar la trampa en AWS."
     },
     {
       "name": "last_error",
       "type": "string",
       "required": false,
       "is_system": true,
-      "description": "Causa del \u00faltimo fallo cuando status = FAILED (epoch vencido, action_payload sobre 256KB, ConflictException no resuelto). Campo de bit\u00e1cora."
+      "description": "Causa del último fallo cuando status = FAILED (epoch vencido, action_payload sobre 256KB, ConflictException no resuelto). Campo de bitácora."
     }
   ],
-  "events": {
-    "create": "SCHEDULED_JOB_CREATED",
-    "update": "SCHEDULED_JOB_UPDATED",
-    "delete": "SCHEDULED_JOB_DELETED"
-  },
   "event_rules": [
     {
       "rule_code": "SCHEDULED_JOB_CREATED",
       "event_trigger_type": "on_create",
       "filter_conditions": [],
       "detail_type_output": "system.scheduled_job.created",
-      "description": "Notifica a Metri Schedulers para construir la trampa temporal (AWS EventBridge Scheduler) o telem\u00e9trica abstractamente."
+      "description": "Notifica a Metri Schedulers para construir la trampa temporal (AWS EventBridge Scheduler) o telemétrica abstractamente."
     },
     {
       "rule_code": "SCHEDULED_JOB_UPDATED",
       "event_trigger_type": "on_update",
       "filter_conditions": [],
       "detail_type_output": "system.scheduled_job.updated",
-      "description": "Fuerza a Metri Schedulers a destruir la trampa antigua en AWS y reajustar los temporizadores ciegamente con la nueva configuraci\u00f3n."
+      "description": "Fuerza a Metri Schedulers a destruir la trampa antigua en AWS y reajustar los temporizadores ciegamente con la nueva configuración."
     },
     {
       "rule_code": "SCHEDULED_JOB_DELETED",
       "event_trigger_type": "on_delete",
       "filter_conditions": [],
       "detail_type_output": "system.scheduled_job.deleted",
-      "description": "Aniquila la subscripci\u00f3n de EventBridge Scheduler en AWS evadiendo posibles despertares fantasma futuros."
+      "description": "Aniquila la subscripción de EventBridge Scheduler en AWS evadiendo posibles despertares fantasma futuros."
     }
   ]
 }

@@ -179,10 +179,10 @@ pub struct EntityModel {
     pub shadow_sagas_mapping: Option<serde_json::Value>,
     /// Restricciones a nivel de entidad, declaradas en el JSON del modelo.
     ///
-    /// Vacío en todos los modelos actuales: el planificador existe y está
-    /// probado, pero no planifica nada hasta que un modelo lo declare (F4).
-    /// Deliberado — activar la restricción con duplicados vivos en la base
-    /// haría fallar la siguiente escritura de esos tenants.
+    /// `work_order` declara la primera (unique tenant de `scheduled_job_id` +
+    /// `asset_id`, idempotencia del loop preventivo). Activar una restricción
+    /// con duplicados vivos en la base haría fallar la siguiente escritura de
+    /// esos tenants: cada nueva constraint exige conciliación previa del dato.
     #[serde(default)]
     pub constraints: Vec<Constraint>,
 }
