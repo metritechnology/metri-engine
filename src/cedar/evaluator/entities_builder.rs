@@ -1,10 +1,12 @@
-// authorizer/evaluator/entities_builder.rs — Ensamblado de entidades Cedar.
-//
-// La base de acciones es una sola instancia precompilada (el loader de Cedar
-// añade todas las acciones del schema — el JSON de acciones que el camino
-// mutacional reconstruía por petición era 100 % redundante). Por petición se
-// clona la base y se le añaden exactamente dos entidades tipadas: el User con
-// sus grants y el Resource con el grant requerido.
+//! Cedar entities assembly — precompiled action base.
+//!
+//! Ensamblado de entidades Cedar.
+//!
+//! La base de acciones es una sola instancia precompilada (el loader de Cedar
+//! añade todas las acciones del schema — el JSON de acciones que el camino
+//! mutacional reconstruía por petición era 100 % redundante). Por petición se
+//! clona la base y se le añaden exactamente dos entidades tipadas: el User con
+//! sus grants y el Resource con el grant requerido.
 
 use std::collections::{HashMap, HashSet};
 

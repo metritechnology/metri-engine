@@ -1,15 +1,19 @@
-// iop/core.rs — IOP Orchestrator raíz del Metri Engine.
-// En el stack anterior: ig/init-key :iop/orchestrator — coordina Cedar → Quota → Janus → Moira → Audit
-// En Rust: IopOrchestrator struct con run() async.
-//
-// Arquitectura:
-//   Paso 1: CedarAuthorizer  (Zero-Trust)
-//   Paso 2: QuotaGuard       (control de recursos)
-//   Paso 3: JanusRouter      (validación + ruteo)
-//   → gRPC 200 OK al cliente
-//   → (async fire-and-forget) MoiraEmitter  [solo en Ok]
-//   → audit! SIEMPRE [Ok y Err]
-//   → normalize_response (contrato de salida garantizado)
+//! IOP orchestrator — the root coordinating Cedar, Quota and Janus.
+//!
+//! IOP Orchestrator raíz del Metri Engine.
+//!
+//! # Origin
+//! En el stack anterior: ig/init-key :iop/orchestrator — coordina Cedar → Quota → Janus → Moira → Audit
+//! En Rust: IopOrchestrator struct con run() async.
+//!
+//! Arquitectura:
+//! Paso 1: CedarAuthorizer  (Zero-Trust)
+//! Paso 2: QuotaGuard       (control de recursos)
+//! Paso 3: JanusRouter      (validación + ruteo)
+//! → gRPC 200 OK al cliente
+//! → (async fire-and-forget) MoiraEmitter  [solo en Ok]
+//! → audit! SIEMPRE [Ok y Err]
+//! → normalize_response (contrato de salida garantizado)
 
 use std::sync::Arc;
 use std::time::Instant;

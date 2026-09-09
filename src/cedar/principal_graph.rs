@@ -1,6 +1,8 @@
-// authorizer/principal_graph.rs — grafo de principal (fase 2).
-// step2 (consulta OLTP), step3 (consolidación), expansión de jerarquías
-// y ensamblado del grafo completo de roles/grupos/vecinos.
+//! Principal graph — role and group hierarchy expansion.
+//!
+//! grafo de principal (fase 2).
+//! step2 (consulta OLTP), step3 (consolidación), expansión de jerarquías
+//! y ensamblado del grafo completo de roles/grupos/vecinos.
 
 use std::collections::HashSet;
 

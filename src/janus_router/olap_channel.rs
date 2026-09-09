@@ -1,20 +1,22 @@
-// janus_router/olap_channel.rs — OLAPChannel — Canal OLAP Columnar Nativo.
-//
-// Arquitectura: Columnar Nativo (sin Raw Zone genérica).
-// Cada entidad OLAP → stream Firehose dedicado:
-//   meter_reading  → <prefix>-meter-reading
-//   audit_log      → <prefix>-audit-log
-//
-// Solo acepta BulkIngest (data=[...]). Bloquea rpc Transact con JNS_OLAP_001.
-//
-// Pipeline:
-//   1. Guard: data != nil (solo BulkIngest)
-//   2. Lookup atributos del Códice para coerción de tipos
-//   3. Por cada registro: coerce numéricos + decorate (ULID + metadatos)
-//   4. Emit al stream Firehose de la entidad
-//
-// La coerción de tipos usa AttrType del Códice para garantizar que los campos
-// numéricos (epoch/number/decimal) sean nativos al serializarse en Parquet/Iceberg.
+//! OLAPChannel — native columnar channel via Firehose.
+//!
+//! OLAPChannel — Canal OLAP Columnar Nativo.
+//!
+//! Arquitectura: Columnar Nativo (sin Raw Zone genérica).
+//! Cada entidad OLAP → stream Firehose dedicado:
+//! meter_reading  → <prefix>-meter-reading
+//! audit_log      → <prefix>-audit-log
+//!
+//! Solo acepta BulkIngest (data=[...]). Bloquea rpc Transact con JNS_OLAP_001.
+//!
+//! Pipeline:
+//! 1. Guard: data != nil (solo BulkIngest)
+//! 2. Lookup atributos del Códice para coerción de tipos
+//! 3. Por cada registro: coerce numéricos + decorate (ULID + metadatos)
+//! 4. Emit al stream Firehose de la entidad
+//!
+//! La coerción de tipos usa AttrType del Códice para garantizar que los campos
+//! numéricos (epoch/number/decimal) sean nativos al serializarse en Parquet/Iceberg.
 
 use chrono::Utc;
 use serde_json::{json, Value};

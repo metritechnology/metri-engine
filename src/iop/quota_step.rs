@@ -1,31 +1,33 @@
-// iop/quota_step.rs — IopStep wrapper para QuotaGuard real.
-//
-// Responsabilidades:
-//   1. Filtrar fast-path O(1) de operaciones no limitadas (UPDATE, DELETE, UPSERT).
-//   2. Localizar la cuota vigente del tenant y el dominio con `QuotaResolver`.
-//   3. Debitar la cuota de forma ATÓMICA contra `QuotaLedger`, que resuelve
-//      techo e incremento en una sola escritura condicional de DynamoDB.
-//   4. Dejar la reserva anotada en el contexto para que el orquestador pueda
-//      devolverla si un paso posterior del pipeline falla.
-//
-// Este paso corre en CADA create y CADA get del motor, así que lo que cuesta
-// aquí lo paga todo el mundo. Hasta la fase 3 pagaba además una
-// `TransactWriteItems` completa sobre `domain_quota` para dejar una copia
-// legible del contador; ahora ese número se calcula al leerlo
-// (`quota/projection.rs`) y este camino se queda en una sola escritura
-// condicional.
-//
-// Hasta la revisión de cuotas esto era un leer-modificar-escribir: se consultaba
-// `current_usage`, se sumaba uno en memoria y se escribía el resultado absoluto.
-// Dos altas simultáneas en el límite menos uno leían las dos el mismo valor y
-// pasaban las dos. Ahora la decisión la toma DynamoDB dentro de la propia
-// escritura; ver `quota/ledger.rs` para por qué el contador no puede vivir en el
-// log de datoms.
-//
-// La resolución de «qué cuota aplica hoy» ya no vive aquí: estaba duplicada con
-// `grpc/quota_service.rs` y las dos copias habían divergido. Ahora es
-// `quota/resolver.rs`, y este archivo se ocupa solo de la política del pipeline
-// —qué operaciones cuentan, quién queda exento, qué se devuelve al compensar—.
+//! QuotaGuard as an IOP step — fast-path and reservation.
+//!
+//! IopStep wrapper para QuotaGuard real.
+//!
+//! Responsabilidades:
+//! 1. Filtrar fast-path O(1) de operaciones no limitadas (UPDATE, DELETE, UPSERT).
+//! 2. Localizar la cuota vigente del tenant y el dominio con `QuotaResolver`.
+//! 3. Debitar la cuota de forma ATÓMICA contra `QuotaLedger`, que resuelve
+//! techo e incremento en una sola escritura condicional de DynamoDB.
+//! 4. Dejar la reserva anotada en el contexto para que el orquestador pueda
+//! devolverla si un paso posterior del pipeline falla.
+//!
+//! Este paso corre en CADA create y CADA get del motor, así que lo que cuesta
+//! aquí lo paga todo el mundo. Hasta la fase 3 pagaba además una
+//! `TransactWriteItems` completa sobre `domain_quota` para dejar una copia
+//! legible del contador; ahora ese número se calcula al leerlo
+//! (`quota/projection.rs`) y este camino se queda en una sola escritura
+//! condicional.
+//!
+//! Hasta la revisión de cuotas esto era un leer-modificar-escribir: se consultaba
+//! `current_usage`, se sumaba uno en memoria y se escribía el resultado absoluto.
+//! Dos altas simultáneas en el límite menos uno leían las dos el mismo valor y
+//! pasaban las dos. Ahora la decisión la toma DynamoDB dentro de la propia
+//! escritura; ver `quota/ledger.rs` para por qué el contador no puede vivir en el
+//! log de datoms.
+//!
+//! La resolución de «qué cuota aplica hoy» ya no vive aquí: estaba duplicada con
+//! `grpc/quota_service.rs` y las dos copias habían divergido. Ahora es
+//! `quota/resolver.rs`, y este archivo se ocupa solo de la política del pipeline
+//! —qué operaciones cuentan, quién queda exento, qué se devuelve al compensar—.
 
 use serde_json::json;
 use tracing::{error, info, warn};

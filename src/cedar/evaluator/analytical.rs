@@ -1,9 +1,11 @@
-// authorizer/evaluator/analytical.rs — Camino analítico (PDP).
-// Consultas: sin motor Cedar — los grants del principal se traducen a
-// boundaries por dominio (`query_scope` + perímetros), que los handlers
-// aplican como FLS. Auto-autorización acotada a dominios de sistema para
-// dejar pasar el intercept: el chequeo de servicio (SystemSecurityRules)
-// impone el PermissionDenied con el mensaje canónico.
+//! Analytical path — grants as per-domain boundaries.
+//!
+//! Camino analítico (PDP).
+//! Consultas: sin motor Cedar — los grants del principal se traducen a
+//! boundaries por dominio (`query_scope` + perímetros), que los handlers
+//! aplican como FLS. Auto-autorización acotada a dominios de sistema para
+//! dejar pasar el intercept: el chequeo de servicio (SystemSecurityRules)
+//! impone el PermissionDenied con el mensaje canónico.
 
 use crate::cedar::evaluator::grants::grant_allows_action;
 use crate::cedar::rules::is_master_tenant;

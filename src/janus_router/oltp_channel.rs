@@ -1,14 +1,17 @@
-// janus_router/oltp_channel.rs — OLTPChannel — Canal ACID vía EAV (DynamoDB).
-//
-// Responsabilidades (igual que OLTPChannel el stack anterior):
-//   1. Validar payload contra el Códice → HashMap<attr, DatomValue>
-//   2. Enriquecer con auto-generados (ULID, meta/created_at, meta/updated_at)
-//   3. Coerción de tipos numéricos (epoch/number strings → DatomValue correcto)
-//   4. TX ACID via EavWriter (entidad principal)
-//   5. Soporte de BULK: procesamiento de N registros con cortocircuito en error
-//
-// Reemplaza d/transact de Datahike con TransactWriteItems DynamoDB.
-// Sin imports directos de negocio — todo llega en IopContext o inyectado.
+//! OLTPChannel — ACID channel via the EAV engine.
+//!
+//! OLTPChannel — Canal ACID vía EAV (DynamoDB).
+//!
+//! # Origin
+//! Responsabilidades (igual que OLTPChannel el stack anterior):
+//! 1. Validar payload contra el Códice → HashMap<attr, DatomValue>
+//! 2. Enriquecer con auto-generados (ULID, meta/created_at, meta/updated_at)
+//! 3. Coerción de tipos numéricos (epoch/number strings → DatomValue correcto)
+//! 4. TX ACID via EavWriter (entidad principal)
+//! 5. Soporte de BULK: procesamiento de N registros con cortocircuito en error
+//!
+//! Reemplaza d/transact de Datahike con TransactWriteItems DynamoDB.
+//! Sin imports directos de negocio — todo llega en IopContext o inyectado.
 
 use std::collections::HashMap;
 

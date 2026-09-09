@@ -1,7 +1,9 @@
-// cedar/types.rs — Tipos de dominio del autorizador Zero-Trust.
-// Contratos de datos que cruzan el módulo: el principal consolidado con sus
-// límites de rol, restricciones temporales, el contexto Cedar que reciben los
-// handlers y el mensaje de invalidación de caché. Solo tipos — nada de lógica.
+//! Authorizer domain types — principal, context, invalidation.
+//!
+//! Tipos de dominio del autorizador Zero-Trust.
+//! Contratos de datos que cruzan el módulo: el principal consolidado con sus
+//! límites de rol, restricciones temporales, el contexto Cedar que reciben los
+//! handlers y el mensaje de invalidación de caché. Solo tipos — nada de lógica.
 
 use std::collections::HashSet;
 

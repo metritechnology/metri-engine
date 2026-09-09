@@ -1,8 +1,10 @@
-// cedar/pipeline.rs — Pipeline de autorización Zero-Trust.
-//
-// UNA composición de los pasos step1→step2→step3→step3b que antes estaba
-// copiada en `intercept` y `get_principal_data`. Las fachadas públicas
-// (`intercept`, `get_principal_data` en authorizer.rs) delegan aquí.
+//! Zero-Trust authorization pipeline — steps 1 to 3b.
+//!
+//! Pipeline de autorización Zero-Trust.
+//!
+//! UNA composición de los pasos step1→step2→step3→step3b que antes estaba
+//! copiada en `intercept` y `get_principal_data`. Las fachadas públicas
+//! (`intercept`, `get_principal_data` en authorizer.rs) delegan aquí.
 
 use std::time::Instant;
 

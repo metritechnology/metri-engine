@@ -1,9 +1,11 @@
-// cedar/rules.rs — Reglas de seguridad de entidades de sistema.
-//
-// Qué es maestro y qué entidad es de sistema se decide AQUÍ, una vez, sobre
-// la configuración del arranque (engine_config). Antes había tres definiciones
-// divergentes de "tenant maestro" repartidas por evaluator, principal_graph y
-// este módulo — un tenant podía ser maestro para una capa y no para otra.
+//! System entity security rules — one definition of master tenant.
+//!
+//! Reglas de seguridad de entidades de sistema.
+//!
+//! Qué es maestro y qué entidad es de sistema se decide AQUÍ, una vez, sobre
+//! la configuración del arranque (engine_config). Antes había tres definiciones
+//! divergentes de "tenant maestro" repartidas por evaluator, principal_graph y
+//! este módulo — un tenant podía ser maestro para una capa y no para otra.
 
 use crate::domain::errors::{DomainError, ErrorCode};
 

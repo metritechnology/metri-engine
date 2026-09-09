@@ -1,8 +1,10 @@
-// cedar/request.rs — DTO de petición de autorización y adapter de transporte.
-//
-// El core de Cedar no conoce tonic: solo necesita estas cabeceras. El adapter
-// `from_tonic` vive aquí (capa de transporte del módulo); los tests construyen
-// el DTO directamente, sin requests sintéticos.
+//! Authorization request DTO and transport adapter.
+//!
+//! DTO de petición de autorización y adapter de transporte.
+//!
+//! El core de Cedar no conoce tonic: solo necesita estas cabeceras. El adapter
+//! `from_tonic` vive aquí (capa de transporte del módulo); los tests construyen
+//! el DTO directamente, sin requests sintéticos.
 
 pub struct AuthRequest<'a> {
     pub authorization: Option<&'a str>,

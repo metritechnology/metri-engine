@@ -1,36 +1,38 @@
-// quota/reservations.rs — El ticket de una reserva de IA, y quién lo guarda.
-//
-// POR QUÉ NO PUEDE VIVIR EN MEMORIA
-// ─────────────────────────────────
-// Hasta aquí las reservas estaban en un `HashMap` dentro de `QuotaServiceImpl`,
-// con un recolector propio por proceso. Con más de una réplica eso se rompe de
-// tres formas, y las tres cuestan cuota de verdad:
-//
-//   · La conciliación aterriza en otra réplica, que no encuentra el ticket,
-//     asume que ya expiró y CARGA el consumo real — mientras la réplica que sí
-//     lo tiene reintegra la estimación entera al vencer. Se devuelve de más.
-//   · Un reinicio se lleva los tickets en vuelo: su débito queda aplicado para
-//     siempre, hasta que rote el periodo. Cada despliegue filtra cuota.
-//   · `Instant` es monotónico por proceso: ni se comparte ni sobrevive.
-//
-// Con el ticket en un store compartido, cualquier réplica puede cerrarlo, y el
-// `claim` condicional decide cuál lo hace.
-//
-// ESTADOS
-// ───────
-// Solo hay dos, `Open` y `Closed`. «Conciliándose» no es un estado: es una
-// reserva abierta con un lease vivo. Un estado intermedio explícito obligaría a
-// devolverlo a `Open` cuando el lease vence, y ese paso extra es otra escritura
-// que puede fallar; con el lease, que expire es simplemente que la condición
-// del `claim` vuelva a ser cierta.
-//
-// EXACTAMENTE UNA VEZ
-// ───────────────────
-// El `claim` reparte el trabajo, no lo garantiza: entre ganar el lease y
-// escribir en el contador cabe una muerte, y el siguiente que reclame no sabría
-// si el apunte llegó a aplicarse. Por eso todo apunte ligado a una reserva pasa
-// por `QuotaCounter::settle_once` con la clave `{id}#final`. El `claim` evita el
-// trabajo repetido; la clave evita el apunte repetido.
+//! AI reservation tickets and who stores them.
+//!
+//! El ticket de una reserva de IA, y quién lo guarda.
+//!
+//! POR QUÉ NO PUEDE VIVIR EN MEMORIA
+//! ─────────────────────────────────
+//! Hasta aquí las reservas estaban en un `HashMap` dentro de `QuotaServiceImpl`,
+//! con un recolector propio por proceso. Con más de una réplica eso se rompe de
+//! tres formas, y las tres cuestan cuota de verdad:
+//!
+//! · La conciliación aterriza en otra réplica, que no encuentra el ticket,
+//! asume que ya expiró y CARGA el consumo real — mientras la réplica que sí
+//! lo tiene reintegra la estimación entera al vencer. Se devuelve de más.
+//! · Un reinicio se lleva los tickets en vuelo: su débito queda aplicado para
+//! siempre, hasta que rote el periodo. Cada despliegue filtra cuota.
+//! · `Instant` es monotónico por proceso: ni se comparte ni sobrevive.
+//!
+//! Con el ticket en un store compartido, cualquier réplica puede cerrarlo, y el
+//! `claim` condicional decide cuál lo hace.
+//!
+//! ESTADOS
+//! ───────
+//! Solo hay dos, `Open` y `Closed`. «Conciliándose» no es un estado: es una
+//! reserva abierta con un lease vivo. Un estado intermedio explícito obligaría a
+//! devolverlo a `Open` cuando el lease vence, y ese paso extra es otra escritura
+//! que puede fallar; con el lease, que expire es simplemente que la condición
+//! del `claim` vuelva a ser cierta.
+//!
+//! EXACTAMENTE UNA VEZ
+//! ───────────────────
+//! El `claim` reparte el trabajo, no lo garantiza: entre ganar el lease y
+//! escribir en el contador cabe una muerte, y el siguiente que reclame no sabría
+//! si el apunte llegó a aplicarse. Por eso todo apunte ligado a una reserva pasa
+//! por `QuotaCounter::settle_once` con la clave `{id}#final`. El `claim` evita el
+//! trabajo repetido; la clave evita el apunte repetido.
 
 use std::collections::HashMap;
 use std::sync::Mutex;

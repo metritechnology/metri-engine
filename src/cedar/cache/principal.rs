@@ -1,9 +1,11 @@
-// cedar/cache/principal.rs — Caché en memoria de principals consolidados.
-//
-// Entradas con TTL: la staleness máxima de una decisión por caché queda
-// acotada incluso si el suscriptor de invalidación pierde mensajes (ventana
-// de `Lagged`) — se prefiere re-consultar el grafo antes que autorizar con
-// roles obsoletos.
+//! In-memory cache of consolidated principals, with TTL.
+//!
+//! Caché en memoria de principals consolidados.
+//!
+//! Entradas con TTL: la staleness máxima de una decisión por caché queda
+//! acotada incluso si el suscriptor de invalidación pierde mensajes (ventana
+//! de `Lagged`) — se prefiere re-consultar el grafo antes que autorizar con
+//! roles obsoletos.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

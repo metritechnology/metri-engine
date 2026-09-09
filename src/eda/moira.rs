@@ -1,5 +1,7 @@
-// eda/moira.rs — MoiraEmitterImpl
-// SRP: Transmite eventos asíncronos para desacoplar procesos del Write Path.
+//! Moira emitter — async event dispatch decoupling the write path.
+//!
+//! MoiraEmitterImpl
+//! Transmite eventos asíncronos para desacoplar procesos del Write Path.
 
 use async_trait::async_trait;
 use serde_json::{json, Value};

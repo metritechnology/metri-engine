@@ -1,9 +1,11 @@
-// cedar/engine.rs — Fachada sobre el motor cedar-policy.
-//
-// El PDP de Cedar puro: políticas compiladas + entidades + request →
-// decisión. Pierde los diagnósticos al colapsar a bool — aceptado: los
-// handlers reportan el DENY canónico; si algún día se necesita el motivo
-// exacto, devolver Decision aquí y propagar.
+//! Facade over the cedar-policy engine.
+//!
+//! Fachada sobre el motor cedar-policy.
+//!
+//! El PDP de Cedar puro: políticas compiladas + entidades + request →
+//! decisión. Pierde los diagnósticos al colapsar a bool — aceptado: los
+//! handlers reportan el DENY canónico; si algún día se necesita el motivo
+//! exacto, devolver Decision aquí y propagar.
 
 use tracing::{info, warn};
 

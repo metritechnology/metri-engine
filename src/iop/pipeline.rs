@@ -1,8 +1,12 @@
-// iop/pipeline.rs — Motor Railway del IOP.
-// En el stack anterior: (reduce (fn [[tag ctx] step] (if (= :ok tag) (step ctx) [:error ctx])) ...)
-// En Rust:    pipeline::run — pure function, cero I/O, cero estado.
-//
-// Zero-Drop Policy: cortocircuita en el primer Err, propaga sin ejecutar pasos restantes.
+//! Railway engine of the IOP — short-circuits on the first error.
+//!
+//! Motor Railway del IOP.
+//!
+//! # Origin
+//! En el stack anterior: (reduce (fn [[tag ctx] step] (if (= :ok tag) (step ctx) [:error ctx])) ...)
+//! En Rust:    pipeline::run — pure function, cero I/O, cero estado.
+//!
+//! Zero-Drop Policy: cortocircuita en el primer Err, propaga sin ejecutar pasos restantes.
 
 use crate::domain::errors::DomainError;
 

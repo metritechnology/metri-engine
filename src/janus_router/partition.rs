@@ -1,12 +1,14 @@
-// janus/partition.rs — Estrategias de particionamiento S3/Hive para OLAP.
-// Dominio puro — sin I/O, sin infra. Evaluación de paths en memoria.
-//
-// Soporta las estrategias de particionamiento Hive:
-//   "YYYY-MM-DD/HH" → "year=2024/month=01/day=15/hour=09"
-//   "YYYY-MM-DD"    → "year=2024/month=01/day=15"
-//   "YYYY-MM"       → "year=2024/month=01"
-//   "YYYY"          → "year=2024"
-//   + sustitución dinámica de {atributo} → atributo=valor (sanitizado)
+//! S3/Hive partitioning strategies for OLAP (pure domain).
+//!
+//! Estrategias de particionamiento S3/Hive para OLAP.
+//! Dominio puro — sin I/O, sin infra. Evaluación de paths en memoria.
+//!
+//! Soporta las estrategias de particionamiento Hive:
+//! "YYYY-MM-DD/HH" → "year=2024/month=01/day=15/hour=09"
+//! "YYYY-MM-DD"    → "year=2024/month=01/day=15"
+//! "YYYY-MM"       → "year=2024/month=01"
+//! "YYYY"          → "year=2024"
+//! + sustitución dinámica de {atributo} → atributo=valor (sanitizado)
 
 use chrono::{DateTime, TimeZone, Utc};
 

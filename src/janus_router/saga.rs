@@ -1,11 +1,12 @@
-// janus_router/saga.rs — SagaBuilder — Proyección declarativa hacia `scheduled_job`.
-//
-//
-// Cuando una entidad madre declara `shadow_sagas_mapping`, cada CREATE proyecta uno o más
-// `scheduled_job` en la MISMA transacción ACID. Metri Schedulers los consume por el bus.
-// Ver docs/architecture/COMPONENTE_EXTERNO_05_METRI_SCHEDULERS.md §3 y 03B §III.2.
-//
-// El builder no inventa valores: el trigger se deriva de atributos declarados en la madre.
+//! SagaBuilder — declarative projection into scheduled_job.
+//!
+//! SagaBuilder — Proyección declarativa hacia `scheduled_job`.
+//!
+//! Cuando una entidad madre declara `shadow_sagas_mapping`, cada CREATE proyecta uno o más
+//! `scheduled_job` en la MISMA transacción ACID. Metri Schedulers los consume por el bus.
+//! Ver docs/architecture/COMPONENTE_EXTERNO_05_METRI_SCHEDULERS.md §3 y 03B §III.2.
+//!
+//! El builder no inventa valores: el trigger se deriva de atributos declarados en la madre.
 
 use std::collections::HashMap;
 

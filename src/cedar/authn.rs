@@ -1,14 +1,16 @@
-// cedar/authn.rs — Autenticación de tokens HMAC (formato mk_).
-//
-// UNA implementación de formato + firma + comparación en tiempo constante.
-// Antes había tres copias que derivaban por separado (el camino Cedar leía el
-// secreto de la variable de entorno cruda, el interceptor gRPC usaba
-// engine_config con tolerancia de reloj, y el session store guardaba el
-// suyo) — la fuente única es ahora la configuración del arranque.
-//
-// El guard fail-closed que exige un secreto fuerte en producción vive en
-// `domain::config::resolve_hmac_secret` y se aplica UNA vez en `server.rs`;
-// aquí no hay segunda validación de entorno por petición.
+//! HMAC token authentication (mk_ format) in constant time.
+//!
+//! Autenticación de tokens HMAC (formato mk_).
+//!
+//! UNA implementación de formato + firma + comparación en tiempo constante.
+//! Antes había tres copias que derivaban por separado (el camino Cedar leía el
+//! secreto de la variable de entorno cruda, el interceptor gRPC usaba
+//! engine_config con tolerancia de reloj, y el session store guardaba el
+//! suyo) — la fuente única es ahora la configuración del arranque.
+//!
+//! El guard fail-closed que exige un secreto fuerte en producción vive en
+//! `domain::config::resolve_hmac_secret` y se aplica UNA vez en `server.rs`;
+//! aquí no hay segunda validación de entorno por petición.
 
 use std::sync::OnceLock;
 

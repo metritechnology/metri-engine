@@ -1,7 +1,11 @@
-// cedar_step.rs — IopStep wrapper para CedarAuthorizer.
-// En el stack anterior: Paso 1 del pipeline — :iop/cedar-authorizer
-//
-// Conecta con cedar-policy real y realiza evaluación Zero-Trust.
+//! CedarAuthorizer as an IOP step.
+//!
+//! IopStep wrapper para CedarAuthorizer.
+//!
+//! # Origin
+//! En el stack anterior: Paso 1 del pipeline — :iop/cedar-authorizer
+//!
+//! Conecta con cedar-policy real y realiza evaluación Zero-Trust.
 
 use std::collections::HashMap;
 use std::sync::Arc;

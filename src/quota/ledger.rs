@@ -1,40 +1,44 @@
-// quota/ledger.rs — Contador atómico con techo, fuera del log de datoms.
-//
-// [MOVIDO_DESDE: eav/writer/counter.rs — fase 0 del refactor de QuotaGuard]
-//
-// POR QUÉ NO VIVE EN EL LOG EAV
-// ─────────────────────────────
-// El log es append-only: «el valor actual» de un atributo es el datom con el
-// tx_id más alto. Un contador sobre esa forma obliga a leer, sumar en memoria y
-// escribir el resultado, y esa secuencia no se puede proteger con una condición
-// de DynamoDB: una ConditionExpression solo puede hablar del item que nombra, y
-// el item que haría falta nombrar —el datom que otro escritor está a punto de
-// añadir— todavía no existe. No hay forma de expresar «nadie ha escrito después
-// que yo» sobre un log de sólo-añadir.
-//
-// Una cuota necesita exactamente esa garantía, así que el contador vive en su
-// propio item mutable, donde el incremento es atómico y el techo es una
-// condición evaluada por DynamoDB en la misma operación. Sin ventana entre
-// comprobar y debitar, porque son la misma escritura.
-//
-// Aquí hubo un helper de bloqueo optimista (`eav/writer/optimistic.rs`) que
-// pretendía resolver esto condicionando sobre un atributo de versión. No podía
-// funcionar, por la razón de arriba y por dos más: el id que usaba era el de
-// `entity/type`, y la clave que componía no correspondía a ningún datom escrito.
-// Se retiró; la nota de diseño de lo que haría falta para un bloqueo optimista
-// de verdad está en el blueprint, §XIII.2.
-//
-// CLAVES
-// ──────
-// PK `T#{tenant}#QC#{quota_id}` — contador. Espacio propio, no colisiona con
-// los datoms, que viven bajo `T#{tenant}#E#{entity}`. Como el id de cuota es
-// distinto en cada periodo, el contador es automáticamente por periodo: al
-// rotar el ciclo hay una fila `domain_quota` nueva y por tanto un contador
-// nuevo, que arranca en cero sin necesidad de reiniciar nada.
-//
-// PK `T#{tenant}#QI#{idem_key}` — marca de idempotencia de `settle_once`.
-// Misma tabla a propósito: una `TransactWriteItems` solo es atómica sobre lo
-// que abarca, y la marca tiene que caer con el apunte o no caer.
+//! Atomic counter with ceiling, outside the datom log.
+//!
+//! Contador atómico con techo, fuera del log de datoms.
+//!
+//! [MOVIDO_DESDE: eav/writer/counter.rs — fase 0 del refactor de QuotaGuard]
+//!
+//! POR QUÉ NO VIVE EN EL LOG EAV
+//! ─────────────────────────────
+//! El log es append-only: «el valor actual» de un atributo es el datom con el
+//! tx_id más alto. Un contador sobre esa forma obliga a leer, sumar en memoria y
+//! escribir el resultado, y esa secuencia no se puede proteger con una condición
+//! de DynamoDB: una ConditionExpression solo puede hablar del item que nombra, y
+//! el item que haría falta nombrar —el datom que otro escritor está a punto de
+//! añadir— todavía no existe. No hay forma de expresar «nadie ha escrito después
+//! que yo» sobre un log de sólo-añadir.
+//!
+//! Una cuota necesita exactamente esa garantía, así que el contador vive en su
+//! propio item mutable, donde el incremento es atómico y el techo es una
+//! condición evaluada por DynamoDB en la misma operación. Sin ventana entre
+//! comprobar y debitar, porque son la misma escritura.
+//!
+//! Aquí hubo un helper de bloqueo optimista (`eav/writer/optimistic.rs`) que
+//! pretendía resolver esto condicionando sobre un atributo de versión. No podía
+//! funcionar, por la razón de arriba y por dos más: el id que usaba era el de
+//! `entity/type`, y la clave que componía no correspondía a ningún datom escrito.
+//! Se retiró; la nota de diseño de lo que haría falta para un bloqueo optimista
+//!
+//! # Origin
+//! de verdad está en el blueprint, §XIII.2.
+//!
+//! CLAVES
+//! ──────
+//! PK `T#{tenant}#QC#{quota_id}` — contador. Espacio propio, no colisiona con
+//! los datoms, que viven bajo `T#{tenant}#E#{entity}`. Como el id de cuota es
+//! distinto en cada periodo, el contador es automáticamente por periodo: al
+//! rotar el ciclo hay una fila `domain_quota` nueva y por tanto un contador
+//! nuevo, que arranca en cero sin necesidad de reiniciar nada.
+//!
+//! PK `T#{tenant}#QI#{idem_key}` — marca de idempotencia de `settle_once`.
+//! Misma tabla a propósito: una `TransactWriteItems` solo es atómica sobre lo
+//! que abarca, y la marca tiene que caer con el apunte o no caer.
 
 use std::collections::HashMap;
 use std::sync::Arc;

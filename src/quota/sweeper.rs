@@ -1,25 +1,27 @@
-// quota/sweeper.rs — Quien recoge las reservas que nadie concilió.
-//
-// Sustituye al recolector que vivía dentro de `QuotaServiceImpl` recorriendo su
-// propio `HashMap`. La diferencia no es de forma: aquel solo veía las reservas
-// de su proceso, así que las de una réplica caída no las recogía nadie y su
-// débito se quedaba aplicado hasta el cambio de periodo.
-//
-// Ahora las reservas vencidas están en un índice que todas las réplicas ven, y
-// el trabajo se reparte solo: quien gana el `claim` la cierra, y los demás
-// siguen. No hace falta elegir un líder ni coordinar nada.
-//
-// QUÉ HACE CON CADA UNA
-// ─────────────────────
-//   · con débito aplicado → devuelve `estimated` y la cierra como EXPIRED.
-//   · sin débito aplicado → la cierra como ABANDONED, sin tocar el contador.
-//     Es el caso de la muerte entre abrir la reserva y debitarla: no hay nada
-//     que devolver, y devolverlo igualmente regalaría esos tokens.
-//
-// Si el apunte falla, la reserva NO se cierra: al vencer el lease vuelve a
-// estar disponible y otro lo reintenta. Reintentarlo es seguro porque el apunte
-// va con la clave de `settlement_key`, así que aunque el fallo fuera solo de
-// respuesta y el apunte hubiera entrado, no se aplica dos veces.
+//! Reaper of reservations nobody reconciled.
+//!
+//! Quien recoge las reservas que nadie concilió.
+//!
+//! Sustituye al recolector que vivía dentro de `QuotaServiceImpl` recorriendo su
+//! propio `HashMap`. La diferencia no es de forma: aquel solo veía las reservas
+//! de su proceso, así que las de una réplica caída no las recogía nadie y su
+//! débito se quedaba aplicado hasta el cambio de periodo.
+//!
+//! Ahora las reservas vencidas están en un índice que todas las réplicas ven, y
+//! el trabajo se reparte solo: quien gana el `claim` la cierra, y los demás
+//! siguen. No hace falta elegir un líder ni coordinar nada.
+//!
+//! QUÉ HACE CON CADA UNA
+//! ─────────────────────
+//! · con débito aplicado → devuelve `estimated` y la cierra como EXPIRED.
+//! · sin débito aplicado → la cierra como ABANDONED, sin tocar el contador.
+//! Es el caso de la muerte entre abrir la reserva y debitarla: no hay nada
+//! que devolver, y devolverlo igualmente regalaría esos tokens.
+//!
+//! Si el apunte falla, la reserva NO se cierra: al vencer el lease vuelve a
+//! estar disponible y otro lo reintenta. Reintentarlo es seguro porque el apunte
+//! va con la clave de `settlement_key`, así que aunque el fallo fuera solo de
+//! respuesta y el apunte hubiera entrado, no se aplica dos veces.
 
 use std::sync::Arc;
 use std::time::Duration;

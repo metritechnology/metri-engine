@@ -1,31 +1,33 @@
-// quota/dynamo_store.rs — Las reservas en vuelo, en DynamoDB.
-//
-// POR QUÉ DYNAMODB Y NO REDIS
-// ───────────────────────────
-// El contador ya vive en DynamoDB, y el apunte de cierre tiene que caer con su
-// marca de idempotencia en la misma transacción (`QuotaCounter::settle_once`).
-// Con la reserva en otro sistema esa atomicidad no existe y habría que
-// reconstruirla a mano. Añádase que el motor no tiene hoy ninguna dependencia
-// de Redis —el `valkey_store` del wiring es un `HmacTokenStore` sobre DynamoDB,
-// el nombre es herencia— y que la tabla de cuota ya está declarada. Redis daría
-// menos latencia; el precio sería un cluster que operar y una garantía menos.
-//
-// EL TTL NO DEVUELVE TOKENS
-// ─────────────────────────
-// El atributo `ttl` sirve para que los tickets cerrados desaparezcan solos. No
-// es el recolector: DynamoDB borra hasta 48 h más tarde y el borrado no puede
-// decrementar el contador. Quien devuelve los tokens es el barrido, que
-// consulta `GSI-SWEEP` por `expires_at`. Confundir las dos cosas es el error
-// clásico de esta arquitectura, y se paga en cuota que nunca vuelve.
-//
-// CLAVES
-// ──────
-//   PK  = T#{tenant}#RSV#{ulid}      SK = "RSV"
-//   GSI-SWEEP:  gp = "OPEN#{shard}"  gs = expires_at (N)
-//
-// `gp` y `gs` solo existen mientras la reserva está abierta: al cerrarla se
-// borran, así que el índice contiene exactamente lo que queda por cerrar y no
-// crece con el histórico.
+//! In-flight reservations, in DynamoDB.
+//!
+//! Las reservas en vuelo, en DynamoDB.
+//!
+//! POR QUÉ DYNAMODB Y NO REDIS
+//! ───────────────────────────
+//! El contador ya vive en DynamoDB, y el apunte de cierre tiene que caer con su
+//! marca de idempotencia en la misma transacción (`QuotaCounter::settle_once`).
+//! Con la reserva en otro sistema esa atomicidad no existe y habría que
+//! reconstruirla a mano. Añádase que el motor no tiene hoy ninguna dependencia
+//! de Redis —el `valkey_store` del wiring es un `HmacTokenStore` sobre DynamoDB,
+//! el nombre es herencia— y que la tabla de cuota ya está declarada. Redis daría
+//! menos latencia; el precio sería un cluster que operar y una garantía menos.
+//!
+//! EL TTL NO DEVUELVE TOKENS
+//! ─────────────────────────
+//! El atributo `ttl` sirve para que los tickets cerrados desaparezcan solos. No
+//! es el recolector: DynamoDB borra hasta 48 h más tarde y el borrado no puede
+//! decrementar el contador. Quien devuelve los tokens es el barrido, que
+//! consulta `GSI-SWEEP` por `expires_at`. Confundir las dos cosas es el error
+//! clásico de esta arquitectura, y se paga en cuota que nunca vuelve.
+//!
+//! CLAVES
+//! ──────
+//! PK  = T#{tenant}#RSV#{ulid}      SK = "RSV"
+//! GSI-SWEEP:  gp = "OPEN#{shard}"  gs = expires_at (N)
+//!
+//! `gp` y `gs` solo existen mientras la reserva está abierta: al cerrarla se
+//! borran, así que el índice contiene exactamente lo que queda por cerrar y no
+//! crece con el histórico.
 
 use std::collections::HashMap;
 use std::sync::Arc;

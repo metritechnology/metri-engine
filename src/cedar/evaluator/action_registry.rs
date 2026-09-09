@@ -1,14 +1,16 @@
-// authorizer/evaluator/action_registry.rs — Registro de acciones Cedar.
-//
-// La acción → grupo y la base de entidades de acciones se DERIVAN de
-// cedar-schema.json (una sola fuente de datos): añadir una acción al schema
-// ya no exige tocar Rust. La base se compila UNA vez por proceso (OnceLock);
-// por petición solo se ensamblan User y Resource encima (entities_builder).
-//
-// Divergencia conservada a propósito: el schema pone `GET` en el grupo
-// mutacional, pero el enrutador (`is_mutational_action`) la trata como
-// analítica desde siempre — cambiar el enrutamiento de GET es una decisión
-// de producto, no de este refactor.
+//! Cedar action registry — derived from cedar-schema.json.
+//!
+//! Registro de acciones Cedar.
+//!
+//! La acción → grupo y la base de entidades de acciones se DERIVAN de
+//! cedar-schema.json (una sola fuente de datos): añadir una acción al schema
+//! ya no exige tocar Rust. La base se compila UNA vez por proceso (OnceLock);
+//! por petición solo se ensamblan User y Resource encima (entities_builder).
+//!
+//! Divergencia conservada a propósito: el schema pone `GET` en el grupo
+//! mutacional, pero el enrutador (`is_mutational_action`) la trata como
+//! analítica desde siempre — cambiar el enrutamiento de GET es una decisión
+//! de producto, no de este refactor.
 
 use std::collections::HashMap;
 use std::str::FromStr;

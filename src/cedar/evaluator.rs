@@ -1,10 +1,12 @@
-// authorizer/evaluator.rs — PDP Cedar: enrutamiento de decisiones.
-//
-// La entrada única es `step4_evaluate_cedar`: atajo system-bff y, según la
-// acción, camino mutacional (mutational.rs — motor Cedar real) o analítico
-// (analytical.rs — boundaries por dominio). Los grants viven en grants.rs, y
-// el registro de acciones y la base de entidades precompilada en
-// action_registry.rs / entities_builder.rs.
+//! Cedar PDP decision routing — mutational vs analytical.
+//!
+//! PDP Cedar: enrutamiento de decisiones.
+//!
+//! La entrada única es `step4_evaluate_cedar`: atajo system-bff y, según la
+//! acción, camino mutacional (mutational.rs — motor Cedar real) o analítico
+//! (analytical.rs — boundaries por dominio). Los grants viven en grants.rs, y
+//! el registro de acciones y la base de entidades precompilada en
+//! action_registry.rs / entities_builder.rs.
 
 mod action_registry;
 mod analytical;

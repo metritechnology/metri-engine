@@ -1,13 +1,15 @@
-// cedar/cache/invalidation.rs — Suscriptor del bus de invalidación de cachés.
-//
-// Los mutadores (bulk, transact) publican `InvalidationMsg` y este suscriptor
-// expulsa al principal de la caché — y a los usuarios que lo referencian por
-// rol o grupo. La expulsión del EAV_CACHE vive en su módulo (`pull.rs::evict_
-// cached_entity`): cedar ya no toma el candado de otra capa.
-//
-// S3: un `Lagged` del canal broadcast (mensajes perdidos por capacidad) YA NO
-// mata al suscriptor — se registra la ventana perdida y se sigue consumiendo;
-// el TTL de entrada de la caché de principals acota la staleness residual.
+//! Cache invalidation bus subscriber.
+//!
+//! Suscriptor del bus de invalidación de cachés.
+//!
+//! Los mutadores (bulk, transact) publican `InvalidationMsg` y este suscriptor
+//! expulsa al principal de la caché — y a los usuarios que lo referencian por
+//! rol o grupo. La expulsión del EAV_CACHE vive en su módulo (`pull.rs::evict_
+//! cached_entity`): cedar ya no toma el candado de otra capa.
+//!
+//! S3: un `Lagged` del canal broadcast (mensajes perdidos por capacidad) YA NO
+//! mata al suscriptor — se registra la ventana perdida y se sigue consumiendo;
+//! el TTL de entrada de la caché de principals acota la staleness residual.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

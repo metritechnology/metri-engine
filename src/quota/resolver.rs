@@ -1,18 +1,20 @@
-// quota/resolver.rs — Qué cuota gobierna esta operación, y con qué techo.
-//
-// Una consulta a Aegis por (tenant, resource_domain, limit_type) devuelve todas
-// las filas `domain_quota` de ese dominio: la del periodo en curso, las de los
-// periodos ya cerrados y las de los que aún no han empezado. Elegir entre ellas
-// es lo único que hace este archivo.
-//
-// LO QUE DEVUELVE NO DECIDE
-// ─────────────────────────
-// `QuotaSpec::seed_usage` es la foto de `current_usage` en el momento de la
-// consulta, y NO sirve para comprobar si queda sitio: entre esa lectura y la
-// escritura cabe otra petición. Quien decide es `ledger::QuotaCounter`, que
-// resuelve techo e incremento en una sola operación condicional. El `seed` solo
-// se usa como valor de arranque la primera vez que se toca un contador que
-// todavía no existe, para no regalarle a un tenant en marcha lo que ya gastó.
+//! Which quota governs this operation, and with what ceiling.
+//!
+//! Qué cuota gobierna esta operación, y con qué techo.
+//!
+//! Una consulta a Aegis por (tenant, resource_domain, limit_type) devuelve todas
+//! las filas `domain_quota` de ese dominio: la del periodo en curso, las de los
+//! periodos ya cerrados y las de los que aún no han empezado. Elegir entre ellas
+//! es lo único que hace este archivo.
+//!
+//! LO QUE DEVUELVE NO DECIDE
+//! ─────────────────────────
+//! `QuotaSpec::seed_usage` es la foto de `current_usage` en el momento de la
+//! consulta, y NO sirve para comprobar si queda sitio: entre esa lectura y la
+//! escritura cabe otra petición. Quien decide es `ledger::QuotaCounter`, que
+//! resuelve techo e incremento en una sola operación condicional. El `seed` solo
+//! se usa como valor de arranque la primera vez que se toca un contador que
+//! todavía no existe, para no regalarle a un tenant en marcha lo que ya gastó.
 
 use std::collections::HashMap;
 use std::sync::Mutex;

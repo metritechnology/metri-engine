@@ -1,8 +1,10 @@
-// cedar/cache/session.rs — Session store en memoria.
-//
-// ÚNICAMENTE para tests y desarrollo: nunca se construye en producción
-// (server.rs monta `HmacTokenStore`). A diferencia de antes, `revoke_session`
-// respeta el contrato del trait (LSP): un jti revocado ya no autentica.
+//! In-memory session store — tests and development only.
+//!
+//! Session store en memoria.
+//!
+//! ÚNICAMENTE para tests y desarrollo: nunca se construye en producción
+//! (server.rs monta `HmacTokenStore`). A diferencia de antes, `revoke_session`
+//! respeta el contrato del trait (LSP): un jti revocado ya no autentica.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;

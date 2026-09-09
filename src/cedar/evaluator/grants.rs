@@ -1,6 +1,8 @@
-// authorizer/evaluator/grants.rs — Expansión de grants del principal.
-// Funciones puras: el JSON de grants de los boundaries se convierte en el
-// conjunto plano `dominio:acción` que consume la evaluación Cedar.
+//! Principal grants expansion — the plain domain:action set.
+//!
+//! Expansión de grants del principal.
+//! Funciones puras: el JSON de grants de los boundaries se convierte en el
+//! conjunto plano `dominio:acción` que consume la evaluación Cedar.
 
 use std::collections::HashSet;
 

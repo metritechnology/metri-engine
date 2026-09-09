@@ -1,13 +1,15 @@
-// janus_router/router.rs — JanusRouter — Write Path del Metri Engine.
-// Invocado exclusivamente por el IOP, después de Cedar + Quota.
-//
-// Pipeline interno (6 pasos):
-//   1. load-schema  (Códice O(1))
-//   2. validate-payload (validator Rust)
-//   3. Pre-checks: write_path_locked, is_system_seeded
-//   4. Resolve engine (oltp | olap)
-//   5. Enriquecer ctx — tenant_id inyectado (NUNCA del cliente)
-//   6. Despachar al canal del registry
+//! JanusRouter — write-path entry, invoked only by the IOP.
+//!
+//! JanusRouter — Write Path del Metri Engine.
+//! Invocado exclusivamente por el IOP, después de Cedar + Quota.
+//!
+//! Pipeline interno (6 pasos):
+//! 1. load-schema  (Códice O(1))
+//! 2. validate-payload (validator Rust)
+//! 3. Pre-checks: write_path_locked, is_system_seeded
+//! 4. Resolve engine (oltp | olap)
+//! 5. Enriquecer ctx — tenant_id inyectado (NUNCA del cliente)
+//! 6. Despachar al canal del registry
 
 use std::collections::HashMap;
 use std::sync::Arc;

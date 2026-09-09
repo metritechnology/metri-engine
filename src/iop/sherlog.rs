@@ -1,14 +1,18 @@
-// iop/sherlog.rs — Módulo Sherlog — Pipeline EDA de Errores (Módulo V).
-// En el stack anterior: IFaultNotifier protocol + EventBridgeNotifier + process-fault!
-// En Rust:    IFaultNotifier trait + EventBridgeNotifier + process_fault()
-//
-// Dispatch de severidad:
-//   :info    → solo log
-//   :warning → log + notify
-//   :error   → log + notify
-//   :fatal   → log + notify (máxima prioridad)
-//
-// Nunca interrumpe el flujo principal — fire-and-forget seguro.
+//! Sherlog — the EDA fault pipeline.
+//!
+//! Módulo Sherlog — Pipeline EDA de Errores (Módulo V).
+//!
+//! # Origin
+//! En el stack anterior: IFaultNotifier protocol + EventBridgeNotifier + process-fault!
+//! En Rust:    IFaultNotifier trait + EventBridgeNotifier + process_fault()
+//!
+//! Dispatch de severidad:
+//! :info    → solo log
+//! :warning → log + notify
+//! :error   → log + notify
+//! :fatal   → log + notify (máxima prioridad)
+//!
+//! Nunca interrumpe el flujo principal — fire-and-forget seguro.
 
 use serde_json::Value;
 use tracing::{debug, error, info, warn};

@@ -1,6 +1,10 @@
-// iop/error_response.rs — DTO forense para errores de dominio → gRPC.
-// En el stack anterior: sanitize-context + build-error-dto + OTel trace_id.
-// En Rust: mismo contrato con otel::tracer::current_trace_id().
+//! Forensic error DTO — domain errors to gRPC responses.
+//!
+//! DTO forense para errores de dominio → gRPC.
+//!
+//! # Origin
+//! En el stack anterior: sanitize-context + build-error-dto + OTel trace_id.
+//! En Rust: mismo contrato con otel::tracer::current_trace_id().
 
 use serde_json::{json, Value};
 

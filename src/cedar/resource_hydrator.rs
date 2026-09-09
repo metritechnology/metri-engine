@@ -1,10 +1,12 @@
-// cedar/resource_hydrator.rs — Hidratación ABAC del recurso.
-//
-// Antes del evaluador, el recurso sintetizado desde cabeceras se enriquece
-// con la empresa asignada según el EAV: las políticas mutacionales comparan
-// `assigned_company_id` del recurso con el `company_id` del principal. Este
-// paso vive aparte del intercept para que la pipeline sea legible y el
-// acceso a EAV no esté incrustado en el orquestador.
+//! ABAC resource hydration — assigned-company enrichment.
+//!
+//! Hidratación ABAC del recurso.
+//!
+//! Antes del evaluador, el recurso sintetizado desde cabeceras se enriquece
+//! con la empresa asignada según el EAV: las políticas mutacionales comparan
+//! `assigned_company_id` del recurso con el `company_id` del principal. Este
+//! paso vive aparte del intercept para que la pipeline sea legible y el
+//! acceso a EAV no esté incrustado en el orquestador.
 
 use crate::cedar::ports::EntityReader;
 use crate::eav::types::datom::DatomValue;

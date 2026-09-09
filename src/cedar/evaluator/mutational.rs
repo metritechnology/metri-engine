@@ -1,6 +1,8 @@
-// authorizer/evaluator/mutational.rs — Camino mutacional (PDP).
-// CREATE/UPDATE/DELETE/UPSERT: evaluación Cedar real por cada boundary del
-// principal — basta con que UNA política permita.
+//! Mutational path — real Cedar evaluation per boundary.
+//!
+//! Camino mutacional (PDP).
+//! CREATE/UPDATE/DELETE/UPSERT: evaluación Cedar real por cada boundary del
+//! principal — basta con que UNA política permita.
 
 use cedar_policy::{Context, EntityUid, Request};
 

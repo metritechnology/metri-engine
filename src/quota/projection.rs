@@ -1,30 +1,32 @@
-// quota/projection.rs — `current_usage` calculado en lectura.
-//
-// EL PROBLEMA QUE RESUELVE
-// ────────────────────────
-// El consumo real lo lleva el contador atómico, fuera del log de datoms. Para
-// que el panel pudiera enseñarlo, hasta la fase 3 cada débito escribía además
-// una `TransactWriteItems` completa —n datoms, sus índices y su posible evento
-// de outbox— sobre la fila `domain_quota`, solo para dejar ahí una copia del
-// mismo número.
-//
-// Eso salía caro en el sitio peor: el paso IOP corre en cada CREATE y cada GET
-// del motor, y pagaba una transacción multi-item por operación. Y con todo,
-// la copia no era fiable: se escribía en best-effort, así que cualquier fallo
-// la dejaba atrás sin que nadie lo notara.
-//
-// Ahora no se escribe. Cuando alguien lee filas de `domain_quota`, se les
-// superpone el consumo vigente del contador — una sola llamada para todas las
-// filas de la página, no una por fila.
-//
-// QUÉ QUEDA DE `current_usage` EN EL LOG
-// ──────────────────────────────────────
-// El valor SEMILLA. `try_debit` lo usa como punto de partida la primera vez que
-// toca un contador que aún no existe, para que activar esto sobre un tenant en
-// marcha no le regale lo ya gastado. Una vez creado el contador, deja de
-// intervenir — y este retoque deja de devolver el valor almacenado para
-// devolver el del contador. Los dos casos encajan sin condiciones especiales:
-// mientras no hay contador, el valor guardado ES el bueno.
+//! current_usage computed at read time.
+//!
+//! `current_usage` calculado en lectura.
+//!
+//! EL PROBLEMA QUE RESUELVE
+//! ────────────────────────
+//! El consumo real lo lleva el contador atómico, fuera del log de datoms. Para
+//! que el panel pudiera enseñarlo, hasta la fase 3 cada débito escribía además
+//! una `TransactWriteItems` completa —n datoms, sus índices y su posible evento
+//! de outbox— sobre la fila `domain_quota`, solo para dejar ahí una copia del
+//! mismo número.
+//!
+//! Eso salía caro en el sitio peor: el paso IOP corre en cada CREATE y cada GET
+//! del motor, y pagaba una transacción multi-item por operación. Y con todo,
+//! la copia no era fiable: se escribía en best-effort, así que cualquier fallo
+//! la dejaba atrás sin que nadie lo notara.
+//!
+//! Ahora no se escribe. Cuando alguien lee filas de `domain_quota`, se les
+//! superpone el consumo vigente del contador — una sola llamada para todas las
+//! filas de la página, no una por fila.
+//!
+//! QUÉ QUEDA DE `current_usage` EN EL LOG
+//! ──────────────────────────────────────
+//! El valor SEMILLA. `try_debit` lo usa como punto de partida la primera vez que
+//! toca un contador que aún no existe, para que activar esto sobre un tenant en
+//! marcha no le regale lo ya gastado. Una vez creado el contador, deja de
+//! intervenir — y este retoque deja de devolver el valor almacenado para
+//! devolver el del contador. Los dos casos encajan sin condiciones especiales:
+//! mientras no hay contador, el valor guardado ES el bueno.
 
 use std::sync::Arc;
 

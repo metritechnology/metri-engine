@@ -1,8 +1,10 @@
-// cedar/ports.rs — Puertos del autorizador Cedar (DIP).
-// El core de autorización no conoce DynamoClient ni el detalle del executor
-// EAV: consume los puertos de este archivo. Los adaptadores concretos
-// (`EavReader`, el `HashMap` de PolicySets) los provee la raíz de composición,
-// y los tests pueden sustituirlos por fakes en memoria.
+//! Authorizer ports (DIP) — the core consumes traits.
+//!
+//! Puertos del autorizador Cedar (DIP).
+//! El core de autorización no conoce DynamoClient ni el detalle del executor
+//! EAV: consume los puertos de este archivo. Los adaptadores concretos
+//! (`EavReader`, el `HashMap` de PolicySets) los provee la raíz de composición,
+//! y los tests pueden sustituirlos por fakes en memoria.
 
 use std::collections::HashMap;
 
