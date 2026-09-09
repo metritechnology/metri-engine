@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **64**
+Total de modelos: **62**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -69,5 +69,3 @@ Total de modelos: **64**
 | `work_order_procedure_field` | oltp | `work_order_procedure_id`, `procedure_field_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `field_order`, `score`, `max_score`, `value_text`, `value_number`, `value_boolean`, `value_epoch`, `value_choice`, `value_file_ids`, `answered_by`, `answered_at` |
 | `work_order_task` | oltp | `work_order_id`, `task_template_id`, `asset_id`, `location_id`, `work_order_template_stop_id`, `description`, `assigned_user_id`, `assigned_group_id`, `estimated_duration_minutes`, `scheduled_start`, `scheduled_end`, `note_ids`, `status`, `evidence_file_ids`, `completed_by`, `completed_at` |
 | `work_order_task_item` | oltp | `work_order_task_id`, `task_template_item_id`, `description`, `is_completed`, `note_ids`, `evidence_file_ids`, `completed_by`, `labor_log_ids`, `completed_at` |
-| `work_order_template` | oltp | `title`, `description`, `assigned_role_id`, `assigned_group_id`, `estimated_duration_minutes`, `notification_template_code`, `status`, `subject_mode`, `scope_location_id`, `scope_include_descendants`, `scope_omniclass_code`, `scope_criticality` |
-| `work_order_template_stop` | oltp | `work_order_template_id`, `stop_order`, `asset_id`, `location_id`, `task_template_id`, `estimated_effort_minutes`, `access_note` |
