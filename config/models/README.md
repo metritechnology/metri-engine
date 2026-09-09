@@ -180,3 +180,29 @@ Las reglas de eventos permiten disparar notificaciones y registrar auditorías a
    - `operator`: Operadores de comparación suportados (`"eq"`, `"neq"`, `"gt"`, `"lt"`, `"gte"`, `"lte"`).
    - `target_value`: El valor objetivo de comparación (guardado como string pero coercionado dinámicamente según el tipo de atributo).
 4. **`detail_type_output`**: El tipo de evento con el que se emitirá al bus (ej: `"system.alerts.high_cost_work_order"`).
+
+---
+
+## V. Protocolos y formularios: los dos sistemas y sus fronteras
+
+Desde el 2026-09-09 el catálogo reconoce **dos** sistemas de "definición →
+instancia" (la capa `work_order_template` + paradas de ruta y el sistema de
+tareas `task_template`/`work_order_task` fueron retirados). Ambos cuelgan
+directamente de `work_order`:
+
+| Sistema | Definición | Instancia | Frontera |
+|---|---|---|---|
+| **Procedimientos** | `procedure` → `procedure_field` (12 tipos de campo, scoring) | `work_order_procedure` → `work_order_procedure_field` | **SSOT del protocolo formal**: pasos tipados con puntaje, estilo MaintainX. Solo los `procedure` con `lifecycle_state=PUBLISHED` se instancian; `DRAFT` no se ofrece a nuevas OTs y `RETIRED` conserva histórico. |
+| **Formularios** | `form_template` → `form_template_section` → `form_template_field` (10 tipos de respuesta) | `check_list` → `check_list_section` → `check_list_item` | **Checklists de inspección y solicitudes**: única vía de formularios para `check_list` y para `request`. |
+
+Reglas de frontera:
+
+1. Un protocolo de trabajo con scoring (aprobar/rechazar por puntaje) se define
+   como `procedure`, nunca como `form_template`.
+2. Una lista de verificación sí/no/respuesta corta se define como
+   `form_template`, nunca como `procedure`.
+3. Ninguna definición cuelga de otra capa: `procedure` y `form_template` se
+   instancian sobre la OT (o la `request`) directamente.
+4. Las tareas de una OT son ahora atributos y evidencias de la propia
+   `work_order` (notas, horas de `labor_log`, adjuntos vía `file`): no existe
+   entidad de tarea.
