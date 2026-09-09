@@ -1,3 +1,4 @@
+//! Normalizer for Query requests.
 use crate::janus::normalizer::helpers::{
     derive_semantic_label, infer_viz_type, new_query_id, safe_double,
 };

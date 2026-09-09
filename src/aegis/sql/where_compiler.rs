@@ -1,5 +1,7 @@
-// aegis/sql/where_compiler.rs
-// Compiles a typed WhereNode AST into a sea-query Condition.
+//! Where compiler — typed WhereNode AST to sea-query Condition.
+//!
+//! aegis/sql/where_compiler.rs
+//! Compiles a typed WhereNode AST into a sea-query Condition.
 
 use crate::aegis::ast_ir::WhereNode;
 use crate::aegis::sql::dialect::SqlDialect;

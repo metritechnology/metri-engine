@@ -1,13 +1,16 @@
-// aegis/oltp/hierarchy.rs — HierarchyContext post-processing.
-//
-// SRP: inyectar :has_children en rows EAV, sin I/O ni estado.
-//
-// el stack anterior implementa 2 modos:
-//   Modo 1 (ref): Datahike reverse-ref → pull retorna [{:db/id ...}]
-//   Modo 2 (string/EAV): in-memory usando el conjunto de parent_field values
-//
-// Para DynamoDB EAV, parent_location_id es un string ULID.
-// Solo el Modo 2 aplica aquí.
+//! HierarchyContext post-processing — has_children injection.
+//!
+//! HierarchyContext post-processing.
+//!
+//! SRP: inyectar :has_children en rows EAV, sin I/O ni estado.
+//!
+//! # Origin
+//! el stack anterior implementa 2 modos:
+//! Modo 1 (ref): Datahike reverse-ref → pull retorna [{:db/id ...}]
+//! Modo 2 (string/EAV): in-memory usando el conjunto de parent_field values
+//!
+//! Para DynamoDB EAV, parent_location_id es un string ULID.
+//! Solo el Modo 2 aplica aquí.
 
 use serde_json::{json, Value};
 use std::collections::HashSet;

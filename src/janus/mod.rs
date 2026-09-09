@@ -1,5 +1,7 @@
-// janus/ — Read Path del Metri Engine.
-// Write Path → ver src/janus_router/
+//! janus — the read path of the metri engine.
+//!
+//! janus/ — Read Path del Metri Engine.
+//! Write Path → ver src/janus_router/
 
 pub mod fbs;
 pub mod normalizer;

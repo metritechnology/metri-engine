@@ -1,3 +1,4 @@
+//! Shared normalizer helpers — safe conversions and derived labels.
 use serde_json::{json, Value};
 use uuid::Uuid;
 

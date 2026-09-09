@@ -1,15 +1,17 @@
-// aegis/oltp/fuzzy.rs — Fuzzy matching para Omnisearch (operador MATCHES).
-//
-// Algoritmos (aprovechando EAV FTS):
-//   1. Substring case-insensitive (fast path)
-//   2. Trigram Intersection Score (fast fuzzy path)
-//   3. Damerau-Levenshtein distance O(m·n) (deep fuzzy path)
-//   4. Word-level tokenization
-//
-// Threshold adaptativo:
-//   ≤ 2 chars → 0 (solo exacto)
-//   3-8 chars → 1 (1 error tipográfico)
-//   ≥ 9 chars → 2 (2 errores)
+//! Fuzzy matching for Omnisearch (MATCHES operator).
+//!
+//! Fuzzy matching para Omnisearch (operador MATCHES).
+//!
+//! Algoritmos (aprovechando EAV FTS):
+//! 1. Substring case-insensitive (fast path)
+//! 2. Trigram Intersection Score (fast fuzzy path)
+//! 3. Damerau-Levenshtein distance O(m·n) (deep fuzzy path)
+//! 4. Word-level tokenization
+//!
+//! Threshold adaptativo:
+//! ≤ 2 chars → 0 (solo exacto)
+//! 3-8 chars → 1 (1 error tipográfico)
+//! ≥ 9 chars → 2 (2 errores)
 
 use crate::eav::fts::searcher::damerau_levenshtein;
 use crate::eav::fts::trigram::generate_trigrams;

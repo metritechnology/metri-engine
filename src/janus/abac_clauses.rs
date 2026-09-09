@@ -1,5 +1,7 @@
-// janus/abac_clauses.rs — Construcción de cláusulas ABAC desde el CedarCtx.
-// SRP: transforma {entity + boundaries + user-id + schema} -> nodo AST IR ABAC.
+//! ABAC clause construction from the CedarCtx.
+//!
+//! Construcción de cláusulas ABAC desde el CedarCtx.
+//! transforma {entity + boundaries + user-id + schema} -> nodo AST IR ABAC.
 
 use serde_json::{json, Value};
 

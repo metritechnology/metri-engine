@@ -1,8 +1,10 @@
-// aegis/formula/compiler_olap.rs — Compila fórmulas a SQL projection strings.
-//
-// Flujo: formula_str → validate → tokenize → to_rpn (solo validar) → tokens_to_sql
-//        El RPN se genera SOLO para validar sintaxis y aridad.
-//        El SQL se reconstruye desde los tokens INFIX (pre-RPN).
+//! Formula compiler to SQL projection strings.
+//!
+//! Compila fórmulas a SQL projection strings.
+//!
+//! Flujo: formula_str → validate → tokenize → to_rpn (solo validar) → tokens_to_sql
+//! El RPN se genera SOLO para validar sintaxis y aridad.
+//! El SQL se reconstruye desde los tokens INFIX (pre-RPN).
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;

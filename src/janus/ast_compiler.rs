@@ -1,5 +1,7 @@
-// janus/ast_compiler.rs — Ensamblador del AST IR.
-// SRP: combina los sub-pasos 4a-4f en un AST IR inmutable completo.
+//! AST IR assembler — combines sub-steps 4a to 4f.
+//!
+//! Ensamblador del AST IR.
+//! combina los sub-pasos 4a-4f en un AST IR inmutable completo.
 
 use serde_json::{json, Value};
 

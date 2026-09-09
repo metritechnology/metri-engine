@@ -1,11 +1,15 @@
-// janus/aggregator.rs — Paso 7: Result Assembly + OutputCast Aggregation
-// Blueprint: JANUS - Rust.md §I.2 Paso 7 — Result Assembly
-//
-// Aplica el OutputCast sobre rows de negocio:
-//   TABLE      → rows directas (sin agregación)
-//   KPI        → SUM/COUNT/AVG/MIN/MAX con StreamAggregator (1 fila)
-//   TIMESERIES → epoch bucketing + group_by intervalo
-//   PIE/BUBBLE → group_by dimensiones + apply_metrics
+//! Step 7 — result assembly and OutputCast aggregation.
+//!
+//! Paso 7: Result Assembly + OutputCast Aggregation
+//!
+//! # Origin
+//! Blueprint: JANUS - Rust.md §I.2 Paso 7 — Result Assembly
+//!
+//! Aplica el OutputCast sobre rows de negocio:
+//! TABLE      → rows directas (sin agregación)
+//! KPI        → SUM/COUNT/AVG/MIN/MAX con StreamAggregator (1 fila)
+//! TIMESERIES → epoch bucketing + group_by intervalo
+//! PIE/BUBBLE → group_by dimensiones + apply_metrics
 
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;

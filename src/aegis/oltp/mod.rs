@@ -1,3 +1,9 @@
+//! OLTP compiler and executor over the EAV engine.
+//!
+//! Pipeline en memoria: `compiler` traduce el AST IR a un plan físico del
+//! motor EAV; `executor` orquesta compile → execute → `hydrator` (con
+//! cache) → `filter`/`aggregation` → `comparison`/`hierarchy` → `caster`.
+//! [`channel`] implementa `IWriteChannel` para escrituras OLTP.
 pub mod aggregation; // Agregación completa: 14 funciones + FilterNode + derive_columns
 pub(crate) mod caster;
 pub mod channel;

@@ -1,5 +1,7 @@
-// janus/multi_series.rs — Motor de fusión MultiSeriesGroup — Full Outer Join asintótico.
-// SRP: realiza y fusiona resultados de sub-queries agrupados bajo un group-id.
+//! MultiSeriesGroup fusion — asymptotic full outer join.
+//!
+//! Motor de fusión MultiSeriesGroup — Full Outer Join asintótico.
+//! realiza y fusiona resultados de sub-queries agrupados bajo un group-id.
 
 use serde_json::{Map, Value};
 use std::collections::hash_map::DefaultHasher;

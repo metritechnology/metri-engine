@@ -1,16 +1,18 @@
-// aegis/oltp/aggregation.rs — Agregación in-memory con FilterNode support.
-//
-// Implementa los 14 AggregationFunction del contrato FBS:
-//   COUNT SUM AVG MIN MAX MEDIAN PERCENTILE_90/95/99
-//   STD_DEV VARIANCE CORRELATION LINEAR_REGRESSION LOGISTIC_REGRESSION
-//
-// Filtered Aggregation (MetricDefinition.filter):
-//   Si la métrica tiene un FilterNode, solo los rows que pasan el predicado
-//   in-memory contribuyen al cómputo.
-//
-// API pública:
-//   apply_metrics_fbs(rows, metrics) → Value (JSON object {:alias value})
-//   eval_filter_node(row, node)      → bool
+//! In-memory aggregation — the 14 contract functions + FilterNode.
+//!
+//! Agregación in-memory con FilterNode support.
+//!
+//! Implementa los 14 AggregationFunction del contrato FBS:
+//! COUNT SUM AVG MIN MAX MEDIAN PERCENTILE_90/95/99
+//! STD_DEV VARIANCE CORRELATION LINEAR_REGRESSION LOGISTIC_REGRESSION
+//!
+//! Filtered Aggregation (MetricDefinition.filter):
+//! Si la métrica tiene un FilterNode, solo los rows que pasan el predicado
+//! in-memory contribuyen al cómputo.
+//!
+//! API pública:
+//! apply_metrics_fbs(rows, metrics) → Value (JSON object {:alias value})
+//! eval_filter_node(row, node)      → bool
 
 use serde_json::Value;
 use tracing::warn;

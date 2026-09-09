@@ -1,3 +1,8 @@
+//! Request normalizers — raw gRPC bodies to canonical pre-AST form.
+//!
+//! Un normalizador por forma de RPC ([`strategy::NormalizerStrategy`]):
+//! `query`, `bulk`, `discovery`, `explore`, `transaction` y `match_rules`.
+//! [`helpers`] concentra las conversiones seguras compartidas.
 pub mod bulk;
 pub mod discovery;
 pub mod explore;

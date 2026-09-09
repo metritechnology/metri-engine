@@ -1,6 +1,8 @@
-// aegis/formula/functions.rs — Trait extensible para funciones de fórmula.
-// OCP: Para agregar una nueva función, solo se crea un nuevo struct
-//       que implemente FormulaFunction y se registra.
+//! Extensible trait for formula functions.
+//!
+//! Trait extensible para funciones de fórmula.
+//! OCP: Para agregar una nueva función, solo se crea un nuevo struct
+//! que implemente FormulaFunction y se registra.
 
 /// Contrato que toda función de fórmula debe implementar.
 pub trait FormulaFunction: Send + Sync {

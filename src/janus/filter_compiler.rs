@@ -1,5 +1,7 @@
-// janus/filter_compiler.rs — Compilador de FilterNode -> nodos AST IR.
-// SRP: transforma árboles de filtros del cliente en nodos del AST IR inmutable.
+//! FilterNode compiler — client filters to AST IR nodes.
+//!
+//! Compilador de FilterNode -> nodos AST IR.
+//! transforma árboles de filtros del cliente en nodos del AST IR inmutable.
 
 use serde_json::{json, Value};
 

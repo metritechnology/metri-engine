@@ -1,5 +1,7 @@
-// aegis/sql/metric_compiler.rs
-// Compiles MetricDef analytics metric specifications into sea-query expressions.
+//! MetricDef compiler — analytics metrics to sea-query expressions.
+//!
+//! aegis/sql/metric_compiler.rs
+//! Compiles MetricDef analytics metric specifications into sea-query expressions.
 
 use crate::aegis::ast_ir::{MetricDef, WhereNode};
 use crate::aegis::sql::dialect::SqlDialect;

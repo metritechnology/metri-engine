@@ -1,5 +1,7 @@
-// aegis/formula/token.rs — Solo definición de tipos del AST.
-// SRP: No contiene lógica de parseo ni evaluación.
+//! Formula AST type definitions.
+//!
+//! Solo definición de tipos del AST.
+//! SRP: No contiene lógica de parseo ni evaluación.
 
 /// Operadores aritméticos binarios y unario.
 #[derive(Debug, Clone, PartialEq)]

@@ -1,5 +1,7 @@
-// aegis/sql/security.rs
-// SRP: Encapsular el gate de seguridad Zero Trust (ZT Invariant §7) para verificar aislamiento de inquilinos.
+//! Zero-Trust security gate — tenant isolation verification.
+//!
+//! aegis/sql/security.rs
+//! SRP: Encapsular el gate de seguridad Zero Trust (ZT Invariant §7) para verificar aislamiento de inquilinos.
 
 use serde_json::Value;
 

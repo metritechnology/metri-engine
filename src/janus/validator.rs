@@ -1,9 +1,13 @@
-// janus/validator.rs — Validador de contratos del AST IR.
-// En el stack anterior: el stack anterior Registry cargado desde resources/schema/janus-ast-ir.edn.
-// En Rust: validación estructural con serde_json + reglas semánticas.
-//
-// "Defensa Inquebrantable": cualquier payload que viole el contrato
-// es rechazado antes de llegar al motor EAV.
+//! AST IR contract validator.
+//!
+//! Validador de contratos del AST IR.
+//!
+//! # Origin
+//! En el stack anterior: el stack anterior Registry cargado desde resources/schema/janus-ast-ir.edn.
+//! En Rust: validación estructural con serde_json + reglas semánticas.
+//!
+//! "Defensa Inquebrantable": cualquier payload que viole el contrato
+//! es rechazado antes de llegar al motor EAV.
 
 use serde_json::Value;
 

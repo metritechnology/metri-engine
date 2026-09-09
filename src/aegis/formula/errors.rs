@@ -1,5 +1,7 @@
-// aegis/formula/errors.rs — Errores específicos del motor de fórmulas.
-// SRP: Solo define tipos de error y el bridge a DomainError.
+//! Formula engine errors and the DomainError bridge.
+//!
+//! Errores específicos del motor de fórmulas.
+//! SRP: Solo define tipos de error y el bridge a DomainError.
 
 use crate::domain::errors::{DomainError, ErrorCode};
 

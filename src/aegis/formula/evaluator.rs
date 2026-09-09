@@ -1,6 +1,8 @@
-// aegis/formula/evaluator.rs — Evaluador RPN desacoplado.
-// ISP: Solo expone evaluate(). No conoce parseo ni compilación SQL.
-// DIP: Depende de traits (VariableResolver, FormulaFunction), NO de implementaciones concretas.
+//! Decoupled RPN formula evaluator.
+//!
+//! Evaluador RPN desacoplado.
+//! ISP: Solo expone evaluate(). No conoce parseo ni compilación SQL.
+//! DIP: Depende de traits (VariableResolver, FormulaFunction), NO de implementaciones concretas.
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;

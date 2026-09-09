@@ -1,5 +1,7 @@
-// aegis/oltp/hydrator.rs
-// SRP: Encapsular hidratación de entidades (EAV → JSON Rows in-memory), control de cache y calentamiento selectivo.
+//! Entity hydration — EAV to JSON rows with cache control.
+//!
+//! aegis/oltp/hydrator.rs
+//! SRP: Encapsular hidratación de entidades (EAV → JSON Rows in-memory), control de cache y calentamiento selectivo.
 
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};

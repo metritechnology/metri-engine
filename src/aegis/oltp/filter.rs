@@ -1,6 +1,8 @@
-// aegis/oltp/filter.rs
-// Evaluador de FilterNode in-memory para el motor OLTP (EAV).
-// SRP: Evaluar si un row JSON cumple con un conjunto de predicados definidos en el AST/FilterNode.
+//! In-memory FilterNode evaluator for the OLTP engine.
+//!
+//! aegis/oltp/filter.rs
+//! Evaluador de FilterNode in-memory para el motor OLTP (EAV).
+//! SRP: Evaluar si un row JSON cumple con un conjunto de predicados definidos en el AST/FilterNode.
 
 use serde_json::Value;
 use tracing::warn;

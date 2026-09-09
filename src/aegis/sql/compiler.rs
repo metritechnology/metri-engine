@@ -1,5 +1,7 @@
-// aegis/sql/compiler.rs
-// Principal OLAP AST IR to SQL compiler. Orchestrates AST parsing, validation, and sea-query rendering.
+//! Principal OLAP compiler — AST IR to SQL via sea-query.
+//!
+//! aegis/sql/compiler.rs
+//! Principal OLAP AST IR to SQL compiler. Orchestrates AST parsing, validation, and sea-query rendering.
 
 use crate::aegis::ast_ir::{AstIr, OutputCast};
 use crate::aegis::sql::cte_compiler::{

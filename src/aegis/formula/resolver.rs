@@ -1,6 +1,8 @@
-// aegis/formula/resolver.rs — Trait para resolución de variables.
-// LSP: OltpVariableResolver y OlapVariableResolver son intercambiables.
-// DIP: evaluator.rs depende de este trait, NO de implementaciones concretas.
+//! Variable resolution trait for formula contexts.
+//!
+//! Trait para resolución de variables.
+//! LSP: OltpVariableResolver y OlapVariableResolver son intercambiables.
+//! DIP: evaluator.rs depende de este trait, NO de implementaciones concretas.
 
 /// Contrato para resolver el valor de una variable en el contexto de una fórmula.
 /// Abstrae la diferencia entre OLAP (columna SQL) y OLTP (row JSON).

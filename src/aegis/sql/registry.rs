@@ -1,5 +1,7 @@
-// aegis/sql/registry.rs
-// Registry for dynamic configurations of hybrid/EAV/rollup entities.
+//! Registry of dynamic hybrid/EAV/rollup entity configurations.
+//!
+//! aegis/sql/registry.rs
+//! Registry for dynamic configurations of hybrid/EAV/rollup entities.
 
 use lazy_static::lazy_static;
 use std::collections::HashMap;

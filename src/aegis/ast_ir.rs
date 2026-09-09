@@ -1,5 +1,7 @@
-// aegis/ast_ir.rs
-// Typed AST IR representation to decouple from raw JSON values and provide compile-time safety.
+//! Typed AST IR — decoupled from raw JSON with compile-time safety.
+//!
+//! aegis/ast_ir.rs
+//! Typed AST IR representation to decouple from raw JSON values and provide compile-time safety.
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use serde::{Deserialize, Serialize};

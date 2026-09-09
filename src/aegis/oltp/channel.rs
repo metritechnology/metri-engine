@@ -1,5 +1,7 @@
-// src/aegis/oltp/channel.rs
-// SRP: Implementación de IWriteChannel para el Motor OLTP (EAV).
+//! IWriteChannel implementation for the OLTP (EAV) engine.
+//!
+//! src/aegis/oltp/channel.rs
+//! SRP: Implementación de IWriteChannel para el Motor OLTP (EAV).
 
 use serde_json::{json, Value};
 use tracing::{error, info};

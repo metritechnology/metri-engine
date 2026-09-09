@@ -1,5 +1,7 @@
-// aegis/formula/lexer.rs — Convierte un string de fórmula en una secuencia de tokens.
-// SRP: Solo tokeniza. No reordena, no evalúa, no valida semántica.
+//! Formula lexer — formula string to token stream.
+//!
+//! Convierte un string de fórmula en una secuencia de tokens.
+//! SRP: Solo tokeniza. No reordena, no evalúa, no valida semántica.
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::token::{Operator, Token};

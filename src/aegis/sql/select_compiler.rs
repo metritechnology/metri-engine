@@ -1,5 +1,7 @@
-// aegis/sql/select_compiler.rs
-// Compiles AstIr dimensions, metrics, measures and semantic measures into select expressions.
+//! Select compiler — dimensions, metrics and measures to expressions.
+//!
+//! aegis/sql/select_compiler.rs
+//! Compiles AstIr dimensions, metrics, measures and semantic measures into select expressions.
 
 use crate::aegis::ast_ir::{AstIr, Dimension, OutputCast};
 use crate::aegis::formula::compiler_olap::OlapFormulaCompiler;

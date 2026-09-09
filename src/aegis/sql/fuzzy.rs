@@ -1,5 +1,7 @@
-// aegis/sql/fuzzy.rs — Expansor de términos fuzzy para Athena/OLAP y OLTP.
-// SRP: genera expresiones regex exactas de Damerau-Levenshtein 1 y evalúa distancias.
+//! Fuzzy term expansion — exact Damerau-Levenshtein-1 regexes.
+//!
+//! Expansor de términos fuzzy para Athena/OLAP y OLTP.
+//! SRP: genera expresiones regex exactas de Damerau-Levenshtein 1 y evalúa distancias.
 
 use std::cmp::min;
 

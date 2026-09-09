@@ -1,14 +1,16 @@
-// aegis/oltp/compiler.rs — Compilador OLTP: AST IR → plan físico EAV.
-//
-// Conecta la salida del PlanSelector (janus::plan_selector::EavQueryPlan)
-// con el ejecutor físico (eav::reader::query::EavQueryExecutor).
-//
-// Cadena completa:
-//   AST IR (serde_json::Value)
-//     → select_plan()         [plan_selector.rs]
-//     → compile_oltp_query()  [este archivo]
-//     → QueryExecutionPlan    [eav/reader/query.rs]
-//     → execute_plan()
+//! OLTP compiler — AST IR to physical EAV plan.
+//!
+//! Compilador OLTP: AST IR → plan físico EAV.
+//!
+//! Conecta la salida del PlanSelector (janus::plan_selector::EavQueryPlan)
+//! con el ejecutor físico (eav::reader::query::EavQueryExecutor).
+//!
+//! Cadena completa:
+//! AST IR (serde_json::Value)
+//! → select_plan()         [plan_selector.rs]
+//! → compile_oltp_query()  [este archivo]
+//! → QueryExecutionPlan    [eav/reader/query.rs]
+//! → execute_plan()
 
 use serde_json::Value;
 use tracing::debug;

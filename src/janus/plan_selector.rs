@@ -1,8 +1,12 @@
-// janus/plan_selector.rs — Paso 5: Selección del índice EAV óptimo
-// Blueprint: JANUS - Rust.md §I.2 Paso 5 — Plan Selection
-//
-// Analiza el AST IR compilado y selecciona el QueryPlan más eficiente:
-// Prioridad: PointLookup > AvetSingleFilter > AvetIntersection > FtsSearch > AevtScan
+//! Step 5 — optimal EAV index selection.
+//!
+//! Paso 5: Selección del índice EAV óptimo
+//!
+//! # Origin
+//! Blueprint: JANUS - Rust.md §I.2 Paso 5 — Plan Selection
+//!
+//! Analiza el AST IR compilado y selecciona el QueryPlan más eficiente:
+//! Prioridad: PointLookup > AvetSingleFilter > AvetIntersection > FtsSearch > AevtScan
 
 use serde_json::Value;
 use tracing::debug;

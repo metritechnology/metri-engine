@@ -1,11 +1,15 @@
-// temporal/adapters.rs — Adaptadores temporales: TimeRange → cláusulas engine-específicas.
-//
-// SRP: traducir {start_ts, end_ts} epoch-s a la sintaxis de cada motor.
-//
-// Adaptadores disponibles:
-//   to_datalog_clauses  → cláusulas Datahike (convierte a ms con s_to_ms)
-// to_honey_clause → el stack anterior BETWEEN para Athena/SQL (serde_json)
-// to_bucket_fn → fn de bucketing el stack anterior para OLTP TIMESERIES
+//! Temporal adapters — TimeRange to engine-specific clauses.
+//!
+//! Adaptadores temporales: TimeRange → cláusulas engine-específicas.
+//!
+//! traducir {start_ts, end_ts} epoch-s a la sintaxis de cada motor.
+//!
+//! Adaptadores disponibles:
+//! to_datalog_clauses  → cláusulas Datahike (convierte a ms con s_to_ms)
+//!
+//! # Origin
+//! to_honey_clause → el stack anterior BETWEEN para Athena/SQL (serde_json)
+//! to_bucket_fn → fn de bucketing el stack anterior para OLTP TIMESERIES
 
 use crate::temporal::core::{s_to_ms, truncate_to_unit, CalUnit, TimeRange};
 use serde_json::{json, Value};

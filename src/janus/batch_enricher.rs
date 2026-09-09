@@ -1,6 +1,8 @@
-// janus/batch_enricher.rs — Enriquecedor de queries pre-compilación.
-// SRP: aplica BatchContext.common-filters y DashboardCrossFilterContext
-//      al mapa de sub-queries antes de que el AST compiler los procese.
+//! Pre-compilation query enricher — batch and cross-filters.
+//!
+//! Enriquecedor de queries pre-compilación.
+//! aplica BatchContext.common-filters y DashboardCrossFilterContext
+//! al mapa de sub-queries antes de que el AST compiler los procese.
 
 use serde_json::Value;
 

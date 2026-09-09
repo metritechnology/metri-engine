@@ -1,5 +1,7 @@
-// aegis/formula/functions_registry.rs — Registro dinámico de funciones.
-// OCP: Nuevas funciones se REGISTRAN sin modificar el evaluador ni el parser.
+//! Dynamic function registry — extend without touching the evaluator.
+//!
+//! Registro dinámico de funciones.
+//! OCP: Nuevas funciones se REGISTRAN sin modificar el evaluador ni el parser.
 
 use crate::aegis::formula::functions::FormulaFunction;
 use std::collections::HashMap;

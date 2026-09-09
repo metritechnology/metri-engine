@@ -1,14 +1,17 @@
-// temporal/time_frame.rs — Resuelve TimeFrameContext → {start_ts, end_ts} epoch-segundos.
-//
-// SSOT — reemplaza metres.aegis.time-frame en el stack anterior.
-//
-// CORRECCIONES vs la implementación anterior:
-//   1. CUSTOM_RANGE: el proto envía epoch-MILISEGUNDOS → se convierte con ms_to_s
-//   2. Todos los shifts usan shift_by_calendar (chrono) — bisiesto-safe, DST-aware
-//   3. ALL_TIME retorna {start_ts: None, end_ts: None} de forma explícita
-//   4. Tipo no reconocido retorna None (loggeable upstream)
-//
-// 29 tipos soportados (28 relativos + CUSTOM_RANGE).
+//! TimeFrame resolution — named windows to epoch ranges.
+//!
+//! Resuelve TimeFrameContext → {start_ts, end_ts} epoch-segundos.
+//!
+//! # Origin
+//! SSOT — reemplaza metres.aegis.time-frame en el stack anterior.
+//!
+//! CORRECCIONES vs la implementación anterior:
+//! 1. CUSTOM_RANGE: el proto envía epoch-MILISEGUNDOS → se convierte con ms_to_s
+//! 2. Todos los shifts usan shift_by_calendar (chrono) — bisiesto-safe, DST-aware
+//! 3. ALL_TIME retorna {start_ts: None, end_ts: None} de forma explícita
+//! 4. Tipo no reconocido retorna None (loggeable upstream)
+//!
+//! 29 tipos soportados (28 relativos + CUSTOM_RANGE).
 
 use crate::temporal::core::{self as t, ms_to_s, shift_by_calendar, CalUnit, TimeRange};
 

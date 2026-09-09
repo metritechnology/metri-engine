@@ -1,6 +1,8 @@
-// aegis/sql/dialect.rs
-// Trait SqlDialect y su implementación para Athena/Presto.
-// DIP/OCP: Permite desacoplar el compilador de consultas SQL de funciones y sintaxis específicas de Athena.
+//! SqlDialect trait — engine-specific rendering behind a port.
+//!
+//! aegis/sql/dialect.rs
+//! Trait SqlDialect y su implementación para Athena/Presto.
+//! DIP/OCP: Permite desacoplar el compilador de consultas SQL de funciones y sintaxis específicas de Athena.
 
 pub trait SqlDialect: Send + Sync {
     /// Formatea un operador regex match (ej: regexp_like en Athena, REGEXP en MySQL, ~* en Postgres)

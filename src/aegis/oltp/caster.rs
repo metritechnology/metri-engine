@@ -1,5 +1,7 @@
-// aegis/oltp/caster.rs
-// SRP: Encapsular el formateo, agrupamiento y agregación final en memoria de los rows (KPI, TIMESERIES, PIE, BUBBLE).
+//! Output caster — final formatting, grouping and row aggregation.
+//!
+//! aegis/oltp/caster.rs
+//! SRP: Encapsular el formateo, agrupamiento y agregación final en memoria de los rows (KPI, TIMESERIES, PIE, BUBBLE).
 
 use crate::aegis::formula::{
     lexer, parser, FormulaEvaluator, FunctionRegistry, OltpVariableResolver,

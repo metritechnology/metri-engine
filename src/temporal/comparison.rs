@@ -1,11 +1,13 @@
-// temporal/comparison.rs — Resolución de AnalyticalComparison → períodos de comparación.
-//
-// CORRECCIONES vs implementación anterior:
-//   1. Todos los shortcuts usan shift_by_calendar (chrono) — bisiesto-safe
-//   2. SAME_PERIOD_LAST_YEAR ya no usa 365*86400 fijo
-//   3. SAME_PERIOD_LAST_QUARTER ya no usa 91*86400 fijo
-//   4. Timezone propagada en todos los shortcuts
-//   5. TIME_SHIFT_RELATIVE usa shift_by_calendar — 'month' es mes real
+//! AnalyticalComparison resolution — comparison periods.
+//!
+//! Resolución de AnalyticalComparison → períodos de comparación.
+//!
+//! CORRECCIONES vs implementación anterior:
+//! 1. Todos los shortcuts usan shift_by_calendar (chrono) — bisiesto-safe
+//! 2. SAME_PERIOD_LAST_YEAR ya no usa 365*86400 fijo
+//! 3. SAME_PERIOD_LAST_QUARTER ya no usa 91*86400 fijo
+//! 4. Timezone propagada en todos los shortcuts
+//! 5. TIME_SHIFT_RELATIVE usa shift_by_calendar — 'month' es mes real
 
 use crate::temporal::core::{
     shift_by_calendar, CalUnit, ComparisonPeriod, TimeRange, SMART_HISTORY_DAYS,

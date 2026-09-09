@@ -1,3 +1,4 @@
+//! Normalizer for BulkIngest requests.
 use crate::janus::normalizer::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 

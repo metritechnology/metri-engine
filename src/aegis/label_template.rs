@@ -1,5 +1,7 @@
-// aegis/label_template.rs — Interpolación de label templates Mustache-style.
-// SRP: resolución pura de templates — sin I/O, sin estado.
+//! Mustache-style label template interpolation.
+//!
+//! Interpolación de label templates Mustache-style.
+//! SRP: resolución pura de templates — sin I/O, sin estado.
 
 use once_cell::sync::Lazy;
 use regex::Regex;

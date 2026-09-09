@@ -1,22 +1,25 @@
-// aegis/oltp/comparison.rs — AnalyticalComparison: 5 tipos del contrato §4.
-//
-// SRP: computar comparaciones temporales sobre rows EAV en memoria — sin I/O.
-//
-// Estrategias (paralelo al path el stack anterior/OLAP):
-//   TIME_SHIFT_RELATIVE  → shift_by_calendar(N × granularidad) via temporal::comparison
-//   TIME_SHIFT_SHORTCUT  → resolve_shortcut via temporal::comparison (bisiesto-safe)
-//   TIME_SHIFT_ABSOLUTE  → ventana explícita absolute_start_ts / absolute_end_ts
-//   SMART                → smart_history_window(90d) via temporal::comparison → z_score
-//   BENCHMARK            → valor inline en resultado (sin query adicional)
-//
-// Diferencia respecto al path OLAP (Athena/SQL):
-//   SQL   → CTEs WITH prev_0 / smart_N + CROSS JOIN / LEFT JOIN en bucket
-//   Rust  → rows ya hidratados en memoria + filtro temporal inline
-//
-// Resolución de períodos:
-//   ✅ Delegada a temporal::comparison (shift_by_calendar, chrono) — única SSOT
-//   ✅ Bisiesto-safe, DST-aware, timezone propagada
-//   ✅ No más aritmética fija (30*86400, 365*86400) en este módulo
+//! AnalyticalComparison — the five temporal comparison strategies.
+//!
+//! AnalyticalComparison: 5 tipos del contrato §4.
+//!
+//! SRP: computar comparaciones temporales sobre rows EAV en memoria — sin I/O.
+//!
+//! # Origin
+//! Estrategias (paralelo al path el stack anterior/OLAP):
+//! TIME_SHIFT_RELATIVE  → shift_by_calendar(N × granularidad) via temporal::comparison
+//! TIME_SHIFT_SHORTCUT  → resolve_shortcut via temporal::comparison (bisiesto-safe)
+//! TIME_SHIFT_ABSOLUTE  → ventana explícita absolute_start_ts / absolute_end_ts
+//! SMART                → smart_history_window(90d) via temporal::comparison → z_score
+//! BENCHMARK            → valor inline en resultado (sin query adicional)
+//!
+//! Diferencia respecto al path OLAP (Athena/SQL):
+//! SQL   → CTEs WITH prev_0 / smart_N + CROSS JOIN / LEFT JOIN en bucket
+//! Rust  → rows ya hidratados en memoria + filtro temporal inline
+//!
+//! Resolución de períodos:
+//! ✅ Delegada a temporal::comparison (shift_by_calendar, chrono) — única SSOT
+//! ✅ Bisiesto-safe, DST-aware, timezone propagada
+//! ✅ No más aritmética fija (30*86400, 365*86400) en este módulo
 
 use serde_json::{json, Value};
 use tracing::warn;

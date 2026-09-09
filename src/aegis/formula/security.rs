@@ -1,5 +1,7 @@
-// aegis/formula/security.rs — Validación de seguridad para fórmulas.
-// SRP: Solo valida. No parsea, no evalúa, no compila.
+//! Formula security validation — what the sandbox rejects.
+//!
+//! Validación de seguridad para fórmulas.
+//! SRP: Solo valida. No parsea, no evalúa, no compila.
 
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use once_cell::sync::Lazy;

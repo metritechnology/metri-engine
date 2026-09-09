@@ -1,3 +1,4 @@
+//! Normalizer for Explore requests.
 use crate::janus::normalizer::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 

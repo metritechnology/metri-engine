@@ -1,5 +1,7 @@
-// aegis/sql/cte_compiler.rs
-// Compiles comparison CTE queries (TIME_SHIFT, SMART, BENCHMARK) using sea-query.
+//! Comparison CTE compiler (TIME_SHIFT, SMART, BENCHMARK).
+//!
+//! aegis/sql/cte_compiler.rs
+//! Compiles comparison CTE queries (TIME_SHIFT, SMART, BENCHMARK) using sea-query.
 
 use crate::aegis::ast_ir::{AstIr, ComparisonDef, OutputCast};
 use crate::aegis::sql::dialect::SqlDialect;

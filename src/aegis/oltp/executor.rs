@@ -1,5 +1,7 @@
-// aegis/oltp/executor.rs — Ejecutor que coordina EAV y Aegis.
-// Orquesta: compile → execute_native_plan → hydrate (con cache + streaming filters) → sort → output cast.
+//! OLTP executor — coordinates compile, execute, hydrate and cast.
+//!
+//! Ejecutor que coordina EAV y Aegis.
+//! Orquesta: compile → execute_native_plan → hydrate (con cache + streaming filters) → sort → output cast.
 
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};

@@ -1,5 +1,7 @@
-// aegis/formula/parser.rs — Convierte tokens infix a cola RPN (Reverse Polish Notation).
-// SRP: Solo reordena tokens. No tokeniza, no evalúa, no compila a SQL.
+//! Infix-to-RPN parser (shunting-yard).
+//!
+//! Convierte tokens infix a cola RPN (Reverse Polish Notation).
+//! SRP: Solo reordena tokens. No tokeniza, no evalúa, no compila a SQL.
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
