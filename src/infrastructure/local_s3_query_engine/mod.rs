@@ -1,19 +1,21 @@
-// infrastructure/local_s3_query_engine/mod.rs — Motor de consultas sobre S3 para entornos locales.
-// Lee los datos REALES escritos por Firehose (OlapChannel) directamente desde S3,
-// sin depender de Athena (no disponible en LocalStack).
-//
-// Contrato:
-//   - Implementa IQueryEngine (start_query / get_query_results)
-//   - Schema-driven: usa Codice para coerción de tipos
-//   - Entity-agnostic: funciona para cualquier entidad OLAP
-//
-// Fase 5 (PLAN_CORRECCIONES_PENDIENTES): descompuesto en módulos por
-// responsabilidad, cada uno con su red propia:
-//   - sql_parse: parseo del SQL de Aegis (entidad, proyecciones, filtros, CTEs)
-//   - pipeline: el camino en memoria (filtros, rango temporal, agregación,
-//     proyección) — puro, testeado sin S3
-//   - este archivo queda como orquestador + la lectura de S3 (que se extrae
-//     en el commit siguiente)
+//! Local S3 query engine — real data without Athena, for local dev.
+//!
+//! infrastructure/local_s3_query_engine/mod.rs — Motor de consultas sobre S3 para entornos locales.
+//! Lee los datos REALES escritos por Firehose (OlapChannel) directamente desde S3,
+//! sin depender de Athena (no disponible en LocalStack).
+//!
+//! Contrato:
+//! - Implementa IQueryEngine (start_query / get_query_results)
+//! - Schema-driven: usa Codice para coerción de tipos
+//! - Entity-agnostic: funciona para cualquier entidad OLAP
+//!
+//! Fase 5 (PLAN_CORRECCIONES_PENDIENTES): descompuesto en módulos por
+//! responsabilidad, cada uno con su red propia:
+//! - sql_parse: parseo del SQL de Aegis (entidad, proyecciones, filtros, CTEs)
+//! - pipeline: el camino en memoria (filtros, rango temporal, agregación,
+//! proyección) — puro, testeado sin S3
+//! - este archivo queda como orquestador + la lectura de S3 (que se extrae
+//! en el commit siguiente)
 
 mod lake_reader;
 mod pipeline;

@@ -1,3 +1,7 @@
+//! gRPC composition root — dependency wiring for the services.
+//!
+//! Construye las dependencias concretas (cliente DynamoDB, canales de
+//! escritura, registry del Códice) y las inyecta en los servicios gRPC.
 use crate::aegis::oltp::executor::OltpExecutor;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::janus_router::router::IWriteChannel;

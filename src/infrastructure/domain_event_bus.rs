@@ -1,11 +1,13 @@
-// domain_event_bus — adaptadores del puerto application::ports::DomainEventPublisher.
-//
-// Dos implementaciones, una misma frontera:
-//   - ContractEventPublisher: EventBridge real (producción).
-//   - NoopEventPublisher: tests y composition roots sin AWS.
-//
-// El adaptador conoce EventBridge; el canal OLTP sólo conoce el trait. Cambiar
-// de bus — o publicar vía outbox — no toca el write path.
+//! Domain event bus adapters — EventBridge real and outbox.
+//!
+//! domain_event_bus — adaptadores del puerto application::ports::DomainEventPublisher.
+//!
+//! Dos implementaciones, una misma frontera:
+//! - ContractEventPublisher: EventBridge real (producción).
+//! - NoopEventPublisher: tests y composition roots sin AWS.
+//!
+//! El adaptador conoce EventBridge; el canal OLTP sólo conoce el trait. Cambiar
+//! de bus — o publicar vía outbox — no toca el write path.
 
 use std::sync::Arc;
 

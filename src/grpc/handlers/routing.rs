@@ -1,3 +1,4 @@
+//! MatchRoutingRulesBatch RPC body.
 use crate::grpc::handlers::query_support::{fc_to_fbs_filter_node, fc_to_proto_filter_node};
 use crate::grpc::pb::{
     MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse, MatchRoutingRulesResponse,

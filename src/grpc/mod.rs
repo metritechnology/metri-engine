@@ -1,3 +1,7 @@
+//! grpc — the API surface: Tonic server, interceptors, translation, handlers.
+//!
+//! El módulo `pb` aloja el código generado por tonic (`include_proto!`) —
+//! exento de lints y de auditorías por diseño.
 pub mod pb {
     // Código generado por tonic (include_proto!) — usa unwrap()/expect() por
     // diseño y queda exento de los lints del patrón Result (§4.4).

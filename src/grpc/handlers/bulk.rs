@@ -1,3 +1,4 @@
+//! BulkIngest RPC body.
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::grpc::pb::{BulkRequest, BulkResponse};
 use crate::grpc::service::MetriGrpcService;

@@ -1,5 +1,7 @@
-// infrastructure/glue.rs — Glue schema sync para tablas OLAP Iceberg.
-// Zero-Drop Policy: mismo mapeo de tipos Códice→Glue y lógica de sync.
+//! Glue schema sync for OLAP Iceberg tables.
+//!
+//! Glue schema sync para tablas OLAP Iceberg.
+//! Zero-Drop Policy: mismo mapeo de tipos Códice→Glue y lógica de sync.
 
 use std::collections::HashSet;
 

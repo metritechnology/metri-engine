@@ -1,3 +1,4 @@
+//! Authorization checks shared by the RPC handlers.
 use crate::grpc::service::MetriGrpcService;
 use tonic::Status;
 use tracing::error;

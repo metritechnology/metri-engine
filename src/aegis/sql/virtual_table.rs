@@ -1,3 +1,4 @@
+//! Virtual tables — unions over hybrid EAV/rollup entities for OLAP.
 use crate::aegis::sql::dialect::SqlDialect;
 use crate::aegis::sql::registry::{get_hybrid_config, HybridEntityConfig};
 use crate::temporal::core::TimeRange;

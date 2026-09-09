@@ -1,6 +1,10 @@
-// infrastructure/sqs.rs — SQSFifoBus implementando ISqsBus.
-// En el stack anterior: (defrecord SQSFifoBus [client queue-url])
-// En Rust:    aws-sdk-sqs + ISqsBus trait
+//! SQSFifoBus — ISqsBus implementation.
+//!
+//! SQSFifoBus implementando ISqsBus.
+//!
+//! # Origin
+//! En el stack anterior: (defrecord SQSFifoBus [client queue-url])
+//! En Rust:    aws-sdk-sqs + ISqsBus trait
 
 use async_trait::async_trait;
 use aws_sdk_sqs::Client;

@@ -1,3 +1,4 @@
+//! Transact RPC body.
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::grpc::pb::{TransactionRequest, TransactionResponse};
 use crate::grpc::service::MetriGrpcService;

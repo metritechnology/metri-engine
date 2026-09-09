@@ -1,6 +1,10 @@
-// infrastructure/eventbridge.rs — EventBridgeClient implementando IEventBus.
-// En el stack anterior: cognitect/aws :events PutEvents
-// En Rust:    aws-sdk-eventbridge
+//! EventBridgeClient — IEventBus implementation.
+//!
+//! EventBridgeClient implementando IEventBus.
+//!
+//! # Origin
+//! En el stack anterior: cognitect/aws :events PutEvents
+//! En Rust:    aws-sdk-eventbridge
 
 use async_trait::async_trait;
 use aws_sdk_eventbridge::Client;

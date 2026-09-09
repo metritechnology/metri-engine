@@ -1,3 +1,4 @@
+//! OLTP channel execution — native EAV plan execution and casting.
 use crate::aegis::oltp::executor::OltpExecutor;
 use crate::janus::aggregator::apply_output_cast_fbs;
 use crate::janus::ast_compiler::compile_ast_fbs;

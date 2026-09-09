@@ -1,5 +1,7 @@
-// grpc/server.rs — Inicializador del Servidor gRPC Tonic
-// SRP: Configura el servidor HTTP/2 y los interceptores para AWS Lambda.
+//! Tonic gRPC server bootstrap for AWS Lambda.
+//!
+//! Inicializador del Servidor gRPC Tonic
+//! Configura el servidor HTTP/2 y los interceptores para AWS Lambda.
 
 use http::Method;
 use std::net::SocketAddr;

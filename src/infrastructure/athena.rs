@@ -1,9 +1,13 @@
-// infrastructure/athena.rs — AthenaQueryEngine implementando IQueryEngine.
-// En el stack anterior: AthenaClient SDK v2 Java.
-// En Rust:    aws-sdk-athena — polling de resultados con coerción de tipos.
-//
-// Este módulo es el cliente PURO de AWS Athena para producción.
-// En desarrollo local (LocalStack), se usa LocalS3QueryEngine en su lugar.
+//! AthenaQueryEngine — IQueryEngine implementation.
+//!
+//! AthenaQueryEngine implementando IQueryEngine.
+//!
+//! # Origin
+//! En el stack anterior: AthenaClient SDK v2 Java.
+//! En Rust:    aws-sdk-athena — polling de resultados con coerción de tipos.
+//!
+//! Este módulo es el cliente PURO de AWS Athena para producción.
+//! En desarrollo local (LocalStack), se usa LocalS3QueryEngine en su lugar.
 
 use std::collections::HashMap;
 use std::time::Duration;

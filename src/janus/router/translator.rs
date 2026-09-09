@@ -1,3 +1,4 @@
+//! FBS to domain translators for the read path.
 use crate::codice::global as codice_global;
 use crate::janus::fbs::AnalyticsRequestT;
 use serde_json::{json, Value};

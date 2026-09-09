@@ -1,9 +1,13 @@
-// infrastructure/tenant_guard.rs — Aislamiento multitenant en la capa EAV.
-// En el stack anterior: Pool Model gate para Datahike + schema verification.
-// En Rust:    TenantGuard valida que todo I/O tenga tenant_id en el PK.
-//
-// Zero-Drop Policy: replicas query_with_tenant, transact_with_tenant!,
-// y el chequeo de schema (adapt: en EAV, el "schema" es el CodeRegistry).
+//! TenantGuard — multitenant isolation at the EAV layer.
+//!
+//! Aislamiento multitenant en la capa EAV.
+//!
+//! # Origin
+//! En el stack anterior: Pool Model gate para Datahike + schema verification.
+//! En Rust:    TenantGuard valida que todo I/O tenga tenant_id en el PK.
+//!
+//! Zero-Drop Policy: replicas query_with_tenant, transact_with_tenant!,
+//! y el chequeo de schema (adapt: en EAV, el "schema" es el CodeRegistry).
 
 use crate::codice::CodeRegistry;
 use crate::domain::errors::{DomainError, ErrorCode};

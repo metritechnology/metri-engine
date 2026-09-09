@@ -1,28 +1,30 @@
-// grpc/quota_service.rs — Implementación de gRPC para QuotaService.
-//
-// Responsabilidades:
-//   1. Ofrecer endpoints atómicos para que el MCP Proxy reserve y concilie tokens.
-//   2. Apoyarse en `quota::QuotaResolver` para localizar la cuota vigente y en
-//      `quota::QuotaLedger` para aplicarla.
-//   3. Guardar cada reserva en un store compartido, de modo que la concilie la
-//      réplica que la abrió o cualquier otra.
-//
-// LO QUE CAMBIÓ Y POR QUÉ
-// ───────────────────────
-// Hasta la fase 2 las reservas vivían en un `HashMap` de este proceso y el
-// `reservation_id` llevaba dentro, sin firma, las cifras con las que luego se
-// conciliaba. Eso significaba tres cosas:
-//
-//   · Una conciliación que aterrizaba en otra réplica no encontraba el ticket,
-//     asumía que ya había expirado y cargaba el consumo real — mientras la
-//     réplica dueña reintegraba además la estimación entera. Se devolvía de más.
-//   · Un reinicio se llevaba las reservas en vuelo y su débito quedaba aplicado
-//     para siempre. Cada despliegue filtraba cuota.
-//   · Cualquier cliente podía fabricar un ticket y aplicar apuntes sobre la
-//     cuota de otro tenant.
-//
-// Ahora el ticket es un ULID opaco, lo que se concilia sale del item guardado, y
-// el tenant del item se contrasta con el de la sesión autenticada.
+//! QuotaService gRPC implementation.
+//!
+//! Implementación de gRPC para QuotaService.
+//!
+//! Responsabilidades:
+//! 1. Ofrecer endpoints atómicos para que el MCP Proxy reserve y concilie tokens.
+//! 2. Apoyarse en `quota::QuotaResolver` para localizar la cuota vigente y en
+//! `quota::QuotaLedger` para aplicarla.
+//! 3. Guardar cada reserva en un store compartido, de modo que la concilie la
+//! réplica que la abrió o cualquier otra.
+//!
+//! LO QUE CAMBIÓ Y POR QUÉ
+//! ───────────────────────
+//! Hasta la fase 2 las reservas vivían en un `HashMap` de este proceso y el
+//! `reservation_id` llevaba dentro, sin firma, las cifras con las que luego se
+//! conciliaba. Eso significaba tres cosas:
+//!
+//! · Una conciliación que aterrizaba en otra réplica no encontraba el ticket,
+//! asumía que ya había expirado y cargaba el consumo real — mientras la
+//! réplica dueña reintegraba además la estimación entera. Se devolvía de más.
+//! · Un reinicio se llevaba las reservas en vuelo y su débito quedaba aplicado
+//! para siempre. Cada despliegue filtraba cuota.
+//! · Cualquier cliente podía fabricar un ticket y aplicar apuntes sobre la
+//! cuota de otro tenant.
+//!
+//! Ahora el ticket es un ULID opaco, lo que se concilia sale del item guardado, y
+//! el tenant del item se contrasta con el de la sesión autenticada.
 
 use serde_json::json;
 use std::sync::Arc;

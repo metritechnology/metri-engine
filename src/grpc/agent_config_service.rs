@@ -1,9 +1,11 @@
-// grpc/agent_config_service.rs — Implementación de gRPC para AgentConfigService
-//
-// Responsabilidades:
-//   1. Servir las configuraciones dinámicas de módulos y prompts al agente de IA.
-//   2. Resolver locale (es/en) y nivel de detalle (full/compact) para los archivos de prompt.
-//   3. Retornar las rutas de navegación declaradas de forma centralizada.
+//! AgentConfigService gRPC implementation.
+//!
+//! Implementación de gRPC para AgentConfigService
+//!
+//! Responsabilidades:
+//! 1. Servir las configuraciones dinámicas de módulos y prompts al agente de IA.
+//! 2. Resolver locale (es/en) y nivel de detalle (full/compact) para los archivos de prompt.
+//! 3. Retornar las rutas de navegación declaradas de forma centralizada.
 
 use serde::Deserialize;
 use tonic::{Request, Response, Status};

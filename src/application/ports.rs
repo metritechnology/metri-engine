@@ -1,8 +1,10 @@
-// ports — puertos de salida de la aplicación.
-//
-// El error es parte del contrato: `retryable()` es lo que decide reintentos
-// (outbox sweeper) versus DLQ. Clasificar todo como reintentable — el defecto
-// fácil — sólo consigue envenenar la cola con mensajes que nadie puede leer.
+//! Outbound ports — the error contract decides retries vs DLQ.
+//!
+//! ports — puertos de salida de la aplicación.
+//!
+//! El error es parte del contrato: `retryable()` es lo que decide reintentos
+//! (outbox sweeper) versus DLQ. Clasificar todo como reintentable — el defecto
+//! fácil — sólo consigue envenenar la cola con mensajes que nadie puede leer.
 
 use async_trait::async_trait;
 use serde_json::Value;

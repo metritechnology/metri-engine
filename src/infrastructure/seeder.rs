@@ -1,14 +1,16 @@
-// infrastructure/seeder.rs — Fase 4 de PLAN_CORRECCIONES_PENDIENTES.md
-//
-// Lógica pura del seeder de infraestructura OLAP: naming, mapeo de tipos del
-// Códice a Athena, generación del DDL Iceberg, configuración deseada de los
-// delivery streams y detección de drift. Sin I/O — el binario
-// `src/bin/firehose-seeder.rs` es la CLI fina que ejecuta contra AWS.
-//
-// Contexto: el seeder original (`sync-firehose`, era Clojure) desapareció del
-// repo y la configuración viva de Firehose quedó innombrada — la causa de raíz
-// del incidente de entrega (WarehouseLocation inexistente, ver
-// MEDICION_COSTO_OLAP.md §5a). Este módulo devuelve esa gestión al repo.
+//! OLAP infrastructure seeder — pure logic: naming, DDL, drift.
+//!
+//! Fase 4 de PLAN_CORRECCIONES_PENDIENTES.md
+//!
+//! Lógica pura del seeder de infraestructura OLAP: naming, mapeo de tipos del
+//! Códice a Athena, generación del DDL Iceberg, configuración deseada de los
+//! delivery streams y detección de drift. Sin I/O — el binario
+//! `src/bin/firehose-seeder.rs` es la CLI fina que ejecuta contra AWS.
+//!
+//! Contexto: el seeder original (`sync-firehose`, era Clojure) desapareció del
+//! repo y la configuración viva de Firehose quedó innombrada — la causa de raíz
+//! del incidente de entrega (WarehouseLocation inexistente, ver
+//! MEDICION_COSTO_OLAP.md §5a). Este módulo devuelve esa gestión al repo.
 
 use crate::codice::registry::{AttrType, AttributeDescriptor};
 

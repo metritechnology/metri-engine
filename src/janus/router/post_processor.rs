@@ -1,3 +1,4 @@
+//! Row post-processing — label templates over result rows.
 use serde_json::{json, Value};
 
 /// Aplica las plantillas de etiquetas sobre las filas resultantes de forma segura.

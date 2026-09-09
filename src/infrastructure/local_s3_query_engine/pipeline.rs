@@ -1,10 +1,12 @@
-// infrastructure/local_s3_query_engine/pipeline.rs — Fase 5 (commit C)
-//
-// Responsabilidad 2 del motor local: el pipeline en memoria sobre los
-// registros crudos del lake — filtros de igualdad/IN, rango temporal,
-// agregación por grupo y proyección no agregada. Todo puro: registros
-// entra, filas salen — sin I/O. MOVIMIENTO PURO desde
-// `execute_single_query` + red nueva que fija su semántica.
+//! Local query engine — in-memory pipeline over raw lake records.
+//!
+//! infrastructure/local_s3_query_engine/pipeline.rs — Fase 5 (commit C)
+//!
+//! Responsabilidad 2 del motor local: el pipeline en memoria sobre los
+//! registros crudos del lake — filtros de igualdad/IN, rango temporal,
+//! agregación por grupo y proyección no agregada. Todo puro: registros
+//! entra, filas salen — sin I/O. MOVIMIENTO PURO desde
+//! `execute_single_query` + red nueva que fija su semántica.
 
 use serde_json::Value;
 use std::collections::HashMap;

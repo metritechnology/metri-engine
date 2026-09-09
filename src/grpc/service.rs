@@ -1,5 +1,7 @@
-// grpc/service.rs — Implementación de gRPC (Tonic)
-// SRP: Implementa la interfaz gRPC `MetriService`.
+//! MetriService gRPC implementation.
+//!
+//! Implementación de gRPC (Tonic)
+//! Implementa la interfaz gRPC `MetriService`.
 
 use std::sync::Arc;
 

@@ -1,9 +1,13 @@
-// infrastructure/dynamodb.rs — Cliente DynamoDB AWS SDK v1 para Rust.
-// En el stack anterior: cognitect.aws.client.api — Cognitect SDK directo.
-// En Rust:    aws-sdk-dynamodb — AWS SDK oficial.
-//
-// Zero-Drop Policy: replica get_item, put_item!, update_item!, delete_item!
-// y todos sus códigos de error (INFRA_DDB_001..005).
+//! DynamoDB client adapter — official AWS SDK wrapper.
+//!
+//! Cliente DynamoDB AWS SDK v1 para Rust.
+//!
+//! # Origin
+//! En el stack anterior: cognitect.aws.client.api — Cognitect SDK directo.
+//! En Rust:    aws-sdk-dynamodb — AWS SDK oficial.
+//!
+//! Zero-Drop Policy: replica get_item, put_item!, update_item!, delete_item!
+//! y todos sus códigos de error (INFRA_DDB_001..005).
 
 use std::collections::HashMap;
 

@@ -1,3 +1,4 @@
+//! OLAP channel execution — compile to FBS and query Athena.
 use crate::domain::protocols::IQueryEngine;
 use crate::janus::ast_compiler::compile_ast_internal;
 use crate::janus::fbs::AnalyticsRequestT;

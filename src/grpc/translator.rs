@@ -1,5 +1,7 @@
-// grpc/translator.rs — Traductores DTO ↔ Domain
-// SRP: Convierte mensajes protobuf gRPC a estructuras internas JSON/Domain.
+//! DTO translators — protobuf messages to domain structures.
+//!
+//! Traductores DTO ↔ Domain
+//! Convierte mensajes protobuf gRPC a estructuras internas JSON/Domain.
 
 use crate::domain::errors::DomainError;
 use crate::grpc::pb::QueryRequest;

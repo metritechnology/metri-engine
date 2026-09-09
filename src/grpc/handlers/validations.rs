@@ -1,3 +1,4 @@
+//! Shared request validations for the RPC handlers.
 use crate::grpc::service::MetriGrpcService;
 use crate::janus_router::oltp_channel::extract_entity_id;
 use tonic::Status;

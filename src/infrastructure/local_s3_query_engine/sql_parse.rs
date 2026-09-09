@@ -1,8 +1,10 @@
-// infrastructure/local_s3_engine/sql_parse.rs — Fase 5 (commit B)
-//
-// Responsabilidad 1 del motor local: parsear el SQL que compila Aegis.
-// MOVIMIENTO PURO desde `local_s3_query_engine.rs` — ni una línea de
-// semántica cambiada; el corpus de caracterización viaja con el módulo.
+//! Local query engine — parses the SQL compiled by Aegis.
+//!
+//! infrastructure/local_s3_engine/sql_parse.rs — Fase 5 (commit B)
+//!
+//! Responsabilidad 1 del motor local: parsear el SQL que compila Aegis.
+//! MOVIMIENTO PURO desde `local_s3_query_engine.rs` — ni una línea de
+//! semántica cambiada; el corpus de caracterización viaja con el módulo.
 
 use serde_json::Value;
 use std::collections::HashMap;

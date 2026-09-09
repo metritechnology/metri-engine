@@ -1,10 +1,12 @@
-// infrastructure/audit/interceptor.rs — AuditInterceptorImpl
-//
-// Se invoca SIEMPRE al final de cada request (Ok o Err).
-// Captura el request completo, calcula ActionType y envía un registro al
-// stream de Kinesis (OLAP) audit_log.
-//
-// Es fire-and-forget, nunca falla el request original.
+//! AuditInterceptorImpl — always invoked, absorbs its own errors.
+//!
+//! AuditInterceptorImpl
+//!
+//! Se invoca SIEMPRE al final de cada request (Ok o Err).
+//! Captura el request completo, calcula ActionType y envía un registro al
+//! stream de Kinesis (OLAP) audit_log.
+//!
+//! Es fire-and-forget, nunca falla el request original.
 
 use chrono::Utc;
 use serde_json::{json, Value};

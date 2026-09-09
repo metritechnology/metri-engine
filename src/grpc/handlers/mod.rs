@@ -1,4 +1,4 @@
-//! Cuerpos de los RPC del `MetriGrpcService`, separados por dominio (fase 2).
+//! RPC bodies of the MetriGrpcService, split by domain.
 //!
 //! `grpc/service.rs` conserva la raíz de dependencias (`ServiceDeps`), el
 //! struct y el `impl` del trait gRPC como delegación pura; aquí vive el

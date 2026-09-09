@@ -1,3 +1,4 @@
+//! S3 exports — query results as CSV with presigned download URLs.
 use async_trait::async_trait;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::Client as S3Client;

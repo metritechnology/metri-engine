@@ -1,9 +1,11 @@
-// eav/writer/test_support.rs — Inicialización del Códice para tests puros.
-//
-// Los módulos nuevos del writer (outbox, datom_plan) son puros, pero validan
-// contra el registry global; estos tests necesitan config/models cargado una
-// sola vez por proceso. Los tests de integración (tests/writer_tests.rs) tienen
-// su propia copia local — no se tocan.
+//! Test support — one-shot Codice initialization for pure writer tests.
+//!
+//! Inicialización del Códice para tests puros.
+//!
+//! Los módulos nuevos del writer (outbox, datom_plan) son puros, pero validan
+//! contra el registry global; estos tests necesitan config/models cargado una
+//! sola vez por proceso. Los tests de integración (tests/writer_tests.rs) tienen
+//! su propia copia local — no se tocan.
 
 /// Dos cuidados, ya aprendidos en saga_tests: `Once` serializa nuestros tests,
 /// y `catch_unwind` DENTRO del `Once` tolera la carrera con otros módulos de

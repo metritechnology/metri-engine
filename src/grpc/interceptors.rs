@@ -1,5 +1,7 @@
-// grpc/interceptors.rs — WAF + Auth gRPC middleware
-// SRP: Intercepta peticiones para asegurar Zero-Trust y límites WAF.
+//! gRPC interceptors — WAF limits, HMAC auth, Cedar fail-closed.
+//!
+//! WAF + Auth gRPC middleware
+//! Intercepta peticiones para asegurar Zero-Trust y límites WAF.
 
 use tonic::{Request, Status};
 use tracing::debug;

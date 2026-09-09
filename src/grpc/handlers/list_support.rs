@@ -1,3 +1,4 @@
+//! ListEntities support — filter validation, sorting and truncation.
 use crate::domain::errors::DomainError;
 // Handlers del MetriGrpcService — fase 2: service.rs delega, aquí vive el cuerpo.
 

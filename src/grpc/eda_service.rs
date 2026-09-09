@@ -1,5 +1,7 @@
-// grpc/eda_service.rs — Servidor gRPC MoiraRoutingService
-// SRP: Expone extremos asíncronos para el Event Router en Golang.
+//! MoiraRoutingService gRPC server — for the Go event router.
+//!
+//! Servidor gRPC MoiraRoutingService
+//! Expone extremos asíncronos para el Event Router en Golang.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status};

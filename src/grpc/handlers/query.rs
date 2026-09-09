@@ -1,3 +1,4 @@
+//! Query RPC body — server-side streaming.
 use crate::grpc::handlers::query_support::*;
 use crate::grpc::pb::{QueryRequest, QueryResponse};
 use crate::grpc::service::MetriGrpcService;

@@ -1,6 +1,8 @@
-// otel/tracer.rs — wrapper OTel para Metri Engine.
-// FASE 1: usa tracing puro para structured logging.
-// FASE 2: integrar opentelemetry-otlp completo con exportador a X-Ray/Grafana.
+//! OpenTelemetry tracer wrapper.
+//!
+//! wrapper OTel para Metri Engine.
+//! FASE 1: usa tracing puro para structured logging.
+//! FASE 2: integrar opentelemetry-otlp completo con exportador a X-Ray/Grafana.
 
 use opentelemetry::trace::TraceContextExt;
 use tracing::Span;

@@ -1,9 +1,11 @@
-// infrastructure/local_s3_query_engine/lake_reader.rs — Fase 5 (commit D)
-//
-// Responsabilidad 3 del motor local: la lectura del lake — listar objetos
-// del prefijo de la entidad y descargar JSON-lines con caché en memoria
-// (40 descargas concurrentes). Es la ÚNICA pieza con I/O; todo lo demás
-// del motor es puro (sql_parse, pipeline).
+//! Local query engine — lake reading with in-memory cache.
+//!
+//! infrastructure/local_s3_query_engine/lake_reader.rs — Fase 5 (commit D)
+//!
+//! Responsabilidad 3 del motor local: la lectura del lake — listar objetos
+//! del prefijo de la entidad y descargar JSON-lines con caché en memoria
+//! (40 descargas concurrentes). Es la ÚNICA pieza con I/O; todo lo demás
+//! del motor es puro (sql_parse, pipeline).
 
 use std::collections::HashMap;
 

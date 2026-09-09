@@ -1,9 +1,13 @@
-// infrastructure/session_store.rs — HMACTokenStore.
-// En el stack anterior: (defrecord HMACTokenStore [secret ddb-client table-name])
-// En Rust:    struct HmacTokenStore — implementa ISessionStore
-//
-// Zero-Drop Policy: replica verify_signature con constant-time comparison,
-// blacklist check en DynamoDB, revocación y des-revocación.
+//! HmacTokenStore — ISessionStore implementation.
+//!
+//! HMACTokenStore.
+//!
+//! # Origin
+//! En el stack anterior: (defrecord HMACTokenStore [secret ddb-client table-name])
+//! En Rust:    struct HmacTokenStore — implementa ISessionStore
+//!
+//! Zero-Drop Policy: replica verify_signature con constant-time comparison,
+//! blacklist check en DynamoDB, revocación y des-revocación.
 
 use std::sync::Arc;
 

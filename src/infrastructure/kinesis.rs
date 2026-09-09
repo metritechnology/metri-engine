@@ -1,6 +1,10 @@
-// infrastructure/kinesis.rs — KinesisFirehoseWriter implementando IStreamWriter.
-// En el stack anterior: (defrecord KinesisFirehoseWriter [client]) → put-record!
-// En Rust:    aws-sdk-firehose (Firehose se mapea aquí)
+//! KinesisFirehoseWriter — IStreamWriter implementation.
+//!
+//! KinesisFirehoseWriter implementando IStreamWriter.
+//!
+//! # Origin
+//! En el stack anterior: `(defrecord KinesisFirehoseWriter [client])` → put-record!
+//! En Rust:    aws-sdk-firehose (Firehose se mapea aquí)
 
 use async_trait::async_trait;
 use aws_sdk_firehose::primitives::Blob;
