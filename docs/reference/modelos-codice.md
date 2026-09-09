@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **60**
+Total de modelos: **58**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -15,7 +15,7 @@ Total de modelos: **60**
 | `asset` | oltp | `name`, `tag`, `serial_number`, `barcode_qr_code`, `status`, `criticality`, `location_id`, `parent_asset_id`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `specifications`, `custom_attributes` |
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | oltp | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
-| `check_list` | oltp | `work_order_id`, `work_order_task_id`, `form_template_id`, `title`, `description`, `is_completed` |
+| `check_list` | oltp | `work_order_id`, `form_template_id`, `title`, `description`, `is_completed` |
 | `check_list_item` | oltp | `check_list_section_id`, `form_template_field_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_file_ids`, `response_signature_id`, `observations`, `completed_by`, `completed_at` |
 | `check_list_section` | oltp | `check_list_id`, `form_template_section_id`, `section_order`, `title`, `description`, `is_completed` |
 | `company` | oltp | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
@@ -40,10 +40,10 @@ Total de modelos: **60**
 | `iot_device_profile` | oltp | `name`, `inbound_metric_rules`, `inbound_metadata_rules`, `outbound_command_templates` |
 | `iot_harvester_config` | oltp | `asset_id`, `device_profile_id`, `target_url`, `port`, `polling_interval_seconds`, `schedule_type`, `cron_expression`, `auth_type`, `credentials`, `payload_format`, `http_method`, `http_headers`, `request_payload`, `url_query_params`, `mapping_directive` |
 | `iot_subscription` | oltp | `asset_id`, `device_profile_id`, `aws_thing_name`, `topic_pattern`, `subscription_status`, `batch_window_seconds` |
-| `labor_log` | oltp | `work_order_id`, `work_order_task_id`, `work_order_task_item_id`, `user_id`, `start_time`, `end_time`, `duration_minutes`, `hourly_rate`, `task_description` |
+| `labor_log` | oltp | `work_order_id`, `user_id`, `start_time`, `end_time`, `duration_minutes`, `hourly_rate`, `task_description` |
 | `location` | oltp | `name`, `tag`, `floc_code`, `type`, `status`, `criticality`, `risk_probability_score`, `risk_impact_score`, `parent_location_id`, `description`, `omniclass_code`, `omniclass_name`, `coordinates_geojson`, `address_street`, `address_city`, `address_state_province`, `address_postal_code`, `address_country_iso2`, `area_value`, `area_unit`, `timezone`, `cost_center`, `primary_contact_user_id`, `custom_attributes`, `photo_ids` |
 | `meter_reading` | olap | `asset_id`, `location_id`, `iot_subscription_id`, `device_profile_id`, `aws_thing_name`, `metric_code`, `reading_value`, `raw_value`, `unit_of_measure`, `terminology_system`, `data_quality`, `protocol`, `source_address`, `timestamp`, `ingested_at`, `metadata` |
-| `note` | oltp | `content`, `author_id`, `timestamp`, `work_order_task_id` |
+| `note` | oltp | `content`, `author_id`, `timestamp`, `work_order_id` |
 | `outbox_event` | oltp | `status`, `detail_type`, `payload`, `retry_count`, `retry_at`, `claimed_at`, `created_at` |
 | `part` | oltp | `name`, `sku`, `barcode`, `description`, `category`, `default_unit_cost_cents`, `min_quantity`, `uom`, `currency` |
 | `preventive_maintenance` | oltp | `asset_id`, `cron_expression`, `advance_notice_days`, `meter_based_trigger`, `advance_notice_meter_value`, `iana_timezone`, `prenotify_before_minutes`, `next_due_date`, `recurrence_basis`, `status` |
@@ -56,8 +56,6 @@ Total de modelos: **60**
 | `scheduled_job` | oltp | `parent_entity_ref`, `created_by`, `trigger_type`, `trigger_expression`, `iana_timezone`, `action_type`, `target_user_id`, `target_group_id`, `target_role_id`, `target_webhook_id`, `action_payload`, `idempotency_hash`, `status`, `last_run_at`, `run_count`, `last_error` |
 | `sequence_registry` | oltp | `tenant_id`, `sequence_code`, `prefix`, `padding_length`, `current_value`, `parent_scope_tag` |
 | `shift_pattern` | oltp | `name`, `user_id`, `user_group_id`, `grammar`, `cron_expression`, `iana_timezone`, `span_minutes`, `productive_factor`, `reactive_reserve_pct`, `effective_from`, `effective_to`, `status` |
-| `task_template` | oltp | `procedure_order`, `name`, `description`, `estimated_duration_minutes`, `required_role_id` |
-| `task_template_item` | oltp | `task_template_id`, `step_order`, `description` |
 | `technician_shift` | oltp | `user_id`, `shift_date`, `start_time`, `end_time`, `status`, `shift_pattern_id`, `kind`, `absence_reason` |
 | `tenant` | oltp | `name`, `tag`, `status`, `tier`, `require_mfa_for_new_users`, `mfa_policy`, `mfa_allowed_methods`, `session_max_idle_minutes`, `industry`, `timezone`, `currency`, `language`, `billing_admin_email`, `logo`, `config` |
 | `tenant_plugin` | oltp | `tenant_id`, `plugin_id`, `status`, `config` |

@@ -41,7 +41,7 @@
       ],
       "default_value": "PENDING",
       "is_dimension": true,
-      "description": "Avance del procedimiento dentro de la OT, en paridad con work_order_task.status."
+      "description": "Avance del procedimiento dentro de la OT, en paridad con work_order.status."
     },
     {
       "name": "score",

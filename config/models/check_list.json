@@ -13,13 +13,6 @@
       "is_dimension": true
     },
     {
-      "name": "work_order_task_id",
-      "type": "reference",
-      "entityRef": "work_order_task",
-      "cardinality": "one",
-      "description": "Permite asentar jer\u00e1rquicamente esta lista de inspecci\u00f3n debajo de una fase de trabajo espec\u00edfica (y no solo gen\u00e9ricamente a la orden ra\u00edz)."
-    },
-    {
       "name": "form_template_id",
       "type": "reference",
       "entityRef": "form_template",

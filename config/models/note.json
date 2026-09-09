@@ -26,11 +26,12 @@
       "is_dimension": true
     },
     {
-      "name": "work_order_task_id",
+      "name": "work_order_id",
       "type": "reference",
-      "entityRef": "work_order_task",
+      "entityRef": "work_order",
       "cardinality": "one",
       "required": true,
+      "index": true,
       "is_dimension": true
     }
   ]

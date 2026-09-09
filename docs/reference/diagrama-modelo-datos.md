@@ -1,6 +1,6 @@
 # Diagrama del Modelo de Datos (Códice)
 
-> Fuente única: `config/models/*.json` (62 modelos). Este documento es un mapa visual
+> Fuente única: `config/models/*.json` (58 modelos). Este documento es un mapa visual
 > de acompañamiento — la referencia campo a campo vive en
 > [modelos-codice.md](modelos-codice.md) (generada). Si el catálogo cambia,
 > regenerar las aristas: las relaciones de este doc derivan de los atributos
@@ -24,13 +24,13 @@ Las relaciones **polimórficas** (nombre de entidad + id en campos string, sin
 ```mermaid
 flowchart LR
     subgraph CMMS["Núcleo CMMS (ejecución)"]
-        WO["work_order + tasks<br/>labor_log · downtime · notes"]
+        WO["work_order<br/>labor_log · downtime · notes<br/>check_list · procedures"]
     end
     subgraph PLAN["Planificación"]
         PM["preventive_maintenance<br/>scheduled_job · reminder<br/>calendar_event"]
     end
     subgraph PROT["Protocolos (plantillas de trabajo)"]
-        TT["task_template · procedure<br/>form_template"]
+        TT["procedure<br/>form_template"]
     end
     subgraph EXEC["Instancias de formulario"]
         CL["check_list · work_order_procedure"]
@@ -56,7 +56,6 @@ flowchart LR
     WO --> CL
     CL --> TT
     PLAN --> WO
-    PROT --> PLAN
     METER --> AS
     INV --> AS
     IOT --> METER
@@ -88,18 +87,11 @@ flowchart TB
     WO -->|"scheduled_job_id (unique ⫦)"| SJ["scheduled_job 🔒"]
     WO -->|"completed_by"| U
 
-    TASK["work_order_task<br/>(fase de la orden)"]
-    WO -->|"work_order_id"| TASK
-    TASK -->|"task_template_id"| TT["task_template"]
-    TASK -->|"asset_id"| ASSET
-    TASK -. "note_ids" .-> NOTE["note"]
-    TASK -. "evidence_file_ids" .-> FILE["file 🔒"]
+    NOTE["note<br/>(auditable)"] -->|"work_order_id"| WO
+    NOTE -->|"author_id"| U
 
-    ITEM["work_order_task_item<br/>(sub-paso con evidencias)"]
-    TASK -->|"work_order_task_id"| ITEM
-    ITEM -->|"task_template_item_id"| TTI["task_template_item"]
-    ITEM -. "labor_log_ids" .-> LL["labor_log<br/>hora × tarifa"]
-    LL -->|"work_order_task_item_id"| ITEM
+    LL["labor_log<br/>hora × tarifa"] -->|"work_order_id"| WO
+    LL -->|"user_id"| U
 
     CL["check_list<br/>(inspección instanciada)"]
     WO -->|"work_order_id"| CL
@@ -116,7 +108,8 @@ flowchart TB
 
 Restricción viva: `constraints` de `work_order` — **una OT por
 (`scheduled_job_id`, `asset_id`)** por tenant: es la idempotencia definitiva del
-loop preventivo (una ruta ENUMERATED genera N OTs del mismo job, una por parada).
+loop preventivo (un mismo disparo puede materializar una OT por activo sin que
+el reintento duplique ninguna).
 
 ⭑ `location_id` es `is_sequence_scope`: el contador `work_order_number` se
 Scoped por ubicación (`WO-L-K92MXA-0043`); si solo viene `asset_id`, el scope se
@@ -126,14 +119,14 @@ resuelve vía `is_sequence_scope_via` (nearest_registered).
 
 ## 3. De la planificación y los protocolos a la orden de trabajo
 
-Los tres sistemas de "protocolo → instancia" cuelgan **directamente de la OT**
-(la antigua capa intermedia `work_order_template` + sus paradas de ruta se
-retiró del catálogo el 2026-09-09).
+Dos sistemas de "protocolo → instancia" cuelgan **directamente de la OT**. La
+capa intermedia `work_order_template` (+ paradas de ruta) y el sistema de
+tareas `task_template(_item)` + `work_order_task(_item)` se retiraron del
+catálogo el 2026-09-09: los procedimientos son el único protocolo formal.
 
 ```mermaid
 flowchart LR
     subgraph DEFS["Protocolos (definición)"]
-        TT["task_template → task_template_item"]
         PR["procedure → procedure_field<br/>(12 tipos · scoring)"]
         FT["form_template → section → field<br/>(10 tipos)"]
     end
@@ -146,7 +139,6 @@ flowchart LR
     end
 
     subgraph RUN["Instancia runtime"]
-        WO2 --> TASK2["work_order_task ← task_template"]
         WO2 --> WPR2["work_order_procedure ← procedure"]
         WO2 --> CL2["check_list ← form_template"]
         REQ2["request"] -.->|"convert_to_work_order"| WO2
@@ -155,7 +147,6 @@ flowchart LR
 
 | Sistema | Definición | Instancia | Uso |
 |---|---|---|---|
-| Task templates | `task_template(_item)` | `work_order_task(_item)` | Protocolo de tareas por OT |
 | Procedures | `procedure(_field)` | `work_order_procedure(_field)` | Protocolo formal con scoring (estilo MaintainX) |
 | Form templates | `form_template(_section/_field)` | `check_list(_section/_item)` | Checklists de inspección y `request` |
 
@@ -278,27 +269,26 @@ catálogo no las valida estructuralmente:
 - `work_order_template` y `work_order_template_stop` ya no existen en el
   catálogo. Consecuencias aplicadas: `preventive_maintenance.template_id`
   eliminada (la saga sigue materializando la OT con asset + trazabilidad de
-  pauta y job); `task_template` y `procedure` quedan como protocolos autónomos
-  que la OT instancia directamente; `work_order_task` perdió el puntero
-  `work_order_template_stop_id`. El validador descarta claves desconocidas, así
-  que los payloads que aún envíen `template_id`/`work_order_template_id` no se
-  rompen — metri-app debe dejar de enviarlos.
+  pauta y job); los protocolos quedan anclados directamente a la OT. El
+  validador descarta claves desconocidas,
+  así que los payloads que aún envíen `template_id`/`work_order_template_id` no
+  se rompen — metri-app debe dejar de enviarlos.
+- Segunda ola, misma fecha: `work_order_task`, `work_order_task_item`,
+  `task_template` y `task_template_item` retirados — **los procedimientos son
+  el único protocolo formal**. Reencuadres aplicados: `note` ahora ancla a
+  `work_order_id` (antes `work_order_task_id`); `labor_log` imputa solo a la OT
+  (fuera `work_order_task_id` y `work_order_task_item_id`); `check_list` perdió
+  su anclaje jerárquico a tareas.
 
 **Candidatos a deprecación que exigen decisión de producto/migración de datos**
 (no tocar sin conciliar el dato vivo):
 
 1. `provider` ≅ subconjunto pobre de `company` (que ya tiene
    `company_type: PROVIDER`); ningún modelo referencia ya a `provider`.
-2. Tres sistemas paralelos de protocolos (§3): `procedure` repite campo a campo
-   a `task_template` + lifecycle/scoring. Definir cuál es el camino y deprecir
-   el otro con migración.
-3. `labor_log.hourly_rate` es `decimal` sin `_cents` ni divisa hermana — viola
+2. `labor_log.hourly_rate` es `decimal` sin `_cents` ni divisa hermana — viola
    la convención de unidad menor del [README](../../config/models/README.md).
-4. `iot_alert_rule.notify_groups` apunta a `role` mientras
+3. `iot_alert_rule.notify_groups` apunta a `role` mientras
    `scheduled_job`/`reminder` usan `user_group` para "grupo".
-5. `note.work_order_task_id` es `required`, pero
-   `work_order_task_item.note_ids` declara la inversa — las notas de ítem no
-   tienen campo espejo.
-6. Doble vía de adjuntos: arrays `*_file_ids` + asociación polimórfica de
+4. Doble vía de adjuntos: arrays `*_file_ids` + asociación polimórfica de
    `file.owner_entity_*`.
-7. `dashboardBI` es la única entidad en camelCase.
+5. `dashboardBI` es la única entidad en camelCase.
