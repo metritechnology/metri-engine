@@ -292,7 +292,7 @@
         "scheduled_job_id",
         "asset_id"
       ],
-      "description": "Una OT por (disparo, activo). El par —no el job solo— porque una ruta ENUMERATED materializa N OTs del MISMO job, una por parada: reclamar solo el job bloquearía la segunda parada. El reintento de una parada no duplica su OT ni toca las demás. Las OT manuales sin scheduled_job_id o con asset_id vacío no reclaman nada (huella_clave ignora claves con atributos ausentes)."
+      "description": "Una OT por (disparo, activo). El par —no el job solo— permite que un mismo disparo materialice una OT por activo sin bloquear la segunda. El reintento de un disparo no duplica su OT ni toca las demás. Las OT manuales sin scheduled_job_id o con asset_id vacío no reclaman nada (huella_clave ignora claves con atributos ausentes)."
     }
   ],
   "event_rules": [

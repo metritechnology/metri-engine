@@ -242,7 +242,6 @@ async fn test_preventive_maintenance_saga_projection_extensions() {
     let m = model("preventive_maintenance");
     let payload = json!({
         "asset_id": "01ASSET",
-        "template_id": "01TEMPLATE",
         "cron_expression": "0 8 1 */6 *",
         "iana_timezone": "America/Bogota",
         "next_due_date": 1_780_300_800i64
@@ -272,7 +271,6 @@ async fn test_preventive_maintenance_saga_projection_extensions() {
     };
     assert_eq!(ap["entity_type"], json!("work_order"));
     assert_eq!(ap["content"]["asset_id"], json!("01ASSET"));
-    assert_eq!(ap["payload"]["work_order_template_id"], json!("01TEMPLATE"));
     assert_eq!(
         ap["payload"]["preventive_maintenance_id"],
         json!("01PM_PARENT")
@@ -286,6 +284,11 @@ async fn test_preventive_maintenance_saga_projection_extensions() {
 /// el payload. Este test congela el payload EXACTO que envía metri-app —con la
 /// referencia escalar, el `advance_notice_meter_value` nulo de la sección
 /// oculta y sin `id` de cliente (ADR-006)— y exige que valide y proyecte.
+///
+/// Actualización (2026-09-09): la capa work_order_template se eliminó del
+/// Códice; `template_id` ya no es atributo del modelo y el validador descarta
+/// la clave en silencio (itera el esquema, no el payload). metri-app debe
+/// dejar de enviarla; mientras tanto, el CREATE no se rompe.
 #[tokio::test]
 async fn el_payload_de_create_del_panel_valida_y_proyecta() {
     let m = model("preventive_maintenance");
@@ -300,14 +303,13 @@ async fn el_payload_de_create_del_panel_valida_y_proyecta() {
         "tenant_id": "01M12AGKPCR3YDYW9HG9ZQYXS6"
     });
 
-    // 1. La validación de la entidad acepta el payload completo y la
-    //    referencia escalar sobrevive como Str (el síntoma en producción era
-    //    un CDX_001 que no la veía).
+    // 1. La validación de la entidad acepta el payload completo y descarta
+    //    `template_id` (clave huérfana desde la retirada de la plantilla).
     let attrs = crate::codice::validator::validate_payload(&m, &payload, "tnt_1", true)
         .expect("el payload de Create PM Plan debe validar contra el Códice");
     assert!(
-        matches!(attrs.get("template_id"), Some(DatomValue::Str(s)) if s == "01M1EYF5MPFCH65NRRAGJJ8KY6"),
-        "template_id debe sobrevivir a la validación: {:?}",
+        attrs.get("template_id").is_none(),
+        "template_id ya no es atributo del modelo y debe descartarse: {:?}",
         attrs.get("template_id")
     );
 
@@ -334,7 +336,6 @@ async fn el_payload_de_create_del_panel_valida_y_proyecta() {
 async fn saga_payload_valida_contra_el_codice() {
     let m = model("preventive_maintenance");
     let payload = json!({
-        "template_id": "01M1EYF5MPFCH65NRRAGJJ8KY6",
         "asset_id": "01ASSET",
         "cron_expression": "0 9 * * *",
         "iana_timezone": "UTC",

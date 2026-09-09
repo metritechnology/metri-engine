@@ -1,6 +1,6 @@
 # Diagrama del Modelo de Datos (Códice)
 
-> Fuente única: `config/models/*.json` (64 modelos). Este documento es un mapa visual
+> Fuente única: `config/models/*.json` (62 modelos). Este documento es un mapa visual
 > de acompañamiento — la referencia campo a campo vive en
 > [modelos-codice.md](modelos-codice.md) (generada). Si el catálogo cambia,
 > regenerar las aristas: las relaciones de este doc derivan de los atributos
@@ -27,7 +27,7 @@ flowchart LR
         WO["work_order + tasks<br/>labor_log · downtime · notes"]
     end
     subgraph PLAN["Planificación"]
-        PM["preventive_maintenance<br/>work_order_template · scheduled_job<br/>reminder · calendar_event"]
+        PM["preventive_maintenance<br/>scheduled_job · reminder<br/>calendar_event"]
     end
     subgraph PROT["Protocolos (plantillas de trabajo)"]
         TT["task_template · procedure<br/>form_template"]
@@ -88,10 +88,9 @@ flowchart TB
     WO -->|"scheduled_job_id (unique ⫦)"| SJ["scheduled_job 🔒"]
     WO -->|"completed_by"| U
 
-    TASK["work_order_task<br/>(fase; nace de parada de ruta)"]
+    TASK["work_order_task<br/>(fase de la orden)"]
     WO -->|"work_order_id"| TASK
     TASK -->|"task_template_id"| TT["task_template"]
-    TASK -->|"work_order_template_stop_id"| STOP["work_order_template_stop"]
     TASK -->|"asset_id"| ASSET
     TASK -. "note_ids" .-> NOTE["note"]
     TASK -. "evidence_file_ids" .-> FILE["file 🔒"]
@@ -125,39 +124,31 @@ resuelve vía `is_sequence_scope_via` (nearest_registered).
 
 ---
 
-## 3. De la plantilla a la instancia (los tres sistemas de protocolo)
+## 3. De la planificación y los protocolos a la orden de trabajo
 
-Este es el plano que más confusión resuelve: hay **tres sistemas paralelos** de
-"plantilla → instancia", cada uno con su capa de definición y su capa runtime.
+Los tres sistemas de "protocolo → instancia" cuelgan **directamente de la OT**
+(la antigua capa intermedia `work_order_template` + sus paradas de ruta se
+retiró del catálogo el 2026-09-09).
 
 ```mermaid
 flowchart LR
-    subgraph DEFS["Definición"]
-        WOT["work_order_template<br/>SINGLE · ENUMERATED · CRITERIA"]
-        WOTS["work_order_template_stop<br/>(parada de ruta)"]
+    subgraph DEFS["Protocolos (definición)"]
         TT["task_template → task_template_item"]
         PR["procedure → procedure_field<br/>(12 tipos · scoring)"]
         FT["form_template → section → field<br/>(10 tipos)"]
-        WOT -->|stops| WOTS
-        WOTS -->|task_template_id| TT
-        WOT -->|work_order_template_id| TT
-        WOT -->|work_order_template_id| PR
-        PR --> PF["procedure_field"]
     end
 
-    subgraph GEN["Generación"]
+    subgraph GEN["Generación preventiva"]
         PM["preventive_maintenance<br/>(CRON o umbral de medidor)"]
-        PM -->|template_id| WOT
         PM -->|"saga (shadow_sagas_mapping)"| SJ["scheduled_job 🔒"]
         SJ -->|"materializa + constraint unique"| WO2["work_order"]
         SEQ["sequence_registry 🔒"] -.->|"scope del contador"| WO2
     end
 
     subgraph RUN["Instancia runtime"]
-        WO2 --> TASK2["work_order_task"]
-        WOTS -.->|"work_order_template_stop_id"| TASK2
-        WO2 --> CL2["check_list ← form_template"]
+        WO2 --> TASK2["work_order_task ← task_template"]
         WO2 --> WPR2["work_order_procedure ← procedure"]
+        WO2 --> CL2["check_list ← form_template"]
         REQ2["request"] -.->|"convert_to_work_order"| WO2
     end
 ```
@@ -282,6 +273,17 @@ catálogo no las valida estructuralmente:
   solo aplica a enums) → ahora `enum` con los 4 valores que `moira.rs` escribe
   realmente (PENDING · PROCESSING · FAILED · DELIVERED).
 
+**Capa retirada por decisión de simplificación (2026-09-09):**
+
+- `work_order_template` y `work_order_template_stop` ya no existen en el
+  catálogo. Consecuencias aplicadas: `preventive_maintenance.template_id`
+  eliminada (la saga sigue materializando la OT con asset + trazabilidad de
+  pauta y job); `task_template` y `procedure` quedan como protocolos autónomos
+  que la OT instancia directamente; `work_order_task` perdió el puntero
+  `work_order_template_stop_id`. El validador descarta claves desconocidas, así
+  que los payloads que aún envíen `template_id`/`work_order_template_id` no se
+  rompen — metri-app debe dejar de enviarlos.
+
 **Candidatos a deprecación que exigen decisión de producto/migración de datos**
 (no tocar sin conciliar el dato vivo):
 
@@ -294,11 +296,9 @@ catálogo no las valida estructuralmente:
    la convención de unidad menor del [README](../../config/models/README.md).
 4. `iot_alert_rule.notify_groups` apunta a `role` mientras
    `scheduled_job`/`reminder` usan `user_group` para "grupo".
-5. `estimated_duration_minutes`: `integer` en `work_order_template` pero
-   `decimal` en `work_order_task`/`task_template`/`procedure`.
-6. `note.work_order_task_id` es `required`, pero
+5. `note.work_order_task_id` es `required`, pero
    `work_order_task_item.note_ids` declara la inversa — las notas de ítem no
    tienen campo espejo.
-7. Doble vía de adjuntos: arrays `*_file_ids` + asociación polimórfica de
+6. Doble vía de adjuntos: arrays `*_file_ids` + asociación polimórfica de
    `file.owner_entity_*`.
-8. `dashboardBI` es la única entidad en camelCase.
+7. `dashboardBI` es la única entidad en camelCase.

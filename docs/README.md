@@ -14,6 +14,7 @@
 | [PLAN_DOCUMENTACION.md](architecture/PLAN_DOCUMENTACION.md) | Equipo + contribuidores | Reglas de documentación (idioma, títulos, cobertura por archivo) y fases |
 | [PLAN_PATRON_RESULT.md](architecture/PLAN_PATRON_RESULT.md) | Equipo + contribuidores | Patrón Result: reglas, catálogo de errores y auditor (cumplido) |
 | [PLAN_REFACTORIZACION.md](architecture/PLAN_REFACTORIZACION.md) | Equipo | Plan vivo de rediseño de la arquitectura |
+| [PLAN_REFACTORIZACION_MODELO.md](architecture/PLAN_REFACTORIZACION_MODELO.md) | Equipo | Simplificación del catálogo Códice: fases, deudas de modelado y contratos metri-app |
 | [PLAN_REFACTORIZACION_CEDAR.md](architecture/PLAN_REFACTORIZACION_CEDAR.md) | Equipo | Rediseño del módulo de autorización |
 | [PLAN_CORRECCIONES_PENDIENTES.md](architecture/PLAN_CORRECCIONES_PENDIENTES.md) | Equipo | Correcciones planificadas y su estado |
 | [PLAN_COSTO_OLAP.md](architecture/PLAN_COSTO_OLAP.md) · [MEDICION_COSTO_OLAP.md](architecture/MEDICION_COSTO_OLAP.md) | Equipo | Costos y medición del canal OLAP |

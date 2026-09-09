@@ -218,10 +218,6 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
     assert!(procedure
         .attributes
         .iter()
-        .any(|a| a.name == "work_order_template_id" && a.attr_type == AttrType::Reference));
-    assert!(procedure
-        .attributes
-        .iter()
         .any(|a| a.name == "lifecycle_state"
             && a.attr_type == AttrType::Enum
             && a.options.contains(&"PUBLISHED".to_string())));

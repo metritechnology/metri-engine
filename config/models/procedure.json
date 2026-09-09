@@ -5,17 +5,9 @@
   "track_history": true,
   "attributes": [
     {
-      "name": "work_order_template_id",
-      "type": "reference",
-      "entityRef": "work_order_template",
-      "cardinality": "one",
-      "index": true,
-      "description": "Plantilla de OT a la que sirve este procedimiento formal en modo SINGLE (paridad con task_template). Al materializar la OT, cada procedure PUBLISHED se instancia como work_order_procedure con sus campos tipados."
-    },
-    {
       "name": "procedure_order",
       "type": "integer",
-      "description": "Orden del procedimiento dentro de una plantilla SINGLE (en rutas, el orden lo dan las paradas). El materializador ordena por este campo; empates por name para determinismo."
+      "description": "Orden del procedimiento en el protocolo. El materializador ordena por este campo; empates por name para determinismo."
     },
     {
       "name": "name",

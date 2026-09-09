@@ -11,15 +11,7 @@
       "cardinality": "one",
       "required": false,
       "is_dimension": true,
-      "description": "Sujeto de la pauta cuando su plantilla es SINGLE. Vacío cuando la plantilla declara sus propias paradas o su criterio."
-    },
-    {
-      "name": "template_id",
-      "type": "reference",
-      "entityRef": "work_order_template",
-      "cardinality": "one",
-      "required": true,
-      "description": "El Qué. Enlace asimétrico hacia la Plantilla Abstracta que rige el procedimiento, herramientas y roles a desplegar."
+      "description": "Sujeto de la pauta: el activo al que se le ejecuta el mantenimiento periódico."
     },
     {
       "name": "cron_expression",
@@ -90,23 +82,8 @@
     "action_payload.content.asset_id": [
       "asset_id"
     ],
-    "action_payload.payload.work_order_template_id": [
-      "template_id"
-    ],
     "action_payload.payload.preventive_maintenance_id": [
       "__self"
-    ],
-    "target_group_id": [
-      "template_id",
-      "assigned_group_id"
-    ],
-    "target_role_id": [
-      "template_id",
-      "assigned_role_id"
-    ],
-    "action_payload.content.template_id": [
-      "template_id",
-      "notification_template_code"
     ]
   },
   "event_rules": [

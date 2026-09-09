@@ -225,8 +225,6 @@ fn build_metric_alias(m: &MetricDefinitionT) -> String {
 ///
 /// Resolución de períodos delegada a `temporal::comparison::resolve_comparison_period`
 /// (shift_by_calendar — chrono — bisiesto-safe, DST-aware).
-///
-///                metrics comparisons resolved-tf current-metrics ts-field)]
 pub fn run_comparisons(
     all_rows: &[Value],
     metrics: &[MetricDefinitionT],
