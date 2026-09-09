@@ -77,10 +77,10 @@
     {
       "name": "notify_groups",
       "type": "reference",
-      "entityRef": "role",
+      "entityRef": "user_group",
       "cardinality": "many",
       "required": false,
-      "description": "Lista de grupos (roles) a notificar en masa, por ejemplo, 'Mantenimiento Planta Sur'."
+      "description": "Grupos (user_group) a notificar cuando la regla dispara. Misma semántica que scheduled_job.target_group_id y reminder.target_group_id."
     },
     {
       "name": "is_multi_asset",
