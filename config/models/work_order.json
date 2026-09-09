@@ -275,6 +275,13 @@
       "type": "epoch",
       "index": true,
       "description": "Momento del cierre efectivo de la OT (el completedAt de MaintainX). El KPI de cumplimiento a plazo compara este instante contra sla_resolution_due_date."
+    },
+    {
+      "name": "custom_attributes",
+      "type": "json",
+      "subtype": "flat_map",
+      "is_dimension": true,
+      "description": "Diccionario clave-valor flexible para campos personalizados del cliente sin alterar el esquema."
     }
   ],
   "constraints": [
