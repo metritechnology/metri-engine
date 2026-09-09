@@ -39,14 +39,24 @@
       "default_rollup": "sum"
     },
     {
-      "name": "hourly_rate",
-      "type": "decimal",
-      "description": "Rate at the time the labor was logged"
-    },
-    {
       "name": "task_description",
       "type": "string",
       "fts": true
+    },
+    {
+      "name": "hourly_rate_cents",
+      "type": "number",
+      "is_measure": true,
+      "default_rollup": "sum",
+      "description": "Tarifa horaria al momento del registro, en la unidad menor de la divisa (céntimos)."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "is_dimension": true,
+      "default_value": "USD",
+      "description": "Divisa ISO 4217 de la tarifa. Por defecto hereda la del tenant."
     }
   ]
 }
