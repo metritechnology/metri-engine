@@ -699,9 +699,11 @@ async fn test_tenant_and_quota_master_crud_gates() {
     assert!(res.is_err());
     let err = res.err().unwrap();
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
+    // F4: la fila `tenant` PROPIA ya no la bloquea el gate maestro sino el
+    // GRANT de autoservicio (según la acción: CREATE) — mensaje accionable.
     assert!(err
         .message()
-        .contains("Only master tenant users can mutate tenant"));
+        .contains("requiere el permiso tenant:CREATE"));
 
     // 2. Mutate 'domain_quota' as non-master user -> Expect PermissionDenied (Auth403)
     let payload = serde_json::json!({
@@ -734,10 +736,10 @@ async fn test_tenant_and_quota_master_crud_gates() {
         .message()
         .contains("Only master tenant users can mutate domain_quota"));
 
-    // 3.5 Autoservicio: un tenant NO maestro muta SU PROPIA fila 'tenant_plugin'
-    // -> el gate maestro NO debe bloquearlo (la config de módulos del panel
-    // /settings/plugins de metri-app persiste aquí). Puede fallar después por
-    // validación de EAV, jamás por PermissionDenied del gate.
+    // 3.5 Autoservicio CON GRANT (F4): un tenant NO maestro muta SU PROPIA fila
+    // 'tenant_plugin' — el gate maestro y el ABAC de dominio no aplican, pero
+    // el usuario debe llevar el grant `tenant_plugin:UPDATE` en su rol. El
+    // harness 'regular-role' no tiene grants: sin ellos → 403 ACCIONABLE.
     {
         let payload = serde_json::json!({
             "tenant_id": "tnt_regular",
@@ -749,7 +751,7 @@ async fn test_tenant_and_quota_master_crud_gates() {
             tenant_id: "tnt_regular".to_string(),
             entity_type: "tenant_plugin".to_string(),
             entity_id: "tplug_self".to_string(),
-            action: 1, // CREATE
+            action: 2, // UPDATE
             payload: Some(translator::value_to_struct(&payload)),
             suppress_events: false,
         };
@@ -765,11 +767,87 @@ async fn test_tenant_and_quota_master_crud_gates() {
             .insert("test-roles", "regular-role".parse().unwrap());
 
         let res = service.transact(grpc_req).await;
+        let err = res.err().expect("sin grant el self-service debe rechazarse");
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+        assert!(
+            err.message()
+                .contains("requiere el permiso tenant_plugin:UPDATE"),
+            "mensaje sin guía de acción: {}",
+            err.message()
+        );
+    }
+
+    // 3.5b Autoservicio de la fila `tenant` PROPIA sin grant → 403 accionable
+    // (editar Cuenta Empresarial exige tenant:UPDATE).
+    {
+        let payload = serde_json::json!({
+            "id": "tnt_regular",
+            "name": "Regular"
+        });
+        let req = crate::grpc::pb::TransactionRequest {
+            tenant_id: "tnt_regular".to_string(),
+            entity_type: "tenant".to_string(),
+            entity_id: "tnt_regular".to_string(),
+            action: 2, // UPDATE
+            payload: Some(translator::value_to_struct(&payload)),
+            suppress_events: false,
+        };
+        let mut grpc_req = tonic::Request::new(req);
+        grpc_req
+            .metadata_mut()
+            .insert("test-tenant", "tnt_regular".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-user", "usr_regular".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-roles", "regular-role".parse().unwrap());
+
+        let res = service.transact(grpc_req).await;
+        let err = res.err().expect("sin grant la mutación de tenant propia debe rechazarse");
+        assert_eq!(err.code(), tonic::Code::PermissionDenied);
+        assert!(
+            err.message()
+                .contains("requiere el permiso tenant:UPDATE"),
+            "mensaje sin guía de acción: {}",
+            err.message()
+        );
+    }
+
+    // 3.5c Autoservicio como BFF de sistema → el gate y el grant no aplican
+    // (puede fallar después por EAV, jamás por PermissionDenied del grant).
+    {
+        let payload = serde_json::json!({
+            "tenant_id": "tnt_regular",
+            "plugin_id": "cmms",
+            "status": "active",
+            "config": "{}"
+        });
+        let req = crate::grpc::pb::TransactionRequest {
+            tenant_id: "tnt_regular".to_string(),
+            entity_type: "tenant_plugin".to_string(),
+            entity_id: "tplug_self_admin".to_string(),
+            action: 2, // UPDATE
+            payload: Some(translator::value_to_struct(&payload)),
+            suppress_events: false,
+        };
+        let mut grpc_req = tonic::Request::new(req);
+        grpc_req
+            .metadata_mut()
+            .insert("test-tenant", "tnt_regular".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-user", "usr_system_bff".parse().unwrap());
+        grpc_req
+            .metadata_mut()
+            .insert("test-roles", "admin".parse().unwrap());
+
+        let res = service.transact(grpc_req).await;
         if let Err(err) = res {
             assert_ne!(
                 err.code(),
                 tonic::Code::PermissionDenied,
-                "la fila tenant_plugin propia no debe bloquearse por el gate maestro: {}",
+                "el BFF de sistema no debe bloquearse por grant en self-service: {}",
                 err.message()
             );
         }

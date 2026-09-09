@@ -15,6 +15,20 @@ mod mutational;
 pub(crate) use analytical::step4_analytical;
 pub(crate) use mutational::step4_mutational;
 
+/// Claves `dominio:acción` concedidas al principal — la fachada que consumen
+/// los gates de autoservicio (F4 de PLAN_PERMISOS_SYSTEM_CORE.md) sin exponer
+/// el módulo privado `grants`.
+pub(crate) fn principal_grant_keys(
+    principal: &PrincipalData,
+) -> std::collections::HashSet<String> {
+    grants::collect_user_grants(principal, &grants::known_domains())
+}
+
+/// ¿El dominio es conocido por el Códice (o por la lista de respaldo)?
+pub(crate) fn is_known_domain(domain: &str) -> bool {
+    grants::known_domains().iter().any(|d| d == domain)
+}
+
 use crate::cedar::engine::CedarAuthorizer;
 use crate::cedar::ports::PolicyStore;
 use crate::cedar::types::PrincipalData;

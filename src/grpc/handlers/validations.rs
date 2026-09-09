@@ -24,6 +24,27 @@ impl MetriGrpcService {
                     pair
                 )));
             }
+            // F5 · Validación semántica: la ACCIÓN debe existir en el registro
+            // (las custom de approval incluidas). El dominio desconocido solo
+            // advierte — el Códice puede no listar dominios de plugins en alta.
+            const KNOWN_ACTIONS: &[&str] = &[
+                "VIEW", "CREATE", "UPDATE", "DELETE", "UPSERT", "EXECUTE", "EXPORT",
+                "APPROVE", "REJECT", "DELEGATE", "REVOKE",
+            ];
+            if action != "*" && !KNOWN_ACTIONS.contains(&action) {
+                return Err(Status::invalid_argument(format!(
+                    "Invalid grant action '{}' in '{}'. Known actions: {}.",
+                    action,
+                    pair,
+                    KNOWN_ACTIONS.join(", ")
+                )));
+            }
+            if !crate::cedar::is_known_domain(domain) {
+                tracing::warn!(
+                    domain = %domain,
+                    "[validate_role_grants] Dominio de grant no conocido por el Códice: '{}' (se acepta, pero revisa el nombre)", domain
+                );
+            }
             Ok(())
         };
 
@@ -181,22 +202,57 @@ impl MetriGrpcService {
             }
         }
 
-        // Enforce that only master tenant users or system BFF account can mutate tenants and quotas.
-        // Excepción de autoservicio: la fila `tenant_plugin` PROPIA se muta
-        // desde el panel de módulos del tenant (rules.rs::is_self_service_row).
-        if !crate::cedar::SystemSecurityRules::is_self_service_row(
+        // ── Autoservicio con GRANT (F4 de PLAN_PERMISOS_SYSTEM_CORE.md) ────
+        //
+        // Dos filas de SISTEMA se gestionan desde el panel del PROPIO tenant:
+        //   · `tenant_plugin` — configuración de módulos (/settings/plugins).
+        //   · `tenant`        — la propia cuenta (entity_id == llamante):
+        //     branding, idioma, moneda, settings operativos.
+        // Autorización en DOS condiciones: dueño de la fila (el aislamiento de
+        // arriba ya lo garantizó) Y el GRANT `entidad:acción` en los roles del
+        // llamante — el grant del System Core tiene dientes, no es decorativo.
+        // Master, BFF de sistema y roles admin quedan exentos.
+        let own_tenant_row = entity_type == "tenant"
+            && (entity_id == principal.tenant_id || tenant_id == principal.tenant_id);
+        let is_self_service = crate::cedar::SystemSecurityRules::is_self_service_row(
             entity_type,
             tenant_id,
             &principal.tenant_id,
-        ) {
-            if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
-                entity_type,
-                &principal.tenant_id,
-                &principal.user_id,
-                "mutate",
-            ) {
-                return Err(Status::permission_denied(e.detail));
+        ) || own_tenant_row;
+
+        if is_self_service {
+            let is_master = crate::cedar::rules::is_master_tenant(&principal.tenant_id)
+                || principal.user_id == "usr_system_bff";
+            let is_admin_like = principal
+                .roles_boundaries
+                .iter()
+                .any(|b| b.role_id == "admin" || b.role_id == "tenant-admin");
+
+            if !is_master && !is_admin_like {
+                let grant_action = if action == "UPSERT" { "UPDATE" } else { action };
+                let required = format!("{entity_type}:{grant_action}");
+                let granted = crate::cedar::principal_grant_keys(principal);
+                if !granted.contains(&required) {
+                    return Err(Status::permission_denied(format!(
+                        "Auth403: requiere el permiso {required} (solicítalo al administrador del tenant)"
+                    )));
+                }
             }
+
+            // Gate maestro y ABAC de roles de dominio no aplican al
+            // self-service: ninguna política de rol declara entidades de
+            // sistema, así que evaluarse aquí solo puede DENY.
+            return Ok(());
+        }
+
+        // Enforce that only master tenant users or system BFF account can mutate tenants and quotas.
+        if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
+            entity_type,
+            &principal.tenant_id,
+            &principal.user_id,
+            "mutate",
+        ) {
+            return Err(Status::permission_denied(e.detail));
         }
 
         let mut resource = serde_json::json!({
@@ -258,19 +314,6 @@ impl MetriGrpcService {
                     serde_json::json!(comp_id),
                 );
             }
-        }
-
-        // Autoservicio de módulos: la fila `tenant_plugin` PROPIA no pasa por
-        // el ABAC de roles de dominio — esas políticas gobiernan entidades del
-        // negocio, no la configuración de módulos del propio tenant. El gate
-        // maestro (is_self_service_row) ya la autorizó, y el aislamiento de
-        // tenant garantiza que la fila es del llamante.
-        if crate::cedar::SystemSecurityRules::is_self_service_row(
-            entity_type,
-            tenant_id,
-            &principal.tenant_id,
-        ) {
-            return Ok(());
         }
 
         if self.dev_auth_bypass.is_bypass() {
