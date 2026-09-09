@@ -115,13 +115,6 @@
       "description": "Opción elegida para field_type MULTIPLE_CHOICE o YES_NO_NA."
     },
     {
-      "name": "value_file_ids",
-      "type": "reference",
-      "entityRef": "file",
-      "cardinality": "many",
-      "description": "Evidencia adjunta al campo: fotos (FILE) y firma capturada (SIGNATURE)."
-    },
-    {
       "name": "answered_by",
       "type": "reference",
       "entityRef": "user",

@@ -200,13 +200,6 @@
       "subtype": "flat_map",
       "is_dimension": true,
       "description": "Diccionario clave-valor flexible para campos personalizados del cliente sin alterar el esquema."
-    },
-    {
-      "name": "photo_ids",
-      "type": "reference",
-      "entityRef": "file",
-      "cardinality": "many",
-      "description": "Fotos o imágenes adjuntas de la ubicación física."
     }
   ],
   "event_rules": [

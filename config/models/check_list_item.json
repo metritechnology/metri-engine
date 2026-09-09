@@ -18,7 +18,7 @@
       "type": "reference",
       "entityRef": "form_template_field",
       "cardinality": "one",
-      "description": "Crucial para OLAP: Atar esta respuesta exacta al campo original de la plantilla, asegurando agregaci\u00f3n matem\u00e1tica a prueba de cambios en el texto."
+      "description": "Crucial para OLAP: Atar esta respuesta exacta al campo original de la plantilla, asegurando agregación matemática a prueba de cambios en el texto."
     },
     {
       "name": "question_text",
@@ -65,13 +65,6 @@
       "default_rollup": "last_value"
     },
     {
-      "name": "response_file_ids",
-      "type": "reference",
-      "entityRef": "file",
-      "cardinality": "many",
-      "description": "Used when type is FILE_ATTACHMENT to store photos or documents"
-    },
-    {
       "name": "response_signature_id",
       "type": "reference",
       "entityRef": "electronic_signature",
@@ -82,7 +75,7 @@
       "name": "observations",
       "type": "string",
       "fts": true,
-      "description": "Texto libre opcional para que el t\u00e9cnico agregue comentarios extra o justifique cualquier tipo de respuesta."
+      "description": "Texto libre opcional para que el técnico agregue comentarios extra o justifique cualquier tipo de respuesta."
     },
     {
       "name": "completed_by",

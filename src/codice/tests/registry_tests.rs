@@ -271,20 +271,25 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
         .attributes
         .iter()
         .any(|a| a.name == "procedure_field_id"));
-    // Captura de valor tipada: un attr por familia de respuesta.
+    // Captura de valor tipada: un attr por familia de respuesta. La evidencia
+    // de fichero no va en array: la vía única es file.owner_entity_* (Fase 3
+    // de PLAN_REFACTORIZACION_MODELO).
     for value_attr in [
         "value_text",
         "value_number",
         "value_boolean",
         "value_epoch",
         "value_choice",
-        "value_file_ids",
     ] {
         assert!(
             wopf.attributes.iter().any(|a| a.name == value_attr),
             "work_order_procedure_field debe declarar {value_attr}"
         );
     }
+    assert!(
+        !wopf.attributes.iter().any(|a| a.name == "value_file_ids"),
+        "value_file_ids fue retirado: los adjuntos van vía file.owner_entity_*"
+    );
 
     let wo = registry
         .get_model("work_order")
