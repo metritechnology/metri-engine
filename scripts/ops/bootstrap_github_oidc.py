@@ -231,6 +231,9 @@ def deploy_policy() -> dict:
                     "kms:GetKeyRotationStatus",
                     "kms:EnableKeyRotation",
                     "kms:UpdateKeyDescription",
+                    # Necesario para resolver {{resolve:secretsmanager:...}}:
+                    # el secreto HMAC está cifrado con la CMK del stack.
+                    "kms:Decrypt",
                     "kms:CreateAlias",
                     "kms:UpdateAlias",
                     "kms:DeleteAlias",
