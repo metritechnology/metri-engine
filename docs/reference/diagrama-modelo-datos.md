@@ -280,15 +280,24 @@ catálogo no las valida estructuralmente:
   (fuera `work_order_task_id` y `work_order_task_item_id`); `check_list` perdió
   su anclaje jerárquico a tareas.
 
+**Fases 3-5 y 7 del [plan](../architecture/PLAN_REFACTORIZACION_MODELO.md) aplicadas (2026-09-09):**
+
+- Vía única de adjuntos: retirados `location.photo_ids`,
+  `check_list_item.response_file_ids` y `work_order_procedure_field.value_file_ids`.
+  El único mecanismo es `file.owner_entity_type/id` (required). Los valores de
+  `photo_ids` en producción eran nombres de fichero, no ids de entidad — sin
+  pérdida estructural; quedan en el historial EAV (Regla A).
+- `labor_log.hourly_rate` (decimal, sin divisa) → `hourly_rate_cents` +
+  `currency` según la convención de unidad menor (tenía 0 datoms en producción).
+- `iot_alert_rule.notify_groups` ahora apunta a `user_group`, misma semántica
+  que `scheduled_job.target_group_id` y `reminder.target_group_id` (0 datoms).
+- `provider` retirado del catálogo y de `FALLBACK_DOMAINS` de Cedar: 0 entidades
+  vivas y ningún modelo lo referenciaba; `company_type=PROVIDER` lo cubre.
+
 **Candidatos a deprecación que exigen decisión de producto/migración de datos**
 (no tocar sin conciliar el dato vivo):
 
-1. `provider` ≅ subconjunto pobre de `company` (que ya tiene
-   `company_type: PROVIDER`); ningún modelo referencia ya a `provider`.
-2. `labor_log.hourly_rate` es `decimal` sin `_cents` ni divisa hermana — viola
-   la convención de unidad menor del [README](../../config/models/README.md).
-3. `iot_alert_rule.notify_groups` apunta a `role` mientras
-   `scheduled_job`/`reminder` usan `user_group` para "grupo".
-4. Doble vía de adjuntos: arrays `*_file_ids` + asociación polimórfica de
-   `file.owner_entity_*`.
-5. `dashboardBI` es la única entidad en camelCase.
+1. `dashboardBI` es la única entidad en camelCase (renombrar exige migración de
+   entidad).
+2. Dominio fantasma `"project"` en `FALLBACK_DOMAINS` de Cedar: confirmar si
+   algún tenant lo usa antes de retirarlo.

@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **58**
+Total de modelos: **57**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -16,7 +16,7 @@ Total de modelos: **58**
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | oltp | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
 | `check_list` | oltp | `work_order_id`, `form_template_id`, `title`, `description`, `is_completed` |
-| `check_list_item` | oltp | `check_list_section_id`, `form_template_field_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_file_ids`, `response_signature_id`, `observations`, `completed_by`, `completed_at` |
+| `check_list_item` | oltp | `check_list_section_id`, `form_template_field_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at` |
 | `check_list_section` | oltp | `check_list_id`, `form_template_section_id`, `section_order`, `title`, `description`, `is_completed` |
 | `company` | oltp | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
 | `dashboardBI` | oltp | `name`, `description`, `widgets`, `created_at`, `updated_at` |
@@ -40,8 +40,8 @@ Total de modelos: **58**
 | `iot_device_profile` | oltp | `name`, `inbound_metric_rules`, `inbound_metadata_rules`, `outbound_command_templates` |
 | `iot_harvester_config` | oltp | `asset_id`, `device_profile_id`, `target_url`, `port`, `polling_interval_seconds`, `schedule_type`, `cron_expression`, `auth_type`, `credentials`, `payload_format`, `http_method`, `http_headers`, `request_payload`, `url_query_params`, `mapping_directive` |
 | `iot_subscription` | oltp | `asset_id`, `device_profile_id`, `aws_thing_name`, `topic_pattern`, `subscription_status`, `batch_window_seconds` |
-| `labor_log` | oltp | `work_order_id`, `user_id`, `start_time`, `end_time`, `duration_minutes`, `hourly_rate`, `task_description` |
-| `location` | oltp | `name`, `tag`, `floc_code`, `type`, `status`, `criticality`, `risk_probability_score`, `risk_impact_score`, `parent_location_id`, `description`, `omniclass_code`, `omniclass_name`, `coordinates_geojson`, `address_street`, `address_city`, `address_state_province`, `address_postal_code`, `address_country_iso2`, `area_value`, `area_unit`, `timezone`, `cost_center`, `primary_contact_user_id`, `custom_attributes`, `photo_ids` |
+| `labor_log` | oltp | `work_order_id`, `user_id`, `start_time`, `end_time`, `duration_minutes`, `task_description`, `hourly_rate_cents`, `currency` |
+| `location` | oltp | `name`, `tag`, `floc_code`, `type`, `status`, `criticality`, `risk_probability_score`, `risk_impact_score`, `parent_location_id`, `description`, `omniclass_code`, `omniclass_name`, `coordinates_geojson`, `address_street`, `address_city`, `address_state_province`, `address_postal_code`, `address_country_iso2`, `area_value`, `area_unit`, `timezone`, `cost_center`, `primary_contact_user_id`, `custom_attributes` |
 | `meter_reading` | olap | `asset_id`, `location_id`, `iot_subscription_id`, `device_profile_id`, `aws_thing_name`, `metric_code`, `reading_value`, `raw_value`, `unit_of_measure`, `terminology_system`, `data_quality`, `protocol`, `source_address`, `timestamp`, `ingested_at`, `metadata` |
 | `note` | oltp | `content`, `author_id`, `timestamp`, `work_order_id` |
 | `outbox_event` | oltp | `status`, `detail_type`, `payload`, `retry_count`, `retry_at`, `claimed_at`, `created_at` |
@@ -49,7 +49,6 @@ Total de modelos: **58**
 | `preventive_maintenance` | oltp | `asset_id`, `cron_expression`, `advance_notice_days`, `meter_based_trigger`, `advance_notice_meter_value`, `iana_timezone`, `prenotify_before_minutes`, `next_due_date`, `recurrence_basis`, `status` |
 | `procedure` | oltp | `procedure_order`, `name`, `description`, `lifecycle_state`, `max_score`, `estimated_duration_minutes`, `required_role_id` |
 | `procedure_field` | oltp | `procedure_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `score`, `field_order` |
-| `provider` | oltp | `name`, `contact_email`, `contact_phone`, `address`, `services_provided`, `status` |
 | `reminder` | oltp | `title`, `message`, `target_user_id`, `target_group_id`, `reminder_datetime`, `prenotify_minutes_array`, `iana_timezone`, `status` |
 | `request` | oltp | `title`, `description`, `requested_by_user`, `requested_by_email`, `form_template_id`, `form_data`, `status`, `priority`, `asset_id`, `location_id` |
 | `role` | oltp | `name`, `description`, `grants`, `allowed_locations`, `allowed_assets`, `tenant_id` |
@@ -64,4 +63,4 @@ Total de modelos: **58**
 | `webhook_endpoint` | oltp | `name`, `target_url`, `http_method`, `authentication_type`, `auth_token`, `subscribed_rule_ids`, `max_retries`, `is_active` |
 | `work_order` | oltp | `work_order_number`, `title`, `description`, `request_id`, `client_id`, `asset_id`, `location_id`, `assignees`, `assigned_group_ids`, `category`, `status`, `priority`, `due_date`, `total_cost_cents`, `currency`, `completion_percentage`, `checkin_latitude`, `checkin_longitude`, `checkin_at`, `checkout_latitude`, `checkout_longitude`, `checkout_at`, `is_geofence_verified`, `sla_response_due_date`, `sla_resolution_due_date`, `sla_response_breached`, `sla_resolution_breached`, `internal_audit_hash`, `scheduled_start`, `scheduled_end`, `preventive_maintenance_id`, `scheduled_job_id`, `parent_work_order_id`, `is_parent`, `completed_by`, `completed_at`, `custom_attributes` |
 | `work_order_procedure` | oltp | `work_order_id`, `procedure_id`, `name`, `status`, `score`, `max_score`, `completed_by`, `completed_at` |
-| `work_order_procedure_field` | oltp | `work_order_procedure_id`, `procedure_field_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `field_order`, `score`, `max_score`, `value_text`, `value_number`, `value_boolean`, `value_epoch`, `value_choice`, `value_file_ids`, `answered_by`, `answered_at` |
+| `work_order_procedure_field` | oltp | `work_order_procedure_id`, `procedure_field_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `field_order`, `score`, `max_score`, `value_text`, `value_number`, `value_boolean`, `value_epoch`, `value_choice`, `answered_by`, `answered_at` |

@@ -2,11 +2,11 @@
 
 > **Componente:** `metri-engine` — catálogo Códice (`config/models/*.json`) y sus contratos
 > **Verificado contra el árbol:** 9 de septiembre de 2026 (tarde) — commits, diffs y suite ejecutados, no estimados
-> **ESTADO (2026-09-09):** Fases 0-2 y 6 **ejecutadas o cerradas por consolidación** — el catálogo
-> quedó en **58 modelos** sin refs colgantes, suite 458 en verde y docs regeneradas.
-> Pendiente de confirmación: un run **verde** del pipeline de deploy (los fixes
-> `a4d2e9b`, `47a2d53` indican iteración en vivo; `gh` no está disponible en este
-> entorno para confirmarlo). Restan las fases 3-5, 7 y 8 (deudas con migración de dato).
+> **ESTADO (2026-09-09, cierre):** **FASES 0-7 EJECUTADAS.** Catálogo en **57 modelos**
+> sin refs colgantes; los adjuntos tienen una sola vía (`file.owner_entity_*`); el dinero
+> va en unidad menor; una sola semántica de "grupo"; `provider` retirado. Pipeline de
+> deploy **verificado en vivo** (stack `UPDATE_COMPLETE` 21:49 UTC, alias `live` → v222).
+> Quedan solo las opciones de la Fase 8 y los contratos metri-app.
 > **Motivación:** la revisión del modelo (2026-09-09) destapó dos capas muertas ya retiradas
 > (`work_order_template` y la capa de tareas `task_template`/`work_order_task`) y un inventario
 > de deudas de modelado sin dueño ([diagrama-modelo-datos.md §7](../reference/diagrama-modelo-datos.md))
@@ -25,6 +25,11 @@
 | **1 — Retiro de `task_template`/`task_template_item`** | **EJECUTADA.** Los cuatro modelos de la capa de tareas están fuera: `task_template`/`task_template_item` (este plan) y `work_order_task`/`work_order_task_item` (consolidación `88d8c75` que los precedió). Reencuadres: `note` ancla a `work_order_id`, `labor_log` imputa solo a la OT, `check_list` perdió el anclaje a tareas, prosa de `work_order_procedure` actualizada. Catálogo sin refs colgantes, verificado programáticamente. |
 | **2 — Contrato de protocolos por escrito** | **PARCIAL.** La decisión sobre `work_order_task_item` quedó **sin objeto** (la entidad ya no existe). Pendiente lo documental: fijar en `config/models/README.md` que `procedure` (`PUBLISHED`) es la SSOT de protocolos formales y `form_template` queda para checklists/`request`. |
 | **6 — Notas de ítem** | **EJECUTADA (variante).** No fue necesaria la vía polimórfica: con la capa de tareas fuera, `note` ancla directamente a `work_order_id` (required + index). La asimetría `note_ids` desapareció junto con las entidades que la declaraban. |
+| **0 bis — Verificación del pipeline** | **CERRADA en vivo (21:49 UTC).** Stack `metri-engine` en `UPDATE_COMPLETE`, alias `live` → versión 222 publicada ese minuto. La puerta se cierra por evidencia en AWS, sin necesidad de `gh`. |
+| **3 — Una sola vía de adjuntos** | **EJECUTADA sin migración.** Verificación previa en producción (scan EAV, 21k items): `response_file_ids` y `value_file_ids` con **0 datoms**; `photo_ids` solo en `location` y con **nombres de fichero, no ids de entidad** (`0-images (1).jpeg`…), herencia del stack anterior — nada que respaldar hacia `file.owner_entity_*` (que además es `required` en cada file). Arrays retirados del esquema; los strings quedan en el historial EAV (Regla A). |
+| **4 — Dinero en unidad menor** | **EJECUTADA sin migración.** `hourly_rate` tenía **0 datoms** en producción. Esquema: `hourly_rate_cents` (number, measure, sum) + `currency` (`^[A-Z]{3}$`, hereda del tenant). |
+| **5 — Semántica de grupo** | **EJECUTADA sin migración.** `notify_groups` tenía **0 datoms**. `entityRef` cambiado de `role` a `user_group`, alineado con `scheduled_job`/`reminder`. |
+| **7 — Retiro de `provider`** | **EJECUTADA sin migración.** **0 entidades provider** en producción y ningún modelo lo referenciaba. Fuera `provider.json` y fuera de `FALLBACK_DOMAINS` en `src/cedar/evaluator/grants.rs` (única referencia en el repo). `company_type=PROVIDER` cubre el caso. |
 
 ---
 
@@ -40,14 +45,15 @@
 
 ## Resumen en cinco líneas
 
-El dominio de órdenes de trabajo quedó reducido a su esqueleto sano: **la OT es el centro y
-los procedimientos el único protocolo formal** — plantillas abstractas, paradas de ruta y
-capa de tareas ya no existen. El pipeline de deploy tiene su causa raíz corregida y fixes
-sucesivos; solo falta ver un run verde de punta a punta. Las deudas que quedan son de
-**convergencia y conveniencia**: una sola vía de adjuntos, dinero en unidad menor, una sola
-semántica de "grupo" y el retiro del zombi `provider`. Toda migración con dato vivo va con
-script de dry-run y conciliación. El validador descarta claves desconocidas en silencio: el
-contrato con metri-app se congela en tests, no en esperanzas.
+El dominio de órdenes de trabajo quedó reducido a su esqueleto sano: **la OT es el centro,
+los procedimientos el único protocolo formal y los adjuntos una sola vía
+(`file.owner_entity_*`)**. El dinero va en unidad menor, "grupo" tiene una sola semántica y
+`provider` ya no existe: el catálogo quedó en **57 modelos sin refs colgantes**. El pipeline
+de deploy está verificado en vivo (stack `UPDATE_COMPLETE`, alias `live` → v222, 21:49 UTC).
+Las fases 3-5 y 7 no necesitaron migración: la verificación previa en producción encontró
+0 datoms en los campos cambiados (y en `photo_ids`, filenames heredados, no referencias).
+Lo que queda son contratos, no esquema: metri-app debe dejar de enviar los campos retirados
+y crear notas con `work_order_id`.
 
 ---
 
@@ -91,15 +97,16 @@ end-to-end). Este plan añade cuatro propias del modelo:
 
 ## Parte IV — Las fases
 
-### Fase 0 — Sellar el retiro de la capa plantillas — ✅ CERRADA (con un pendiente)
+### Fase 0 — Sellar el retiro de la capa plantillas — ✅ CERRADA
 
 Commiteada en `950d679` + `d183e0a` (bucket dedicado de artefactos incluido). Los fixes
 sucesivos del workflow (`a4d2e9b` kms:Decrypt en la CMK del stack, `47a2d53` salidas del
-stack como bloque run) indican despliegues reales iterando.
+stack como bloque run) documentan despliegues reales iterando.
 
-**Pendiente único:** confirmar explícitamente un run verde de `Deploy producción` (build +
-deploy + verificación post-deploy con alias `live` en la versión nueva). Desde este entorno
-no hay `gh`; comprobar en GitHub → Actions.
+**Verificado en vivo (21:49 UTC):** stack `metri-engine` en `UPDATE_COMPLETE` con esa
+marca de tiempo, y el alias `live` apuntando a la versión **222** publicada ese mismo
+minuto — la salida del stack y la verificación post-deploy del workflow se ejecutaron.
+Puerta cerrada.
 
 ### Fase 1 — Retiro de la capa de tareas — ✅ EJECUTADA
 
@@ -121,9 +128,10 @@ documental:
 **Puerta 2**
 - [ ] README del Códice describe los dos sistemas y sus fronteras
 
-### Fase 3 — Una sola vía de adjuntos
+### Fase 3 — Una sola vía de adjuntos — ✅ EJECUTADA sin migración
 
-**1-2 días · decisión + migración (Regla D)**
+> Verificación previa en producción: 0 datoms de `response_file_ids`/`value_file_ids`;
+> `photo_ids` solo contenía nombres de fichero (no ids de entidad). Detalle en el anexo.
 
 1. Elegir vía canónica. Recomendación: la **polimórfica** (`file.owner_entity_type/id`) —
    es la que el motor ya trata genéricamente; los arrays fuerzan mantener la inversa a mano.
@@ -137,9 +145,9 @@ documental:
 - [ ] Conciliación 1:1 entre datoms migrados y objetos en S3 referenciados
 - [ ] Ningún modelo declara arrays de file-ids; suite y pipeline en verde
 
-### Fase 4 — Dinero en unidad menor
+### Fase 4 — Dinero en unidad menor — ✅ EJECUTADA sin migración
 
-**Medio día + migración**
+> `hourly_rate` tenía 0 datoms en producción: cambio de esquema puro.
 
 1. `labor_log.hourly_rate` (`decimal`) → `hourly_rate_cents` (`number`) + `currency`
    (`string`, `^[A-Z]{3}$`, `is_dimension`), según la convención obligatoria del README
@@ -150,9 +158,9 @@ documental:
 - [ ] Conciliación: suma de `hourly_rate_cents` = suma antigua ×100 por tenant
 - [ ] `grep -rn "hourly_rate[^_]" config/models/` = 0
 
-### Fase 5 — "Grupo" con una sola semántica
+### Fase 5 — "Grupo" con una sola semántica — ✅ EJECUTADA sin migración
 
-**Medio día + migración**
+> `notify_groups` tenía 0 datoms en producción: cambio de `entityRef` puro.
 
 1. `iot_alert_rule.notify_groups` → `role` mientras todo el resto del sistema usa
    `user_group` para grupos. Decidir (recomendación: `user_group`, que es lo que un
@@ -169,9 +177,9 @@ Ver [Anexo de ejecución](#anexo-de-ejecución-2026-09-09). La vía polimórfica
 necesaria: sin capa de tareas, `note` ancla a `work_order_id` y la asimetría desapareció
 con las entidades que la declaraban.
 
-### Fase 7 — Retiro de `provider`
+### Fase 7 — Retiro de `provider` — ✅ EJECUTADA sin migración
 
-**1 día · migración de dato**
+> 0 entidades provider en producción y una sola referencia en el repo (el fallback de Cedar).
 
 1. Confirmar con datos: cuántas filas `provider` vivas hay (vía Athena/OLTP o Transact).
 2. Migrar cada `provider` a `company` con `company_type=PROVIDER` (Regla D; map de campos
@@ -212,6 +220,6 @@ con las entidades que la declaraban.
 
 ## Orden si solo hay tiempo para una cosa
 
-Cerrar la **Fase 0**: confirmar el run verde del pipeline — sin entrega no hay resto del
-plan, y es la más barata de todas. Después la **Fase 2** (media hora documental) y las
-deudas 3-5/7 por orden de dolor: dinero (`hourly_rate`) primero.
+Nada urgente: las fases 0-7 están cerradas. El resto es **coordinación y opcional** —
+pasar a metri-app la lista de contratos (Parte VI) y, algún día sin prisa, la Fase 8
+(`dashboardBI` en snake_case y el dominio fantasma `project`, previa confirmación de uso).
