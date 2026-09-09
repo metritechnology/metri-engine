@@ -25,7 +25,6 @@ pub const FALLBACK_DOMAINS: &[&str] = &[
     "api_key",
     "audit_log",
     "form_template",
-    "provider",
     "webhook_endpoint",
     "dashboardBI",
     "domain_plugin",
