@@ -86,27 +86,6 @@
       "description": "Activo padre en la jerarquía de equipos / sub-ensambles."
     },
     {
-      "name": "category",
-      "type": "string",
-      "is_dimension": true,
-      "deprecated": true,
-      "description": "DEPRECATO (ASSETS.md §6.4): clasificación en texto libre que duplica omniclass_code. Migrar su contenido a la taxonomía antes de retirar; ventana de doble lectura vigente (AST-R9, AST-R10)."
-    },
-    {
-      "name": "type",
-      "type": "string",
-      "is_dimension": true,
-      "deprecated": true,
-      "description": "DEPRECATO (ASSETS.md §6.4): subtipo en texto libre que duplica omniclass_code. Migrar su contenido a la taxonomía antes de retirar; ventana de doble lectura vigente (AST-R9, AST-R10)."
-    },
-    {
-      "name": "manufacturer",
-      "type": "string",
-      "is_dimension": true,
-      "deprecated": true,
-      "description": "DEPRECATO (ASSETS.md §6.4): sustituido por manufacturer_company_id. Resolver cada cadena contra una company; ventana de doble lectura vigente (AST-R10)."
-    },
-    {
       "name": "manufacturer_company_id",
       "type": "reference",
       "entityRef": "company",
@@ -191,20 +170,6 @@
       "description": "Vida útil proyectada en meses según fabricante."
     },
     {
-      "name": "iot_device_profile_id",
-      "type": "reference",
-      "entityRef": "iot_device_profile",
-      "cardinality": "one",
-      "description": "Perfil de dispositivo IoT que declara cómo se decodifica la telemetría del activo (ASSETS.md §6.4, §7)."
-    },
-    {
-      "name": "iot_harvester_config_id",
-      "type": "reference",
-      "entityRef": "iot_harvester_config",
-      "cardinality": "one",
-      "description": "Configuración de cosecha de telemetría asociada al activo (ASSETS.md §6.4, §7)."
-    },
-    {
       "name": "specifications",
       "type": "json",
       "subtype": "flat_map",
@@ -216,14 +181,6 @@
       "subtype": "flat_map",
       "is_dimension": true,
       "description": "Campos personalizados extensibles definidos por el cliente."
-    },
-    {
-      "name": "photo_ids",
-      "type": "reference",
-      "entityRef": "file",
-      "cardinality": "many",
-      "deprecated": true,
-      "description": "DEPRECATO (ASSETS.md §6.4): `file` ya es polimórfico (owner_entity_type + owner_entity_id) y la lista dedicada duplica ese patrón. Reapuntar las referencias existentes antes de retirar; ventana de doble lectura vigente (AST-R10)."
     }
   ],
   "event_rules": [

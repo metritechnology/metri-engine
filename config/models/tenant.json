@@ -130,6 +130,11 @@
       "entityRef": "file",
       "cardinality": "one",
       "description": "Referencia al archivo de imagen guardado del logotipo corporativo (File entity)."
+    },
+    {
+      "name": "config",
+      "type": "json",
+      "description": "Configuraciones y parámetros personalizados del tenant en formato JSON."
     }
   ],
   "event_rules": [
