@@ -386,6 +386,10 @@ def deploy_policy() -> dict:
             },
             {
                 # MetriHMACSecret (GenerateSecretString lo crea/rota CFN).
+                # GetSecretValue: las referencias dinámicas
+                # {{resolve:secretsmanager:...}} del template (header de
+                # CloudFront y env var HMAC_SECRET) se resuelven con las
+                # credenciales del desplegador.
                 "Sid": "SecretsManager",
                 "Effect": "Allow",
                 "Action": [
@@ -393,6 +397,7 @@ def deploy_policy() -> dict:
                     "secretsmanager:UpdateSecret",
                     "secretsmanager:DeleteSecret",
                     "secretsmanager:DescribeSecret",
+                    "secretsmanager:GetSecretValue",
                     "secretsmanager:PutSecretValue",
                     "secretsmanager:RestoreSecret",
                     "secretsmanager:RotateSecret",
