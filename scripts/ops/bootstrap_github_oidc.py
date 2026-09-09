@@ -93,6 +93,9 @@ def deploy_policy() -> dict:
     change_set = (
         f"arn:aws:cloudformation:{REGION}:{ACCOUNT_ID}:changeSet/metri-engine-*/*"
     )
+    # Los templates con Transform: AWS::Serverless-2016-10-31 exigen permiso
+    # CreateChangeSet también sobre el ARN del transform (cuenta "aws").
+    transform = f"arn:aws:cloudformation:{REGION}:aws:transform/*"
     role_arn = f"arn:aws:iam::{ACCOUNT_ID}:role/metri-engine*"
     kms_keys = [f"arn:aws:kms:{REGION}:{ACCOUNT_ID}:key/*",
                 f"arn:aws:kms:{REGION}:{ACCOUNT_ID}:alias/metri-engine*"]
@@ -138,7 +141,7 @@ def deploy_policy() -> dict:
                     "cloudformation:UpdateTerminationProtection",
                     "cloudformation:ContinueUpdateRollback",
                 ],
-                "Resource": [stack, change_set],
+                "Resource": [stack, change_set, transform],
             },
             {
                 "Sid": "CloudFormationUnscopedReads",
@@ -292,6 +295,7 @@ def deploy_policy() -> dict:
                     "lambda:GetFunction",
                     "lambda:GetFunctionConfiguration",
                     "lambda:GetFunctionUrlConfig",
+                    "lambda:GetRuntimeManagementConfig",
                     "lambda:ListVersionsByFunction",
                     "lambda:PublishVersion",
                     "lambda:CreateAlias",
