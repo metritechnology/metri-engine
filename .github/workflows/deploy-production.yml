@@ -72,6 +72,9 @@ jobs:
 
       - name: protoc (gRPC/tonic)
         run: |
+          # El repo apt de Chrome (preinstalado en el runner) suelta fallos de
+          # hash sum intermitentes que matan a apt-get update entero.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq protobuf-compiler
 
