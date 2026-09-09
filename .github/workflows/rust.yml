@@ -20,11 +20,19 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: flatc + protoc (FlatBuffers y gRPC/tonic)
+      # flatc pineado a la MISMA versión que el crate flatbuffers (Cargo.lock):
+      # el flatc de apt está desfasado y genera código que no compila.
+      - name: flatc 25.12.19 (binario oficial, alineado al crate)
+        run: |
+          curl -sSfLo flatc.zip \
+            "https://github.com/google/flatbuffers/releases/download/v25.12.19/Linux.flatc.binary.g++-13.zip"
+          sudo unzip -o flatc.zip -d /usr/local/bin
+          flatc --version
+
+      - name: protoc (gRPC/tonic)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq flatbuffers-compiler-dev protobuf-compiler
-          flatc --version
+          sudo apt-get install -y -qq protobuf-compiler
 
       - name: Formato (rustfmt — no negociable)
         run: cargo fmt --check
@@ -95,10 +103,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: flatc + protoc (FlatBuffers y gRPC/tonic)
+      - name: flatc 25.12.19 (binario oficial, alineado al crate)
+        run: |
+          curl -sSfLo flatc.zip \
+            "https://github.com/google/flatbuffers/releases/download/v25.12.19/Linux.flatc.binary.g++-13.zip"
+          sudo unzip -o flatc.zip -d /usr/local/bin
+          flatc --version
+
+      - name: protoc (gRPC/tonic)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq flatbuffers-compiler-dev protobuf-compiler
+          sudo apt-get install -y -qq protobuf-compiler
 
       - name: cargo-llvm-cov
         uses: taiki-e/install-action@v2

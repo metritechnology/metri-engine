@@ -61,10 +61,19 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: flatc + protoc (FlatBuffers y gRPC/tonic)
+      # flatc pineado a la MISMA versión que el crate flatbuffers (Cargo.lock):
+      # el flatc de apt está desfasado y genera código que no compila.
+      - name: flatc 25.12.19 (binario oficial, alineado al crate)
+        run: |
+          curl -sSfLo flatc.zip \
+            "https://github.com/google/flatbuffers/releases/download/v25.12.19/Linux.flatc.binary.g++-13.zip"
+          sudo unzip -o flatc.zip -d /usr/local/bin
+          flatc --version
+
+      - name: protoc (gRPC/tonic)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq flatbuffers-compiler-dev protobuf-compiler
+          sudo apt-get install -y -qq protobuf-compiler
 
       # cargo-lambda cruza de x86_64 a aarch64-musl usando zig como enlazador.
       # --user: ubuntu-24.04 bloquea pip global (PEP 668).
