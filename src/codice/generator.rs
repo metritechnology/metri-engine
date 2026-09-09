@@ -79,7 +79,7 @@ fn find_scope_field(model: &EntityModel) -> Option<&str> {
 /// Flujo Railway (mismo que el el stack anterior):
 ///   - Si no hay atributos auto_generate → retorna el payload sin cambios.
 ///   - Para cada atributo, ejecuta la estrategia y reduce el payload.
-///   - Un solo error en la cadena → retorna [:error] inmediatamente.
+///   - Un solo error en la cadena → retorna `[:error]` inmediatamente.
 ///
 pub async fn inject(
     ddb: &DynamoClient,

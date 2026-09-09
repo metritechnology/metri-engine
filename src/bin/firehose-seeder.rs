@@ -1,3 +1,17 @@
+//! firehose-seeder — idempotent OLAP infrastructure seeder for Codice entities.
+//!
+//! Gestor idempotente de la infraestructura OLAP del Códice: para cada entidad
+//! `engine: "olap"` asegura (a) la tabla Iceberg en Glue/Athena y (b) el
+//! delivery stream de Firehose con su configuración canónica — incluido el
+//! `WarehouseLocation` explícito cuya ausencia causó la pérdida de datos del
+//! 30-jul (MEDICION_COSTO_OLAP.md §5a).
+//!
+//! Dry-run por defecto. `--apply` escribe. `make sync-firehose` y
+//! `make sync-iceberg` son los puntos de entrada canónicos.
+//!
+//! Preflight (Regla 05): nada se escribe si el prefijo `iceberg-data/<tabla>/`
+//! no existe en el lake — el fallo es accionable, no un stack trace.
+
 // Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
 // unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
 // invariantes documentadas en scripts/dev/result_pattern_allowlist.json, cada
@@ -13,20 +27,6 @@
         clippy::unimplemented
     )
 )]
-// bin/firehose-seeder.rs — Fase 4 de PLAN_CORRECCIONES_PENDIENTES.md
-//
-// Gestor idempotente de la infraestructura OLAP del Códice: para cada entidad
-// `engine: "olap"` asegura (a) la tabla Iceberg en Glue/Athena y (b) el
-// delivery stream de Firehose con su configuración canónica — incluido el
-// `WarehouseLocation` explícito cuya ausencia causó la pérdida de datos del
-// 30-jul (MEDICION_COSTO_OLAP.md §5a).
-//
-// Dry-run por defecto. `--apply` escribe. `make sync-firehose` y
-// `make sync-iceberg` son los puntos de entrada canónicos.
-//
-// Preflight (Regla 05): nada se escribe si el prefijo `iceberg-data/<tabla>/`
-// no existe en el lake — el fallo es accionable, no un stack trace.
-
 use std::path::PathBuf;
 use std::time::Duration;
 

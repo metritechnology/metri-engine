@@ -48,7 +48,7 @@ pub fn eavt_sk_attr_prefix(attr_id: u16) -> Vec<u8> {
 }
 
 /// SK para buscar la versión de un atributo as-of un tx_id.
-/// Usado en Query: SK <= [attr_id][tx_id][0xFF], ScanIndexForward=false, Limit=1
+/// Usado en Query: SK <= `[attr_id][tx_id][0xFF]`, ScanIndexForward=false, Limit=1
 pub fn eavt_sk_as_of(attr_id: u16, as_of_tx: u64) -> Vec<u8> {
     build_eavt_sk(attr_id, as_of_tx, true)
 }
@@ -159,7 +159,7 @@ pub fn build_avet_sk(value: &DatomValue, entity_id: &str) -> Vec<u8> {
 }
 
 /// Prefijo del SK para buscar un valor exacto en AVET.
-/// Usado en: Query SK begins_with [type_tag][value_bytes]
+/// Usado en: Query SK begins_with `[type_tag][value_bytes]`
 pub fn avet_sk_prefix(value: &DatomValue) -> Vec<u8> {
     // Mismo encoding que build_avet_sk pero sin el entity_id al final
     build_avet_sk(value, "")

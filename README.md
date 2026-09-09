@@ -1,5 +1,7 @@
 # metri-engine
 
+> **English**: [README.en.md](README.en.md) · **Índice de documentación**: [docs/README.md](docs/README.md)
+
 Motor de datos de la plataforma **metri** — CMMS/BI SaaS multitenant para gestión de activos, ordenes de trabajos, etc... .**100% Rust**, desplegado como una única AWS Lambda ARM64 (`provided.al2023`) que expone un servidor **gRPC** (Tonic) detrás de Function URL + CloudFront + WAF.
 
 Combina en un solo proceso:
@@ -46,6 +48,8 @@ Combina en un solo proceso:
 | `iop` | Pipeline de ingesta por pasos: Cedar → Quota → Janus |
 | `eda` | Arquitectura orientada a eventos: outbox, fault detection, routing |
 | `temporal` | Primitivas temporales timezone-aware (ventanas, shifts de calendario) |
+| `domain` | Errores canónicos, catálogo TOML 1:1, eventos de dominio, protocolos |
+| `application` | Puertos de aplicación (DIP) — traits delimitados por la necesidad del consumidor |
 | `infrastructure` | Adaptadores AWS SDK (DynamoDB, S3, Athena, Kinesis, SQS, EventBridge, Glue) |
 | `otel` | Trazas OpenTelemetry (OTLP) |
 
@@ -159,4 +163,4 @@ El stack SAM crea: función Lambda ARM64 con Function URL, distribución CloudFr
 
 ## Estado y documentación
 
-El motor está en producción. La documentación de arquitectura está en **rediseño completo** (la carpeta heredada se elimina y se reconstruye desde cero): el plan vivo, con el estado verificado del código y el roadmap, está en [`docs/architecture/PLAN_REFACTORIZACION.md`](docs/architecture/PLAN_REFACTORIZACION.md).
+El motor está en producción. El índice navegable de toda la documentación está en [`docs/README.md`](docs/README.md); las reglas de documentación (idioma, títulos, cobertura por archivo) en [`docs/architecture/PLAN_DOCUMENTACION.md`](docs/architecture/PLAN_DOCUMENTACION.md); el plan vivo de rediseño de la arquitectura, con el estado verificado del código y el roadmap, en [`docs/architecture/PLAN_REFACTORIZACION.md`](docs/architecture/PLAN_REFACTORIZACION.md).

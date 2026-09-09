@@ -1,3 +1,17 @@
+//! metri-engine Lambda entry point — the `bootstrap` binary.
+//!
+//! Punto de arranque de la función Lambda: `provided.al2023` exige que el
+//! binario se llame `bootstrap`. La secuencia es fail-fast — cada paso
+//! aborta con `exit(1)` y log estructurado si falla:
+//!
+//! 1. Telemetría OTel (logs JSON para CloudWatch, filtro por `RUST_LOG`).
+//! 2. [`metri_engine::codice`] — compila el `CodeRegistry` desde
+//!    `CODICE_MODELS_DIR` (default `config/models`) y lo instala global.
+//! 3. [`metri_engine::domain`] — carga el `ErrorCatalog` TOML desde
+//!    `ERROR_CATALOG_PATH` y lo instala global.
+//! 4. [`metri_engine::grpc`] — levanta el servidor gRPC sobre la Lambda
+//!    Function URL.
+
 // Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
 // unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
 // invariantes documentadas en scripts/dev/result_pattern_allowlist.json, cada
@@ -13,9 +27,6 @@
         clippy::unimplemented
     )
 )]
-// main.rs — Lambda entry point para AWS Lambda ARM64 (provided.al2023)
-// Runtime: Tonic gRPC server sobre Lambda Function URL
-
 use std::path::Path;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;

@@ -213,8 +213,8 @@ fn build_metric_alias(m: &MetricDefinitionT) -> String {
 ///
 /// Parámetros:
 ///   all_rows        — filas completas del período principal (para filter_rows_by_window)
-///   metrics         — [MetricDefinition] (igual que en query principal)
-///   comparisons     — [AnalyticalComparison] del AST IR
+///   metrics         — `MetricDefinition` (igual que en query principal)
+///   comparisons     — `AnalyticalComparison` del AST IR
 ///   resolved_tf     — TimeRange del período actual (None = sin ventana temporal)
 ///   current_metrics — { alias → value } de apply_metrics_fbs período actual
 ///   tz              — timezone string (ej: "UTC", "America/Mexico_City")

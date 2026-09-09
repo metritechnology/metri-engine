@@ -89,7 +89,7 @@ impl EavReader {
     }
 
     /// Carga el estado actual de una entidad (todos los atributos vigentes).
-    /// Equivale a (d/pull db '[*] entity-id) pero sin deserializar el blob.
+    /// Equivale a (d/pull db `'[*]` entity-id) pero sin deserializar el blob.
     ///
     /// Mejora: solo carga los atributos pedidos, no el blob completo.
     pub async fn pull(
