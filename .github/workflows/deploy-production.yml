@@ -163,5 +163,6 @@ jobs:
             --query '{version:FunctionVersion,last_updated:AliasArn}' --output table
 
       - name: Salidas del stack
-        run: aws cloudformation describe-stacks --stack-name metri-engine \
-               --query 'Stacks[0].Outputs' --output table
+        run: |
+          aws cloudformation describe-stacks --stack-name metri-engine \
+            --query 'Stacks[0].Outputs' --output table
