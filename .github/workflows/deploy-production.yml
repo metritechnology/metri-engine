@@ -61,10 +61,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: flatc (FlatBuffers compiler)
+      - name: flatc + protoc (FlatBuffers y gRPC/tonic)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq flatbuffers-compiler-dev
+          sudo apt-get install -y -qq flatbuffers-compiler-dev protobuf-compiler
 
       # cargo-lambda cruza de x86_64 a aarch64-musl usando zig como enlazador.
       # --user: ubuntu-24.04 bloquea pip global (PEP 668).
