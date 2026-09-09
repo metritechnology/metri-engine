@@ -1,6 +1,8 @@
-// eav/writer/chunker.rs
-// Chunking transaccional — mitiga el límite físico de 100 items/TX de DynamoDB.
-// Blueprint: Metri EAV §XII.1 + §MÓDULO 3 writer/chunker.rs
+//! Transactional chunking — works around the 100-item DynamoDB limit.
+//!
+//! eav/writer/chunker.rs
+//! Chunking transaccional — mitiga el límite físico de 100 items/TX de DynamoDB.
+//! Blueprint: Metri EAV §XII.1 + §MÓDULO 3 writer/chunker.rs
 
 use aws_sdk_dynamodb::types::TransactWriteItem;
 

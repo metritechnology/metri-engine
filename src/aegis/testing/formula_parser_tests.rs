@@ -1,3 +1,4 @@
+//! Tests for `aegis::formula::parser`.
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::lexer::tokenize;

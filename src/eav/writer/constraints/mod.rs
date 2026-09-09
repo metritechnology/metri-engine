@@ -1,4 +1,4 @@
-//! Restricciones de integridad aplicadas EN la transacción.
+//! Integrity constraints enforced inside the transaction.
 //!
 //! ## Por qué existe este módulo
 //!

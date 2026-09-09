@@ -1,11 +1,13 @@
-// eav/writer/system_attrs.rs — Fuente única de los atributos de sistema.
-//
-// Los primeros attr_ids del motor están reservados y su nombre va ligado al
-// número: el escritor los emite (enricher) y el lector de atributos activos
-// los resuelve de vuelta (transact::get_active_attributes). Antes de este
-// módulo, ambos lados repetían los literales a mano — una drift silenciosa
-// entre escritura y lectura habría corrompido el resolve sin que compile
-// fallara. Hoy ambos lados consumen estas constantes.
+//! Single source of truth for reserved system attribute ids.
+//!
+//! Fuente única de los atributos de sistema.
+//!
+//! Los primeros attr_ids del motor están reservados y su nombre va ligado al
+//! número: el escritor los emite (enricher) y el lector de atributos activos
+//! los resuelve de vuelta (transact::get_active_attributes). Antes de este
+//! módulo, ambos lados repetían los literales a mano — una drift silenciosa
+//! entre escritura y lectura habría corrompido el resolve sin que compile
+//! fallara. Hoy ambos lados consumen estas constantes.
 
 /// `entity/ulid` — identidad de la entidad.
 pub const ULID_ID: u16 = 0x0000;

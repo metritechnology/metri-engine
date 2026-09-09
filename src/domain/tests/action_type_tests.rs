@@ -1,3 +1,4 @@
+//! Tests for `domain::action_type`.
 use super::*;
 
 #[test]

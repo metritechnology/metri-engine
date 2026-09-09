@@ -1,5 +1,7 @@
-// eav/index/vaet.rs — GSI-VAET: Valor(Ref)-Atributo-Entidad-TX (grafo inverso)
-// Blueprint: Metri EAV §II.5
+//! GSI-VAET: reverse-graph index (Value-Ref-Attribute-Entity-TX).
+//!
+//! GSI-VAET: Valor(Ref)-Atributo-Entidad-TX (grafo inverso)
+//! Blueprint: Metri EAV §II.5
 
 use crate::eav::registry::descriptor::AttributeDescriptor;
 use crate::eav::types::datom::{Datom, DatomValue};

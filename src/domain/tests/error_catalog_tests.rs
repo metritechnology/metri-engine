@@ -1,3 +1,4 @@
+//! Tests for `domain::error_catalog`.
 use super::*;
 
 #[test]

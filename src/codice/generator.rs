@@ -1,8 +1,12 @@
-// codice/generator.rs — Inyector de atributos auto-generados.
-// En el stack anterior: (inject! db-conn tenant-guard schema tenant-id payload)
-//             con reducción Railway sobre atributos :auto_generate.
-// En Rust:    inject() — función pura excepto por los efectos de I/O
-//             de sequence/next (DynamoDB) y base36/generate (CSPRNG).
+//! Auto-generated attribute injector — sequences and random Base36 codes.
+//!
+//! Inyector de atributos auto-generados.
+//!
+//! # Origin
+//! En el stack anterior: (inject! db-conn tenant-guard schema tenant-id payload)
+//! con reducción Railway sobre atributos :auto_generate.
+//! En Rust:    inject() — función pura excepto por los efectos de I/O
+//! de sequence/next (DynamoDB) y base36/generate (CSPRNG).
 
 use serde_json::{Map, Value};
 

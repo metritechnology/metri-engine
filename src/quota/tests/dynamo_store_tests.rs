@@ -1,3 +1,4 @@
+//! Tests for `quota::dynamo_store`.
 // Contra DynamoDB Local. `make infra` levanta el contenedor y crea la tabla con
 // su GSI-SWEEP; se ejecutan con `make test-integration`.
 //

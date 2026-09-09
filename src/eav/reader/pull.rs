@@ -1,9 +1,12 @@
-// [NUEVO — reemplaza: src/metri/aegis/datalog/pull.clj]
-// eav/reader/pull.rs — Read path del motor EAV.
-// Blueprint: Metri EAV - OLPT.md §V y §VI
-//
-// En el stack anterior: (d/pull db pattern entity-id) → blob completo en memoria
-// En Rust:    Query selectiva por atributo → solo los bytes necesarios
+//! EAV read path — selective pull without loading the blob.
+//!
+//! # Origin
+//! [NUEVO — reemplaza: src/metri/aegis/datalog/pull.clj]
+//! Read path del motor EAV.
+//! Blueprint: Metri EAV - OLPT.md §V y §VI
+//!
+//! En el stack anterior: (d/pull db pattern entity-id) → blob completo en memoria
+//! En Rust:    Query selectiva por atributo → solo los bytes necesarios
 
 use std::collections::HashMap;
 use std::sync::Arc;

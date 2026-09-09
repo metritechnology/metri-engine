@@ -1,3 +1,4 @@
+//! Tests for `aegis::oltp::comparison`.
 use crate::aegis::oltp::aggregation::apply_metrics_fbs;
 use crate::aegis::oltp::comparison::*;
 use crate::janus::fbs::{

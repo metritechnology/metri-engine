@@ -1,5 +1,7 @@
-// eav/cursor/composite.rs — Cursor compuesto para paginación multi-índice
-// Blueprint: Metri EAV §XIII.1
+//! Composite cursor for multi-index pagination.
+//!
+//! Cursor compuesto para paginación multi-índice
+//! Blueprint: Metri EAV §XIII.1
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};

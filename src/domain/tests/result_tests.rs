@@ -1,3 +1,4 @@
+//! Tests for `domain::result`.
 use super::*;
 use crate::domain::errors::{DomainError, ErrorCode};
 

@@ -1,10 +1,14 @@
-// domain/error_catalog.rs — Loader nativo del catálogo de errores
-// Lee config/errors/error_catalog.toml en bootstrap y expone un HashMap O(1).
-// Reemplaza la referencia a errors/error_catalog.edn de el stack anterior.
-//
-// Uso:
-//   let catalog = ErrorCatalog::load("config/errors/error_catalog.toml")?;
-//   let entry = catalog.get("EAV_002");
+//! Native loader for the canonical TOML error catalog.
+//!
+//! Loader nativo del catálogo de errores
+//! Lee config/errors/error_catalog.toml en bootstrap y expone un HashMap O(1).
+//!
+//! # Origin
+//! Reemplaza la referencia a errors/error_catalog.edn de el stack anterior.
+//!
+//! Uso:
+//! let catalog = ErrorCatalog::load("config/errors/error_catalog.toml")?;
+//! let entry = catalog.get("EAV_002");
 
 use std::collections::HashMap;
 use std::path::Path;

@@ -1,3 +1,4 @@
+//! Tests for `iop::sherlog`.
 use super::*;
 use crate::domain::errors::{DomainError, ErrorCode};
 use std::sync::Mutex;

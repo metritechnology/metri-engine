@@ -1,12 +1,15 @@
-// [NUEVO — reemplaza: src/metri/infrastructure/datahike.clj + tenant_guard.clj]
-// eav/writer/transact.rs — Write path ACID del motor EAV.
-// Blueprint: Metri EAV - OLPT.md §IV — ACID Write Path
-//
-// En el stack anterior: d/transact → DynamoDB (blob monolítico via Datahike)
-// En Rust:    TransactWriteItems con datoms EAVT/AEVT/AVET/VAET individuales
-//
-// Este módulo es el reemplazo directo de la corrupción de blobs de Datahike.
-// Cada atributo es un datom independiente — sin contención bajo concurrencia.
+//! ACID write path of the EAV engine.
+//!
+//! # Origin
+//! [NUEVO — reemplaza: src/metri/infrastructure/datahike.clj + tenant_guard.clj]
+//! Write path ACID del motor EAV.
+//! Blueprint: Metri EAV - OLPT.md §IV — ACID Write Path
+//!
+//! En el stack anterior: d/transact → DynamoDB (blob monolítico via Datahike)
+//! En Rust:    TransactWriteItems con datoms EAVT/AEVT/AVET/VAET individuales
+//!
+//! Este módulo es el reemplazo directo de la corrupción de blobs de Datahike.
+//! Cada atributo es un datom independiente — sin contención bajo concurrencia.
 
 use serde_json;
 use std::collections::HashMap;

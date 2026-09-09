@@ -1,3 +1,4 @@
+//! Tests for `janus::normalizer`.
 use crate::janus::normalizer::{helpers, normalize_chunk, normalize_response, ResponseType};
 use serde_json::json;
 

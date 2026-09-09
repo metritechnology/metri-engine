@@ -1,3 +1,4 @@
+//! Tests for `codice::coercion`.
 use super::*;
 use serde_json::Value;
 

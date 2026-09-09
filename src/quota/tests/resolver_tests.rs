@@ -1,3 +1,4 @@
+//! Tests for `quota::resolver`.
 use super::*;
 use serde_json::json;
 use std::sync::Mutex;

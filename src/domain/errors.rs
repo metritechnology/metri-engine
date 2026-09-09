@@ -1,9 +1,12 @@
-// Equivalencia: Railway-oriented error monad constructor.
-// En el stack anterior: (error :JANUS_400 {:reason "..."}) → [:error {...}]
-// En Rust:    DomainError::janus(JANUS_400, ctx) → Result::Err(DomainError)
-//
-// Zero-Drop Policy: todos los códigos de error del catálogo original
-// están representados como variantes del enum `ErrorCode`.
+//! Railway error monad — DomainError and the canonical ErrorCode catalog.
+//!
+//! # Origin
+//! Equivalencia: Railway-oriented error monad constructor.
+//! En el stack anterior: (error :JANUS_400 {:reason "..."}) → [:error {...}]
+//! En Rust:    DomainError::janus(JANUS_400, ctx) → Result::Err(DomainError)
+//!
+//! Zero-Drop Policy: todos los códigos de error del catálogo original
+//! están representados como variantes del enum `ErrorCode`.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

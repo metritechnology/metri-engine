@@ -1,6 +1,10 @@
-// src/codice/validator.rs
-// SRP: Validador estructural y semántico de payloads JSON contra los modelos Códice.
-// Reemplaza la funcionalidad de `el stack anterior.clj` y `api.clj` (`validate-payload`) de el stack anterior.
+//! Structural and semantic payload validator against Codice models.
+//!
+//! src/codice/validator.rs
+//! Validador estructural y semántico de payloads JSON contra los modelos Códice.
+//!
+//! # Origin
+//! Reemplaza la funcionalidad de `el stack anterior.clj` y `api.clj` (`validate-payload`) de el stack anterior.
 
 use serde_json::Value;
 use std::collections::HashMap;

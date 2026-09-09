@@ -1,3 +1,4 @@
+//! Tests for `aegis::pagination`.
 use crate::aegis::pagination::*;
 use serde_json::json;
 use serde_json::Value;

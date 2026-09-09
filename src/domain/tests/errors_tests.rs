@@ -1,3 +1,4 @@
+//! Tests for `domain::errors`.
 use super::*;
 
 #[test]

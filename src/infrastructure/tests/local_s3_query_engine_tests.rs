@@ -1,3 +1,4 @@
+//! Tests for `infrastructure::local_s3_query_engine`.
 // infrastructure/tests/local_s3_query_engine_tests.rs
 //
 // Corpus de caracterización de la Fase 5 (PLAN_CORRECCIONES_PENDIENTES):

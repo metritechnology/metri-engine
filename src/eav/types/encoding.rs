@@ -1,12 +1,15 @@
-// [NUEVO — sin equivalente directo en el stack anterior]
-// src/eav/types/encoding.rs
-// Builders de Sort Key binario para los 4 índices EAV.
-// Diseñado según Metri EAV - OLPT.md §II.3 y §II.4
-//
-// El SK binario garantiza:
-//   1. memcmp-compatible ordering — DynamoDB ordena por bytes nativos
-//   2. Zero-deserialization para range queries (begins_with, BETWEEN)
-//   3. Todos los tipos numéricos son comparables correctamente
+//! Binary sort-key builders for the four EAV indexes.
+//!
+//! # Origin
+//! [NUEVO — sin equivalente directo en el stack anterior]
+//! src/eav/types/encoding.rs
+//! Builders de Sort Key binario para los 4 índices EAV.
+//! Diseñado según Metri EAV - OLPT.md §II.3 y §II.4
+//!
+//! El SK binario garantiza:
+//! 1. memcmp-compatible ordering — DynamoDB ordena por bytes nativos
+//! 2. Zero-deserialization para range queries (begins_with, BETWEEN)
+//! 3. Todos los tipos numéricos son comparables correctamente
 
 use crate::eav::types::datom::DatomValue;
 

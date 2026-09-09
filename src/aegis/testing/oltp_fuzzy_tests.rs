@@ -1,3 +1,4 @@
+//! Tests for `aegis::oltp::fuzzy`.
 use crate::aegis::oltp::fuzzy::*;
 
 #[test]

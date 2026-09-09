@@ -1,3 +1,4 @@
+//! Tests for `aegis::temporal_bridge`.
 use crate::aegis::temporal_bridge::*;
 use crate::grpc::pb::TimeFrameContext;
 

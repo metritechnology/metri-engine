@@ -1,3 +1,4 @@
+//! Tests for `janus::batch_enricher`.
 use crate::janus::batch_enricher::{apply_batch_context, apply_cross_filter};
 use serde_json::json;
 

@@ -1,3 +1,4 @@
+//! Tests for `cedar::principal_graph.rs`.
 // cedar/tests/principal_graph.rs — Grafo de principal: caché, suspensión y jerarquías.
 
 use super::fakes::{FailingReader, FakeEntityReader};

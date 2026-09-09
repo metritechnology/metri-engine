@@ -1,3 +1,4 @@
+//! Tests for `janus_router::saga`.
 // Pruebas del SagaBuilder — proyección declarativa hacia scheduled_job.
 //
 // Cubren los casos límite que separan una proyección correcta de una que parece

@@ -1,3 +1,4 @@
+//! Tests for `iop::orchestrator`.
 // tests/orchestrator_tests.rs — la mitad «deshacer» del pipeline.
 //
 // El paso de cuota debita en el paso 2 y Janus escribe en el 3. Entre ambos

@@ -1,3 +1,4 @@
+//! Tests for `quota::fakes.rs`.
 // quota/tests/fakes.rs — Dobles compartidos por los tests de cuota.
 //
 // El contador falso reproduce lo que hace DynamoDB en lo que importa para

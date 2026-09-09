@@ -1,3 +1,4 @@
+//! Tests for `aegis::formula`.
 use crate::aegis::formula::compiler_olap::OlapFormulaCompiler;
 use crate::aegis::formula::evaluator::FormulaEvaluator;
 use crate::aegis::formula::functions_registry::FunctionRegistry;

@@ -1,3 +1,4 @@
+//! Tests for `grpc::translator`.
 use super::*;
 use serde_json::json;
 

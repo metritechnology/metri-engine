@@ -1,6 +1,8 @@
-// eav/registry/registry.rs
-// AttributeRegistry — O(1) lookup por id o nombre.
-// Blueprint: Metri EAV §MÓDULO 2
+//! AttributeRegistry — O(1) lookup by id or name.
+//!
+//! eav/registry/registry.rs
+//! AttributeRegistry — O(1) lookup por id o nombre.
+//! Blueprint: Metri EAV §MÓDULO 2
 
 use super::descriptor::AttributeDescriptor;
 use std::collections::HashMap;

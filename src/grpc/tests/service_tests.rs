@@ -1,3 +1,4 @@
+//! Tests for `grpc::service`.
 use super::*;
 use crate::grpc::handlers::query_support::*;
 use crate::grpc::translator;

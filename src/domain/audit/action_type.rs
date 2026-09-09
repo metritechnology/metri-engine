@@ -1,8 +1,12 @@
-// domain/audit/action_type.rs — derive-action-type (fn pura).
-// En el stack anterior: (defn derive-action-type [request result] ...)
-//
-// Mapea (request, result) → ActionType para el audit_log OLAP.
-// Dominio puro: sin I/O, sin efectos secundarios.
+//! Pure (request, result) to ActionType derivation for the audit log.
+//!
+//! derive-action-type (fn pura).
+//!
+//! # Origin
+//! En el stack anterior: (defn derive-action-type [request result] ...)
+//!
+//! Mapea (request, result) → ActionType para el audit_log OLAP.
+//! Dominio puro: sin I/O, sin efectos secundarios.
 
 /// Tipo de acción para el audit_log OLAP.
 #[derive(Debug, Clone, PartialEq, Eq)]

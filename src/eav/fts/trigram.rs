@@ -1,5 +1,7 @@
-// eav/fts/trigram.rs — Índice Trigram para Full-Text Search
-// Blueprint: Metri EAV §V
+//! Trigram index for full-text search.
+//!
+//! Índice Trigram para Full-Text Search
+//! Blueprint: Metri EAV §V
 
 use crate::codice::registry::AttributeDescriptor;
 use crate::eav::types::datom::Datom;

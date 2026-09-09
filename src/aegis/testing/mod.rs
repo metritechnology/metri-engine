@@ -1,3 +1,4 @@
+//! Test suite entry point for `aegis::mod.rs`.
 mod label_template_tests;
 mod oltp_aggregation_tests;
 mod oltp_comparison_tests;

@@ -1,3 +1,4 @@
+//! Tests for `codice::sequence`.
 use super::*;
 
 #[test]

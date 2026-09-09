@@ -1,3 +1,4 @@
+//! Core EAV types — `Datom`, `DatomValue`, `ValueType` and SK encoding.
 pub mod datom;
 pub mod encoding;
 pub mod value_type;

@@ -1,6 +1,8 @@
-// eav/index/eavt.rs
-// GSI helpers para el índice EAVT (tabla principal).
-// Blueprint: Metri EAV §MÓDULO 5 + §II.2
+//! GSI helpers for the EAVT index (main table).
+//!
+//! eav/index/eavt.rs
+//! GSI helpers para el índice EAVT (tabla principal).
+//! Blueprint: Metri EAV §MÓDULO 5 + §II.2
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::datom::Datom;

@@ -1,14 +1,16 @@
-// eav/writer/cache_policy.rs — Invalidación de las caches de lectura tras el commit.
-//
-// Las caches viven en el lector (EAV_CACHE por entidad, AEVT_SCAN_CACHE por
-// tenant+tipo); el escritor sólo sabe QUÉ entidades cambió. Este módulo hace
-// esa traducción en un solo punto — incluidas las entidades proyectadas de
-// saga, que antes no se invalidaban y podían quedar invisibles tras un scan
-// cacheado de su tipo.
-//
-// La ruta bulk difiere la invalidación al final del lote (una sola
-// invalidación AEVT en vez de una por fila): `CachePolicy::Deferred` aquí y
-// `invalidate_aevt_scan` desde el canal.
+//! Read-cache invalidation after commit.
+//!
+//! Invalidación de las caches de lectura tras el commit.
+//!
+//! Las caches viven en el lector (EAV_CACHE por entidad, AEVT_SCAN_CACHE por
+//! tenant+tipo); el escritor sólo sabe QUÉ entidades cambió. Este módulo hace
+//! esa traducción en un solo punto — incluidas las entidades proyectadas de
+//! saga, que antes no se invalidaban y podían quedar invisibles tras un scan
+//! cacheado de su tipo.
+//!
+//! La ruta bulk difiere la invalidación al final del lote (una sola
+//! invalidación AEVT en vez de una por fila): `CachePolicy::Deferred` aquí y
+//! `invalidate_aevt_scan` desde el canal.
 
 /// Cuándo invalida el escritor las caches de lectura.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

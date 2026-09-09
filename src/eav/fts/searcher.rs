@@ -1,5 +1,7 @@
-// eav/fts/searcher.rs — Full-Text Search via trigram intersection
-// Blueprint: Metri EAV §V.2
+//! Full-text search via trigram intersection.
+//!
+//! Full-Text Search via trigram intersection
+//! Blueprint: Metri EAV §V.2
 
 use tracing::debug;
 

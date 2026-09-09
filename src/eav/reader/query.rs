@@ -1,12 +1,14 @@
-// eav/reader/query.rs — Ejecutor físico de planes de consulta en DynamoDB.
-// Implementa los 5 planes del PlanSelector con los índices EAV reales.
-//
-// Planes soportados:
-//   PointLookup        → tabla EAVT (1 Get, O(1))
-//   AvetSingleFilter   → GSI-AVET  (1 Query, valor exacto con SK binario)
-//   AvetIntersection   → GSI-AVET  (N Queries paralelas + intersección HashSet)
-//   FtsSearch          → GSI-FTS   (K Query trigrams + Levenshtein threshold)
-//   AevtScan           → GSI-AEVT  (Scan por tipo de entidad)
+//! Physical executor of query plans on DynamoDB.
+//!
+//! Ejecutor físico de planes de consulta en DynamoDB.
+//! Implementa los 5 planes del PlanSelector con los índices EAV reales.
+//!
+//! Planes soportados:
+//! PointLookup        → tabla EAVT (1 Get, O(1))
+//! AvetSingleFilter   → GSI-AVET  (1 Query, valor exacto con SK binario)
+//! AvetIntersection   → GSI-AVET  (N Queries paralelas + intersección HashSet)
+//! FtsSearch          → GSI-FTS   (K Query trigrams + Levenshtein threshold)
+//! AevtScan           → GSI-AEVT  (Scan por tipo de entidad)
 
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};

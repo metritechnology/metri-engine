@@ -1,9 +1,12 @@
-// Equivalencia: CodeRegistry — carga, valida, hashea y compila todos los modelos JSON.
-// En el stack anterior: Integrant ig/init-key :codice/registry + atom global
-// En Rust:    OnceLock<CodeRegistry> — inmutable post-bootstrap, lookup O(1)
-//
-// Zero-Drop Policy: todos los guard de error (COD_001, COD_002, COD_003, COD_SCOPE_001)
-// están replicados con exactamente la misma semántica.
+//! CodeRegistry — loads, validates, hashes and compiles every JSON model.
+//!
+//! # Origin
+//! Equivalencia: CodeRegistry — carga, valida, hashea y compila todos los modelos JSON.
+//! En el stack anterior: Integrant ig/init-key :codice/registry + atom global
+//! En Rust:    OnceLock<CodeRegistry> — inmutable post-bootstrap, lookup O(1)
+//!
+//! Zero-Drop Policy: todos los guard de error (COD_001, COD_002, COD_003, COD_SCOPE_001)
+//! están replicados con exactamente la misma semántica.
 
 use std::collections::HashMap;
 use std::path::Path;

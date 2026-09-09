@@ -1,6 +1,8 @@
-// eav/writer/enricher.rs
-// Auto-generación de atributos de sistema en el Write Path.
-// Blueprint: Metri EAV §MÓDULO 3 writer/enricher.rs
+//! System-attribute auto-generation in the write path.
+//!
+//! eav/writer/enricher.rs
+//! Auto-generación de atributos de sistema en el Write Path.
+//! Blueprint: Metri EAV §MÓDULO 3 writer/enricher.rs
 
 use crate::eav::types::datom::{Datom, DatomValue};
 use crate::eav::writer::system_attrs as sys;

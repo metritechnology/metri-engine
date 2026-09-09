@@ -1,5 +1,7 @@
-// eav/hierarchy/path.rs — Materialized Paths para jerarquías O(1)
-// Blueprint: Metri EAV §XI.1
+//! Materialized paths for O(1) hierarchies.
+//!
+//! Materialized Paths para jerarquías O(1)
+//! Blueprint: Metri EAV §XI.1
 
 use crate::domain::errors::DomainError;
 use tracing::debug;

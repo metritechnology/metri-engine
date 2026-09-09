@@ -1,3 +1,4 @@
+//! Tests for `aegis::formula::lexer`.
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::lexer::tokenize;
 use crate::aegis::formula::token::{Operator, Token};

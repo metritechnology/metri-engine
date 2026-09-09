@@ -1,5 +1,7 @@
-// eav/sharding/shard.rs — Write Sharding para hot partitions
-// Blueprint: Metri EAV §XI.4 + §XII.2
+//! Write sharding for hot partitions.
+//!
+//! Write Sharding para hot partitions
+//! Blueprint: Metri EAV §XI.4 + §XII.2
 
 /// Calcula el índice de shard para un entity_id dado.
 /// Distribución determinista: hash(entity_id) % total_shards.

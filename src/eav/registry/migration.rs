@@ -1,6 +1,8 @@
-// eav/registry/migration.rs
-// Schema evolution sin downtime — diff de registries y estrategia de backfill.
-// Blueprint: Metri EAV §XIII.3
+//! Zero-downtime schema evolution — registry diff and backfill.
+//!
+//! eav/registry/migration.rs
+//! Schema evolution sin downtime — diff de registries y estrategia de backfill.
+//! Blueprint: Metri EAV §XIII.3
 
 use super::descriptor::AttributeDescriptor;
 use super::registry::AttributeRegistry;

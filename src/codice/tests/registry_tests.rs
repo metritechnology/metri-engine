@@ -1,3 +1,4 @@
+//! Tests for `codice::registry`.
 use super::*;
 use std::fs;
 

@@ -1,3 +1,4 @@
+//! Tests for `eda::moira`.
 use super::*;
 use crate::domain::protocols::SqsMessage;
 use crate::eav::writer::TransactResult;

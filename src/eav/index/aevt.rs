@@ -1,5 +1,7 @@
-// eav/index/aevt.rs — GSI-AEVT: Atributo-Entidad-Valor-TX
-// Blueprint: Metri EAV §II.3
+//! GSI-AEVT: Attribute-Entity-Value-TX index.
+//!
+//! GSI-AEVT: Atributo-Entidad-Valor-TX
+//! Blueprint: Metri EAV §II.3
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::datom::Datom;

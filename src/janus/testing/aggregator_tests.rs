@@ -1,3 +1,4 @@
+//! Tests for `janus::aggregator`.
 use crate::janus::aggregator::apply_output_cast;
 use serde_json::json;
 

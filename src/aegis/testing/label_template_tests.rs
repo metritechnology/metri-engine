@@ -1,3 +1,4 @@
+//! Tests for `aegis::label_template`.
 use crate::aegis::label_template::*;
 use serde_json::json;
 

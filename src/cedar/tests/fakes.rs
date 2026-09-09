@@ -1,3 +1,4 @@
+//! Tests for `cedar::fakes.rs`.
 // cedar/tests/fakes.rs — Lectores EAV en memoria para la suite.
 //
 // Sin DynamoClient real, sin sembrar candados globales: los tests del grafo

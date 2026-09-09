@@ -1,3 +1,4 @@
+//! Tests for `janus::contract`.
 use crate::aegis::oltp::compiler::compile_native_plan_fbs;
 use crate::janus::ast_compiler::compile_ast_fbs;
 use crate::janus::fbs;

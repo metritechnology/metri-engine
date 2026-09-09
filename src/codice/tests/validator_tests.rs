@@ -1,3 +1,4 @@
+//! Tests for `codice::validator`.
 use super::*;
 use crate::codice::registry::{AttributeDescriptor, EngineChannel};
 use serde_json::json;

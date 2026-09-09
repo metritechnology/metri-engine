@@ -1,3 +1,4 @@
+//! Attribute registry — descriptors, O(1) lookup and schema migration.
 pub mod descriptor;
 pub mod migration;
 pub mod registry;

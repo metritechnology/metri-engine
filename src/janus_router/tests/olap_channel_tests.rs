@@ -1,3 +1,4 @@
+//! Tests for `janus_router::olap_channel`.
 // janus_router/tests/olap_channel_tests.rs — Fase 1 de PLAN_COSTO_OLAP.md (Puerta 1)
 //
 // Red primero (Regla 02): el canal debe emitir ⌈N/50⌉ llamadas PutRecordBatch

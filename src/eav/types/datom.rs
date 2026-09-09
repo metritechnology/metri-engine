@@ -1,7 +1,10 @@
-// [NUEVO — reemplaza: src/metri/infrastructure/datahike.clj]
-// src/eav/types/datom.rs
-// Struct Datom + enum DatomValue — unidad atómica del sistema EAV.
-// Diseñado según Metri EAV - OLPT.md §I
+//! Datom and DatomValue — the atomic unit of the EAV system.
+//!
+//! # Origin
+//! [NUEVO — reemplaza: src/metri/infrastructure/datahike.clj]
+//! src/eav/types/datom.rs
+//! Struct Datom + enum DatomValue — unidad atómica del sistema EAV.
+//! Diseñado según Metri EAV - OLPT.md §I
 
 use crate::eav::types::value_type::ValueType;
 use serde::{Deserialize, Serialize};

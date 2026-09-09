@@ -1,3 +1,4 @@
+//! Tests for `aegis::sql::compiler`.
 use crate::aegis::sql::compiler::*;
 use crate::aegis::sql::dialect::{AthenaDialect, PostgresDialect};
 use crate::temporal::core::TimeRange;

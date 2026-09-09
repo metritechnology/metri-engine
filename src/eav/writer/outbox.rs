@@ -1,16 +1,18 @@
-// eav/writer/outbox.rs — Patrón outbox: la fila del evento nace en la MISMA
-// transacción que la mutación (Componente Externo 05, metri-schedulers §10).
-//
-// La fila outbox_event ES el registro durable de la mutación: su id es el ULID
-// de la mutación y la llave de orden del ledger del Hub (§10.3). Este módulo es
-// puro — compone datoms, no toca I/O — para que el escritor (transact.rs) sólo
-// orqueste y los tests puedan fijar el sobre sin DynamoDB.
-//
-// Los helpers JSON (`datom_value_to_json`, `datom_map_to_json`) viven aquí
-// porque el sobre `payload` fijó su formato: aplanado y con la misma
-// representación que el delta del contrato metri-contracts. Consumidores
-// externos (saga, domain_event_bus, materialization) comparten la función para
-// no partir la representación en dos.
+//! Transactional outbox — the event row is born with the mutation.
+//!
+//! Patrón outbox: la fila del evento nace en la MISMA
+//! transacción que la mutación (Componente Externo 05, metri-schedulers §10).
+//!
+//! La fila outbox_event ES el registro durable de la mutación: su id es el ULID
+//! de la mutación y la llave de orden del ledger del Hub (§10.3). Este módulo es
+//! puro — compone datoms, no toca I/O — para que el escritor (transact.rs) sólo
+//! orqueste y los tests puedan fijar el sobre sin DynamoDB.
+//!
+//! Los helpers JSON (`datom_value_to_json`, `datom_map_to_json`) viven aquí
+//! porque el sobre `payload` fijó su formato: aplanado y con la misma
+//! representación que el delta del contrato metri-contracts. Consumidores
+//! externos (saga, domain_event_bus, materialization) comparten la función para
+//! no partir la representación en dos.
 
 use std::collections::HashMap;
 

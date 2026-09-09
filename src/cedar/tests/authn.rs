@@ -1,3 +1,4 @@
+//! Tests for `cedar::authn.rs`.
 // cedar/tests/authn.rs — Autenticación: extracción de token y verificación HMAC.
 
 use crate::cedar::cache::session::InMemorySessionStore;

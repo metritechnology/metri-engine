@@ -1,5 +1,7 @@
-// codice/coercion.rs — Motor centralizado de coerción de tipos para Códice.
-// SRP: Maneja conversiones y normalizaciones seguras de strings/tipos en payloads.
+//! Centralized type-coercion engine for Codice payloads.
+//!
+//! Motor centralizado de coerción de tipos para Códice.
+//! Maneja conversiones y normalizaciones seguras de strings/tipos en payloads.
 
 use crate::codice::registry::AttrType;
 use serde_json::Value;

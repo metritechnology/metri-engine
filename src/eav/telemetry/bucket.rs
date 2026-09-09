@@ -1,5 +1,7 @@
-// eav/telemetry/bucket.rs — IoT Epoch Bucketing + LZ4 Compression
-// Blueprint: Metri EAV §XI.2
+//! IoT epoch bucketing + LZ4 compression.
+//!
+//! IoT Epoch Bucketing + LZ4 Compression
+//! Blueprint: Metri EAV §XI.2
 
 use lz4_flex::{compress_prepend_size, decompress_size_prepended};
 

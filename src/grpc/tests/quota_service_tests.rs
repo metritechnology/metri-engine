@@ -1,3 +1,4 @@
+//! Tests for `grpc::quota_service`.
 use super::*;
 
 use serde_json::Value;

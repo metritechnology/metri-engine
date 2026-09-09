@@ -1,3 +1,4 @@
+//! Tests for `quota::ledger`.
 use super::*;
 use aws_sdk_dynamodb::types::error::TransactionCanceledException;
 use aws_sdk_dynamodb::types::CancellationReason;

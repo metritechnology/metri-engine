@@ -1,3 +1,4 @@
+//! Tests for `aegis::oltp::compiler`.
 use crate::aegis::oltp::compiler::*;
 use crate::eav::reader::query::NativeQueryPlan;
 use serde_json::json;

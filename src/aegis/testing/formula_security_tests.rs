@@ -1,3 +1,4 @@
+//! Tests for `aegis::formula::security`.
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::security::{validate_formula, validate_functions};

@@ -1,3 +1,4 @@
+//! Tests for `eav::writer::writer`.
 // Tests del writer EAV — Puerta 1 del plan de refactorización.
 //
 // El writer es la capa de escritura: una regresión aquí es corrupción silenciosa

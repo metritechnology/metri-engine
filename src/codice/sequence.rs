@@ -1,9 +1,13 @@
-// codice/sequence.rs — Generador secuencial ACID con scope resolution.
-// En el stack anterior: Datahike unique:identity + UPSERT para ACID.
-// En Rust:    DynamoDB ConditionalExpression + atomic counter.
-//
-// Zero-Drop Policy: replica next!, build_sequence_code, format_code,
-// scope resolution (exact / nearest_registered / global fallback).
+//! ACID sequential code generator with scope resolution.
+//!
+//! Generador secuencial ACID con scope resolution.
+//!
+//! # Origin
+//! En el stack anterior: Datahike unique:identity + UPSERT para ACID.
+//! En Rust:    DynamoDB ConditionalExpression + atomic counter.
+//!
+//! Zero-Drop Policy: replica next!, build_sequence_code, format_code,
+//! scope resolution (exact / nearest_registered / global fallback).
 
 use tracing::{info, warn};
 

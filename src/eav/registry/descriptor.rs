@@ -1,6 +1,8 @@
-// eav/registry/descriptor.rs
-// AttributeDescriptor — catálogo de atributos del sistema EAV.
-// Blueprint: Metri EAV §MÓDULO 2
+//! AttributeDescriptor — the EAV attribute catalog.
+//!
+//! eav/registry/descriptor.rs
+//! AttributeDescriptor — catálogo de atributos del sistema EAV.
+//! Blueprint: Metri EAV §MÓDULO 2
 
 use crate::eav::types::datom::DatomValue;
 use serde::{Deserialize, Serialize};

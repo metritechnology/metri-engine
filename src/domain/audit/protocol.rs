@@ -1,5 +1,7 @@
-// domain/audit/protocol.rs — protocolo del AuditInterceptor.
-// Se invoca SIEMPRE ([:ok] y [:error]) — nunca bloquea ni altera el result.
+//! Audit interceptor protocol — fire-and-forget, absorbs its own errors.
+//!
+//! protocolo del AuditInterceptor.
+//! Se invoca SIEMPRE (`[:ok]` y `[:error]`) — nunca bloquea ni altera el result.
 
 use async_trait::async_trait;
 use serde_json::Value;

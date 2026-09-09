@@ -1,3 +1,4 @@
+//! Tests for `codice::generator`.
 use super::*;
 use crate::codice::registry::{AttrType, AttributeDescriptor, EngineChannel};
 use serde_json::json;

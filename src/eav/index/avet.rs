@@ -1,5 +1,7 @@
-// eav/index/avet.rs — GSI-AVET: Atributo-Valor-Entidad-TX
-// Blueprint: Metri EAV §II.4
+//! GSI-AVET: Attribute-Value-Entity-TX index.
+//!
+//! GSI-AVET: Atributo-Valor-Entidad-TX
+//! Blueprint: Metri EAV §II.4
 
 use crate::eav::registry::descriptor::AttributeDescriptor;
 use crate::eav::types::datom::Datom;

@@ -1,3 +1,4 @@
+//! Tests for `codice::base36`.
 use super::*;
 use std::collections::HashSet;
 

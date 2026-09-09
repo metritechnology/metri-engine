@@ -1,3 +1,4 @@
+//! Tests for `aegis::oltp::aggregation`.
 use crate::aegis::oltp::aggregation::*;
 use serde_json::json;
 

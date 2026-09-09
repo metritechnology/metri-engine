@@ -1,3 +1,4 @@
+//! Tests for `iop::pipeline`.
 use super::*;
 use crate::domain::errors::ErrorCode;
 

@@ -1,3 +1,4 @@
+//! Tests for `cedar::evaluator.rs`.
 // cedar/tests/evaluator.rs — PDP Cedar: aislamiento por compañía, grants y CSV.
 
 use crate::cedar::engine::CedarAuthorizer;

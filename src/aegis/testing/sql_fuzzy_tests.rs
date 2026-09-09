@@ -1,3 +1,4 @@
+//! Tests for `aegis::sql::fuzzy`.
 use crate::aegis::sql::fuzzy::*;
 
 #[test]

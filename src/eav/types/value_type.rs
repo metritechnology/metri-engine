@@ -1,7 +1,10 @@
-// [NUEVO — no tiene equivalente en el stack anterior]
-// src/eav/types/value_type.rs
-// Define los 12 tipos de valor del sistema EAV y sus tag bytes para SK binario.
-// Diseñado según Metri EAV - OLPT.md §II.3
+//! The twelve EAV value types and their SK tag bytes.
+//!
+//! # Origin
+//! [NUEVO — no tiene equivalente en el stack anterior]
+//! src/eav/types/value_type.rs
+//! Define los 12 tipos de valor del sistema EAV y sus tag bytes para SK binario.
+//! Diseñado según Metri EAV - OLPT.md §II.3
 
 use serde::{Deserialize, Serialize};
 

@@ -1,19 +1,21 @@
-// eav/writer/datom_plan.rs — Planificador puro del camino de escritura.
-//
-// Traduce un payload (o una entidad proyectada de saga) a la lista de datoms
-// que la transacción ACID confirmará: retracts del valor previo, asserts del
-// nuevo, atributos de sistema, `entity_type`, delta del contrato y el rescate
-// de `deleted_attrs`. Es la extracción del núcleo que `transact_inner` y
-// `transact_bulk_deferred` duplicaban línea a línea — con esta pieza, el
-// escritor sólo orquesta I/O y este módulo se prueba sin DynamoDB.
-//
-// Invariantes que fija (y los tests de caracterización candan):
-//   - Un UPDATE genera par retract+assert por atributo cambiado; los
-//     atributos no tocados no generan nada.
-//   - Un DELETE genera sólo retracts y NO añade datoms de sistema.
-//   - UPDATE/DELETE sobre entidad sin atributos activos es Eav002: el motor
-//     no hace upsert (el audit trail del recurso real no se fabrica aquí).
-//   - El delta sólo entra atributos que realmente cambiaron.
+//! Pure planner of the write path — payload to datom list.
+//!
+//! Planificador puro del camino de escritura.
+//!
+//! Traduce un payload (o una entidad proyectada de saga) a la lista de datoms
+//! que la transacción ACID confirmará: retracts del valor previo, asserts del
+//! nuevo, atributos de sistema, `entity_type`, delta del contrato y el rescate
+//! de `deleted_attrs`. Es la extracción del núcleo que `transact_inner` y
+//! `transact_bulk_deferred` duplicaban línea a línea — con esta pieza, el
+//! escritor sólo orquesta I/O y este módulo se prueba sin DynamoDB.
+//!
+//! Invariantes que fija (y los tests de caracterización candan):
+//! - Un UPDATE genera par retract+assert por atributo cambiado; los
+//! atributos no tocados no generan nada.
+//! - Un DELETE genera sólo retracts y NO añade datoms de sistema.
+//! - UPDATE/DELETE sobre entidad sin atributos activos es Eav002: el motor
+//! no hace upsert (el audit trail del recurso real no se fabrica aquí).
+//! - El delta sólo entra atributos que realmente cambiaron.
 
 use std::collections::HashMap;
 

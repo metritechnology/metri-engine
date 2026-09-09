@@ -1,4 +1,4 @@
-//! Unicidad por item de reclamación.
+//! Uniqueness via a claim item inside the transaction.
 //!
 //! Un item aparte, en la misma transacción, cuya clave primaria ES la clave
 //! natural. DynamoDB garantiza que solo un escritor puede crearlo.

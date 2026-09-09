@@ -1,13 +1,15 @@
-// eav/writer/fts_dispatch.rs — Despacho del índice FTS (Degraded Consistency).
-//
-// El índice de trigramas vive FUERA de la transacción ACID: BatchWriteItem en
-// chunks de 25, con reintentos en el cliente. Dos decisiones de política viven
-// aquí y no en el orquestador:
-//   1. El spawn ocurre DESPUÉS del commit ACID — si la transacción falla, ya
-//      no quedan trigramas de datoms que nunca se confirmaron contaminando el
-//      índice con entidades inexistentes.
-//   2. Los errores de FTS se registran y nunca fallan la mutación ya
-//      confirmada: el índice es reconstruible, la escritura no.
+//! FTS index dispatch — degraded consistency by design.
+//!
+//! Despacho del índice FTS (Degraded Consistency).
+//!
+//! El índice de trigramas vive FUERA de la transacción ACID: BatchWriteItem en
+//! chunks de 25, con reintentos en el cliente. Dos decisiones de política viven
+//! aquí y no en el orquestador:
+//! 1. El spawn ocurre DESPUÉS del commit ACID — si la transacción falla, ya
+//! no quedan trigramas de datoms que nunca se confirmaron contaminando el
+//! índice con entidades inexistentes.
+//! 2. Los errores de FTS se registran y nunca fallan la mutación ya
+//! confirmada: el índice es reconstruible, la escritura no.
 
 use std::sync::Arc;
 

@@ -1,11 +1,14 @@
-// Equivalencia: ISessionStore, ISQSBus, IQueryEngine, IStreamWriter,
-//               IEventBus, ICedarContext, IASTCompiler, IAegisEngine
-//
-// En el stack anterior: defprotocol → interfaz dinámica (duck typing)
-// En Rust:    trait → interfaz estática tipada
-//
-// Zero-Drop Policy: todos los métodos de cada defprotocol están presentes.
-// Los contratos Railway [:ok ...] | [:error ...] se mapean a Result<T, DomainError>.
+//! Domain ports — defprotocol equivalents as static Rust traits.
+//!
+//! # Origin
+//! Equivalencia: ISessionStore, ISQSBus, IQueryEngine, IStreamWriter,
+//! IEventBus, ICedarContext, IASTCompiler, IAegisEngine
+//!
+//! En el stack anterior: defprotocol → interfaz dinámica (duck typing)
+//! En Rust:    trait → interfaz estática tipada
+//!
+//! Zero-Drop Policy: todos los métodos de cada defprotocol están presentes.
+//! Los contratos Railway [:ok ...] | [:error ...] se mapean a Result<T, DomainError>.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

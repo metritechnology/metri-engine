@@ -1,3 +1,4 @@
+//! Tests for `quota::sweeper`.
 use super::*;
 
 use crate::quota::reservations::{MemoryReservationStore, Reservation};

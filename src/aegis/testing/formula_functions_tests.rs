@@ -1,3 +1,4 @@
+//! Tests for `aegis::formula::functions`.
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 
 #[test]
