@@ -39,6 +39,10 @@ POLICY_NAME = "metri-engine-deploy"
 HOSTED_ZONE_ID = "Z0492322W8B6QV4SG4W4"
 LAMBDA_ADAPTER_ACCOUNT = "753240598075"  # cuenta AWS del layer público Web Adapter
 GITHUB_OIDC_PROVIDER = "token.actions.githubusercontent.com"
+# Bucket dedicado de artefactos de deploy (samconfig [production].s3_bucket).
+# Usar un bucket explícito evita que CI toque el stack compartido
+# aws-sam-cli-managed-default que sam CLI crea con resolve_s3.
+DEPLOY_BUCKET = "metri-engine-deploy-982592308819-us-east-1"
 # Thumbprints publicados por GitHub para su proveedor OIDC. AWS ya no los
 # valida para GitHub (rotan los certs bajo dominio de GitHub), pero la API de
 # IAM exige al menos uno al crear el proveedor.
@@ -146,7 +150,8 @@ def deploy_policy() -> dict:
                 "Resource": "*",
             },
             {
-                # Bucket del paquete SAM (resolve_s3 lo descubre/crea).
+                # Bucket del paquete SAM (resolve_s3 del deploy manual local) y
+                # bucket dedicado de artefactos del deploy CI.
                 "Sid": "SamArtifactBucket",
                 "Effect": "Allow",
                 "Action": [
@@ -159,6 +164,8 @@ def deploy_policy() -> dict:
                 "Resource": [
                     "arn:aws:s3:::aws-sam-cli-managed-default-samclisourcebucket-*",
                     "arn:aws:s3:::aws-sam-cli-managed-default-samclisourcebucket-*/*",
+                    f"arn:aws:s3:::{DEPLOY_BUCKET}",
+                    f"arn:aws:s3:::{DEPLOY_BUCKET}/*",
                 ],
             },
             {
@@ -454,6 +461,50 @@ def _provider_exists(iam) -> str | None:
     return None
 
 
+def ensure_deploy_bucket(session) -> None:
+    """Bucket dedicado de artefactos de sam deploy en CI (idempotente)."""
+    s3 = session.client("s3")
+    try:
+        s3.head_bucket(Bucket=DEPLOY_BUCKET)
+        print(f"✓ Bucket de artefactos ya existe: s3://{DEPLOY_BUCKET}")
+        return
+    except s3.exceptions.ClientError:
+        pass
+
+    print(f"→ Creando bucket de artefactos s3://{DEPLOY_BUCKET}…")
+    # us-east-1 no admite CreateBucketConfiguration.
+    s3.create_bucket(Bucket=DEPLOY_BUCKET)
+    s3.put_public_access_block(
+        Bucket=DEPLOY_BUCKET,
+        PublicAccessBlockConfiguration={
+            "BlockPublicAcls": True,
+            "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True,
+            "RestrictPublicBuckets": True,
+        },
+    )
+    s3.put_bucket_encryption(
+        Bucket=DEPLOY_BUCKET,
+        ServerSideEncryptionConfiguration={
+            "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+        },
+    )
+    s3.put_bucket_lifecycle_configuration(
+        Bucket=DEPLOY_BUCKET,
+        LifecycleConfiguration={
+            "Rules": [
+                {
+                    "ID": "expire-old-artifacts",
+                    "Status": "Enabled",
+                    "Filter": {"Prefix": ""},
+                    "Expiration": {"Days": 90},
+                }
+            ]
+        },
+    )
+    print(f"✅ Bucket listo: cifrado AES256, público bloqueado, expiración 90d")
+
+
 def apply_changes(session) -> None:
     iam = session.client("iam")
 
@@ -515,6 +566,7 @@ def main() -> int:
         if args.profile
         else boto3.session.Session(region_name=REGION)
     )
+    ensure_deploy_bucket(session)
     apply_changes(session)
     return 0
 

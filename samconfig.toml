@@ -52,7 +52,10 @@ parallel = true
 [production.deploy.parameters]
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = false
-resolve_s3 = true
+# Bucket dedicado (creado por scripts/ops/bootstrap_github_oidc.py). Con
+# s3_bucket explícito, sam deploy no toca el stack compartido
+# aws-sam-cli-managed-default que usa el resolve_s3 del deploy local.
+s3_bucket = "metri-engine-deploy-982592308819-us-east-1"
 s3_prefix = "metri-engine"
 region = "us-east-1"
 parameter_overrides = "EavTableName=\"metri-dynamo\" AthenaWorkGroup=\"metri-analytics\""

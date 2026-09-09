@@ -53,7 +53,8 @@ Strategy decisions:
    ```bash
    python3 scripts/ops/bootstrap_github_oidc.py --apply --profile metri-dev
    # → creates the GitHub OIDC provider + metri-engine-github-deploy role
-   #   with a least-privilege policy aligned to template.yaml
+   #   (least-privilege policy aligned to template.yaml) + the dedicated
+   #   artifact bucket metri-engine-deploy-* (encrypted, private, 90d expiry)
    ```
 
 2. **`production` environment in GitHub**: Settings → Environments → New
