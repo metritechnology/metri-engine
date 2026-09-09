@@ -1,6 +1,15 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 
+    // Fixtures dorados del contrato de eventos (golden_test.rs): viven en el
+    // repo hermano metri-contracts, que no se publica. Solo se compila el
+    // candado donde ambos repos conviven; en CI el módulo se excluye (cfg).
+    println!("cargo:rustc-check-cfg=cfg(has_metri_contracts)");
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    if manifest_dir.join("../metri-contracts/golden").is_dir() {
+        println!("cargo:rustc-cfg=has_metri_contracts");
+    }
+
     tonic_build::configure()
         .build_server(true)
         .build_client(true)

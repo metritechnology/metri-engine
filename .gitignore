@@ -16,7 +16,7 @@ env.json
 
 # Local development / Testing
 .local/
-events/
+/events/
 event.json
 *.log
 *.profraw
