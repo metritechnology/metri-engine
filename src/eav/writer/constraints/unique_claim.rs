@@ -202,7 +202,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints,
-                    }
+        }
     }
 
     fn unica(attrs: &[&str], scope: ConstraintScope) -> Constraint {

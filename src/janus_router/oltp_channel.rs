@@ -630,7 +630,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints: vec![],
-                    };
+        };
 
         let normal_model = EntityModel {
             entity: "dashboardBI".to_string(),
@@ -647,7 +647,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints: vec![],
-                    };
+        };
 
         // Case 1: System model permits custom human-readable ID
         let payload = json!({ "id": "tnt_regular" });

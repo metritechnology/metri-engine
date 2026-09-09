@@ -307,5 +307,4 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
         .attributes
         .iter()
         .any(|a| a.name == "completed_at" && a.indexed));
-
 }

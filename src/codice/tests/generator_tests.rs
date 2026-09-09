@@ -21,7 +21,7 @@ async fn test_generator_inject_empty() {
         disable_eda: false,
         shadow_sagas_mapping: None,
         constraints: vec![],
-            };
+    };
 
     let mut payload = serde_json::Map::new();
     payload.insert("name".to_string(), Value::String("foo".to_string()));
@@ -74,7 +74,7 @@ async fn test_generator_inject_stochastic_base36() {
         disable_eda: false,
         shadow_sagas_mapping: None,
         constraints: vec![],
-            };
+    };
 
     // Case A: Payload does not have "code". It should inject it.
     let payload = serde_json::Map::new();

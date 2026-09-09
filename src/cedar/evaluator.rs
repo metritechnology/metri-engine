@@ -20,9 +20,7 @@ pub(crate) use mutational::step4_mutational;
 /// Claves `dominio:acción` concedidas al principal — la fachada que consumen
 /// los gates de autoservicio (F4 de PLAN_PERMISOS_SYSTEM_CORE.md) sin exponer
 /// el módulo privado `grants`.
-pub(crate) fn principal_grant_keys(
-    principal: &PrincipalData,
-) -> std::collections::HashSet<String> {
+pub(crate) fn principal_grant_keys(principal: &PrincipalData) -> std::collections::HashSet<String> {
     grants::collect_user_grants(principal, &grants::known_domains())
 }
 

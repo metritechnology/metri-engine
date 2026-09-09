@@ -191,7 +191,7 @@ fn make_test_model() -> EntityModel {
         disable_eda: false,
         shadow_sagas_mapping: None,
         constraints: vec![],
-            }
+    }
 }
 
 #[test]

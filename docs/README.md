@@ -33,7 +33,23 @@
 
 ### Components (`docs/components/`) — fichas por módulo
 
-> En construcción (Fase 6 del plan de documentación): una ficha por componente con propósito, invariantes, puntos de entrada, errores y ADRs. / In progress (Phase 6): one card per component.
+| Ficha | Componente |
+|---|---|
+| [eav.md](components/eav.md) | Motor de almacenamiento EAV inmutable |
+| [codice.md](components/codice.md) | Registro SSOT de esquemas |
+| [domain.md](components/domain.md) | Contratos fundamentales: errores, eventos, puertos |
+| [aegis.md](components/aegis.md) | Compiladores: SQL OLAP, executor OLTP, fórmulas |
+| [janus.md](components/janus.md) | Read path |
+| [janus_router.md](components/janus_router.md) | Write path |
+| [cedar.md](components/cedar.md) | Autorización ABAC Zero-Trust |
+| [quota.md](components/quota.md) | Cuotas por tenant |
+| [iop.md](components/iop.md) | Pipeline de ingesta |
+| [eda.md](components/eda.md) | Eventos: outbox y fallas |
+| [temporal.md](components/temporal.md) | Primitivas temporales |
+| [grpc.md](components/grpc.md) | Superficie de API gRPC |
+| [infrastructure.md](components/infrastructure.md) | Adaptadores AWS y emulaciones locales |
+| [application.md](components/application.md) | Puertos DIP |
+| [otel.md](components/otel.md) | Trazas OpenTelemetry |
 
 ### Guides (`docs/guides/`)
 
@@ -48,6 +64,7 @@
 |---|---|
 | [api-grpc.md](reference/api-grpc.md) | Contrato gRPC para consumidores (metri-app, bff, agentes) |
 | [codigos-error.md](reference/codigos-error.md) | Catálogo canónico de errores y su mapeo gRPC |
+| [glosario.md](reference/glosario.md) | Equivalencias EN↔ES de los términos del dominio |
 | [modelos-codice.md](reference/modelos-codice.md) | Esquemas de los modelos del Códice |
 
 ### Code documentation (rustdoc)

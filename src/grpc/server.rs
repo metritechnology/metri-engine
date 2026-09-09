@@ -318,7 +318,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         .add_service(eda_web_service)
         .add_service(quota_web_service)
         .add_service(config_web_service)
-            .serve_with_shutdown(addr, shutdown_signal())
+        .serve_with_shutdown(addr, shutdown_signal())
         .await
         .map_err(|e| DomainError::new(ErrorCode::Janus500, format!("serve falló: {e}")))?;
 

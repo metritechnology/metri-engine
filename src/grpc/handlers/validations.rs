@@ -29,8 +29,8 @@ impl MetriGrpcService {
             // (las custom de approval incluidas). El dominio desconocido solo
             // advierte — el Códice puede no listar dominios de plugins en alta.
             const KNOWN_ACTIONS: &[&str] = &[
-                "VIEW", "CREATE", "UPDATE", "DELETE", "UPSERT", "EXECUTE", "EXPORT",
-                "APPROVE", "REJECT", "DELEGATE", "REVOKE",
+                "VIEW", "CREATE", "UPDATE", "DELETE", "UPSERT", "EXECUTE", "EXPORT", "APPROVE",
+                "REJECT", "DELEGATE", "REVOKE",
             ];
             if action != "*" && !KNOWN_ACTIONS.contains(&action) {
                 return Err(Status::invalid_argument(format!(

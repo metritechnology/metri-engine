@@ -702,9 +702,7 @@ async fn test_tenant_and_quota_master_crud_gates() {
     assert_eq!(err.code(), tonic::Code::PermissionDenied);
     // F4: la fila `tenant` PROPIA ya no la bloquea el gate maestro sino el
     // GRANT de autoservicio (según la acción: CREATE) — mensaje accionable.
-    assert!(err
-        .message()
-        .contains("requiere el permiso tenant:CREATE"));
+    assert!(err.message().contains("requiere el permiso tenant:CREATE"));
 
     // 2. Mutate 'domain_quota' as non-master user -> Expect PermissionDenied (Auth403)
     let payload = serde_json::json!({
@@ -768,7 +766,9 @@ async fn test_tenant_and_quota_master_crud_gates() {
             .insert("test-roles", "regular-role".parse().unwrap());
 
         let res = service.transact(grpc_req).await;
-        let err = res.err().expect("sin grant el self-service debe rechazarse");
+        let err = res
+            .err()
+            .expect("sin grant el self-service debe rechazarse");
         assert_eq!(err.code(), tonic::Code::PermissionDenied);
         assert!(
             err.message()
@@ -805,11 +805,12 @@ async fn test_tenant_and_quota_master_crud_gates() {
             .insert("test-roles", "regular-role".parse().unwrap());
 
         let res = service.transact(grpc_req).await;
-        let err = res.err().expect("sin grant la mutación de tenant propia debe rechazarse");
+        let err = res
+            .err()
+            .expect("sin grant la mutación de tenant propia debe rechazarse");
         assert_eq!(err.code(), tonic::Code::PermissionDenied);
         assert!(
-            err.message()
-                .contains("requiere el permiso tenant:UPDATE"),
+            err.message().contains("requiere el permiso tenant:UPDATE"),
             "mensaje sin guía de acción: {}",
             err.message()
         );
