@@ -72,10 +72,11 @@ jobs:
 
       - name: protoc (gRPC/tonic)
         run: |
-          # El repo apt de Chrome (preinstalado en el runner) suelta fallos de
-          # hash sum intermitentes que matan a apt-get update entero.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update -qq
+          # Repo apt de Chrome del runner: índices intermitentes con hash sum
+          # distinto. Se elimina en cualquier formato (.list/.sources) y se
+          # tolera el fallo de update: los índices de Ubuntu bastan para protoc.
+          sudo rm -f /etc/apt/sources.list.d/google*chrome*
+          sudo apt-get update -qq || true
           sudo apt-get install -y -qq protobuf-compiler
 
       # cargo-lambda cruza de x86_64 a aarch64-musl usando zig como enlazador.

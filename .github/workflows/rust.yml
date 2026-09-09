@@ -31,10 +31,8 @@ jobs:
 
       - name: protoc (gRPC/tonic)
         run: |
-          # El repo apt de Chrome (preinstalado en el runner) suelta fallos de
-          # hash sum intermitentes que matan a apt-get update entero.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update -qq
+          sudo rm -f /etc/apt/sources.list.d/google*chrome*
+          sudo apt-get update -qq || true
           sudo apt-get install -y -qq protobuf-compiler
 
       - name: Formato (rustfmt — no negociable)
@@ -115,8 +113,8 @@ jobs:
 
       - name: protoc (gRPC/tonic)
         run: |
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update -qq
+          sudo rm -f /etc/apt/sources.list.d/google*chrome*
+          sudo apt-get update -qq || true
           sudo apt-get install -y -qq protobuf-compiler
 
       - name: cargo-llvm-cov
