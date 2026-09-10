@@ -18,11 +18,11 @@
       "type": "reference",
       "entityRef": "form_template_section",
       "cardinality": "one",
-      "description": "Crucial para vincular anal\u00edticamente esta instancia de grupo a su origen estandarizado."
+      "description": "Crucial para vincular analíticamente esta instancia de grupo a su origen estandarizado."
     },
     {
       "name": "section_order",
-      "type": "decimal",
+      "type": "integer",
       "required": true,
       "index": true
     },

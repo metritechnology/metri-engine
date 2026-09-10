@@ -15,7 +15,7 @@
     },
     {
       "name": "field_order",
-      "type": "decimal",
+      "type": "integer",
       "required": true,
       "index": true,
       "description": "Sequential order of the question in the checklist UI"

@@ -349,4 +349,28 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         .iter()
         .find(|c| c.attributes == ["work_order_id", "form_template_id"])
         .expect("la misma form_template no debe instanciarse dos veces en una OT");
+
+    // La definición de formularios comparte ciclo de vida con procedure y sus
+    // órdenes son integer (paridad con la familia procedure).
+    let ft = registry
+        .get_model("form_template")
+        .expect("form_template debe estar registrado");
+    assert!(ft.attributes.iter().any(|a| a.name == "status"
+        && a.attr_type == AttrType::Enum
+        && a.options.contains(&"PUBLISHED".to_string())));
+    for (model, attr) in [
+        ("form_template_field", "field_order"),
+        ("form_template_section", "section_order"),
+        ("check_list_section", "section_order"),
+    ] {
+        let m = registry
+            .get_model(model)
+            .unwrap_or_else(|| panic!("{model} debe estar registrado"));
+        assert!(
+            m.attributes
+                .iter()
+                .any(|a| a.name == attr && a.attr_type == AttrType::Number),
+            "{model}.{attr} debe ser integer (AttrType::Number)"
+        );
+    }
 }

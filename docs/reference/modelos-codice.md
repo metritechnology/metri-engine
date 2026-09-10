@@ -28,7 +28,7 @@ Total de modelos: **57**
 | `electronic_signature` | oltp | `signer_user_id`, `signature_intent`, `timestamp`, `ip_address`, `device_fingerprint`, `snapshot_hash`, `graphical_file_id`, `requires_mfa_token`, `signed_entity`, `signed_entity_id` |
 | `event_routing_rule` | oltp | `rule_code`, `description`, `is_system_seeded`, `target_entity_name`, `event_trigger_type`, `filter_conditions`, `detail_type_output` |
 | `file` | oltp | `file_name`, `mime_type`, `file_extension`, `file_size_bytes`, `checksum_sha256`, `owner_entity_type`, `owner_entity_id`, `url`, `optimized_url`, `thumbnail_url`, `optimized_size_bytes`, `optimized_mime_type`, `size_reduction_percent`, `processing_status`, `processing_error`, `embed_requested`, `embed_status`, `chunks_count`, `uploaded_by`, `created_at`, `processed_at`, `direct_access_only` |
-| `form_template` | oltp | `name`, `description`, `version` |
+| `form_template` | oltp | `name`, `description`, `version`, `status` |
 | `form_template_field` | oltp | `form_template_section_id`, `field_order`, `question_prompt`, `type`, `is_required`, `validation_rules` |
 | `form_template_section` | oltp | `form_template_id`, `section_order`, `title`, `description` |
 | `inventory_batch` | oltp | `part_id`, `location_id`, `received_quantity`, `remaining_quantity`, `unit_cost_cents`, `currency`, `received_at`, `tenant_id` |

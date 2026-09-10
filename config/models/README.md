@@ -203,7 +203,12 @@ Reglas de frontera:
    `form_template`, nunca como `procedure`.
 3. Ninguna definición cuelga de otra capa: `procedure` y `form_template` se
    instancian sobre la OT (o la `request`) directamente.
-4. Las tareas de una OT son ahora atributos y evidencias de la propia
+4. `form_template` comparte ciclo de vida con `procedure`: `status`
+   DRAFT/PUBLISHED/RETIRED — solo las PUBLISHED se ofrecen para instanciar. El
+   default es PUBLISHED para no quitar usabilidad a las plantillas existentes.
+5. Los órdenes son `integer` en toda la familia (form y procedure):
+   `field_order`, `section_order`, `procedure_order`, `check_list_order`.
+6. Las tareas de una OT son ahora atributos y evidencias de la propia
    `work_order` (notas, horas de `labor_log`, adjuntos vía `file`): no existe
    entidad de tarea.
 

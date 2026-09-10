@@ -21,6 +21,18 @@
       "type": "decimal",
       "default_value": 1.0,
       "description": "Template version for audit trails."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "DRAFT",
+        "PUBLISHED",
+        "RETIRED"
+      ],
+      "default_value": "PUBLISHED",
+      "is_dimension": true,
+      "description": "Ciclo de vida en paridad con procedure: solo las PUBLISHED se ofrecen para instanciar checklists y requests; DRAFT se edita sin ofrecerse; RETIRED conserva el histórico. Default PUBLISHED: toda plantilla existente sigue usable."
     }
   ]
 }

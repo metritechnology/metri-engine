@@ -15,7 +15,7 @@
     },
     {
       "name": "section_order",
-      "type": "decimal",
+      "type": "integer",
       "required": true,
       "index": true
     },
