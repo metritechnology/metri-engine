@@ -15,12 +15,9 @@ Total de modelos: **57**
 | `asset` | oltp | `name`, `tag`, `serial_number`, `barcode_qr_code`, `status`, `criticality`, `location_id`, `parent_asset_id`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `specifications`, `custom_attributes` |
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | oltp | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
-| `check_list` | oltp | `work_order_id`, `title`, `description`, `is_completed`, `check_list_order`, `check_list_template_id` |
-| `check_list_item` | oltp | `check_list_section_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at`, `check_list_template_item_id` |
-| `check_list_section` | oltp | `check_list_id`, `section_order`, `title`, `description`, `is_completed`, `check_list_template_section_id` |
-| `check_list_template` | oltp | `name`, `description`, `status` |
-| `check_list_template_item` | oltp | `check_list_template_section_id`, `item_order`, `question_text`, `type`, `is_required` |
-| `check_list_template_section` | oltp | `check_list_template_id`, `section_order`, `title`, `description` |
+| `checklist_template` | oltp | `name`, `description`, `status` |
+| `checklist_template_item` | oltp | `checklist_template_section_id`, `item_order`, `question_text`, `type`, `is_required` |
+| `checklist_template_section` | oltp | `checklist_template_id`, `section_order`, `title`, `description` |
 | `company` | oltp | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
 | `dashboardBI` | oltp | `name`, `description`, `widgets`, `created_at`, `updated_at` |
 | `document_chunk` | oltp | `id`, `parent_file`, `chunk_index`, `chunk_content`, `semantic_embedding`, `metadata_tags`, `owner_entity_type`, `owner_entity_id`, `page_range`, `created_at` |
@@ -47,8 +44,8 @@ Total de modelos: **57**
 | `outbox_event` | oltp | `status`, `detail_type`, `payload`, `retry_count`, `retry_at`, `claimed_at`, `created_at` |
 | `part` | oltp | `name`, `sku`, `barcode`, `description`, `category`, `default_unit_cost_cents`, `min_quantity`, `uom`, `currency` |
 | `preventive_maintenance` | oltp | `asset_id`, `cron_expression`, `advance_notice_days`, `meter_based_trigger`, `advance_notice_meter_value`, `iana_timezone`, `prenotify_before_minutes`, `next_due_date`, `recurrence_basis`, `status` |
-| `procedure` | oltp | `procedure_order`, `name`, `description`, `lifecycle_state`, `max_score`, `estimated_duration_minutes`, `required_role_id` |
-| `procedure_field` | oltp | `procedure_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `score`, `field_order` |
+| `procedure_template` | oltp | `procedure_order`, `name`, `description`, `lifecycle_state`, `max_score`, `estimated_duration_minutes`, `required_role_id` |
+| `procedure_template_field` | oltp | `procedure_template_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `score`, `field_order` |
 | `reminder` | oltp | `title`, `message`, `target_user_id`, `target_group_id`, `reminder_datetime`, `prenotify_minutes_array`, `iana_timezone`, `status` |
 | `request` | oltp | `title`, `description`, `requested_by_user`, `requested_by_email`, `form_data`, `status`, `priority`, `asset_id`, `location_id` |
 | `role` | oltp | `name`, `description`, `grants`, `allowed_locations`, `allowed_assets`, `tenant_id` |
@@ -62,5 +59,8 @@ Total de modelos: **57**
 | `user_group` | oltp | `name`, `description`, `allowed_locations`, `allowed_assets`, `parent_user_group_id`, `time_restrictions` |
 | `webhook_endpoint` | oltp | `name`, `target_url`, `http_method`, `authentication_type`, `auth_token`, `subscribed_rule_ids`, `max_retries`, `is_active` |
 | `work_order` | oltp | `work_order_number`, `title`, `description`, `request_id`, `client_id`, `asset_id`, `location_id`, `assignees`, `assigned_group_ids`, `category`, `status`, `priority`, `due_date`, `total_cost_cents`, `currency`, `checkin_latitude`, `checkin_longitude`, `checkin_at`, `checkout_latitude`, `checkout_longitude`, `checkout_at`, `is_geofence_verified`, `sla_response_due_date`, `sla_resolution_due_date`, `sla_response_breached`, `sla_resolution_breached`, `scheduled_start`, `scheduled_end`, `preventive_maintenance_id`, `scheduled_job_id`, `parent_work_order_id`, `is_parent`, `completed_by`, `completed_at`, `custom_attributes` |
-| `work_order_procedure` | oltp | `work_order_id`, `procedure_id`, `name`, `status`, `score`, `max_score`, `completed_by`, `completed_at`, `procedure_order` |
-| `work_order_procedure_field` | oltp | `work_order_procedure_id`, `procedure_field_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `field_order`, `score`, `max_score`, `value_text`, `value_number`, `value_boolean`, `value_epoch`, `value_choice`, `answered_by`, `answered_at` |
+| `work_order_checklist` | oltp | `work_order_id`, `title`, `description`, `is_completed`, `checklist_order`, `checklist_template_id` |
+| `work_order_checklist_item` | oltp | `work_order_checklist_section_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at`, `checklist_template_item_id` |
+| `work_order_checklist_section` | oltp | `work_order_checklist_id`, `section_order`, `title`, `description`, `is_completed`, `checklist_template_section_id` |
+| `work_order_procedure` | oltp | `work_order_id`, `procedure_template_id`, `name`, `status`, `score`, `max_score`, `completed_by`, `completed_at`, `procedure_order` |
+| `work_order_procedure_field` | oltp | `work_order_procedure_id`, `procedure_template_field_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `field_order`, `score`, `max_score`, `value_text`, `value_number`, `value_boolean`, `value_epoch`, `value_choice`, `answered_by`, `answered_at` |

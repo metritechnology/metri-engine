@@ -1,5 +1,5 @@
 {
-  "entity": "check_list_template",
+  "entity": "checklist_template",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
@@ -21,7 +21,11 @@
     {
       "name": "status",
       "type": "enum",
-      "options": ["DRAFT", "PUBLISHED", "RETIRED"],
+      "options": [
+        "DRAFT",
+        "PUBLISHED",
+        "RETIRED"
+      ],
       "default_value": "DRAFT",
       "is_dimension": true,
       "description": "Ciclo de vida en paridad con procedure: solo las PUBLISHED se instancian en órdenes de trabajo (constraint ref_state); DRAFT se edita sin ofrecerse; RETIRED conserva el histórico. La definición define el esqueleto (secciones + preguntas); las respuestas viven solo en la instancia."

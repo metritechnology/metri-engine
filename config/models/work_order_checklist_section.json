@@ -1,13 +1,13 @@
 {
-  "entity": "check_list_section",
+  "entity": "work_order_checklist_section",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [
     {
-      "name": "check_list_id",
+      "name": "work_order_checklist_id",
       "type": "reference",
-      "entityRef": "check_list",
+      "entityRef": "work_order_checklist",
       "cardinality": "one",
       "required": true,
       "index": true,
@@ -37,9 +37,9 @@
       "is_dimension": true
     },
     {
-      "name": "check_list_template_section_id",
+      "name": "checklist_template_section_id",
       "type": "reference",
-      "entityRef": "check_list_template_section",
+      "entityRef": "checklist_template_section",
       "cardinality": "one",
       "description": "Provenance (opcional): la sección de plantilla que originó esta sección. Habilita OLAP por sección de plantilla aunque cambien los títulos."
     }

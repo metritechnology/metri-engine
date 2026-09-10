@@ -1421,7 +1421,7 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
     let proc_id = format!("01PROC{}", &ulid::Ulid::new().to_string()[..8]);
     let semilla = crate::grpc::pb::TransactionRequest {
         tenant_id: tenant.clone(),
-        entity_type: "procedure".to_string(),
+        entity_type: "procedure_template".to_string(),
         entity_id: proc_id.clone(),
         action: 1,
         payload: Some(translator::value_to_struct(&json!({
@@ -1449,7 +1449,7 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
             &wop_id,
             json!({
                 "work_order_id": "01WO",
-                "procedure_id": proc_id,
+                "procedure_template_id": proc_id,
                 "name": "Inspección de planta",
                 "procedure_order": 1,
                 "status": "PENDING"
@@ -1496,7 +1496,7 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
             &wop_id,
             json!({
                 "work_order_id": "01WO",
-                "procedure_id": proc_id,
+                "procedure_template_id": proc_id,
                 "name": "Inspección de planta",
                 "procedure_order": 1,
                 "status": "PENDING"

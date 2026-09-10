@@ -1,13 +1,13 @@
 {
-  "entity": "check_list_template_section",
+  "entity": "checklist_template_section",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [
     {
-      "name": "check_list_template_id",
+      "name": "checklist_template_id",
       "type": "reference",
-      "entityRef": "check_list_template",
+      "entityRef": "checklist_template",
       "cardinality": "one",
       "required": true,
       "index": true,
@@ -18,7 +18,7 @@
       "type": "integer",
       "required": true,
       "index": true,
-      "description": "Orden de la sección dentro de la plantilla (1..N). Al instanciar se copia al section_order de la check_list_section."
+      "description": "Orden de la sección dentro de la plantilla (1..N). Al instanciar se copia al section_order de la work_order_checklist_section."
     },
     {
       "name": "title",

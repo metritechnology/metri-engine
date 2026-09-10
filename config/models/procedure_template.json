@@ -1,5 +1,5 @@
 {
-  "entity": "procedure",
+  "entity": "procedure_template",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,

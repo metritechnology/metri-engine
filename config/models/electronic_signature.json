@@ -67,7 +67,7 @@
       "type": "string",
       "required": true,
       "is_dimension": true,
-      "description": "The table or concept being signed (e.g. 'work_order', 'check_list_item')"
+      "description": "The table or concept being signed (e.g. 'work_order', 'work_order_checklist_item')"
     },
     {
       "name": "signed_entity_id",

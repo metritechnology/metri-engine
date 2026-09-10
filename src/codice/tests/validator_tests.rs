@@ -365,8 +365,8 @@ fn test_lifecycle_state_de_procedure_acepta_sus_tres_estados() {
     let (registry, _rules) =
         crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
     let model = registry
-        .get_model("procedure")
-        .expect("procedure registrado");
+        .get_model("procedure_template")
+        .expect("procedure_template registrado");
 
     for state in ["DRAFT", "PUBLISHED", "RETIRED"] {
         let ok = validate_payload(

@@ -213,8 +213,8 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
         .expect("config/models debe compilar con la familia procedure");
 
     let procedure = registry
-        .get_model("procedure")
-        .expect("procedure debe estar registrado");
+        .get_model("procedure_template")
+        .expect("procedure_template debe estar registrado");
     assert!(procedure
         .attributes
         .iter()
@@ -223,12 +223,12 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
             && a.options.contains(&"PUBLISHED".to_string())));
 
     let pfield = registry
-        .get_model("procedure_field")
-        .expect("procedure_field debe estar registrado");
+        .get_model("procedure_template_field")
+        .expect("procedure_template_field debe estar registrado");
     assert!(pfield
         .attributes
         .iter()
-        .any(|a| a.name == "procedure_id" && a.required && a.indexed));
+        .any(|a| a.name == "procedure_template_id" && a.required && a.indexed));
     assert!(pfield
         .attributes
         .iter()
@@ -243,7 +243,7 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
             .attributes
             .iter()
             .any(|a| a.name == "parent_field_id"
-                && a.entity_ref.as_deref() == Some("procedure_field"))
+                && a.entity_ref.as_deref() == Some("procedure_template_field"))
     );
 
     let wop = registry
@@ -256,7 +256,7 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
     assert!(wop
         .attributes
         .iter()
-        .any(|a| a.name == "procedure_id" && a.entity_ref.as_deref() == Some("procedure")));
+        .any(|a| a.name == "procedure_template_id" && a.entity_ref.as_deref() == Some("procedure_template")));
     assert!(wop.attributes.iter().any(|a| a.name == "score"));
     assert!(wop.attributes.iter().any(|a| a.name == "max_score"));
 
@@ -270,7 +270,7 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
     assert!(wopf
         .attributes
         .iter()
-        .any(|a| a.name == "procedure_field_id"));
+        .any(|a| a.name == "procedure_template_field_id"));
     // Captura de valor tipada: un attr por familia de respuesta. La evidencia
     // de fichero no va en array: la vía única es file.owner_entity_* (Fase 3
     // de PLAN_REFACTORIZACION_MODELO).
@@ -329,7 +329,7 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
     let wop_unique = wop
         .constraints
         .iter()
-        .find(|c| c.attributes == ["work_order_id", "procedure_id"])
+        .find(|c| c.attributes == ["work_order_id", "procedure_template_id"])
         .expect("el mismo procedure no debe instanciarse dos veces en una OT");
     assert_eq!(wop_unique.scope, crate::codice::registry::ConstraintScope::Tenant);
     // Contrato de integridad: plantilla PUBLISHED, cierre con actor y puntaje acotado.
@@ -337,7 +337,7 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         .constraints
         .iter()
         .any(|c| c.kind == crate::codice::registry::ConstraintKind::RefState
-            && c.attributes == ["procedure_id"]
+            && c.attributes == ["procedure_template_id"]
             && c.when
                 .as_deref()
                 .is_some_and(|w| w.contains(&("lifecycle_state".to_string(), "PUBLISHED".to_string())))));
@@ -353,19 +353,19 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
             && c.attributes == ["score", "max_score"]));
 
     let cl = registry
-        .get_model("check_list")
-        .expect("check_list debe estar registrado");
+        .get_model("work_order_checklist")
+        .expect("work_order_checklist debe estar registrado");
     assert!(cl
         .attributes
         .iter()
-        .any(|a| a.name == "check_list_order" && a.indexed));
+        .any(|a| a.name == "checklist_order" && a.indexed));
     assert!(
         !cl.attributes.iter().any(|a| a.name == "form_template_id"),
         "form_template_id fue retirado: la checklist es self-contained"
     );
 
     // Toda la capa de definición de formularios está retirada: las preguntas
-    // y su estructura viven solo en las instancias (check_list*).
+    // y su estructura viven solo en las instancias (work_order_checklist*).
     for retirada in ["form_template", "form_template_section", "form_template_field"] {
         assert!(
             registry.get_model(retirada).is_none(),
@@ -373,27 +373,27 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         );
     }
     let cls = registry
-        .get_model("check_list_section")
-        .expect("check_list_section debe estar registrado");
+        .get_model("work_order_checklist_section")
+        .expect("work_order_checklist_section debe estar registrado");
     assert!(
         cls.attributes
             .iter()
             .any(|a| a.name == "section_order" && a.attr_type == AttrType::Number),
-        "check_list_section.section_order debe ser integer (AttrType::Number)"
+        "work_order_checklist_section.section_order debe ser integer (AttrType::Number)"
     );
 
     // La plantilla de checklists es simétrica a procedure: ciclo de vida
     // PUBLISHED, provenance por pregunta y las mismas constraints en la
     // instancia (unique WO+template, ref_state).
     let clt = registry
-        .get_model("check_list_template")
-        .expect("check_list_template debe estar registrado");
+        .get_model("checklist_template")
+        .expect("checklist_template debe estar registrado");
     assert!(clt.attributes.iter().any(|a| a.name == "status"
         && a.attr_type == AttrType::Enum
         && a.options.contains(&"PUBLISHED".to_string())));
     let clt_item = registry
-        .get_model("check_list_template_item")
-        .expect("check_list_template_item debe estar registrado");
+        .get_model("checklist_template_item")
+        .expect("checklist_template_item debe estar registrado");
     assert!(clt_item
         .attributes
         .iter()
@@ -407,18 +407,18 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
     assert!(cl
         .attributes
         .iter()
-        .any(|a| a.name == "check_list_template_id"
-            && a.entity_ref.as_deref() == Some("check_list_template")));
+        .any(|a| a.name == "checklist_template_id"
+            && a.entity_ref.as_deref() == Some("checklist_template")));
     cl.constraints
         .iter()
         .find(|c| {
             c.kind == crate::codice::registry::ConstraintKind::Unique
-                && c.attributes == ["work_order_id", "check_list_template_id"]
+                && c.attributes == ["work_order_id", "checklist_template_id"]
         })
         .expect("la misma plantilla de checklist no debe instanciarse dos veces en una OT");
     assert!(cl
         .constraints
         .iter()
         .any(|c| c.kind == crate::codice::registry::ConstraintKind::RefState
-            && c.attributes == ["check_list_template_id"]));
+            && c.attributes == ["checklist_template_id"]));
 }

@@ -14,9 +14,9 @@
       "is_dimension": true
     },
     {
-      "name": "procedure_id",
+      "name": "procedure_template_id",
       "type": "reference",
-      "entityRef": "procedure",
+      "entityRef": "procedure_template",
       "cardinality": "one",
       "index": true,
       "is_dimension": true,
@@ -79,13 +79,13 @@
       "scope": "tenant",
       "attributes": [
         "work_order_id",
-        "procedure_id"
+        "procedure_template_id"
       ],
       "description": "El mismo procedure no se instancia dos veces en la misma OT: una OT ordena N procedimientos distintos. Reordenar toca procedure_order, nunca duplica la instancia."
     },
     {
       "type": "ref_state",
-      "attr": "procedure_id",
+      "attr": "procedure_template_id",
       "conditions": {
         "lifecycle_state": "PUBLISHED"
       },

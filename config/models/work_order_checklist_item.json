@@ -1,13 +1,13 @@
 {
-  "entity": "check_list_item",
+  "entity": "work_order_checklist_item",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [
     {
-      "name": "check_list_section_id",
+      "name": "work_order_checklist_section_id",
       "type": "reference",
-      "entityRef": "check_list_section",
+      "entityRef": "work_order_checklist_section",
       "cardinality": "one",
       "required": true,
       "index": true,
@@ -82,9 +82,9 @@
       "index": true
     },
     {
-      "name": "check_list_template_item_id",
+      "name": "checklist_template_item_id",
       "type": "reference",
-      "entityRef": "check_list_template_item",
+      "entityRef": "checklist_template_item",
       "cardinality": "one",
       "description": "Provenance (opcional): la pregunta de plantilla que originó este ítem. Ata la respuesta exacta al campo original, a prueba de cambios en el texto (OLAP)."
     }

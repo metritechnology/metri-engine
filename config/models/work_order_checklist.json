@@ -1,5 +1,5 @@
 {
-  "entity": "check_list",
+  "entity": "work_order_checklist",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
@@ -30,15 +30,15 @@
       "is_dimension": true
     },
     {
-      "name": "check_list_order",
+      "name": "checklist_order",
       "type": "integer",
       "index": true,
       "description": "Orden de esta checklist entre las N que puede llevar la OT (1..N). Libre al crear; desempate por title."
     },
     {
-      "name": "check_list_template_id",
+      "name": "checklist_template_id",
       "type": "reference",
-      "entityRef": "check_list_template",
+      "entityRef": "checklist_template",
       "cardinality": "one",
       "index": true,
       "is_dimension": true,
@@ -51,13 +51,13 @@
       "scope": "tenant",
       "attributes": [
         "work_order_id",
-        "check_list_template_id"
+        "checklist_template_id"
       ],
-      "description": "La misma plantilla no se instancia dos veces en la misma OT. Las checklists manuales (sin check_list_template_id) no reclaman: la huella ignora claves con atributos ausentes."
+      "description": "La misma plantilla no se instancia dos veces en la misma OT. Las checklists manuales (sin checklist_template_id) no reclaman: la huella ignora claves con atributos ausentes."
     },
     {
       "type": "ref_state",
-      "attr": "check_list_template_id",
+      "attr": "checklist_template_id",
       "conditions": {
         "status": "PUBLISHED"
       },

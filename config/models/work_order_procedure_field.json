@@ -14,9 +14,9 @@
       "is_dimension": true
     },
     {
-      "name": "procedure_field_id",
+      "name": "procedure_template_field_id",
       "type": "reference",
-      "entityRef": "procedure_field",
+      "entityRef": "procedure_template_field",
       "cardinality": "one",
       "description": "Provenance campo a campo (el procedureTemplateFieldId de MaintainX): qué fila de plantilla originó este campo. Vital para inteligencia de negocio: agrupar métricas sobre este paso específico nacido de una plantilla."
     },

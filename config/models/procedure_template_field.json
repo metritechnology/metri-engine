@@ -1,13 +1,13 @@
 {
-  "entity": "procedure_field",
+  "entity": "procedure_template_field",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [
     {
-      "name": "procedure_id",
+      "name": "procedure_template_id",
       "type": "reference",
-      "entityRef": "procedure",
+      "entityRef": "procedure_template",
       "cardinality": "one",
       "required": true,
       "index": true,
@@ -16,7 +16,7 @@
     {
       "name": "parent_field_id",
       "type": "reference",
-      "entityRef": "procedure_field",
+      "entityRef": "procedure_template_field",
       "cardinality": "one",
       "description": "Campo padre cuando este paso cuelga de una sección (field_type HEADING). Vacío: paso de primer nivel. Habilita la anidación tipo MaintainX (parentId en procedure fields)."
     },

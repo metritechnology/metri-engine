@@ -33,7 +33,7 @@ flowchart LR
         TT["procedure"]
     end
     subgraph EXEC["Instancias de formulario"]
-        CL["check_list · work_order_procedure"]
+        CL["work_order_checklist · work_order_procedure"]
     end
     subgraph ACT["Activos y ubicaciones"]
         AS["asset · location · company"]
@@ -53,7 +53,7 @@ flowchart LR
 
     WO --> AS
     WO --> U
-    WO --> CL
+    WO --> WCL
     PLAN --> WO
     METER --> AS
     INV --> AS
@@ -92,10 +92,10 @@ flowchart TB
     LL["labor_log<br/>hora × tarifa"] -->|"work_order_id"| WO
     LL -->|"user_id"| U
 
-    CL["check_list<br/>(1..N por OT · check_list_order)"]
-    WO -->|"work_order_id"| CL
-    CLS["check_list_section"] -->|"check_list_id"| CL
-    CLI["check_list_item<br/>(10 tipos de respuesta)"] -->|"check_list_section_id"| CLS
+    WCL["work_order_checklist<br/>(1..N por OT · checklist_order)"]
+    WO -->|"work_order_id"| WCL
+    WCLS["work_order_checklist_section"] -->|"work_order_checklist_id"| WCL
+    WCLI["work_order_checklist_item<br/>(10 tipos de respuesta)"] -->|"work_order_checklist_section_id"| WCLS
 
     WPROC["work_order_procedure<br/>(1..N por OT · procedure_order)"]
     WO -->|"work_order_id"| WPROC
@@ -126,8 +126,8 @@ catálogo el 2026-09-09: los procedimientos son el único protocolo formal.
 ```mermaid
 flowchart LR
     subgraph DEFS["Definición (solo PUBLISHED se instancia)"]
-        PR["procedure → procedure_field<br/>(12 tipos · scoring)"]
-        CLT["check_list_template → sections → items<br/>(10 tipos de respuesta)"]
+        PR["procedure_template → procedure_template_field<br/>(12 tipos · scoring)"]
+        CLT["checklist_template → sections → items<br/>(10 tipos de respuesta)"]
     end
 
     subgraph GEN["Generación preventiva"]
@@ -138,16 +138,16 @@ flowchart LR
     end
 
     subgraph RUN["Instancia runtime — la OT lleva 1..N procedimientos y 1..N checklists"]
-        WO2 --> WPR2["work_order_procedure ← procedure<br/>(procedure_order · unique WO+procedure)"]
-        WO2 --> CL2["check_list ← check_list_template<br/>(check_list_order · unique WO+template)"]
+        WO2 --> WPR2["work_order_procedure ← procedure_template<br/>(procedure_order · unique WO+template)"]
+        WO2 --> CL2["work_order_checklist ← checklist_template<br/>(checklist_order · unique WO+template)"]
         REQ2["request"] -.->|"convert_to_work_order"| WO2
     end
 ```
 
 | Sistema | Definición | Instancia | Uso |
 |---|---|---|---|
-| Procedures | `procedure(_field)` | `work_order_procedure(_field)` | Protocolo formal con scoring (estilo MaintainX) |
-| Checklists | `check_list_template(_section/_item)` | `check_list(_section/_item)` | Verificación sin puntaje (provenance por pregunta; manuales permitidas) |
+| Procedures | `procedure_template(_field)` | `work_order_procedure(_field)` | Protocolo formal con scoring (estilo MaintainX) |
+| Checklists | `checklist_template(_section/_item)` | `work_order_checklist(_section/_item)` | Verificación sin puntaje (provenance por pregunta; manuales permitidas) |
 
 ---
 

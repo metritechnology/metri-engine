@@ -437,11 +437,11 @@ mod state_tests {
     #[test]
     fn ref_state_evalua_las_condiciones_del_referenciado() {
         let publicado = pares(&[
-            ("entity/type", DatomValue::Str("procedure".into())),
+            ("entity/type", DatomValue::Str("procedure_template".into())),
             ("lifecycle_state", DatomValue::Str("PUBLISHED".into())),
         ]);
         check_ref_conditions(
-            "procedure",
+            "procedure_template",
             "01PROC",
             &publicado,
             &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
@@ -450,7 +450,7 @@ mod state_tests {
 
         let borrador = pares(&[("lifecycle_state", DatomValue::Str("DRAFT".into()))]);
         assert!(check_ref_conditions(
-            "procedure",
+            "procedure_template",
             "01PROC",
             &borrador,
             &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
@@ -459,7 +459,7 @@ mod state_tests {
 
         // Entidad inexistente: vista vacía, no cumple nada.
         assert!(check_ref_conditions(
-            "procedure",
+            "procedure_template",
             "01FANTASMA",
             &HashMap::new(),
             &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],

@@ -1,13 +1,13 @@
 {
-  "entity": "check_list_template_item",
+  "entity": "checklist_template_item",
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [
     {
-      "name": "check_list_template_section_id",
+      "name": "checklist_template_section_id",
       "type": "reference",
-      "entityRef": "check_list_template_section",
+      "entityRef": "checklist_template_section",
       "cardinality": "one",
       "required": true,
       "index": true,
@@ -25,7 +25,7 @@
       "type": "string",
       "required": true,
       "fts": true,
-      "description": "Pregunta mostrada al técnico. Se copia al question_text del check_list_item al instanciar."
+      "description": "Pregunta mostrada al técnico. Se copia al question_text del work_order_checklist_item al instanciar."
     },
     {
       "name": "type",
@@ -44,7 +44,7 @@
       ],
       "required": true,
       "is_dimension": true,
-      "description": "Mismo enum de 10 tipos que check_list_item: se copia tal cual al instanciar."
+      "description": "Mismo enum de 10 tipos que work_order_checklist_item: se copia tal cual al instanciar."
     },
     {
       "name": "is_required",
