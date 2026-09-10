@@ -14,13 +14,6 @@
       "is_dimension": true
     },
     {
-      "name": "form_template_section_id",
-      "type": "reference",
-      "entityRef": "form_template_section",
-      "cardinality": "one",
-      "description": "Crucial para vincular analíticamente esta instancia de grupo a su origen estandarizado."
-    },
-    {
       "name": "section_order",
       "type": "integer",
       "required": true,

@@ -30,7 +30,7 @@ flowchart LR
         PM["preventive_maintenance<br/>scheduled_job · reminder<br/>calendar_event"]
     end
     subgraph PROT["Protocolos (plantillas de trabajo)"]
-        TT["procedure<br/>form_template"]
+        TT["procedure"]
     end
     subgraph EXEC["Instancias de formulario"]
         CL["check_list · work_order_procedure"]
@@ -54,7 +54,6 @@ flowchart LR
     WO --> AS
     WO --> U
     WO --> CL
-    CL --> TT
     PLAN --> WO
     METER --> AS
     INV --> AS
@@ -128,7 +127,6 @@ catálogo el 2026-09-09: los procedimientos son el único protocolo formal.
 flowchart LR
     subgraph DEFS["Protocolos (definición)"]
         PR["procedure → procedure_field<br/>(12 tipos · scoring)"]
-        FT["form_template → section<br/>(esqueleto de secciones)"]
     end
 
     subgraph GEN["Generación preventiva"]
@@ -140,7 +138,7 @@ flowchart LR
 
     subgraph RUN["Instancia runtime — la OT lleva 1..N procedimientos y 1..N checklists"]
         WO2 --> WPR2["work_order_procedure ← procedure<br/>(procedure_order · unique WO+procedure)"]
-        WO2 --> CL2["check_list ← form_template<br/>(check_list_order · unique WO+template)"]
+        WO2 --> CL2["check_list<br/>(self-contained · check_list_order)"]
         REQ2["request"] -.->|"convert_to_work_order"| WO2
     end
 ```
@@ -148,7 +146,9 @@ flowchart LR
 | Sistema | Definición | Instancia | Uso |
 |---|---|---|---|
 | Procedures | `procedure(_field)` | `work_order_procedure(_field)` | Protocolo formal con scoring (estilo MaintainX) |
-| Form templates | `form_template(_section)` | `check_list(_section/_item)` | Checklists de inspección y `request` (preguntas self-contained en el ítem) |
+
+Las checklists (`check_list` → secciones → ítems) no tienen definición: se
+construyen a mano sobre la OT o la `request`.
 
 ---
 

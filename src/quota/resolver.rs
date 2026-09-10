@@ -46,7 +46,7 @@ const MAX_QUOTA_ROWS: i64 = 100;
 /// Dominio comodín: la cuota POR DEFECTO del tenant.
 ///
 /// El catálogo de modelos del motor tiene muchas más entidades de las que nadie
-/// tarifa —`form_template_section`, `check_list_item`, `document_chunk`—, y
+/// tarifa —`check_list_item`, `document_chunk`—, y
 /// casi ninguna se crea desde una pantalla propia: aparecen como parte de otra
 /// cosa. Con la política fail-closed, cada una de ellas era un alta imposible
 /// hasta que alguien se acordara de darle su fila, y el síntoma no era «falta

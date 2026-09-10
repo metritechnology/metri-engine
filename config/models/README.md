@@ -183,36 +183,31 @@ Las reglas de eventos permiten disparar notificaciones y registrar auditorías a
 
 ---
 
-## V. Protocolos y formularios: los dos sistemas y sus fronteras
+## V. Protocolos y checklists
 
-Desde el 2026-09-09 el catálogo reconoce **dos** sistemas de "definición →
-instancia" (la capa `work_order_template` + paradas de ruta y el sistema de
-tareas `task_template`/`work_order_task` fueron retirados). Ambos cuelgan
-directamente de `work_order`:
+Desde el 2026-09-09 el catálogo tiene **un solo sistema de protocolo formal**:
+la capa `work_order_template` + paradas de ruta, el sistema de tareas
+`task_template`/`work_order_task` y la capa de definición de formularios
+`form_template*` fueron retirados.
 
 | Sistema | Definición | Instancia | Frontera |
 |---|---|---|---|
 | **Procedimientos** | `procedure` → `procedure_field` (12 tipos de campo, scoring) | `work_order_procedure` → `work_order_procedure_field` | **SSOT del protocolo formal**: pasos tipados con puntaje, estilo MaintainX. Solo los `procedure` con `lifecycle_state=PUBLISHED` se instancian; `DRAFT` no se ofrece a nuevas OTs y `RETIRED` conserva histórico. |
-| **Formularios** | `form_template` → `form_template_section` (esqueleto: cabecera + secciones) | `check_list` → `check_list_section` → `check_list_item` | **Checklists de inspección y solicitudes**: única vía de formularios para `check_list` y para `request`. Las preguntas viven solo en la instancia (`check_list_item` es self-contained: pregunta, tipo y respuesta). |
 
-Reglas de frontera:
+Las **checklists** (`check_list` → `check_list_section` → `check_list_item`)
+no tienen capa de definición: se construyen directamente sobre la OT. Cada
+pieza es self-contained — secciones con `section_order`, ítems con pregunta,
+tipo y respuesta — y los órdenes son `integer` en toda la familia
+(`section_order`, `procedure_order`, `check_list_order`).
 
-1. Un protocolo de trabajo con scoring (aprobar/rechazar por puntaje) se define
-   como `procedure`, nunca como `form_template`.
-2. Una lista de verificación sí/no/respuesta corta se define como
-   `form_template`, nunca como `procedure`. La plantilla define el esqueleto
-   (cabecera + secciones), no las preguntas: al instanciar, los ítems de
-   `check_list_item` son self-contained y no llevan provenance por pregunta.
-3. Ninguna definición cuelga de otra capa: `procedure` y `form_template` se
-   instancian sobre la OT (o la `request`) directamente.
-4. `form_template` comparte ciclo de vida con `procedure`: `status`
-   DRAFT/PUBLISHED/RETIRED — solo las PUBLISHED se ofrecen para instanciar. El
-   default es PUBLISHED para no quitar usabilidad a las plantillas existentes.
-5. Los órdenes son `integer` en toda la familia (form y procedure):
-   `field_order`, `section_order`, `procedure_order`, `check_list_order`.
-6. Las tareas de una OT son ahora atributos y evidencias de la propia
-   `work_order` (notas, horas de `labor_log`, adjuntos vía `file`): no existe
-   entidad de tarea.
+Reglas:
+
+1. Un protocolo de trabajo con scoring (aprobar/rechazar por puntaje) es un
+   `procedure` instanciado como `work_order_procedure`; una verificación
+   sí/no/respuesta corta es una `check_list` construida a mano sobre la OT.
+2. Las tareas de una OT son atributos y evidencias de la propia `work_order`
+   (notas, horas de `labor_log`, adjuntos vía `file`): no existe entidad de
+   tarea.
 
 ### La OT lleva 1..N procedimientos y 1..N checklists
 
@@ -224,10 +219,8 @@ checklists — no hay límite de uno por OT ni de plantillas distintas:
   `procedure.procedure_order` al instanciar y reordenable sin tocar la
   plantilla. Constraint: el mismo `procedure` no se instancia dos veces en la
   misma OT (`unique` tenant sobre `work_order_id + procedure_id`).
-- Cada checklist (`check_list`) lleva `check_list_order` (1..N) y puede nacer
-  de una `form_template` o construirse a mano. Constraint: la misma
-  `form_template` no se instancia dos veces en la misma OT (`unique` tenant
-  sobre `work_order_id + form_template_id`); las manuales, sin plantilla, no
-  reclaman nada.
+- Cada checklist (`check_list`) lleva `check_list_order` (1..N) y se construye
+  directamente sobre la OT: la capa `form_template*` fue retirada, así que no
+  hay plantillas de las que heredar.
 - Los N procedimientos y las N checklists de una OT son independientes entre
   sí: ni los protocolos generan checklists ni las checklists generan pasos.

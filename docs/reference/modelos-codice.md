@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **56**
+Total de modelos: **54**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -15,9 +15,9 @@ Total de modelos: **56**
 | `asset` | oltp | `name`, `tag`, `serial_number`, `barcode_qr_code`, `status`, `criticality`, `location_id`, `parent_asset_id`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `specifications`, `custom_attributes` |
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | oltp | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
-| `check_list` | oltp | `work_order_id`, `form_template_id`, `title`, `description`, `is_completed`, `check_list_order` |
+| `check_list` | oltp | `work_order_id`, `title`, `description`, `is_completed`, `check_list_order` |
 | `check_list_item` | oltp | `check_list_section_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at` |
-| `check_list_section` | oltp | `check_list_id`, `form_template_section_id`, `section_order`, `title`, `description`, `is_completed` |
+| `check_list_section` | oltp | `check_list_id`, `section_order`, `title`, `description`, `is_completed` |
 | `company` | oltp | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
 | `dashboardBI` | oltp | `name`, `description`, `widgets`, `created_at`, `updated_at` |
 | `document_chunk` | oltp | `id`, `parent_file`, `chunk_index`, `chunk_content`, `semantic_embedding`, `metadata_tags`, `owner_entity_type`, `owner_entity_id`, `page_range`, `created_at` |
@@ -28,8 +28,6 @@ Total de modelos: **56**
 | `electronic_signature` | oltp | `signer_user_id`, `signature_intent`, `timestamp`, `ip_address`, `device_fingerprint`, `snapshot_hash`, `graphical_file_id`, `requires_mfa_token`, `signed_entity`, `signed_entity_id` |
 | `event_routing_rule` | oltp | `rule_code`, `description`, `is_system_seeded`, `target_entity_name`, `event_trigger_type`, `filter_conditions`, `detail_type_output` |
 | `file` | oltp | `file_name`, `mime_type`, `file_extension`, `file_size_bytes`, `checksum_sha256`, `owner_entity_type`, `owner_entity_id`, `url`, `optimized_url`, `thumbnail_url`, `optimized_size_bytes`, `optimized_mime_type`, `size_reduction_percent`, `processing_status`, `processing_error`, `embed_requested`, `embed_status`, `chunks_count`, `uploaded_by`, `created_at`, `processed_at`, `direct_access_only` |
-| `form_template` | oltp | `name`, `description`, `version`, `status` |
-| `form_template_section` | oltp | `form_template_id`, `section_order`, `title`, `description` |
 | `inventory_batch` | oltp | `part_id`, `location_id`, `received_quantity`, `remaining_quantity`, `unit_cost_cents`, `currency`, `received_at`, `tenant_id` |
 | `inventory_ledger` | olap | `movement_id`, `part_id`, `location_id`, `timestamp`, `quantity_change`, `running_balance`, `running_financial_value` |
 | `inventory_movement` | oltp | `part_id`, `location_id`, `type`, `quantity`, `unit_cost_cents`, `currency`, `inventory_batch_id`, `reference_entity`, `reference_id`, `timestamp`, `performed_by`, `tenant_id` |
@@ -49,7 +47,7 @@ Total de modelos: **56**
 | `procedure` | oltp | `procedure_order`, `name`, `description`, `lifecycle_state`, `max_score`, `estimated_duration_minutes`, `required_role_id` |
 | `procedure_field` | oltp | `procedure_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `score`, `field_order` |
 | `reminder` | oltp | `title`, `message`, `target_user_id`, `target_group_id`, `reminder_datetime`, `prenotify_minutes_array`, `iana_timezone`, `status` |
-| `request` | oltp | `title`, `description`, `requested_by_user`, `requested_by_email`, `form_template_id`, `form_data`, `status`, `priority`, `asset_id`, `location_id` |
+| `request` | oltp | `title`, `description`, `requested_by_user`, `requested_by_email`, `form_data`, `status`, `priority`, `asset_id`, `location_id` |
 | `role` | oltp | `name`, `description`, `grants`, `allowed_locations`, `allowed_assets`, `tenant_id` |
 | `scheduled_job` | oltp | `parent_entity_ref`, `created_by`, `trigger_type`, `trigger_expression`, `iana_timezone`, `action_type`, `target_user_id`, `target_group_id`, `target_role_id`, `target_webhook_id`, `action_payload`, `idempotency_hash`, `status`, `last_run_at`, `run_count`, `last_error` |
 | `sequence_registry` | oltp | `tenant_id`, `sequence_code`, `prefix`, `padding_length`, `current_value`, `parent_scope_tag` |
