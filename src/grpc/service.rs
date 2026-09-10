@@ -9,8 +9,8 @@ use crate::grpc::pb::metri_service_server::MetriService;
 use crate::grpc::pb::{
     BulkRequest, BulkResponse, DiscoveryRequest, DiscoveryResponse, ExploreRequest,
     ExploreResponse, ListEntitiesRequest, ListEntitiesResponse, MatchRoutingRulesBatchRequest,
-    MatchRoutingRulesBatchResponse, QueryRequest, QueryResponse, TransactionRequest,
-    TransactionResponse,
+    MatchRoutingRulesBatchResponse, QueryRequest, QueryResponse, CompositeTransactRequest,
+    CompositeTransactResponse, TransactionRequest, TransactionResponse,
 };
 /// Dependencias del servicio, resueltas una sola vez en la raíz de
 /// composición (`grpc/server.rs` en producción). Sustituye al constructor de
@@ -44,6 +44,9 @@ pub struct ServiceDeps {
 
 pub struct MetriGrpcService {
     pub(crate) oltp_executor: crate::aegis::oltp::executor::OltpExecutor,
+    /// Escritor EAV inyectado: el composite lo usa directo (instanciación
+    /// atómica — madre + hijos en una TransactWriteItems).
+    pub(crate) eav_writer: crate::eav::writer::EavWriter,
     pub(crate) iop_orchestrator: std::sync::Arc<dyn crate::iop::core::IIopOrchestrator>,
     pub(crate) athena_engine: Option<std::sync::Arc<dyn crate::domain::protocols::IQueryEngine>>,
     pub(crate) valkey_store: std::sync::Arc<dyn crate::domain::protocols::ISessionStore>,
@@ -107,6 +110,7 @@ impl MetriGrpcService {
 
         Self {
             oltp_executor,
+            eav_writer,
             iop_orchestrator,
             athena_engine,
             valkey_store,
@@ -159,6 +163,13 @@ impl MetriService for MetriGrpcService {
         request: Request<TransactionRequest>,
     ) -> Result<Response<TransactionResponse>, Status> {
         self.transact_impl(request).await
+    }
+
+    async fn composite_transact(
+        &self,
+        request: Request<CompositeTransactRequest>,
+    ) -> Result<Response<CompositeTransactResponse>, Status> {
+        self.composite_transact_impl(request).await
     }
 
     async fn bulk_ingest(

@@ -6,6 +6,7 @@
 
 pub(crate) mod authz;
 pub(crate) mod bulk;
+pub(crate) mod composite;
 pub(crate) mod explore;
 pub(crate) mod list_support;
 pub(crate) mod query;

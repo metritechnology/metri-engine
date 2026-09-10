@@ -74,6 +74,84 @@ pub fn default_planners() -> Vec<Box<dyn ConstraintPlanner>> {
     vec![Box::new(UniqueClaimPlanner::new())]
 }
 
+/// Una entidad participante de una transacción (compuesta o no).
+///
+/// La madre de un `transact_with_projections` y cada proyección entran por
+/// aquí: las mismas reglas se evalúan para todas — SOLID sin privilegiar a la
+/// madre.
+pub struct EntidadEnTx<'a> {
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub attrs: &'a HashMap<String, DatomValue>,
+    pub op: TransactOp,
+    pub model: &'a EntityModel,
+}
+
+/// Planifica los items de reclamación (`unique`) de TODAS las entidades de la
+/// transacción, con detección de conflicto intra-transacción.
+///
+/// Dos entidades distintas que reclamen la misma clave en la MISMA
+/// `TransactWriteItems` serían dos Puts sobre el mismo item: DynamoDB los
+/// rechazaría con una `ValidationException` genérica a mitad del commit.
+/// Aquí se detecta antes y sale como error de dominio con contexto. La misma
+/// entidad re-clamando su propia clave (reintento) se deduplica: un solo item.
+pub fn plan_claims_para(
+    planners: &[Box<dyn ConstraintPlanner>],
+    tenant_id: &str,
+    table: &str,
+    entidades: &[EntidadEnTx<'_>],
+) -> Result<Vec<TransactWriteItem>, DomainError> {
+    let mut items: Vec<TransactWriteItem> = Vec::new();
+    let mut reclamado_por: HashMap<String, &str> = HashMap::new();
+
+    for entidad in entidades {
+        let ctx = ConstraintContext {
+            tenant_id,
+            entity_id: entidad.entity_id,
+            model: entidad.model,
+            attrs: entidad.attrs,
+            op: entidad.op.clone(),
+            table,
+        };
+        for planner in planners {
+            if !planner.applies_to(entidad.model) {
+                continue;
+            }
+            for item in planner.plan(&ctx)? {
+                match item_pk(&item) {
+                    Some(pk) => match reclamado_por.get(pk) {
+                        Some(previo) if *previo != entidad.entity_id => {
+                            return Err(DomainError::codice(
+                                crate::domain::errors::ErrorCode::Cod001,
+                                format!(
+                                    "conflicto de restricción unique dentro del composite: \
+                                     '{}' y '{}' reclaman la misma clave ({pk})",
+                                    previo, entidad.entity_id
+                                ),
+                            ));
+                        }
+                        Some(_) => {} // la misma entidad: dedupe idempotente
+                        None => {
+                            reclamado_por.insert(pk.to_string(), entidad.entity_id);
+                            items.push(item);
+                        }
+                    },
+                    None => items.push(item),
+                }
+            }
+        }
+    }
+    Ok(items)
+}
+
+/// PK del item de un `TransactWriteItem` de tipo Put (para dedupe/conflicto).
+fn item_pk(item: &TransactWriteItem) -> Option<&str> {
+    item.put()
+        .and_then(|put| put.item().get("PK"))
+        .and_then(|av| av.as_s().ok())
+        .map(|s| s.as_str())
+}
+
 /// Planifica los items de todos los planificadores que apliquen.
 pub fn plan_all(
     planners: &[Box<dyn ConstraintPlanner>],
@@ -387,5 +465,89 @@ mod state_tests {
             &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
         )
         .is_err());
+    }
+}
+
+#[cfg(test)]
+mod claims_tests {
+    use super::*;
+    use crate::codice::registry::{Constraint, ConstraintKind, ConstraintScope, EngineChannel};
+    use crate::eav::writer::constraints::UniqueClaimPlanner;
+
+    fn modelo_unico() -> EntityModel {
+        EntityModel {
+            entity: "work_order_procedure".to_string(),
+            label: None,
+            icon: None,
+            primary_key: None,
+            fts_fields: vec![],
+            engine: EngineChannel::Oltp,
+            attributes: vec![],
+            event_rules: vec![],
+            is_sequence_scope_provider: false,
+            write_path_locked: false,
+            is_system: false,
+            disable_eda: false,
+            shadow_sagas_mapping: None,
+            constraints: vec![Constraint {
+                kind: ConstraintKind::Unique,
+                scope: ConstraintScope::Tenant,
+                attributes: vec!["work_order_id".into(), "procedure_id".into()],
+                when: None,
+            }],
+        }
+    }
+
+    fn entidad<'a>(
+        eid: &'a str,
+        wo: &'a str,
+        proc: &'a str,
+        m: &'a EntityModel,
+    ) -> EntidadEnTx<'a> {
+        let attrs = HashMap::from([
+            ("work_order_id".to_string(), DatomValue::Str(wo.into())),
+            ("procedure_id".to_string(), DatomValue::Str(proc.into())),
+        ]);
+        EntidadEnTx {
+            entity_type: "work_order_procedure",
+            entity_id: eid,
+            attrs: Box::leak(Box::new(attrs)),
+            op: TransactOp::Create,
+            model: m,
+        }
+    }
+
+    fn planners() -> Vec<Box<dyn ConstraintPlanner>> {
+        vec![Box::new(UniqueClaimPlanner::new())]
+    }
+
+    #[test]
+    fn composite_conflicto_intra_tx_sale_como_error_de_dominio() {
+        let m = modelo_unico();
+        let a = entidad("01A", "01WO", "01PROC", &m);
+        let b = entidad("01B", "01WO", "01PROC", &m);
+        let err = plan_claims_para(&planners(), "tnt_1", "tbl", &[a, b])
+            .expect_err("misma clave, entidades distintas: conflicto");
+        assert!(err.detail.contains("conflicto"), "{err:?}");
+    }
+
+    #[test]
+    fn composite_deduplica_el_reintento_de_la_misma_entidad() {
+        let m = modelo_unico();
+        let a = entidad("01A", "01WO", "01PROC", &m);
+        let a2 = entidad("01A", "01WO", "01PROC", &m);
+        let items = plan_claims_para(&planners(), "tnt_1", "tbl", &[a, a2])
+            .expect("misma entidad: reintento idempotente");
+        assert_eq!(items.len(), 1, "una sola reclamación");
+    }
+
+    #[test]
+    fn composite_planifica_un_claim_por_entidad_distinta() {
+        let m = modelo_unico();
+        let a = entidad("01A", "01WO", "01PROC", &m);
+        let b = entidad("01B", "01WO", "01PROC2", &m);
+        let items = plan_claims_para(&planners(), "tnt_1", "tbl", &[a, b])
+            .expect("claves distintas: ambas reclaman");
+        assert_eq!(items.len(), 2);
     }
 }

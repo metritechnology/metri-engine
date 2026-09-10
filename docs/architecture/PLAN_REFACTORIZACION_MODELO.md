@@ -29,6 +29,7 @@
 | **3 — Una sola vía de adjuntos** | **EJECUTADA sin migración.** Verificación previa en producción (scan EAV, 21k items): `response_file_ids` y `value_file_ids` con **0 datoms**; `photo_ids` solo en `location` y con **nombres de fichero, no ids de entidad** (`0-images (1).jpeg`…), herencia del stack anterior — nada que respaldar hacia `file.owner_entity_*` (que además es `required` en cada file). Arrays retirados del esquema; los strings quedan en el historial EAV (Regla A). |
 | **4 — Dinero en unidad menor** | **EJECUTADA sin migración.** `hourly_rate` tenía **0 datoms** en producción. Esquema: `hourly_rate_cents` (number, measure, sum) + `currency` (`^[A-Z]{3}$`, hereda del tenant). |
 | **5 — Semántica de grupo** | **EJECUTADA sin migración.** `notify_groups` tenía **0 datoms**. `entityRef` cambiado de `role` a `user_group`, alineado con `scheduled_job`/`reminder`. |
+| **Fase 9 — Instanciación atómica** | **EJECUTADA (2026-09-10).** Nuevo RPC `CompositeTransact` (N entidades en UNA `TransactWriteItems`, ids preasignados por el cliente, solo CREATE). El escritor generalizó sus reglas: madre y proyecciones pasan por las MISMAS checks (`requires_when`/`at_most`/`ref_state`) y el mismo planificador de claims con detección de conflicto intra-composite como error de dominio (`plan_claims_para`) y dedupe idempotente de reintentos. Reuso estricto: seguridad por entidad = `validate_single_mutation`, estructura = `validate_payload`, atomicidad = `transact_with_projections`. Presupuesto de 100 items con error explícito. 4 tests de contrato offline + test integrado `#[ignore]` de Puerta 9 (`composite_instancia_procedure_y_campos_atomicamente`, `make test-integration`). Catálogo 54 modelos; suite 475 en verde. |
 | **Enforce de integridad en el flujo OT↔procedures (pedido del 9-sep)** | **EJECUTADA.** Tres constraints nuevas en el motor (parser + chequeo en el camino de escritura sobre la vista fusionada): `requires_when` (una `work_order_procedure` COMPLETED exige `completed_by/at`; una `work_order` CLOSED ídem), `at_most` (`score ≤ max_score`) y `ref_state` (solo se instancia un procedure `PUBLISHED`; comprobación con lectura tolerada por diseño). 8 tests unitarios + aserciones de parseo. Sin riesgo de dato: 0 work_orders y 0 instancias vivas. |
 | **Retiro de la capa `form_template*` completa (pedido del 9-sep)** | **EJECUTADA.** Fuera `form_template` y `form_template_section` (la `form_template_field` ya había caído). Las checklists quedan como estructuras manuales self-contained sobre la OT: fuera `check_list.form_template_id` (+ su constraint, sin plantilla que desduplicar), `check_list_section.form_template_section_id` y `request.form_template_id`; `form_template` fuera de `FALLBACK_DOMAINS` de Cedar. Dato verificado: las 7 entidades de la familia eran seed del tenant `system` sin una sola checklist o request que las referenciara. Catálogo: **54 modelos** sin refs colgantes. El único sistema de protocolo formal es `procedure`.
 | **Retiro de `form_template_field` (pedido del 9-sep)** | **EJECUTADA.** La plantilla de formularios define el **esqueleto** (cabecera + secciones), no las preguntas: los ítems de `check_list_item` son self-contained (pregunta, tipo y respuesta) y pierden el provenance por pregunta (`form_template_field_id` fuera). Verificado antes de tocar: 3 entidades `form_template_field` vivas quedan como historial EAV sin instancias que las referencien (`check_list` en 0). Catálogo: **56 modelos** sin refs colgantes.
@@ -206,11 +207,12 @@ con las entidades que la declaraban.
   de metri-app — no retirar sin verificar consumo.
 
 
-### Fase 9 — Instanciación atómica de procedimientos (pendiente · días · toca el motor)
+### Fase 9 — Instanciación atómica de procedimientos — ✅ EJECUTADA (2026-09-10)
 
-El único hueco que resta del flujo OT↔procedimientos: colgar un procedure son
-N+1 `Transact` (la instancia + un campo por paso). Si la app cae a mitad, la
-OT queda con un procedure manco. Diseño acordado:
+**Implementada.** Lo que era el último hueco del flujo ya no existe: un
+fallo a mitad deja exactamente 0 filas. Cómo se construyó (respetando la
+regla del módulo de constraints y sin tocar el camino caliente con lógica
+nueva):
 
 1. Nueva variante en el proto: `CompositeTransact` con payloads múltiples y
    **ids preasignados por el cliente** (los ULID se generan en metri-app; el
@@ -222,9 +224,18 @@ OT queda con un procedure manco. Diseño acordado:
    falla explícito; el composite hereda el chequeo con el conteo agregado.
 4. Adopta metri-app: la instanciación pasa de N+1 llamadas a una.
 
-**Puerta 9**: un composite que caiga a mitad deja 0 filas (test con payload
-que exceda el presupuesto); la constraint `unique(WO, procedure)` sigue
-abortando el composite completo si el procedure ya estaba.
+**Puerta 9**
+- [x] Reuso: seguridad por entidad = `validate_single_mutation`; estructura =
+      `validate_payload`; atomicidad = `transact_with_projections` (el handler
+      solo compone — el escritor ya sabía escribir madre + hijos atómicos).
+- [x] Generalización SOLID en el escritor: madre y proyecciones pasan por las
+      mismas checks de estado/referencia y el mismo planificador de claims
+      (`plan_claims_para`: conflicto intra-composite = error de dominio;
+      reintento de la misma entidad = dedupe).
+- [x] Tests: 4 contratos offline (vacío, no-CREATE, sin id, entidad fuera del
+      catálogo, violación estructural) + integrado `#[ignore]` de Puerta 9.
+- [ ] Ejecutar el test integrado contra DynamoDB Local (`make test-integration`)
+      en la próxima sesión con infra levantada.
 
 ## Parte V — Riesgos
 

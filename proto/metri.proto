@@ -32,6 +32,10 @@ service MetriService {
 
   // --- Operations Domain ---
   rpc Transact(TransactionRequest) returns (TransactionResponse);
+  // Instanciación atómica: N entidades en UNA TransactWriteItems — todo o
+  // nada. Caso de uso: colgar un procedure y sus N campos a una OT en una
+  // sola llamada (sin procedure mancos a mitad de un fallo).
+  rpc CompositeTransact(CompositeTransactRequest) returns (CompositeTransactResponse);
   rpc BulkIngest(BulkRequest) returns (BulkResponse);
 
   // --- EDA (Event-Driven Architecture) Domain ---
@@ -920,6 +924,33 @@ message TransactionResponse {
   Status status = 1;
   string entity_id = 2;
   google.protobuf.Struct result = 3;
+}
+
+// ── Instanciación atómica (Composite) ───────────────────────────────────────
+// N entidades en UNA TransactWriteItems: la escritura es todo-o-nada.
+// entities[0] es la raíz del composite (ej. work_order_procedure); el resto,
+// sus hijos en orden (ej. work_order_procedure_field). CONTRATO: TODOS los
+// entity_id van PREASIGNADOS por el cliente (ULID) — los hijos referencian a
+// la raíz y entre sí antes de que el motor mintee ningún id, y el raíz debe
+// existir para que los hijos validen sus entityRef.
+message CompositeTransactRequest {
+  string tenant_id = 1;
+  repeated TransactionRequest entities = 2;
+  // Bandera Anti-Flooding: aplica a TODAS las entidades del composite.
+  bool suppress_events = 3;
+}
+
+message EntityWriteResult {
+  string entity_type = 1;
+  string entity_id = 2;
+  uint64 tx_id = 3;  // el mismo para todo el composite: una sola transacción
+}
+
+message CompositeTransactResponse {
+  Status status = 1;
+  repeated EntityWriteResult results = 2;
+  uint64 datoms = 3;         // total de datoms escritos por el composite
+  uint64 outbox_count = 4;   // filas outbox emitidas (eventos de dominio)
 }
 
 message BulkRequest {

@@ -10,6 +10,7 @@
 - `MetriService.ListEntities`
 - `MetriService.Query`
 - `MetriService.Transact`
+- `MetriService.CompositeTransact`
 - `MetriService.BulkIngest`
 - `MetriService.MatchRoutingRulesBatch`
 
@@ -128,6 +129,12 @@
 ### Mensaje `TransactionRequest`
 
 ### Mensaje `TransactionResponse`
+
+### Mensaje `CompositeTransactRequest`
+
+### Mensaje `EntityWriteResult`
+
+### Mensaje `CompositeTransactResponse`
 
 ### Mensaje `BulkRequest`
 

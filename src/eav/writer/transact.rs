@@ -275,6 +275,43 @@ impl EavWriter {
         .await
     }
 
+    /// Evalúa las constraints `ref_state` del modelo contra los atributos
+    /// escritos: la entidad apuntada por cada atributo con `ref_state` debe
+    /// cumplir las condiciones declaradas. Solo dispara cuando el atributo
+    /// referenciado se está escribiendo (create o re-punteo explícito).
+    async fn check_refs_de(
+        &self,
+        tenant_id: &str,
+        model: &crate::codice::registry::EntityModel,
+        attrs: &HashMap<String, DatomValue>,
+    ) -> Result<(), DomainError> {
+        use crate::codice::registry::ConstraintKind;
+        for c in model.constraints.iter().filter(|c| c.kind == ConstraintKind::RefState) {
+            let Some(attr) = c.attributes.first() else { continue };
+            let Some(DatomValue::Str(ref_id)) = attrs.get(attr) else {
+                continue;
+            };
+            let Some(target) = model
+                .attributes
+                .iter()
+                .find(|a| a.name == *attr)
+                .and_then(|a| a.entity_ref.clone())
+            else {
+                continue;
+            };
+            let Some(condiciones) = c.when.as_deref() else { continue };
+            let ref_attrs = self.get_active_attributes(tenant_id, ref_id).await?;
+            let ref_attrs: HashMap<String, DatomValue> = ref_attrs
+                .into_iter()
+                .map(|(k, (_, v))| (k, v))
+                .collect();
+            crate::eav::writer::constraints::check_ref_conditions(
+                &target, ref_id, &ref_attrs, condiciones,
+            )?;
+        }
+        Ok(())
+    }
+
     async fn transact_inner(
         &self,
         payload: TransactPayload,
@@ -310,15 +347,25 @@ impl EavWriter {
             std::collections::HashMap::new()
         };
 
-        // 4.2. Restricciones declaradas de estado y de referencia.
+        // 4.2. Restricciones declaradas de estado y de referencia para TODAS
+        // las entidades de la transacción (madre + proyecciones): mismas
+        // reglas para todas — ninguna privilegiada.
         //
         // Con la vista fusionada (previo + payload) ya en mano —que el update
         // leyó de todos modos— se evalúan `requires_when` y `at_most` sin
         // lecturas adicionales. `ref_state` sí lee la entidad apuntada: es la
         // comprobación tolerada documentada en `check_ref_conditions` (fallar
         // aquí es más barato y más claro que descubrirlo en la UI).
+        let mut entidades_tx = Vec::new();
         if opts.constraints == ConstraintPolicy::Plan {
             if let Some(model) = crate::codice::global().get_model(&payload.entity_type) {
+                entidades_tx.push(crate::eav::writer::constraints::EntidadEnTx {
+                    entity_type: payload.entity_type.as_str(),
+                    entity_id: entity_id.as_str(),
+                    attrs: &payload.attrs,
+                    op: payload.op.clone(),
+                    model,
+                });
                 // Vista fusionada: get_active_attributes trae (attr_id, valor).
                 let previo: std::collections::HashMap<String,
                     crate::eav::types::datom::DatomValue> = active_attrs
@@ -331,38 +378,24 @@ impl EavWriter {
                     &payload.attrs,
                     &previo,
                 )?;
-                for c in model.constraints.iter().filter(|c| {
-                    c.kind == crate::codice::registry::ConstraintKind::RefState
-                }) {
-                    let Some(attr) = c.attributes.first() else { continue };
-                    let Some(crate::eav::types::datom::DatomValue::Str(ref_id)) =
-                        payload.attrs.get(attr)
-                    else {
-                        continue; // solo cuando la referencia se está escribiendo
-                    };
-                    let Some(target) = model
-                        .attributes
-                        .iter()
-                        .find(|a| a.name == *attr)
-                        .and_then(|a| a.entity_ref.clone())
-                    else {
-                        continue;
-                    };
-                    let Some(condiciones) = c.when.as_deref() else { continue };
-                    let ref_attrs = self
-                        .get_active_attributes(&payload.tenant_id, ref_id)
-                        .await?;
-                    let ref_attrs: std::collections::HashMap<String,
-                        crate::eav::types::datom::DatomValue> = ref_attrs
-                        .into_iter()
-                        .map(|(k, (_, v))| (k, v))
-                        .collect();
-                    crate::eav::writer::constraints::check_ref_conditions(
-                        &target,
-                        ref_id,
-                        &ref_attrs,
-                        condiciones,
+                self.check_refs_de(&payload.tenant_id, model, &payload.attrs).await?;
+            }
+            for proj in &opts.projections {
+                if let Some(model) = crate::codice::global().get_model(&proj.entity_type) {
+                    entidades_tx.push(crate::eav::writer::constraints::EntidadEnTx {
+                        entity_type: proj.entity_type.as_str(),
+                        entity_id: proj.entity_id.as_str(),
+                        attrs: &proj.attrs,
+                        op: TransactOp::Create,
+                        model,
+                    });
+                    crate::eav::writer::constraints::check_state_constraints(
+                        model,
+                        TransactOp::Create,
+                        &proj.attrs,
+                        &std::collections::HashMap::new(),
                     )?;
+                    self.check_refs_de(&payload.tenant_id, model, &proj.attrs).await?;
                 }
             }
         }
@@ -455,34 +488,26 @@ impl EavWriter {
         // Van en la MISMA transacción: es lo que convierte la unicidad en un
         // invariante en lugar de una comprobación con ventana de carrera. Y
         // van en el chunk atómico por construcción, porque se añaden antes
-        // del troceado.
-        //
-        // `work_order` (idempotencia del loop preventivo) y
-        // `work_order_procedure` (plantilla una vez por OT) las declaran hoy.
-        // Activar una `unique` con duplicados vivos en la base haría fallar la
-        // siguiente escritura de esos tenants: conciliar primero, declarar
-        // después.
-        if opts.constraints == ConstraintPolicy::Plan {
-            let model = crate::codice::global().get_model(&payload.entity_type);
-            if let Some(model) = model {
-                let ctx = crate::eav::writer::constraints::ConstraintContext {
-                    tenant_id: &payload.tenant_id,
-                    entity_id: &entity_id,
-                    model,
-                    attrs: &payload.attrs,
-                    op: payload.op.clone(),
-                    table: &self.table,
-                };
-                let claims = crate::eav::writer::constraints::plan_all(&self.planners, &ctx)?;
-                if !claims.is_empty() {
-                    tracing::debug!(
-                        "[EAV] {} items de restricción para {}#{}",
-                        claims.len(),
-                        payload.entity_type,
-                        entity_id
-                    );
-                    write_items.extend(claims);
-                }
+        // del troceado. Madre y proyecciones reclaman por igual; un conflicto
+        // intra-composite (dos entidades con la misma clave) se detecta en
+        // `plan_claims_para` como error de dominio, no como
+        // ValidationException a mitad del commit.
+        if opts.constraints == ConstraintPolicy::Plan && !entidades_tx.is_empty() {
+            let claims = crate::eav::writer::constraints::plan_claims_para(
+                &self.planners,
+                &payload.tenant_id,
+                &self.table,
+                &entidades_tx,
+            )?;
+            if !claims.is_empty() {
+                tracing::debug!(
+                    "[EAV] {} items de restricción para {}#{} (+{} proyecciones)",
+                    claims.len(),
+                    payload.entity_type,
+                    entity_id,
+                    opts.projections.len()
+                );
+                write_items.extend(claims);
             }
         }
 
@@ -495,11 +520,10 @@ impl EavWriter {
             return Err(DomainError::eav(
                 ErrorCode::Eav001,
                 format!(
-                    "TX con proyecciones excede el límite atómico de DynamoDB: {} items ({} entidad madre + {} proyecciones). Reduzca los offsets de pre-notificación de '{}'.",
+                    "TX compuesta excede el límite atómico de DynamoDB: {} items ({} raíz + {} proyecciones). Divida el composite o reduzca atributos.",
                     write_items.len(),
                     payload.entity_type,
-                    opts.projections.len(),
-                    payload.entity_type
+                    opts.projections.len()
                 ),
             ));
         }

@@ -1220,3 +1220,302 @@ fn sort_and_truncate_es_determinista() {
         "el mismo conjunto en otro orden debe recortarse igual"
     );
 }
+
+// ── CompositeTransact — instanciación atómica (Fase 9) ──────────────────────
+
+/// Servicio con DevBypass, el mismo armado de los tests de granular security.
+async fn servicio_composite() -> MetriGrpcService {
+    use std::sync::Arc;
+    let ddb_client =
+        Arc::new(crate::infrastructure::dynamodb::DynamoClient::new("metri-eav-local").await);
+    let query_exec = crate::eav::reader::query::EavQueryExecutor::new(
+        Arc::clone(&ddb_client),
+        "metri-eav-local",
+    );
+    let pull_read =
+        crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_exec = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
+    let eav_writer =
+        crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
+        crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
+    );
+    let mut channel_registry = std::collections::HashMap::new();
+    channel_registry.insert(
+        crate::codice::registry::EngineChannel::Oltp,
+        Arc::clone(&oltp_channel),
+    );
+    let janus_router =
+        Arc::new(crate::janus_router::router::JanusRouter::new(channel_registry));
+    let audit_interceptor = Arc::new(
+        crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
+            &oltp_channel,
+        )),
+    );
+    let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
+        "secret-key-development-metri-256-bits!!!".to_string().into_bytes(),
+        Arc::clone(&ddb_client),
+        "metri-eav-local".to_string(),
+    ));
+    let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(
+        std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
+    ));
+    let olap_channel = Arc::clone(&oltp_channel);
+    MetriGrpcService::new(crate::grpc::service::ServiceDeps {
+        oltp_executor: oltp_exec,
+        eav_writer,
+        janus_router,
+        audit_interceptor,
+        athena_engine: None,
+        moira_emitter: None,
+        valkey_store,
+        principal_cache,
+        fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
+        olap_channel,
+        export_storage: None,
+        dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
+        invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
+    })
+}
+
+fn peticion_compuesta(
+    entities: Vec<crate::grpc::pb::TransactionRequest>,
+) -> tonic::Request<crate::grpc::pb::CompositeTransactRequest> {
+    let mut grpc_req = tonic::Request::new(crate::grpc::pb::CompositeTransactRequest {
+        tenant_id: "tnt_01".to_string(),
+        entities,
+        suppress_events: true,
+    });
+    grpc_req.metadata_mut().insert("test-tenant", "tnt_01".parse().unwrap());
+    grpc_req.metadata_mut().insert("test-user", "usr_001".parse().unwrap());
+    grpc_req
+}
+
+fn entidad_create(
+    entity_type: &str,
+    entity_id: &str,
+    payload: serde_json::Value,
+) -> crate::grpc::pb::TransactionRequest {
+    crate::grpc::pb::TransactionRequest {
+        tenant_id: "tnt_01".to_string(),
+        entity_type: entity_type.to_string(),
+        entity_id: entity_id.to_string(),
+        action: 1, // CREATE
+        payload: Some(translator::value_to_struct(&payload)),
+        suppress_events: true,
+    }
+}
+
+#[tokio::test]
+async fn composite_sin_entidades_es_invalido() {
+    let service = servicio_composite().await;
+    let res = service.composite_transact(peticion_compuesta(vec![])).await;
+    let err = res.err().expect("vacío debe ser rechazado");
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn composite_rechaza_operaciones_que_no_son_create() {
+    let service = servicio_composite().await;
+    let mut e = entidad_create("work_order_procedure", "01A", json!({}));
+    e.action = 2; // UPDATE
+    let err = service
+        .composite_transact(peticion_compuesta(vec![e]))
+        .await
+        .err()
+        .expect("UPDATE no entra por composite");
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    assert!(err.message().contains("solo soporta CREATE"));
+}
+
+#[tokio::test]
+async fn composite_exige_ids_preasignados() {
+    let service = servicio_composite().await;
+    let mut e = entidad_create(
+        "work_order_procedure",
+        "",
+        json!({ "work_order_id": "01WO", "procedure_id": "01PROC" }),
+    );
+    e.entity_id = String::new();
+    let err = service
+        .composite_transact(peticion_compuesta(vec![e]))
+        .await
+        .err()
+        .expect("sin id preasignado debe ser rechazado");
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    assert!(err.message().contains("entity_id preasignado"));
+}
+
+#[tokio::test]
+async fn composite_rechaza_entidad_fuera_del_catalogo() {
+    let service = servicio_composite().await;
+    let err = service
+        .composite_transact(peticion_compuesta(vec![entidad_create(
+            "fantasma_que_no_existe",
+            "01A",
+            json!({ "x": 1 }),
+        )]))
+        .await
+        .err()
+        .expect("entidad fuera del Códice debe ser rechazada");
+    assert!(err.message().contains("no en registry"), "{}", err.message());
+}
+
+#[tokio::test]
+async fn composite_valida_la_estructura_antes_de_escribir() {
+    // Inicializar el Códice global: el composite valida contra el catálogo real.
+    static CODICE: std::sync::Once = std::sync::Once::new();
+    CODICE.call_once(|| {
+        if crate::codice::registry::global_opt().is_none() {
+            let models = std::path::Path::new("config/models");
+            let (registry, _) =
+                crate::codice::CodeRegistry::build(models).expect("registry de config/models");
+            crate::codice::init_global(registry);
+        }
+    });
+
+    let service = servicio_composite().await;
+    // work_order_procedure sin work_order_id (required): debe fallar en
+    // planificación y no tocar la base.
+    let err = service
+        .composite_transact(peticion_compuesta(vec![entidad_create(
+            "work_order_procedure",
+            "01A",
+            json!({ "name": "huerfana" }),
+        )]))
+        .await
+        .err()
+        .expect("violación estructural debe rechazar el composite");
+    assert!(
+        err.message().contains("work_order_id"),
+        "el error debe nombrar el campo faltante: {}",
+        err.message()
+    );
+}
+
+/// Puerta 9 (Fase 9): raíz + hijos en una sola transacción; el reintento del
+/// mismo composite lo rechaza la constraint unique y no duplica nada.
+/// Exige DynamoDB Local: `make test-integration`.
+#[tokio::test]
+#[ignore]
+async fn composite_instancia_procedure_y_campos_atomicamente() {
+    use std::sync::Arc;
+    static CODICE: std::sync::Once = std::sync::Once::new();
+    CODICE.call_once(|| {
+        std::env::set_var("DYNAMODB_ENDPOINT", "http://localhost:8000");
+        std::env::set_var("AWS_ACCESS_KEY_ID", "test");
+        std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
+        std::env::set_var("AWS_REGION", "us-east-1");
+        if crate::codice::registry::global_opt().is_none() {
+            let models = std::path::Path::new("config/models");
+            let (registry, _) =
+                crate::codice::CodeRegistry::build(models).expect("registry");
+            crate::codice::init_global(registry);
+        }
+    });
+
+    let service = servicio_composite().await;
+    let tenant = format!("tnt_ctest_{}", ulid::Ulid::new());
+
+    // Semilla: procedure PUBLISHED (requisito del ref_state).
+    let proc_id = format!("01PROC{}", &ulid::Ulid::new().to_string()[..8]);
+    let semilla = crate::grpc::pb::TransactionRequest {
+        tenant_id: tenant.clone(),
+        entity_type: "procedure".to_string(),
+        entity_id: proc_id.clone(),
+        action: 1,
+        payload: Some(translator::value_to_struct(&json!({
+            "name": "Inspección de planta",
+            "lifecycle_state": "PUBLISHED",
+            "max_score": 100
+        }))),
+        suppress_events: true,
+    };
+    let mut req_semilla = tonic::Request::new(semilla);
+    req_semilla.metadata_mut().insert("test-tenant", tenant.clone().parse().unwrap());
+    req_semilla.metadata_mut().insert("test-user", "usr_001".parse().unwrap());
+    service
+        .transact(req_semilla)
+        .await
+        .expect("la semilla procedure debe crear");
+
+    // Composite: WOP + 2 campos, ids preasignados.
+    let wop_id = format!("01WOP{}", &ulid::Ulid::new().to_string()[..8]);
+    let f1 = format!("01F{}", &ulid::Ulid::new().to_string()[..10]);
+    let f2 = format!("01F{}", &ulid::Ulid::new().to_string()[..10]);
+    let entities = vec![
+        entidad_create(
+            "work_order_procedure",
+            &wop_id,
+            json!({
+                "work_order_id": "01WO",
+                "procedure_id": proc_id,
+                "name": "Inspección de planta",
+                "procedure_order": 1,
+                "status": "PENDING"
+            }),
+        ),
+        entidad_create(
+            "work_order_procedure_field",
+            &f1,
+            json!({
+                "work_order_procedure_id": wop_id,
+                "label": "Sin fugas",
+                "field_type": "INSPECTION_CHECK",
+                "field_order": 1
+            }),
+        ),
+        entidad_create(
+            "work_order_procedure_field",
+            &f2,
+            json!({
+                "work_order_procedure_id": wop_id,
+                "label": "Voltaje",
+                "field_type": "NUMBER",
+                "field_order": 2
+            }),
+        ),
+    ];
+
+    let res = service
+        .composite_transact(peticion_compuesta(entities))
+        .await
+        .expect("el composite debe escribir las 3 entidades");
+    let resp = res.into_inner();
+    assert!(resp.status.as_ref().unwrap().success);
+    assert_eq!(resp.results.len(), 3);
+    assert_eq!(resp.results[0].entity_id, wop_id);
+    assert_eq!(resp.results[1].entity_id, f1);
+    assert_eq!(resp.results[2].entity_id, f2);
+
+    // Puerta 9: el reintento del MISMO composite choca contra la constraint
+    // unique(work_order_id, procedure_id) — la transacción entera se aborta.
+    let entities_duplicado = vec![
+        entidad_create(
+            "work_order_procedure",
+            &wop_id,
+            json!({
+                "work_order_id": "01WO",
+                "procedure_id": proc_id,
+                "name": "Inspección de planta",
+                "procedure_order": 1,
+                "status": "PENDING"
+            }),
+        ),
+        entidad_create(
+            "work_order_procedure_field",
+            &format!("01F{}", &ulid::Ulid::new().to_string()[..10]),
+            json!({
+                "work_order_procedure_id": wop_id,
+                "label": "Otro campo",
+                "field_type": "TEXT",
+                "field_order": 3
+            }),
+        ),
+    ];
+    // UPDATE sobre la misma entidad: la reclamación es idempotente para el
+    // dueño, así que el reintento CREATE falla por la condición
+    // attribute_not_exists del claim — y NO escribe el hijo.
+    let reintento = service.composite_transact(peticion_compuesta(entities_duplicado)).await;
+    assert!(reintento.is_err(), "el duplicado debe abortar");
+}
