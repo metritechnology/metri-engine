@@ -93,12 +93,12 @@ flowchart TB
     LL["labor_log<br/>hora × tarifa"] -->|"work_order_id"| WO
     LL -->|"user_id"| U
 
-    CL["check_list<br/>(inspección instanciada)"]
+    CL["check_list<br/>(1..N por OT · check_list_order)"]
     WO -->|"work_order_id"| CL
     CLS["check_list_section"] -->|"check_list_id"| CL
     CLI["check_list_item<br/>(10 tipos de respuesta)"] -->|"check_list_section_id"| CLS
 
-    WPROC["work_order_procedure<br/>(snapshot con scoring)"]
+    WPROC["work_order_procedure<br/>(1..N por OT · procedure_order)"]
     WO -->|"work_order_id"| WPROC
     WPF["work_order_procedure_field<br/>(respuesta tipada value_*)"] -->|"work_order_procedure_id"| WPROC
 
@@ -138,9 +138,9 @@ flowchart LR
         SEQ["sequence_registry 🔒"] -.->|"scope del contador"| WO2
     end
 
-    subgraph RUN["Instancia runtime"]
-        WO2 --> WPR2["work_order_procedure ← procedure"]
-        WO2 --> CL2["check_list ← form_template"]
+    subgraph RUN["Instancia runtime — la OT lleva 1..N procedimientos y 1..N checklists"]
+        WO2 --> WPR2["work_order_procedure ← procedure<br/>(procedure_order · unique WO+procedure)"]
+        WO2 --> CL2["check_list ← form_template<br/>(check_list_order · unique WO+template)"]
         REQ2["request"] -.->|"convert_to_work_order"| WO2
     end
 ```

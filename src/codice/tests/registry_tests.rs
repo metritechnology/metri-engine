@@ -309,3 +309,44 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
         .iter()
         .any(|a| a.name == "completed_at" && a.indexed));
 }
+
+/// La OT lleva 1..N procedimientos y 1..N checklists (Fase 2 del
+/// PLAN_REFACTORIZACION_MODELO). El orden de ejecución vive en la instancia y
+/// las constraints impiden duplicar la misma plantilla en la misma OT.
+#[test]
+fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
+    let models_dir = std::path::Path::new("config/models");
+    let (registry, _rules) = CodeRegistry::build(models_dir)
+        .expect("config/models debe compilar con la familia 1-a-N");
+
+    let wop = registry
+        .get_model("work_order_procedure")
+        .expect("work_order_procedure debe estar registrado");
+    assert!(wop
+        .attributes
+        .iter()
+        .any(|a| a.name == "procedure_order" && a.indexed));
+    let wop_unique = wop
+        .constraints
+        .iter()
+        .find(|c| c.attributes == ["work_order_id", "procedure_id"])
+        .expect("el mismo procedure no debe instanciarse dos veces en una OT");
+    assert_eq!(wop_unique.scope, crate::codice::registry::ConstraintScope::Tenant);
+
+    let cl = registry
+        .get_model("check_list")
+        .expect("check_list debe estar registrado");
+    assert!(cl
+        .attributes
+        .iter()
+        .any(|a| a.name == "check_list_order" && a.indexed));
+    assert!(cl
+        .attributes
+        .iter()
+        .any(|a| a.name == "form_template_id"
+            && a.entity_ref.as_deref() == Some("form_template")));
+    cl.constraints
+        .iter()
+        .find(|c| c.attributes == ["work_order_id", "form_template_id"])
+        .expect("la misma form_template no debe instanciarse dos veces en una OT");
+}

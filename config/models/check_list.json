@@ -35,6 +35,23 @@
       "type": "boolean",
       "default_value": false,
       "is_dimension": true
+    },
+    {
+      "name": "check_list_order",
+      "type": "integer",
+      "index": true,
+      "description": "Orden de esta checklist entre las N que puede llevar la OT (1..N). Libre al crear; desempate por title."
+    }
+  ],
+  "constraints": [
+    {
+      "type": "unique",
+      "scope": "tenant",
+      "attributes": [
+        "work_order_id",
+        "form_template_id"
+      ],
+      "description": "La misma form_template no se instancia dos veces en la misma OT. Las checklists manuales (sin form_template_id) no reclaman nada: la huella ignora claves con atributos ausentes."
     }
   ]
 }

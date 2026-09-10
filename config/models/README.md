@@ -206,3 +206,21 @@ Reglas de frontera:
 4. Las tareas de una OT son ahora atributos y evidencias de la propia
    `work_order` (notas, horas de `labor_log`, adjuntos vía `file`): no existe
    entidad de tarea.
+
+### La OT lleva 1..N procedimientos y 1..N checklists
+
+Una `work_order` instancia **uno a varios** procedimientos y **una a varias**
+checklists — no hay límite de uno por OT ni de plantillas distintas:
+
+- Cada instancia de procedimiento (`work_order_procedure`) lleva
+  `procedure_order` (1..N): el orden de ejecución dentro de la OT, copiado de
+  `procedure.procedure_order` al instanciar y reordenable sin tocar la
+  plantilla. Constraint: el mismo `procedure` no se instancia dos veces en la
+  misma OT (`unique` tenant sobre `work_order_id + procedure_id`).
+- Cada checklist (`check_list`) lleva `check_list_order` (1..N) y puede nacer
+  de una `form_template` o construirse a mano. Constraint: la misma
+  `form_template` no se instancia dos veces en la misma OT (`unique` tenant
+  sobre `work_order_id + form_template_id`); las manuales, sin plantilla, no
+  reclaman nada.
+- Los N procedimientos y las N checklists de una OT son independientes entre
+  sí: ni los protocolos generan checklists ni las checklists generan pasos.

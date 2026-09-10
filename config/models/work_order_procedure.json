@@ -65,6 +65,23 @@
       "name": "completed_at",
       "type": "epoch",
       "index": true
+    },
+    {
+      "name": "procedure_order",
+      "type": "integer",
+      "index": true,
+      "description": "Orden de ejecución de este procedimiento dentro de la OT (1..N). Copiado de procedure.procedure_order al instanciar; reordenable por el técnico sin tocar la plantilla. Desempate por name."
+    }
+  ],
+  "constraints": [
+    {
+      "type": "unique",
+      "scope": "tenant",
+      "attributes": [
+        "work_order_id",
+        "procedure_id"
+      ],
+      "description": "El mismo procedure no se instancia dos veces en la misma OT: una OT ordena N procedimientos distintos. Reordenar toca procedure_order, nunca duplica la instancia."
     }
   ]
 }
