@@ -35,6 +35,13 @@
       "type": "boolean",
       "default_value": false,
       "is_dimension": true
+    },
+    {
+      "name": "check_list_template_section_id",
+      "type": "reference",
+      "entityRef": "check_list_template_section",
+      "cardinality": "one",
+      "description": "Provenance (opcional): la sección de plantilla que originó esta sección. Habilita OLAP por sección de plantilla aunque cambien los títulos."
     }
   ]
 }

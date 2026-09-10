@@ -1,0 +1,56 @@
+{
+  "entity": "check_list_template_item",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "check_list_template_section_id",
+      "type": "reference",
+      "entityRef": "check_list_template_section",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "item_order",
+      "type": "integer",
+      "required": true,
+      "index": true,
+      "description": "Orden de la pregunta dentro de la sección (1..N). Al instanciar se copia al field_order implícito del ítem."
+    },
+    {
+      "name": "question_text",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "description": "Pregunta mostrada al técnico. Se copia al question_text del check_list_item al instanciar."
+    },
+    {
+      "name": "type",
+      "type": "enum",
+      "options": [
+        "PASS_FAIL",
+        "YES_NO",
+        "COMPLIES_DOES_NOT_COMPLY",
+        "TEXT_INPUT",
+        "NUMBER_INPUT",
+        "MULTIPLE_CHOICE",
+        "FILE_ATTACHMENT",
+        "METER_READING",
+        "SIGNATURE",
+        "QR_BARCODE"
+      ],
+      "required": true,
+      "is_dimension": true,
+      "description": "Mismo enum de 10 tipos que check_list_item: se copia tal cual al instanciar."
+    },
+    {
+      "name": "is_required",
+      "type": "boolean",
+      "default_value": true,
+      "is_dimension": true
+    }
+  ]
+}

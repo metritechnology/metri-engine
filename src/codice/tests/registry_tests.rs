@@ -363,7 +363,6 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         !cl.attributes.iter().any(|a| a.name == "form_template_id"),
         "form_template_id fue retirado: la checklist es self-contained"
     );
-    assert!(cl.constraints.is_empty());
 
     // Toda la capa de definición de formularios está retirada: las preguntas
     // y su estructura viven solo en las instancias (check_list*).
@@ -382,4 +381,44 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
             .any(|a| a.name == "section_order" && a.attr_type == AttrType::Number),
         "check_list_section.section_order debe ser integer (AttrType::Number)"
     );
+
+    // La plantilla de checklists es simétrica a procedure: ciclo de vida
+    // PUBLISHED, provenance por pregunta y las mismas constraints en la
+    // instancia (unique WO+template, ref_state).
+    let clt = registry
+        .get_model("check_list_template")
+        .expect("check_list_template debe estar registrado");
+    assert!(clt.attributes.iter().any(|a| a.name == "status"
+        && a.attr_type == AttrType::Enum
+        && a.options.contains(&"PUBLISHED".to_string())));
+    let clt_item = registry
+        .get_model("check_list_template_item")
+        .expect("check_list_template_item debe estar registrado");
+    assert!(clt_item
+        .attributes
+        .iter()
+        .any(|a| a.name == "item_order" && a.attr_type == AttrType::Number));
+    assert!(clt_item
+        .attributes
+        .iter()
+        .any(|a| a.name == "type"
+            && a.attr_type == AttrType::Enum
+            && a.options.contains(&"PASS_FAIL".to_string())));
+    assert!(cl
+        .attributes
+        .iter()
+        .any(|a| a.name == "check_list_template_id"
+            && a.entity_ref.as_deref() == Some("check_list_template")));
+    cl.constraints
+        .iter()
+        .find(|c| {
+            c.kind == crate::codice::registry::ConstraintKind::Unique
+                && c.attributes == ["work_order_id", "check_list_template_id"]
+        })
+        .expect("la misma plantilla de checklist no debe instanciarse dos veces en una OT");
+    assert!(cl
+        .constraints
+        .iter()
+        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RefState
+            && c.attributes == ["check_list_template_id"]));
 }

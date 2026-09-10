@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **54**
+Total de modelos: **57**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -15,9 +15,12 @@ Total de modelos: **54**
 | `asset` | oltp | `name`, `tag`, `serial_number`, `barcode_qr_code`, `status`, `criticality`, `location_id`, `parent_asset_id`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `specifications`, `custom_attributes` |
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | oltp | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
-| `check_list` | oltp | `work_order_id`, `title`, `description`, `is_completed`, `check_list_order` |
-| `check_list_item` | oltp | `check_list_section_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at` |
-| `check_list_section` | oltp | `check_list_id`, `section_order`, `title`, `description`, `is_completed` |
+| `check_list` | oltp | `work_order_id`, `title`, `description`, `is_completed`, `check_list_order`, `check_list_template_id` |
+| `check_list_item` | oltp | `check_list_section_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at`, `check_list_template_item_id` |
+| `check_list_section` | oltp | `check_list_id`, `section_order`, `title`, `description`, `is_completed`, `check_list_template_section_id` |
+| `check_list_template` | oltp | `name`, `description`, `status` |
+| `check_list_template_item` | oltp | `check_list_template_section_id`, `item_order`, `question_text`, `type`, `is_required` |
+| `check_list_template_section` | oltp | `check_list_template_id`, `section_order`, `title`, `description` |
 | `company` | oltp | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
 | `dashboardBI` | oltp | `name`, `description`, `widgets`, `created_at`, `updated_at` |
 | `document_chunk` | oltp | `id`, `parent_file`, `chunk_index`, `chunk_content`, `semantic_embedding`, `metadata_tags`, `owner_entity_type`, `owner_entity_id`, `page_range`, `created_at` |

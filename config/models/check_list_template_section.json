@@ -1,0 +1,35 @@
+{
+  "entity": "check_list_template_section",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "check_list_template_id",
+      "type": "reference",
+      "entityRef": "check_list_template",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true
+    },
+    {
+      "name": "section_order",
+      "type": "integer",
+      "required": true,
+      "index": true,
+      "description": "Orden de la sección dentro de la plantilla (1..N). Al instanciar se copia al section_order de la check_list_section."
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "required": true,
+      "fts": true
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true
+    }
+  ]
+}

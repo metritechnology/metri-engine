@@ -207,29 +207,33 @@ Notas de diseño:
 - Activar una `unique` con duplicados vivos haría fallar la siguiente
   escritura: conciliar el dato antes de declarar.
 
-## V. Protocolos y checklists
+## V. Procedimientos y checklists: dos sistemas simétricos
 
-Desde el 2026-09-09 el catálogo tiene **un solo sistema de protocolo formal**:
-la capa `work_order_template` + paradas de ruta, el sistema de tareas
-`task_template`/`work_order_task` y la capa de definición de formularios
-`form_template*` fueron retirados.
+Dos sistemas de "definición → instancia" cuelgan directamente de la OT, con la
+misma mecánica: definición con ciclo de vida, provenance hacia atrás, snapshots
+al instanciar e instanciación atómica vía `CompositeTransact`.
 
 | Sistema | Definición | Instancia | Frontera |
 |---|---|---|---|
-| **Procedimientos** | `procedure` → `procedure_field` (12 tipos de campo, scoring) | `work_order_procedure` → `work_order_procedure_field` | **SSOT del protocolo formal**: pasos tipados con puntaje, estilo MaintainX. Solo los `procedure` con `lifecycle_state=PUBLISHED` se instancian; `DRAFT` no se ofrece a nuevas OTs y `RETIRED` conserva histórico. |
-
-Las **checklists** (`check_list` → `check_list_section` → `check_list_item`)
-no tienen capa de definición: se construyen directamente sobre la OT. Cada
-pieza es self-contained — secciones con `section_order`, ítems con pregunta,
-tipo y respuesta — y los órdenes son `integer` en toda la familia
-(`section_order`, `procedure_order`, `check_list_order`).
+| **Procedimientos** | `procedure` → `procedure_field` (12 tipos de campo, scoring) | `work_order_procedure` → `work_order_procedure_field` | **Protocolo formal con puntaje**: se aprueba/reprueba por `score` contra `max_score`. |
+| **Checklists** | `check_list_template` → `check_list_template_section` → `check_list_template_item` (10 tipos de respuesta) | `check_list` → `check_list_section` → `check_list_item` | **Verificación** (pasa/falla/sí/no), sin puntaje. |
 
 Reglas:
 
-1. Un protocolo de trabajo con scoring (aprobar/rechazar por puntaje) es un
-   `procedure` instanciado como `work_order_procedure`; una verificación
-   sí/no/respuesta corta es una `check_list` construida a mano sobre la OT.
-2. Las tareas de una OT son atributos y evidencias de la propia `work_order`
+1. Con puntaje → `procedure`; verificación sin puntaje → `check_list_template`.
+2. Solo se instancian definiciones **PUBLISHED** — el motor lo enforcea con
+   `ref_state` en ambos sistemas (procedure: `lifecycle_state`; checklist:
+   `status`). Default de una definición nueva: DRAFT.
+3. La misma definición no se instancia dos veces en la misma OT — constraint
+   `unique(work_order_id, <id de plantilla>)` en ambos sistemas. Las
+   checklists manuales (sin plantilla) no reclaman nada.
+4. Provenance hacia atrás en cada nivel (instancia → definición): editar o
+   retirar la definición no corrompe ejecutadas, y el OLAP agrupa por id de
+   definición aunque cambien los textos.
+5. Los ítems de checklist son self-contained (pregunta + tipo + respuesta
+   copiadas al instanciar). Los órdenes son `integer` en toda la familia:
+   `section_order`, `item_order`, `procedure_order`, `check_list_order`.
+6. Las tareas de una OT son atributos y evidencias de la propia `work_order`
    (notas, horas de `labor_log`, adjuntos vía `file`): no existe entidad de
    tarea.
 
@@ -243,8 +247,9 @@ checklists — no hay límite de uno por OT ni de plantillas distintas:
   `procedure.procedure_order` al instanciar y reordenable sin tocar la
   plantilla. Constraint: el mismo `procedure` no se instancia dos veces en la
   misma OT (`unique` tenant sobre `work_order_id + procedure_id`).
-- Cada checklist (`check_list`) lleva `check_list_order` (1..N) y se construye
-  directamente sobre la OT: la capa `form_template*` fue retirada, así que no
-  hay plantillas de las que heredar.
+- Cada checklist (`check_list`) lleva `check_list_order` (1..N) y nace de una
+  `check_list_template` PUBLISHED o se construye a mano: la constraint
+  `unique(work_order_id, check_list_template_id)` impide duplicar plantilla y
+  las manuales no reclaman nada.
 - Los N procedimientos y las N checklists de una OT son independientes entre
   sí: ni los protocolos generan checklists ni las checklists generan pasos.

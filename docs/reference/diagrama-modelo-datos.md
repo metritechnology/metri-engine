@@ -125,8 +125,9 @@ catálogo el 2026-09-09: los procedimientos son el único protocolo formal.
 
 ```mermaid
 flowchart LR
-    subgraph DEFS["Protocolos (definición)"]
+    subgraph DEFS["Definición (solo PUBLISHED se instancia)"]
         PR["procedure → procedure_field<br/>(12 tipos · scoring)"]
+        CLT["check_list_template → sections → items<br/>(10 tipos de respuesta)"]
     end
 
     subgraph GEN["Generación preventiva"]
@@ -138,7 +139,7 @@ flowchart LR
 
     subgraph RUN["Instancia runtime — la OT lleva 1..N procedimientos y 1..N checklists"]
         WO2 --> WPR2["work_order_procedure ← procedure<br/>(procedure_order · unique WO+procedure)"]
-        WO2 --> CL2["check_list<br/>(self-contained · check_list_order)"]
+        WO2 --> CL2["check_list ← check_list_template<br/>(check_list_order · unique WO+template)"]
         REQ2["request"] -.->|"convert_to_work_order"| WO2
     end
 ```
@@ -146,9 +147,7 @@ flowchart LR
 | Sistema | Definición | Instancia | Uso |
 |---|---|---|---|
 | Procedures | `procedure(_field)` | `work_order_procedure(_field)` | Protocolo formal con scoring (estilo MaintainX) |
-
-Las checklists (`check_list` → secciones → ítems) no tienen definición: se
-construyen a mano sobre la OT o la `request`.
+| Checklists | `check_list_template(_section/_item)` | `check_list(_section/_item)` | Verificación sin puntaje (provenance por pregunta; manuales permitidas) |
 
 ---
 
