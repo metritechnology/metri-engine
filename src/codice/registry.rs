@@ -724,7 +724,9 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
                                 .collect()
                         })
                         .unwrap_or_default(),
-                    c["when"].as_object().and_then(|w| parse_pares(&json_clone(w))),
+                    c["when"]
+                        .as_object()
+                        .and_then(|w| parse_pares(&json_clone(w))),
                 ),
                 "at_most" => (
                     ConstraintKind::AtMost,
@@ -756,8 +758,13 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
                 ),
                 "ref_state" => (
                     ConstraintKind::RefState,
-                    c["attr"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
-                    c["conditions"].as_object().and_then(|w| parse_pares(&json_clone(w))),
+                    c["attr"]
+                        .as_str()
+                        .map(|s| vec![s.to_string()])
+                        .unwrap_or_default(),
+                    c["conditions"]
+                        .as_object()
+                        .and_then(|w| parse_pares(&json_clone(w))),
                 ),
                 other => {
                     tracing::warn!("[Codice] restricción de tipo desconocido '{other}'; se ignora");
@@ -770,10 +777,14 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
                 return None;
             }
 
-            if matches!(kind, ConstraintKind::RequiresWhen | ConstraintKind::RefState)
-                && when.as_ref().is_none_or(|w| w.is_empty())
+            if matches!(
+                kind,
+                ConstraintKind::RequiresWhen | ConstraintKind::RefState
+            ) && when.as_ref().is_none_or(|w| w.is_empty())
             {
-                tracing::warn!("[Codice] restricción {tipo} sin condiciones 'when'/'conditions'; se ignora");
+                tracing::warn!(
+                    "[Codice] restricción {tipo} sin condiciones 'when'/'conditions'; se ignora"
+                );
                 return None;
             }
 

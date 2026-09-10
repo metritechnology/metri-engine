@@ -72,13 +72,6 @@
       "reason": "Parseo del cedar-schema.json embebido (Schema::from_str, serde_json, acciones y entidades del schema): recurso de build; roto = despliegue tumbado, nunca servicio degradado."
     },
     {
-      "check": "panic_macro",
-      "path": "src/application/scheduling/hooks.rs",
-      "max": 1,
-      "kind": "invariante",
-      "reason": "Los hooks del plan fueron validados por el Códice contra el registry en el build; un nombre ausente aquí es un bug de desincronización de los dos registros, no un caso de runtime. El pánico es el contrato correcto."
-    },
-    {
       "check": "unwrap",
       "path": "src/grpc/handlers/validations.rs",
       "max": 1,

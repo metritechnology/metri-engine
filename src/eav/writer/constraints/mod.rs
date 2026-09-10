@@ -257,11 +257,7 @@ pub fn check_state_constraints(
                 }
             }
             crate::codice::registry::ConstraintKind::RequiresAny => {
-                if !c
-                    .attributes
-                    .iter()
-                    .any(|campo| !presente(&merged, campo))
-                {
+                if !c.attributes.iter().any(|campo| !presente(&merged, campo)) {
                     return Err(DomainError::codice(
                         crate::domain::errors::ErrorCode::Cod001,
                         format!(
@@ -380,7 +376,10 @@ mod state_tests {
 
     #[test]
     fn completed_sin_actor_en_create_falla() {
-        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by", "completed_at"])]);
+        let m = modelo(vec![requires_when(
+            ("status", "COMPLETED"),
+            &["completed_by", "completed_at"],
+        )]);
         let escrito = pares(&[("status", DatomValue::Str("COMPLETED".into()))]);
         let err = check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
             .expect_err("COMPLETED sin actor debe fallar");
@@ -389,7 +388,10 @@ mod state_tests {
 
     #[test]
     fn completed_con_actor_en_create_pasa() {
-        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by", "completed_at"])]);
+        let m = modelo(vec![requires_when(
+            ("status", "COMPLETED"),
+            &["completed_by", "completed_at"],
+        )]);
         let escrito = pares(&[
             ("status", DatomValue::Str("COMPLETED".into())),
             ("completed_by", DatomValue::Str("01CARLOS".into())),
@@ -401,7 +403,10 @@ mod state_tests {
 
     #[test]
     fn update_parcial_usa_el_estado_previo() {
-        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by", "completed_at"])]);
+        let m = modelo(vec![requires_when(
+            ("status", "COMPLETED"),
+            &["completed_by", "completed_at"],
+        )]);
         // El payload solo marca status; completed_by/at ya estaban en la entidad.
         let escrito = pares(&[("status", DatomValue::Str("COMPLETED".into()))]);
         let previo = pares(&[
@@ -421,7 +426,10 @@ mod state_tests {
 
     #[test]
     fn status_distinto_no_dispara_la_exigencia() {
-        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by"])]);
+        let m = modelo(vec![requires_when(
+            ("status", "COMPLETED"),
+            &["completed_by"],
+        )]);
         let escrito = pares(&[("status", DatomValue::Str("IN_PROGRESS".into()))]);
         check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
             .expect("IN_PROGRESS no exige actor");
@@ -434,7 +442,10 @@ mod state_tests {
         let err = check_state_constraints(
             &m,
             TransactOp::Create,
-            &pares(&[("score", DatomValue::Long(150)), ("max_score", DatomValue::Long(100))]),
+            &pares(&[
+                ("score", DatomValue::Long(150)),
+                ("max_score", DatomValue::Long(100)),
+            ]),
             &HashMap::new(),
         )
         .expect_err("150 > 100 debe fallar");
@@ -445,10 +456,15 @@ mod state_tests {
             ("score", DatomValue::Double(100.5)),
             ("max_score", DatomValue::Long(100)),
         ]);
-        assert!(check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new()).is_err());
+        assert!(
+            check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new()).is_err()
+        );
 
         // Dentro del techo pasa.
-        let escrito = pares(&[("score", DatomValue::Long(100)), ("max_score", DatomValue::Long(100))]);
+        let escrito = pares(&[
+            ("score", DatomValue::Long(100)),
+            ("max_score", DatomValue::Long(100)),
+        ]);
         check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
             .expect("igualar el máximo es válido");
     }
@@ -463,7 +479,10 @@ mod state_tests {
 
     #[test]
     fn delete_nunca_dispara_restricciones_de_estado() {
-        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by"])]);
+        let m = modelo(vec![requires_when(
+            ("status", "COMPLETED"),
+            &["completed_by"],
+        )]);
         let escrito = pares(&[("status", DatomValue::Str("COMPLETED".into()))]);
         check_state_constraints(&m, TransactOp::Delete, &escrito, &HashMap::new())
             .expect("el borrado no evalúa estado");
@@ -679,13 +698,8 @@ mod at_least_any_tests {
             ("user_id", DatomValue::Str("01CARLOS".into())),
             ("user_group_id", DatomValue::Str("01CUADRILLA".into())),
         ] {
-            check_state_constraints(
-                &m,
-                TransactOp::Create,
-                &pares(&[dueño]),
-                &HashMap::new(),
-            )
-            .expect("con un dueño basta");
+            check_state_constraints(&m, TransactOp::Create, &pares(&[dueño]), &HashMap::new())
+                .expect("con un dueño basta");
         }
     }
 }

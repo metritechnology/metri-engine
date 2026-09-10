@@ -238,13 +238,8 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
         .iter()
         .any(|a| a.name == "choices" && a.attr_type == AttrType::Array));
     // Anidación de secciones: auto-referencia a la misma entidad.
-    assert!(
-        pfield
-            .attributes
-            .iter()
-            .any(|a| a.name == "parent_field_id"
-                && a.entity_ref.as_deref() == Some("procedure_template_field"))
-    );
+    assert!(pfield.attributes.iter().any(|a| a.name == "parent_field_id"
+        && a.entity_ref.as_deref() == Some("procedure_template_field")));
 
     let wop = registry
         .get_model("work_order_procedure")
@@ -256,7 +251,8 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
     assert!(wop
         .attributes
         .iter()
-        .any(|a| a.name == "procedure_template_id" && a.entity_ref.as_deref() == Some("procedure_template")));
+        .any(|a| a.name == "procedure_template_id"
+            && a.entity_ref.as_deref() == Some("procedure_template")));
     assert!(wop.attributes.iter().any(|a| a.name == "score"));
     assert!(wop.attributes.iter().any(|a| a.name == "max_score"));
 
@@ -316,8 +312,8 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
 #[test]
 fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
     let models_dir = std::path::Path::new("config/models");
-    let (registry, _rules) = CodeRegistry::build(models_dir)
-        .expect("config/models debe compilar con la familia 1-a-N");
+    let (registry, _rules) =
+        CodeRegistry::build(models_dir).expect("config/models debe compilar con la familia 1-a-N");
 
     let wop = registry
         .get_model("work_order_procedure")
@@ -331,26 +327,23 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         .iter()
         .find(|c| c.attributes == ["work_order_id", "procedure_template_id"])
         .expect("el mismo procedure no debe instanciarse dos veces en una OT");
-    assert_eq!(wop_unique.scope, crate::codice::registry::ConstraintScope::Tenant);
+    assert_eq!(
+        wop_unique.scope,
+        crate::codice::registry::ConstraintScope::Tenant
+    );
     // Contrato de integridad: plantilla PUBLISHED, cierre con actor y puntaje acotado.
-    assert!(wop
-        .constraints
-        .iter()
-        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RefState
-            && c.attributes == ["procedure_template_id"]
-            && c.when
-                .as_deref()
-                .is_some_and(|w| w.contains(&("lifecycle_state".to_string(), "PUBLISHED".to_string())))));
-    assert!(wop
-        .constraints
-        .iter()
-        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RequiresWhen
-            && c.attributes == ["completed_by", "completed_at"]));
-    assert!(wop
-        .constraints
-        .iter()
-        .any(|c| c.kind == crate::codice::registry::ConstraintKind::AtMost
-            && c.attributes == ["score", "max_score"]));
+    assert!(wop.constraints.iter().any(|c| c.kind
+        == crate::codice::registry::ConstraintKind::RefState
+        && c.attributes == ["procedure_template_id"]
+        && c.when.as_deref().is_some_and(
+            |w| w.contains(&("lifecycle_state".to_string(), "PUBLISHED".to_string()))
+        )));
+    assert!(wop.constraints.iter().any(|c| c.kind
+        == crate::codice::registry::ConstraintKind::RequiresWhen
+        && c.attributes == ["completed_by", "completed_at"]));
+    assert!(wop.constraints.iter().any(|c| c.kind
+        == crate::codice::registry::ConstraintKind::AtMost
+        && c.attributes == ["score", "max_score"]));
 
     let cl = registry
         .get_model("work_order_checklist")
@@ -366,7 +359,11 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
 
     // Toda la capa de definición de formularios está retirada: las preguntas
     // y su estructura viven solo en las instancias (work_order_checklist*).
-    for retirada in ["form_template", "form_template_section", "form_template_field"] {
+    for retirada in [
+        "form_template",
+        "form_template_section",
+        "form_template_field",
+    ] {
         assert!(
             registry.get_model(retirada).is_none(),
             "{retirada} fue retirada del catálogo"
@@ -398,12 +395,9 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         .attributes
         .iter()
         .any(|a| a.name == "item_order" && a.attr_type == AttrType::Number));
-    assert!(clt_item
-        .attributes
-        .iter()
-        .any(|a| a.name == "type"
-            && a.attr_type == AttrType::Enum
-            && a.options.contains(&"PASS_FAIL".to_string())));
+    assert!(clt_item.attributes.iter().any(|a| a.name == "type"
+        && a.attr_type == AttrType::Enum
+        && a.options.contains(&"PASS_FAIL".to_string())));
     assert!(cl
         .attributes
         .iter()
@@ -416,11 +410,9 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
                 && c.attributes == ["work_order_id", "checklist_template_id"]
         })
         .expect("la misma plantilla de checklist no debe instanciarse dos veces en una OT");
-    assert!(cl
-        .constraints
-        .iter()
-        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RefState
-            && c.attributes == ["checklist_template_id"]));
+    assert!(cl.constraints.iter().any(|c| c.kind
+        == crate::codice::registry::ConstraintKind::RefState
+        && c.attributes == ["checklist_template_id"]));
 }
 
 /// La familia de turnos declara sus contratos de capacidad: el override cita
@@ -441,34 +433,47 @@ fn la_familia_de_turnos_declara_los_contratos_de_capacidad() {
         .map(|c| (c.kind, c.attributes.clone()))
         .collect();
     for esperado in [
-        (crate::codice::registry::ConstraintKind::RequiresWhen, vec!["shift_pattern_id".to_string()]),
-        (crate::codice::registry::ConstraintKind::RequiresWhen, vec!["absence_reason".to_string()]),
-        (crate::codice::registry::ConstraintKind::RequiresWhen, vec!["completed_by".to_string(), "completed_at".to_string()]),
-        (crate::codice::registry::ConstraintKind::AtLeast, vec!["end_time".to_string(), "start_time".to_string()]),
+        (
+            crate::codice::registry::ConstraintKind::RequiresWhen,
+            vec!["shift_pattern_id".to_string()],
+        ),
+        (
+            crate::codice::registry::ConstraintKind::RequiresWhen,
+            vec!["absence_reason".to_string()],
+        ),
+        (
+            crate::codice::registry::ConstraintKind::RequiresWhen,
+            vec!["completed_by".to_string(), "completed_at".to_string()],
+        ),
+        (
+            crate::codice::registry::ConstraintKind::AtLeast,
+            vec!["end_time".to_string(), "start_time".to_string()],
+        ),
     ] {
         assert!(
-            tipos.iter().any(|(k, a)| *k == esperado.0 && *a == esperado.1),
+            tipos
+                .iter()
+                .any(|(k, a)| *k == esperado.0 && *a == esperado.1),
             "falta la constraint {:?} {:?} en technician_shift: {tipos:?}",
             esperado.0,
             esperado.1
         );
     }
-    assert!(ts
-        .attributes
-        .iter()
-        .any(|a| a.name == "status"
-            && a.attr_type == AttrType::Enum
-            && a.options.contains(&"CANCELLED".to_string())));
-    assert_eq!(ts.event_rules.len(), 3, "create/update/delete emiten la señal de reproyección");
+    assert!(ts.attributes.iter().any(|a| a.name == "status"
+        && a.attr_type == AttrType::Enum
+        && a.options.contains(&"CANCELLED".to_string())));
+    assert_eq!(
+        ts.event_rules.len(),
+        3,
+        "create/update/delete emiten la señal de reproyección"
+    );
 
     let sp = registry
         .get_model("shift_pattern")
         .expect("shift_pattern debe estar registrado");
-    assert!(sp
-        .constraints
-        .iter()
-        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RequiresAny
-            && c.attributes == ["user_id", "user_group_id"]));
+    assert!(sp.constraints.iter().any(|c| c.kind
+        == crate::codice::registry::ConstraintKind::RequiresAny
+        && c.attributes == ["user_id", "user_group_id"]));
     assert!(sp.attributes.iter().any(|a| a.name == "status"
         && a.attr_type == AttrType::Enum
         && a.options.contains(&"PUBLISHED".to_string())));

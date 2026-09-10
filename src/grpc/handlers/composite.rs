@@ -37,14 +37,6 @@ impl MetriGrpcService {
         .await
         .map_err(|err| Status::unauthenticated(format!("Authentication failed: {}", err.detail)))?;
 
-        let auth_header = request
-            .metadata()
-            .get("authorization")
-            .or_else(|| request.metadata().get("sid"))
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
-
         let mut req = request.into_inner();
         req.tenant_id = if principal.tenant_id == "system" && req.tenant_id.is_empty() {
             "system".to_string()
@@ -121,13 +113,9 @@ impl MetriGrpcService {
                     format!("entity_type '{}' no en registry", entity.entity_type),
                 )));
             };
-            let attrs = crate::codice::validator::validate_payload(
-                model,
-                &payload_json,
-                &tenant_id,
-                true,
-            )
-            .map_err(|e| Status::invalid_argument(e.detail))?;
+            let attrs =
+                crate::codice::validator::validate_payload(model, &payload_json, &tenant_id, true)
+                    .map_err(|e| Status::invalid_argument(e.detail))?;
 
             info!(
                 "Composite entity[{i}] | tenant: {} | entity: {} | id: {}",
@@ -145,8 +133,13 @@ impl MetriGrpcService {
         }
 
         // Madre = entities[0]; hijos = proyecciones de la MISMA transacción.
+        // (R6 del Patrón Result: el vacío ya se rechazó arriba con Status;
+        // aquí no hay pánico — se degrada a error de dominio por si el
+        // contrato cambia mañana.)
         let mut iter = payloads.into_iter();
-        let madre = iter.next().expect("verificado: entities no vacío");
+        let madre = iter.next().ok_or_else(|| {
+            Status::invalid_argument("CompositeTransact exige al menos una entidad")
+        })?;
         let proyecciones: Vec<SagaProjection> = iter
             .map(|p| {
                 warn!(

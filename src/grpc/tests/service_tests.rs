@@ -1235,8 +1235,7 @@ async fn servicio_composite() -> MetriGrpcService {
     let pull_read =
         crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), "metri-eav-local");
     let oltp_exec = crate::aegis::oltp::executor::OltpExecutor::new(query_exec, pull_read.clone());
-    let eav_writer =
-        crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
+    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), "metri-eav-local");
     let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
         crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
     );
@@ -1245,15 +1244,18 @@ async fn servicio_composite() -> MetriGrpcService {
         crate::codice::registry::EngineChannel::Oltp,
         Arc::clone(&oltp_channel),
     );
-    let janus_router =
-        Arc::new(crate::janus_router::router::JanusRouter::new(channel_registry));
+    let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(
+        channel_registry,
+    ));
     let audit_interceptor = Arc::new(
         crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
             &oltp_channel,
         )),
     );
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
-        "secret-key-development-metri-256-bits!!!".to_string().into_bytes(),
+        "secret-key-development-metri-256-bits!!!"
+            .to_string()
+            .into_bytes(),
         Arc::clone(&ddb_client),
         "metri-eav-local".to_string(),
     ));
@@ -1286,8 +1288,12 @@ fn peticion_compuesta(
         entities,
         suppress_events: true,
     });
-    grpc_req.metadata_mut().insert("test-tenant", "tnt_01".parse().unwrap());
-    grpc_req.metadata_mut().insert("test-user", "usr_001".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_01".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_001".parse().unwrap());
     grpc_req
 }
 
@@ -1310,7 +1316,7 @@ fn entidad_create(
 async fn composite_sin_entidades_es_invalido() {
     let service = servicio_composite().await;
     let res = service.composite_transact(peticion_compuesta(vec![])).await;
-    let err = res.err().expect("vacío debe ser rechazado");
+    let err = res.expect_err("vacío debe ser rechazado");
     assert_eq!(err.code(), tonic::Code::InvalidArgument);
 }
 
@@ -1322,8 +1328,7 @@ async fn composite_rechaza_operaciones_que_no_son_create() {
     let err = service
         .composite_transact(peticion_compuesta(vec![e]))
         .await
-        .err()
-        .expect("UPDATE no entra por composite");
+        .expect_err("UPDATE no entra por composite");
     assert_eq!(err.code(), tonic::Code::InvalidArgument);
     assert!(err.message().contains("solo soporta CREATE"));
 }
@@ -1340,8 +1345,7 @@ async fn composite_exige_ids_preasignados() {
     let err = service
         .composite_transact(peticion_compuesta(vec![e]))
         .await
-        .err()
-        .expect("sin id preasignado debe ser rechazado");
+        .expect_err("sin id preasignado debe ser rechazado");
     assert_eq!(err.code(), tonic::Code::InvalidArgument);
     assert!(err.message().contains("entity_id preasignado"));
 }
@@ -1356,9 +1360,12 @@ async fn composite_rechaza_entidad_fuera_del_catalogo() {
             json!({ "x": 1 }),
         )]))
         .await
-        .err()
-        .expect("entidad fuera del Códice debe ser rechazada");
-    assert!(err.message().contains("no en registry"), "{}", err.message());
+        .expect_err("entidad fuera del Códice debe ser rechazada");
+    assert!(
+        err.message().contains("no en registry"),
+        "{}",
+        err.message()
+    );
 }
 
 #[tokio::test]
@@ -1384,8 +1391,7 @@ async fn composite_valida_la_estructura_antes_de_escribir() {
             json!({ "name": "huerfana" }),
         )]))
         .await
-        .err()
-        .expect("violación estructural debe rechazar el composite");
+        .expect_err("violación estructural debe rechazar el composite");
     assert!(
         err.message().contains("work_order_id"),
         "el error debe nombrar el campo faltante: {}",
@@ -1399,7 +1405,6 @@ async fn composite_valida_la_estructura_antes_de_escribir() {
 #[tokio::test]
 #[ignore]
 async fn composite_instancia_procedure_y_campos_atomicamente() {
-    use std::sync::Arc;
     static CODICE: std::sync::Once = std::sync::Once::new();
     CODICE.call_once(|| {
         std::env::set_var("DYNAMODB_ENDPOINT", "http://localhost:8000");
@@ -1408,8 +1413,7 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
         std::env::set_var("AWS_REGION", "us-east-1");
         if crate::codice::registry::global_opt().is_none() {
             let models = std::path::Path::new("config/models");
-            let (registry, _) =
-                crate::codice::CodeRegistry::build(models).expect("registry");
+            let (registry, _) = crate::codice::CodeRegistry::build(models).expect("registry");
             crate::codice::init_global(registry);
         }
     });
@@ -1432,8 +1436,12 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
         suppress_events: true,
     };
     let mut req_semilla = tonic::Request::new(semilla);
-    req_semilla.metadata_mut().insert("test-tenant", tenant.clone().parse().unwrap());
-    req_semilla.metadata_mut().insert("test-user", "usr_001".parse().unwrap());
+    req_semilla
+        .metadata_mut()
+        .insert("test-tenant", tenant.clone().parse().unwrap());
+    req_semilla
+        .metadata_mut()
+        .insert("test-user", "usr_001".parse().unwrap());
     service
         .transact(req_semilla)
         .await
@@ -1516,6 +1524,8 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
     // UPDATE sobre la misma entidad: la reclamación es idempotente para el
     // dueño, así que el reintento CREATE falla por la condición
     // attribute_not_exists del claim — y NO escribe el hijo.
-    let reintento = service.composite_transact(peticion_compuesta(entities_duplicado)).await;
+    let reintento = service
+        .composite_transact(peticion_compuesta(entities_duplicado))
+        .await;
     assert!(reintento.is_err(), "el duplicado debe abortar");
 }

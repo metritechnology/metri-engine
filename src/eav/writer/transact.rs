@@ -286,8 +286,14 @@ impl EavWriter {
         attrs: &HashMap<String, DatomValue>,
     ) -> Result<(), DomainError> {
         use crate::codice::registry::ConstraintKind;
-        for c in model.constraints.iter().filter(|c| c.kind == ConstraintKind::RefState) {
-            let Some(attr) = c.attributes.first() else { continue };
+        for c in model
+            .constraints
+            .iter()
+            .filter(|c| c.kind == ConstraintKind::RefState)
+        {
+            let Some(attr) = c.attributes.first() else {
+                continue;
+            };
             let Some(DatomValue::Str(ref_id)) = attrs.get(attr) else {
                 continue;
             };
@@ -299,14 +305,17 @@ impl EavWriter {
             else {
                 continue;
             };
-            let Some(condiciones) = c.when.as_deref() else { continue };
+            let Some(condiciones) = c.when.as_deref() else {
+                continue;
+            };
             let ref_attrs = self.get_active_attributes(tenant_id, ref_id).await?;
-            let ref_attrs: HashMap<String, DatomValue> = ref_attrs
-                .into_iter()
-                .map(|(k, (_, v))| (k, v))
-                .collect();
+            let ref_attrs: HashMap<String, DatomValue> =
+                ref_attrs.into_iter().map(|(k, (_, v))| (k, v)).collect();
             crate::eav::writer::constraints::check_ref_conditions(
-                &target, ref_id, &ref_attrs, condiciones,
+                &target,
+                ref_id,
+                &ref_attrs,
+                condiciones,
             )?;
         }
         Ok(())
@@ -367,8 +376,10 @@ impl EavWriter {
                     model,
                 });
                 // Vista fusionada: get_active_attributes trae (attr_id, valor).
-                let previo: std::collections::HashMap<String,
-                    crate::eav::types::datom::DatomValue> = active_attrs
+                let previo: std::collections::HashMap<
+                    String,
+                    crate::eav::types::datom::DatomValue,
+                > = active_attrs
                     .iter()
                     .map(|(k, (_, v))| (k.clone(), v.clone()))
                     .collect();
@@ -378,7 +389,8 @@ impl EavWriter {
                     &payload.attrs,
                     &previo,
                 )?;
-                self.check_refs_de(&payload.tenant_id, model, &payload.attrs).await?;
+                self.check_refs_de(&payload.tenant_id, model, &payload.attrs)
+                    .await?;
             }
             for proj in &opts.projections {
                 if let Some(model) = crate::codice::global().get_model(&proj.entity_type) {
@@ -395,7 +407,8 @@ impl EavWriter {
                         &proj.attrs,
                         &std::collections::HashMap::new(),
                     )?;
-                    self.check_refs_de(&payload.tenant_id, model, &proj.attrs).await?;
+                    self.check_refs_de(&payload.tenant_id, model, &proj.attrs)
+                        .await?;
                 }
             }
         }

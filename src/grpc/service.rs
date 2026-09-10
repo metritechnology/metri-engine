@@ -7,10 +7,10 @@ use std::sync::Arc;
 
 use crate::grpc::pb::metri_service_server::MetriService;
 use crate::grpc::pb::{
-    BulkRequest, BulkResponse, DiscoveryRequest, DiscoveryResponse, ExploreRequest,
-    ExploreResponse, ListEntitiesRequest, ListEntitiesResponse, MatchRoutingRulesBatchRequest,
-    MatchRoutingRulesBatchResponse, QueryRequest, QueryResponse, CompositeTransactRequest,
-    CompositeTransactResponse, TransactionRequest, TransactionResponse,
+    BulkRequest, BulkResponse, CompositeTransactRequest, CompositeTransactResponse,
+    DiscoveryRequest, DiscoveryResponse, ExploreRequest, ExploreResponse, ListEntitiesRequest,
+    ListEntitiesResponse, MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse,
+    QueryRequest, QueryResponse, TransactionRequest, TransactionResponse,
 };
 /// Dependencias del servicio, resueltas una sola vez en la raíz de
 /// composición (`grpc/server.rs` en producción). Sustituye al constructor de
