@@ -210,6 +210,7 @@ mod tests {
             kind: ConstraintKind::Unique,
             scope,
             attributes: attrs.iter().map(|s| s.to_string()).collect(),
+            when: None,
         }
     }
 

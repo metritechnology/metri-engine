@@ -309,6 +309,64 @@ impl EavWriter {
         } else {
             std::collections::HashMap::new()
         };
+
+        // 4.2. Restricciones declaradas de estado y de referencia.
+        //
+        // Con la vista fusionada (previo + payload) ya en mano —que el update
+        // leyó de todos modos— se evalúan `requires_when` y `at_most` sin
+        // lecturas adicionales. `ref_state` sí lee la entidad apuntada: es la
+        // comprobación tolerada documentada en `check_ref_conditions` (fallar
+        // aquí es más barato y más claro que descubrirlo en la UI).
+        if opts.constraints == ConstraintPolicy::Plan {
+            if let Some(model) = crate::codice::global().get_model(&payload.entity_type) {
+                // Vista fusionada: get_active_attributes trae (attr_id, valor).
+                let previo: std::collections::HashMap<String,
+                    crate::eav::types::datom::DatomValue> = active_attrs
+                    .iter()
+                    .map(|(k, (_, v))| (k.clone(), v.clone()))
+                    .collect();
+                crate::eav::writer::constraints::check_state_constraints(
+                    model,
+                    payload.op.clone(),
+                    &payload.attrs,
+                    &previo,
+                )?;
+                for c in model.constraints.iter().filter(|c| {
+                    c.kind == crate::codice::registry::ConstraintKind::RefState
+                }) {
+                    let Some(attr) = c.attributes.first() else { continue };
+                    let Some(crate::eav::types::datom::DatomValue::Str(ref_id)) =
+                        payload.attrs.get(attr)
+                    else {
+                        continue; // solo cuando la referencia se está escribiendo
+                    };
+                    let Some(target) = model
+                        .attributes
+                        .iter()
+                        .find(|a| a.name == *attr)
+                        .and_then(|a| a.entity_ref.clone())
+                    else {
+                        continue;
+                    };
+                    let Some(condiciones) = c.when.as_deref() else { continue };
+                    let ref_attrs = self
+                        .get_active_attributes(&payload.tenant_id, ref_id)
+                        .await?;
+                    let ref_attrs: std::collections::HashMap<String,
+                        crate::eav::types::datom::DatomValue> = ref_attrs
+                        .into_iter()
+                        .map(|(k, (_, v))| (k, v))
+                        .collect();
+                    crate::eav::writer::constraints::check_ref_conditions(
+                        &target,
+                        ref_id,
+                        &ref_attrs,
+                        condiciones,
+                    )?;
+                }
+            }
+        }
+
         let plan = crate::eav::writer::datom_plan::plan_payload_datoms(
             &payload,
             &entity_id,
@@ -399,10 +457,11 @@ impl EavWriter {
         // van en el chunk atómico por construcción, porque se añaden antes
         // del troceado.
         //
-        // Hoy no producen nada: ningún modelo declara `constraints`. Activarlo
-        // con duplicados vivos en la base haría fallar la siguiente escritura
-        // de esos tenants, así que el orden correcto es reconciliar primero
-        // (F3) y declarar después (F4).
+        // `work_order` (idempotencia del loop preventivo) y
+        // `work_order_procedure` (plantilla una vez por OT) las declaran hoy.
+        // Activar una `unique` con duplicados vivos en la base haría fallar la
+        // siguiente escritura de esos tenants: conciliar primero, declarar
+        // después.
         if opts.constraints == ConstraintPolicy::Plan {
             let model = crate::codice::global().get_model(&payload.entity_type);
             if let Some(model) = model {

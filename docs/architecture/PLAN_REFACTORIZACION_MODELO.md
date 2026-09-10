@@ -29,6 +29,7 @@
 | **3 — Una sola vía de adjuntos** | **EJECUTADA sin migración.** Verificación previa en producción (scan EAV, 21k items): `response_file_ids` y `value_file_ids` con **0 datoms**; `photo_ids` solo en `location` y con **nombres de fichero, no ids de entidad** (`0-images (1).jpeg`…), herencia del stack anterior — nada que respaldar hacia `file.owner_entity_*` (que además es `required` en cada file). Arrays retirados del esquema; los strings quedan en el historial EAV (Regla A). |
 | **4 — Dinero en unidad menor** | **EJECUTADA sin migración.** `hourly_rate` tenía **0 datoms** en producción. Esquema: `hourly_rate_cents` (number, measure, sum) + `currency` (`^[A-Z]{3}$`, hereda del tenant). |
 | **5 — Semántica de grupo** | **EJECUTADA sin migración.** `notify_groups` tenía **0 datoms**. `entityRef` cambiado de `role` a `user_group`, alineado con `scheduled_job`/`reminder`. |
+| **Enforce de integridad en el flujo OT↔procedures (pedido del 9-sep)** | **EJECUTADA.** Tres constraints nuevas en el motor (parser + chequeo en el camino de escritura sobre la vista fusionada): `requires_when` (una `work_order_procedure` COMPLETED exige `completed_by/at`; una `work_order` CLOSED ídem), `at_most` (`score ≤ max_score`) y `ref_state` (solo se instancia un procedure `PUBLISHED`; comprobación con lectura tolerada por diseño). 8 tests unitarios + aserciones de parseo. Sin riesgo de dato: 0 work_orders y 0 instancias vivas. |
 | **Retiro de la capa `form_template*` completa (pedido del 9-sep)** | **EJECUTADA.** Fuera `form_template` y `form_template_section` (la `form_template_field` ya había caído). Las checklists quedan como estructuras manuales self-contained sobre la OT: fuera `check_list.form_template_id` (+ su constraint, sin plantilla que desduplicar), `check_list_section.form_template_section_id` y `request.form_template_id`; `form_template` fuera de `FALLBACK_DOMAINS` de Cedar. Dato verificado: las 7 entidades de la familia eran seed del tenant `system` sin una sola checklist o request que las referenciara. Catálogo: **54 modelos** sin refs colgantes. El único sistema de protocolo formal es `procedure`.
 | **Retiro de `form_template_field` (pedido del 9-sep)** | **EJECUTADA.** La plantilla de formularios define el **esqueleto** (cabecera + secciones), no las preguntas: los ítems de `check_list_item` son self-contained (pregunta, tipo y respuesta) y pierden el provenance por pregunta (`form_template_field_id` fuera). Verificado antes de tocar: 3 entidades `form_template_field` vivas quedan como historial EAV sin instancias que las referencien (`check_list` en 0). Catálogo: **56 modelos** sin refs colgantes.
 | **Barrido de campos deprecados (pedido del 9-sep)** | **EJECUTADA sin migración.** Fuera `work_order.internal_audit_hash`, `work_order.completion_percentage` (descripción huérfana: hablaba de las tareas retiradas) y `labor_log.task_description` (nombre de la era de tareas) — 0 refs en `src/` y 0 datoms en producción en los tres. Limpieza adicional: flag inerte `is_system` a nivel de atributo en 14 atributos (el parser solo lee el de raíz) y prosa de `work_order.scheduled_start/end` que seguía describiendo el rollup de tareas. Se conservan como diseño intencional: `is_parent`, familia SLA/due_date, GPS de check-in/out (0 datoms, features por construir).
@@ -203,6 +204,27 @@ con las entidades que la declaraban.
 - Recordatorio permanente (Regla A): los campos de `work_order` sin lógica en el engine
   (GPS check-in/out, SLA breached, `completion_percentage`) pueden estar vivos por escritura
   de metri-app — no retirar sin verificar consumo.
+
+
+### Fase 9 — Instanciación atómica de procedimientos (pendiente · días · toca el motor)
+
+El único hueco que resta del flujo OT↔procedimientos: colgar un procedure son
+N+1 `Transact` (la instancia + un campo por paso). Si la app cae a mitad, la
+OT queda con un procedure manco. Diseño acordado:
+
+1. Nueva variante en el proto: `CompositeTransact` con payloads múltiples y
+   **ids preasignados por el cliente** (los ULID se generan en metri-app; el
+   validador de referencias ya acepta ids en el payload).
+2. `EavWriter::transact_all(Vec<TransactPayload>)`: planifica todos los
+   payloads (datoms, claims, outbox, FTS) y ejecuta **una sola**
+   `TransactWriteItems` — la atomicidad la da DynamoDB al ser la misma tabla.
+3. Presupuesto: el límite de 100 items por transacción ya se chequea y hoy
+   falla explícito; el composite hereda el chequeo con el conteo agregado.
+4. Adopta metri-app: la instanciación pasa de N+1 llamadas a una.
+
+**Puerta 9**: un composite que caiga a mitad deja 0 filas (test con payload
+que exceda el presupuesto); la constraint `unique(WO, procedure)` sigue
+abortando el composite completo si el procedure ya estaba.
 
 ## Parte V — Riesgos
 

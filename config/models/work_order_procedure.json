@@ -82,6 +82,31 @@
         "procedure_id"
       ],
       "description": "El mismo procedure no se instancia dos veces en la misma OT: una OT ordena N procedimientos distintos. Reordenar toca procedure_order, nunca duplica la instancia."
+    },
+    {
+      "type": "ref_state",
+      "attr": "procedure_id",
+      "conditions": {
+        "lifecycle_state": "PUBLISHED"
+      },
+      "description": "Solo se instancian procedures PUBLISHED (paridad MaintainX): DRAFT no se ofrece y RETIRED conserva histórico sin nuevas instancias. Comprobación con lectura, tolerada por diseño."
+    },
+    {
+      "type": "requires_when",
+      "when": {
+        "status": "COMPLETED"
+      },
+      "required": [
+        "completed_by",
+        "completed_at"
+      ],
+      "description": "Un procedimiento COMPLETED lleva quién y cuándo lo cerró. Se evalúa sobre la vista fusionada (estado previo + payload): si completed_by ya estaba, un update que solo marca status no falla."
+    },
+    {
+      "type": "at_most",
+      "field": "score",
+      "of": "max_score",
+      "description": "El puntaje obtenido no puede exceder el máximo del snapshot."
     }
   ]
 }

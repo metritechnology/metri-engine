@@ -183,6 +183,30 @@ Las reglas de eventos permiten disparar notificaciones y registrar auditorías a
 
 ---
 
+## IV-bis. Constraints: integridad declarada en el catálogo
+
+Las constraints se declaran en el JSON del modelo y el motor las enforcea en
+el camino de escritura. El catálogo falla el arranque si una está malformada
+(los tipos desconocidos se descartan con aviso):
+
+| Tipo | Sintaxis | Qué garantiza | Dónde se enforcea |
+|---|---|---|---|
+| `unique` | `{type, scope: tenant\|global, attributes[]}` | La clave no se repite en el ámbito: un item de reclamación con `attribute_not_exists` en la MISMA transacción DynamoDB — invariante sin ventanas de carrera. | Escritura (planner) |
+| `requires_when` | `{type, when: {campo: valor}, required: [campos]}` | Si la vista fusionada (estado previo + payload) cumple todos los pares `when`, los campos `required` son obligatorios (presentes y no nulos). | Escritura (chequeo de estado) |
+| `at_most` | `{type, field, of}` | `field` no puede exceder `of` numéricamente (enteros y decimales comparables entre sí). | Escritura (chequeo de estado) |
+| `ref_state` | `{type, attr, conditions: {campo: valor}}` | La entidad apuntada por `attr` —solo cuando la referencia se escribe— cumple todas las `conditions`. | Escritura (comprobación con lectura) |
+
+Notas de diseño:
+
+- `requires_when` se evalúa sobre la **vista fusionada**: si `completed_by` ya
+  estaba en la entidad, un update que solo marca `status: COMPLETED` no falla;
+  si el update retrajera `completed_by`, la vista lo delata.
+- `ref_state` es la única comprobación con lectura y la tolerancia está
+  documentada: la ventana (alguien retira el referenciado justo después del
+  chequeo) es de negocio, no de integridad.
+- Activar una `unique` con duplicados vivos haría fallar la siguiente
+  escritura: conciliar el dato antes de declarar.
+
 ## V. Protocolos y checklists
 
 Desde el 2026-09-09 el catálogo tiene **un solo sistema de protocolo formal**:

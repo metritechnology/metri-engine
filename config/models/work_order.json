@@ -279,6 +279,17 @@
         "asset_id"
       ],
       "description": "Una OT por (disparo, activo). El par —no el job solo— permite que un mismo disparo materialice una OT por activo sin bloquear la segunda. El reintento de un disparo no duplica su OT ni toca las demás. Las OT manuales sin scheduled_job_id o con asset_id vacío no reclaman nada (huella_clave ignora claves con atributos ausentes)."
+    },
+    {
+      "type": "requires_when",
+      "when": {
+        "status": "CLOSED"
+      },
+      "required": [
+        "completed_by",
+        "completed_at"
+      ],
+      "description": "Una OT CLOSED lleva quién y cuándo la cerró (el completerId/completedAt de MaintainX). Vista fusionada: si ya estaban, un update parcial no falla."
     }
   ],
   "event_rules": [

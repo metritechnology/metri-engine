@@ -137,20 +137,47 @@ impl From<&str> for ConstraintScope {
 ///   { "type": "unique", "scope": "tenant", "attributes": ["tenant_id", "plugin_id"] }
 /// ]
 /// ```
+///
+/// Tipos adicionales (evaluados sobre la vista fusionada estado-previo +
+/// payload en el camino de escritura):
+///
+/// ```json
+/// "constraints": [
+///   { "type": "requires_when", "when": {"status": "COMPLETED"},
+///     "required": ["completed_by", "completed_at"] },
+///   { "type": "at_most", "field": "score", "of": "max_score" },
+///   { "type": "ref_state", "attr": "procedure_id",
+///     "conditions": {"lifecycle_state": "PUBLISHED"} }
+/// ]
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Constraint {
     pub kind: ConstraintKind,
     pub scope: ConstraintScope,
-    /// Atributos que forman la clave, EN EL ORDEN DECLARADO.
+    /// Atributos de la restricción, EN EL ORDEN DECLARADO.
     ///
-    /// El orden importa: forma parte de la clave física, así que reordenarlos
-    /// en el JSON cambia el hash y deja huérfanos los items ya escritos.
+    /// `unique`: la clave física (reordenar cambia el hash y deja huérfanos
+    /// los items ya escritos). `requires_when`: los campos exigidos.
+    /// `at_most`: `[field, of]`. `ref_state`: `[attr]` — el atributo
+    /// referencia cuya entidad apuntada debe cumplir `when`.
     pub attributes: Vec<String>,
+    /// Pares (campo, valor) que condicionan `RequiresWhen` y `RefState`.
+    #[serde(default)]
+    pub when: Option<Vec<(String, String)>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConstraintKind {
     Unique,
+    /// Si todos los pares `when` se cumplen en la vista fusionada, los campos
+    /// `attributes` son obligatorios.
+    RequiresWhen,
+    /// `attributes[0]` no puede exceder a `attributes[1]` (numérico).
+    AtMost,
+    /// La entidad apuntada por `attributes[0]` debe cumplir todos los pares
+    /// `when`. Comprobación con lectura: tolera la carrera por diseño (ver
+    /// `constraints::check_ref_conditions`).
+    RefState,
 }
 
 /// Modelo completo de una entidad del Códice.
@@ -659,25 +686,69 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
     items
         .iter()
         .filter_map(|c| {
-            let kind = match c["type"].as_str().unwrap_or("unique") {
-                "unique" => ConstraintKind::Unique,
+            let tipo = c["type"].as_str().unwrap_or("unique");
+            let parse_pares = |obj: &serde_json::Value| -> Option<Vec<(String, String)>> {
+                let map = obj.as_object()?;
+                Some(
+                    map.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect(),
+                )
+            };
+
+            let (kind, attributes, when) = match tipo {
+                "unique" => (
+                    ConstraintKind::Unique,
+                    c["attributes"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    None,
+                ),
+                "requires_when" => (
+                    ConstraintKind::RequiresWhen,
+                    c["required"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    c["when"].as_object().and_then(|w| parse_pares(&json_clone(w))),
+                ),
+                "at_most" => (
+                    ConstraintKind::AtMost,
+                    ["field", "of"]
+                        .iter()
+                        .filter_map(|k| c[*k].as_str().map(str::to_string))
+                        .collect(),
+                    None,
+                ),
+                "ref_state" => (
+                    ConstraintKind::RefState,
+                    c["attr"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
+                    c["conditions"].as_object().and_then(|w| parse_pares(&json_clone(w))),
+                ),
                 other => {
                     tracing::warn!("[Codice] restricción de tipo desconocido '{other}'; se ignora");
                     return None;
                 }
             };
 
-            let attributes: Vec<String> = c["attributes"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-
             if attributes.is_empty() {
                 tracing::warn!("[Codice] restricción sin atributos; se ignora");
+                return None;
+            }
+
+            if matches!(kind, ConstraintKind::RequiresWhen | ConstraintKind::RefState)
+                && when.as_ref().is_none_or(|w| w.is_empty())
+            {
+                tracing::warn!("[Codice] restricción {tipo} sin condiciones 'when'/'conditions'; se ignora");
                 return None;
             }
 
@@ -685,9 +756,15 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
                 kind,
                 scope: ConstraintScope::from(c["scope"].as_str().unwrap_or("tenant")),
                 attributes,
+                when,
             })
         })
         .collect()
+}
+
+/// Clona un mapa de serde_json como Value para el parser de pares.
+fn json_clone(w: &serde_json::Map<String, serde_json::Value>) -> serde_json::Value {
+    serde_json::Value::Object(w.clone())
 }
 
 /// Recolecta todos los archivos .json de un directorio.

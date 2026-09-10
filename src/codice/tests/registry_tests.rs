@@ -332,6 +332,25 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         .find(|c| c.attributes == ["work_order_id", "procedure_id"])
         .expect("el mismo procedure no debe instanciarse dos veces en una OT");
     assert_eq!(wop_unique.scope, crate::codice::registry::ConstraintScope::Tenant);
+    // Contrato de integridad: plantilla PUBLISHED, cierre con actor y puntaje acotado.
+    assert!(wop
+        .constraints
+        .iter()
+        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RefState
+            && c.attributes == ["procedure_id"]
+            && c.when
+                .as_deref()
+                .is_some_and(|w| w.contains(&("lifecycle_state".to_string(), "PUBLISHED".to_string())))));
+    assert!(wop
+        .constraints
+        .iter()
+        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RequiresWhen
+            && c.attributes == ["completed_by", "completed_at"]));
+    assert!(wop
+        .constraints
+        .iter()
+        .any(|c| c.kind == crate::codice::registry::ConstraintKind::AtMost
+            && c.attributes == ["score", "max_score"]));
 
     let cl = registry
         .get_model("check_list")

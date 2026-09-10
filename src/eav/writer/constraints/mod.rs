@@ -87,3 +87,305 @@ pub fn plan_all(
     }
     Ok(items)
 }
+
+/// Evalúa las restricciones de ESTADO declaradas en el modelo
+/// (`requires_when`, `at_most`) sobre la vista fusionada.
+///
+/// La vista fusionada es el estado previo (`active`) sobrescrito por el
+/// payload (`written`): en Create `active` viene vacío y el payload debe
+/// contener todo; en Update el camino de escritura ya leyó el estado previo
+/// para el retract+assert, así que esta comprobación no añade lecturas.
+///
+/// Nota honesta sobre la regla del módulo («lo que lee no es invariante»):
+/// aquí no se lee nada *nuevo* — se reusa la lectura que el update ya hace —
+/// pero sí hay una ventana mínima entre esa lectura y la transacción. Para
+/// estas reglas de negocio la carrera es tolerada por diseño: deciden sobre
+/// una foto coherente del estado, no sobre reclamos físicos.
+pub fn check_state_constraints(
+    model: &EntityModel,
+    op: TransactOp,
+    written: &HashMap<String, DatomValue>,
+    active: &HashMap<String, DatomValue>,
+) -> Result<(), DomainError> {
+    if op == TransactOp::Delete {
+        return Ok(());
+    }
+
+    // Vista fusionada: lo escrito gana sobre lo previo.
+    let mut merged = active.clone();
+    for (k, v) in written {
+        merged.insert(k.clone(), v.clone());
+    }
+
+    for c in &model.constraints {
+        match c.kind {
+            crate::codice::registry::ConstraintKind::RequiresWhen => {
+                let cuando = c.when.as_deref().unwrap_or(&[]);
+                if cuando
+                    .iter()
+                    .all(|(k, v)| como_texto(merged.get(k)).as_deref() == Some(v.as_str()))
+                {
+                    for requerido in &c.attributes {
+                        if presente(&merged, requerido) {
+                            return Err(DomainError::codice(
+                                crate::domain::errors::ErrorCode::Cod001,
+                                format!(
+                                    "restricción '{}': con {} el campo '{}' es obligatorio",
+                                    model.entity,
+                                    cuando
+                                        .iter()
+                                        .map(|(k, v)| format!("{k}={v}"))
+                                        .collect::<Vec<_>>()
+                                        .join(" y "),
+                                    requerido
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            crate::codice::registry::ConstraintKind::AtMost => {
+                if let [campo, techo] = c.attributes.as_slice() {
+                    if let (Some(valor), Some(maximo)) =
+                        (como_numero(&merged, campo), como_numero(&merged, techo))
+                    {
+                        if valor > maximo {
+                            return Err(DomainError::codice(
+                                crate::domain::errors::ErrorCode::Cod001,
+                                format!(
+                                    "restricción '{}': {campo} ({valor}) no puede exceder {techo} ({maximo})",
+                                    model.entity
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Evalúa los pares `conditions` de una restricción `ref_state` contra los
+/// atributos activos de la entidad apuntada.
+///
+/// Es una comprobación con lectura, tolerada por diseño: entre la lectura del
+/// referenciado y la transacción cabe que cambie de estado (p. ej. alguien
+/// retira el procedure justo después de la comprobación). La ventana es de
+/// negocio, no de integridad — no corrompe datos, solo permite instanciar un
+/// procedure que acaba de pasar a RETIRED.
+pub fn check_ref_conditions(
+    entity: &str,
+    ref_id: &str,
+    ref_attrs: &HashMap<String, DatomValue>,
+    when: &[(String, String)],
+) -> Result<(), DomainError> {
+    for (k, v) in when {
+        if como_texto(ref_attrs.get(k)).as_deref() != Some(v.as_str()) {
+            return Err(DomainError::codice(
+                crate::domain::errors::ErrorCode::Cod001,
+                format!(
+                    "restricción '{entity}': la entidad referenciada '{ref_id}' no cumple \
+                     la condición {k}={v} (¿existe? {})",
+                    if ref_attrs.is_empty() { "no" } else { "sí" }
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn como_texto(v: Option<&DatomValue>) -> Option<String> {
+    match v? {
+        DatomValue::Str(s) => Some(s.clone()),
+        DatomValue::Ref(r) => Some(r.to_string()),
+        _ => None,
+    }
+}
+
+/// ¿Falta el campo en la vista fusionada (ausente o nulo)?
+fn presente(merged: &HashMap<String, DatomValue>, campo: &str) -> bool {
+    matches!(merged.get(campo), None | Some(DatomValue::Null))
+}
+
+fn como_numero(merged: &HashMap<String, DatomValue>, campo: &str) -> Option<f64> {
+    match merged.get(campo)? {
+        DatomValue::Long(i) => Some(*i as f64),
+        DatomValue::Double(f) => Some(*f),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+    use crate::codice::registry::{Constraint, ConstraintKind, ConstraintScope, EngineChannel};
+
+    fn modelo(constraints: Vec<Constraint>) -> EntityModel {
+        EntityModel {
+            entity: "work_order_procedure".to_string(),
+            label: None,
+            icon: None,
+            primary_key: None,
+            fts_fields: vec![],
+            engine: EngineChannel::Oltp,
+            attributes: vec![],
+            event_rules: vec![],
+            is_sequence_scope_provider: false,
+            write_path_locked: false,
+            is_system: false,
+            disable_eda: false,
+            shadow_sagas_mapping: None,
+            constraints,
+        }
+    }
+
+    fn requires_when(cuando: (&str, &str), requeridos: &[&str]) -> Constraint {
+        Constraint {
+            kind: ConstraintKind::RequiresWhen,
+            scope: ConstraintScope::Tenant,
+            attributes: requeridos.iter().map(|s| s.to_string()).collect(),
+            when: Some(vec![(cuando.0.to_string(), cuando.1.to_string())]),
+        }
+    }
+
+    fn at_most(campo: &str, techo: &str) -> Constraint {
+        Constraint {
+            kind: ConstraintKind::AtMost,
+            scope: ConstraintScope::Tenant,
+            attributes: vec![campo.to_string(), techo.to_string()],
+            when: None,
+        }
+    }
+
+    fn pares(vals: &[(&str, DatomValue)]) -> HashMap<String, DatomValue> {
+        vals.iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn completed_sin_actor_en_create_falla() {
+        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by", "completed_at"])]);
+        let escrito = pares(&[("status", DatomValue::Str("COMPLETED".into()))]);
+        let err = check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
+            .expect_err("COMPLETED sin actor debe fallar");
+        assert!(err.detail.contains("completed_by"), "{err:?}");
+    }
+
+    #[test]
+    fn completed_con_actor_en_create_pasa() {
+        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by", "completed_at"])]);
+        let escrito = pares(&[
+            ("status", DatomValue::Str("COMPLETED".into())),
+            ("completed_by", DatomValue::Str("01CARLOS".into())),
+            ("completed_at", DatomValue::Instant(1_788_000_000_000)),
+        ]);
+        check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
+            .expect("COMPLETED con actor debe pasar");
+    }
+
+    #[test]
+    fn update_parcial_usa_el_estado_previo() {
+        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by", "completed_at"])]);
+        // El payload solo marca status; completed_by/at ya estaban en la entidad.
+        let escrito = pares(&[("status", DatomValue::Str("COMPLETED".into()))]);
+        let previo = pares(&[
+            ("completed_by", DatomValue::Str("01CARLOS".into())),
+            ("completed_at", DatomValue::Instant(1)),
+        ]);
+        check_state_constraints(&m, TransactOp::Update, &escrito, &previo)
+            .expect("con completed_* previos el update parcial debe pasar");
+
+        // Y si el update RETRACTA completed_by, la vista fusionada lo delata.
+        let escrito = pares(&[
+            ("status", DatomValue::Str("COMPLETED".into())),
+            ("completed_by", DatomValue::Null),
+        ]);
+        assert!(check_state_constraints(&m, TransactOp::Update, &escrito, &previo).is_err());
+    }
+
+    #[test]
+    fn status_distinto_no_dispara_la_exigencia() {
+        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by"])]);
+        let escrito = pares(&[("status", DatomValue::Str("IN_PROGRESS".into()))]);
+        check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
+            .expect("IN_PROGRESS no exige actor");
+    }
+
+    #[test]
+    fn score_sobre_max_score_falla_con_ambos_tipos_numericos() {
+        let m = modelo(vec![at_most("score", "max_score")]);
+
+        let err = check_state_constraints(
+            &m,
+            TransactOp::Create,
+            &pares(&[("score", DatomValue::Long(150)), ("max_score", DatomValue::Long(100))]),
+            &HashMap::new(),
+        )
+        .expect_err("150 > 100 debe fallar");
+        assert!(err.detail.contains("no puede exceder"), "{err:?}");
+
+        // Decimal contra entero: mismo chequeo, tipos distintos.
+        let escrito = pares(&[
+            ("score", DatomValue::Double(100.5)),
+            ("max_score", DatomValue::Long(100)),
+        ]);
+        assert!(check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new()).is_err());
+
+        // Dentro del techo pasa.
+        let escrito = pares(&[("score", DatomValue::Long(100)), ("max_score", DatomValue::Long(100))]);
+        check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
+            .expect("igualar el máximo es válido");
+    }
+
+    #[test]
+    fn at_most_sin_techo_en_vista_no_chequea() {
+        let m = modelo(vec![at_most("score", "max_score")]);
+        let escrito = pares(&[("score", DatomValue::Long(500))]);
+        check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
+            .expect("sin max_score en la vista no hay contra qué comparar");
+    }
+
+    #[test]
+    fn delete_nunca_dispara_restricciones_de_estado() {
+        let m = modelo(vec![requires_when(("status", "COMPLETED"), &["completed_by"])]);
+        let escrito = pares(&[("status", DatomValue::Str("COMPLETED".into()))]);
+        check_state_constraints(&m, TransactOp::Delete, &escrito, &HashMap::new())
+            .expect("el borrado no evalúa estado");
+    }
+
+    #[test]
+    fn ref_state_evalua_las_condiciones_del_referenciado() {
+        let publicado = pares(&[
+            ("entity/type", DatomValue::Str("procedure".into())),
+            ("lifecycle_state", DatomValue::Str("PUBLISHED".into())),
+        ]);
+        check_ref_conditions(
+            "procedure",
+            "01PROC",
+            &publicado,
+            &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
+        )
+        .expect("PUBLISHED cumple");
+
+        let borrador = pares(&[("lifecycle_state", DatomValue::Str("DRAFT".into()))]);
+        assert!(check_ref_conditions(
+            "procedure",
+            "01PROC",
+            &borrador,
+            &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
+        )
+        .is_err());
+
+        // Entidad inexistente: vista vacía, no cumple nada.
+        assert!(check_ref_conditions(
+            "procedure",
+            "01FANTASMA",
+            &HashMap::new(),
+            &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
+        )
+        .is_err());
+    }
+}
