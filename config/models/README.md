@@ -193,14 +193,16 @@ directamente de `work_order`:
 | Sistema | Definición | Instancia | Frontera |
 |---|---|---|---|
 | **Procedimientos** | `procedure` → `procedure_field` (12 tipos de campo, scoring) | `work_order_procedure` → `work_order_procedure_field` | **SSOT del protocolo formal**: pasos tipados con puntaje, estilo MaintainX. Solo los `procedure` con `lifecycle_state=PUBLISHED` se instancian; `DRAFT` no se ofrece a nuevas OTs y `RETIRED` conserva histórico. |
-| **Formularios** | `form_template` → `form_template_section` → `form_template_field` (10 tipos de respuesta) | `check_list` → `check_list_section` → `check_list_item` | **Checklists de inspección y solicitudes**: única vía de formularios para `check_list` y para `request`. |
+| **Formularios** | `form_template` → `form_template_section` (esqueleto: cabecera + secciones) | `check_list` → `check_list_section` → `check_list_item` | **Checklists de inspección y solicitudes**: única vía de formularios para `check_list` y para `request`. Las preguntas viven solo en la instancia (`check_list_item` es self-contained: pregunta, tipo y respuesta). |
 
 Reglas de frontera:
 
 1. Un protocolo de trabajo con scoring (aprobar/rechazar por puntaje) se define
    como `procedure`, nunca como `form_template`.
 2. Una lista de verificación sí/no/respuesta corta se define como
-   `form_template`, nunca como `procedure`.
+   `form_template`, nunca como `procedure`. La plantilla define el esqueleto
+   (cabecera + secciones), no las preguntas: al instanciar, los ítems de
+   `check_list_item` son self-contained y no llevan provenance por pregunta.
 3. Ninguna definición cuelga de otra capa: `procedure` y `form_template` se
    instancian sobre la OT (o la `request`) directamente.
 4. `form_template` comparte ciclo de vida con `procedure`: `status`

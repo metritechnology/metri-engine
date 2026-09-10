@@ -14,13 +14,6 @@
       "is_dimension": true
     },
     {
-      "name": "form_template_field_id",
-      "type": "reference",
-      "entityRef": "form_template_field",
-      "cardinality": "one",
-      "description": "Crucial para OLAP: Atar esta respuesta exacta al campo original de la plantilla, asegurando agregación matemática a prueba de cambios en el texto."
-    },
-    {
       "name": "question_text",
       "type": "string",
       "required": true,

@@ -358,8 +358,11 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
     assert!(ft.attributes.iter().any(|a| a.name == "status"
         && a.attr_type == AttrType::Enum
         && a.options.contains(&"PUBLISHED".to_string())));
+    assert!(
+        registry.get_model("form_template_field").is_none(),
+        "form_template_field fue retirada: las preguntas viven solo en check_list_item"
+    );
     for (model, attr) in [
-        ("form_template_field", "field_order"),
         ("form_template_section", "section_order"),
         ("check_list_section", "section_order"),
     ] {

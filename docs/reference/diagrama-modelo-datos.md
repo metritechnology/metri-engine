@@ -128,7 +128,7 @@ catálogo el 2026-09-09: los procedimientos son el único protocolo formal.
 flowchart LR
     subgraph DEFS["Protocolos (definición)"]
         PR["procedure → procedure_field<br/>(12 tipos · scoring)"]
-        FT["form_template → section → field<br/>(10 tipos)"]
+        FT["form_template → section<br/>(esqueleto de secciones)"]
     end
 
     subgraph GEN["Generación preventiva"]
@@ -148,7 +148,7 @@ flowchart LR
 | Sistema | Definición | Instancia | Uso |
 |---|---|---|---|
 | Procedures | `procedure(_field)` | `work_order_procedure(_field)` | Protocolo formal con scoring (estilo MaintainX) |
-| Form templates | `form_template(_section/_field)` | `check_list(_section/_item)` | Checklists de inspección y `request` |
+| Form templates | `form_template(_section)` | `check_list(_section/_item)` | Checklists de inspección y `request` (preguntas self-contained en el ítem) |
 
 ---
 

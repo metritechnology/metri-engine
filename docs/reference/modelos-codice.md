@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **57**
+Total de modelos: **56**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -16,7 +16,7 @@ Total de modelos: **57**
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | oltp | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
 | `check_list` | oltp | `work_order_id`, `form_template_id`, `title`, `description`, `is_completed`, `check_list_order` |
-| `check_list_item` | oltp | `check_list_section_id`, `form_template_field_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at` |
+| `check_list_item` | oltp | `check_list_section_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at` |
 | `check_list_section` | oltp | `check_list_id`, `form_template_section_id`, `section_order`, `title`, `description`, `is_completed` |
 | `company` | oltp | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
 | `dashboardBI` | oltp | `name`, `description`, `widgets`, `created_at`, `updated_at` |
@@ -29,7 +29,6 @@ Total de modelos: **57**
 | `event_routing_rule` | oltp | `rule_code`, `description`, `is_system_seeded`, `target_entity_name`, `event_trigger_type`, `filter_conditions`, `detail_type_output` |
 | `file` | oltp | `file_name`, `mime_type`, `file_extension`, `file_size_bytes`, `checksum_sha256`, `owner_entity_type`, `owner_entity_id`, `url`, `optimized_url`, `thumbnail_url`, `optimized_size_bytes`, `optimized_mime_type`, `size_reduction_percent`, `processing_status`, `processing_error`, `embed_requested`, `embed_status`, `chunks_count`, `uploaded_by`, `created_at`, `processed_at`, `direct_access_only` |
 | `form_template` | oltp | `name`, `description`, `version`, `status` |
-| `form_template_field` | oltp | `form_template_section_id`, `field_order`, `question_prompt`, `type`, `is_required`, `validation_rules` |
 | `form_template_section` | oltp | `form_template_id`, `section_order`, `title`, `description` |
 | `inventory_batch` | oltp | `part_id`, `location_id`, `received_quantity`, `remaining_quantity`, `unit_cost_cents`, `currency`, `received_at`, `tenant_id` |
 | `inventory_ledger` | olap | `movement_id`, `part_id`, `location_id`, `timestamp`, `quantity_change`, `running_balance`, `running_financial_value` |
