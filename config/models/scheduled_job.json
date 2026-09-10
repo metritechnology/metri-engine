@@ -18,7 +18,6 @@
       "cardinality": "one",
       "required": true,
       "index": true,
-      "is_system": true,
       "description": "Principal que engendró el Job. Cedar lo reevalúa en T=0: la trampa puede disparar meses después de su creación, cuando el creador pudo ser desactivado o perder permisos. Sin este campo la autorización quedaría congelada en el instante de la creación."
     },
     {
@@ -93,7 +92,6 @@
     {
       "name": "idempotency_hash",
       "type": "string",
-      "is_system": true,
       "description": "Huella dactilar ESTÁTICA por Job. NO se usa directamente como llave de deduplicación: un hash constante deduplicaría entre sí todos los disparos de un CRON. El ejecutor deduplica por idempotency_key = sha256(idempotency_hash + instante de la ocurrencia)."
     },
     {
@@ -113,21 +111,18 @@
       "name": "last_run_at",
       "type": "epoch",
       "required": false,
-      "is_system": true,
       "description": "Instante del último disparo ejecutado. Campo de bitácora: su mutación NO debe reprovisionar la trampa en AWS."
     },
     {
       "name": "run_count",
       "type": "long",
       "default_value": 0,
-      "is_system": true,
       "description": "Número de disparos ejecutados. Campo de bitácora: su mutación NO debe reprovisionar la trampa en AWS."
     },
     {
       "name": "last_error",
       "type": "string",
       "required": false,
-      "is_system": true,
       "description": "Causa del último fallo cuando status = FAILED (epoch vencido, action_payload sobre 256KB, ConflictException no resuelto). Campo de bitácora."
     }
   ],

@@ -39,11 +39,6 @@
       "default_rollup": "sum"
     },
     {
-      "name": "task_description",
-      "type": "string",
-      "fts": true
-    },
-    {
       "name": "hourly_rate_cents",
       "type": "number",
       "is_measure": true,

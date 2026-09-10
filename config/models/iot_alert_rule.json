@@ -118,7 +118,6 @@
       "type": "uuid",
       "required": false,
       "index": true,
-      "is_system": true,
       "description": "Llave de retorno cuando la regla fue aprovisionada por un scheduled_job de trigger_type TELEMETRY. Viaja en system.iot.alert.breach para que Metri Schedulers correlacione el breach físico con su Job y dispare el action_payload. Null en reglas creadas por el usuario."
     }
   ],

@@ -294,6 +294,16 @@ catálogo no las valida estructuralmente:
 - `provider` retirado del catálogo y de `FALLBACK_DOMAINS` de Cedar: 0 entidades
   vivas y ningún modelo lo referenciaba; `company_type=PROVIDER` lo cubre.
 
+**Campos deprecados eliminados (2026-09-09, cierre):** `work_order.internal_audit_hash`
+y `work_order.completion_percentage` (su descripción aún refería a las tareas
+retiradas) y `labor_log.task_description` (nombre heredado de la era de tareas) —
+los tres con 0 referencias en el motor y 0 datoms en producción. También se limpió
+el flag inerte `is_system` a nivel de atributo en 14 atributos (`user`,
+`scheduled_job`, `iot_alert_rule`, `work_order`): el parser nunca lo leyó (solo el
+de raíz). Quedan como diseño intencional sin dato aún: `is_parent`
+(denormalización tipo MaintainX para filtrar sin negar índice), la familia
+SLA/due_date y los GPS de check-in/out.
+
 **Candidatos a deprecación que exigen decisión de producto/migración de datos**
 (no tocar sin conciliar el dato vivo):
 

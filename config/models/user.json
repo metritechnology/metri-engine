@@ -17,7 +17,6 @@
     {
       "name": "password_hash",
       "type": "string",
-      "is_system": true,
       "sensitive": true,
       "description": "Hash Bcrypt/Argon2 de la contraseña. Nunca en texto plano y sanitizado en logs."
     },
@@ -183,27 +182,23 @@
     {
       "name": "failed_attempts",
       "type": "number",
-      "is_system": true,
       "default_value": 0,
       "description": "Contador de intentos fallidos de inicio de sesión."
     },
     {
       "name": "locked_until",
       "type": "string",
-      "is_system": true,
       "description": "Timestamp RFC3339 de expiración de bloqueo de cuenta."
     },
     {
       "name": "mfa_enabled",
       "type": "boolean",
-      "is_system": true,
       "default_value": false,
       "description": "Indica si el segundo factor de autenticación está activo."
     },
     {
       "name": "mfa_secret",
       "type": "string",
-      "is_system": true,
       "sensitive": true,
       "description": "Secreto TOTP cifrado AES-256 (Base32). Sanitizado en logs."
     },
@@ -218,20 +213,17 @@
         "DIRECT_API",
         "BOOTSTRAP"
       ],
-      "is_system": true,
       "is_dimension": true,
       "description": "Método utilizado para completar el registro inicial."
     },
     {
       "name": "registered_at",
       "type": "epoch",
-      "is_system": true,
       "description": "Timestamp epoch ms de registro oficial."
     },
     {
       "name": "last_login_at",
       "type": "epoch",
-      "is_system": true,
       "description": "Timestamp epoch ms del último inicio de sesión exitoso."
     }
   ],

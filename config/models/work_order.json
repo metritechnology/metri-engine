@@ -142,12 +142,6 @@
       "description": "Código de divisa ISO 4217 de tres letras validado contra el sistema terminológico (ej: USD, EUR, MXN)."
     },
     {
-      "name": "completion_percentage",
-      "type": "decimal",
-      "is_measure": true,
-      "description": "0 to 100 percentage representing progress across tasks and checklists"
-    },
-    {
       "name": "checkin_latitude",
       "type": "decimal",
       "description": "Latitud GPS de origen registrada por el dispositivo móvil al iniciar la orden de trabajo."
@@ -211,24 +205,16 @@
       "description": "Indica si se incumplió el tiempo límite de resolución del SLA."
     },
     {
-      "name": "internal_audit_hash",
-      "type": "string",
-      "is_system": true,
-      "fts": false
-    },
-    {
       "name": "scheduled_start",
       "type": "epoch",
       "index": true,
-      "is_system": true,
-      "description": "Mínimo de los scheduled_start de sus tareas. Lo calcula el motor."
+      "description": "Inicio previsto de la orden de trabajo."
     },
     {
       "name": "scheduled_end",
       "type": "epoch",
       "index": true,
-      "is_system": true,
-      "description": "Máximo de los scheduled_end de sus tareas. Lo calcula el motor."
+      "description": "Fin previsto de la orden de trabajo."
     },
     {
       "name": "preventive_maintenance_id",
@@ -315,19 +301,6 @@
       ],
       "detail_type_output": "system.work_order.closed",
       "description": "Evento crítico de cierre de orden de trabajo para auditoría y KPIs."
-    },
-    {
-      "rule_code": "WO_HIGH_COST_ALERT",
-      "event_trigger_type": "on_update",
-      "filter_conditions": [
-        {
-          "field_name": "total_cost_cents",
-          "operator": "gt",
-          "target_value": "5000000"
-        }
-      ],
-      "detail_type_output": "system.alerts.high_cost_work_order",
-      "description": "Alerta sistémica automática para órdenes de trabajo que superan los 50k en costo (5,000,000 céntimos)."
     }
   ]
 }
