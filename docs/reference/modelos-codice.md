@@ -52,7 +52,7 @@ Total de modelos: **57**
 | `scheduled_job` | oltp | `parent_entity_ref`, `created_by`, `trigger_type`, `trigger_expression`, `iana_timezone`, `action_type`, `target_user_id`, `target_group_id`, `target_role_id`, `target_webhook_id`, `action_payload`, `idempotency_hash`, `status`, `last_run_at`, `run_count`, `last_error` |
 | `sequence_registry` | oltp | `tenant_id`, `sequence_code`, `prefix`, `padding_length`, `current_value`, `parent_scope_tag` |
 | `shift_pattern` | oltp | `name`, `user_id`, `user_group_id`, `grammar`, `cron_expression`, `iana_timezone`, `span_minutes`, `productive_factor`, `reactive_reserve_pct`, `effective_from`, `effective_to`, `status` |
-| `technician_shift` | oltp | `user_id`, `shift_date`, `start_time`, `end_time`, `status`, `shift_pattern_id`, `kind`, `absence_reason` |
+| `technician_shift` | oltp | `user_id`, `shift_date`, `start_time`, `end_time`, `status`, `shift_pattern_id`, `kind`, `absence_reason`, `completed_by`, `completed_at` |
 | `tenant` | oltp | `name`, `tag`, `status`, `tier`, `require_mfa_for_new_users`, `mfa_policy`, `mfa_allowed_methods`, `session_max_idle_minutes`, `industry`, `timezone`, `currency`, `language`, `billing_admin_email`, `logo`, `config` |
 | `tenant_plugin` | oltp | `tenant_id`, `plugin_id`, `status`, `config` |
 | `user` | oltp | `username`, `password_hash`, `email`, `primary_phone`, `first_name`, `last_name`, `job_title`, `avatar`, `badge_id`, `status`, `user_type`, `role_ids`, `group_ids`, `tenant_id`, `company_id`, `primary_location_id`, `hourly_rate_cents`, `currency`, `skills`, `timezone`, `locale`, `failed_attempts`, `locked_until`, `mfa_enabled`, `mfa_secret`, `registration_method`, `registered_at`, `last_login_at` |

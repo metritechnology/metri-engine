@@ -25,7 +25,7 @@
       "entityRef": "user_group",
       "cardinality": "one",
       "is_dimension": true,
-      "description": "Cuadrilla a la que rige. El patrón individual gana sobre el de cuadrilla (CAP-R4)."
+      "description": "Cuadrilla a la que rige. El patrón individual gana sobre el de cuadrilla. Constraint: exige al menos un dueño (user_id o user_group_id)."
     },
     {
       "name": "grammar",
@@ -34,7 +34,7 @@
         "cronPosix"
       ],
       "default_value": "cronPosix",
-      "description": "Gramática de la recurrencia. Hoy solo la del contrato del calendario; ver §3.6."
+      "description": "Gramática de la recurrencia. Hoy solo cronPosix: la misma que expande el calendario declarativo y preventive_maintenance."
     },
     {
       "name": "cron_expression",
@@ -64,7 +64,7 @@
       "name": "reactive_reserve_pct",
       "type": "decimal",
       "default_value": 0.0,
-      "description": "Fracción de la capacidad productiva reservada para trabajo no planificable. Ver §3.5."
+      "description": "Fracción de la capacidad productiva reservada para trabajo no planificable (averías): el plan preventivo no puede consumirla."
     },
     {
       "name": "effective_from",
@@ -77,19 +77,19 @@
       "name": "effective_to",
       "type": "epoch",
       "index": true,
-      "description": "Vacío = vigente. Un cambio de rol de turnos cierra el patrón viejo y abre uno nuevo; no se edita en sitio (CAP-R3)."
+      "description": "Vacío = vigente. Un cambio de rol de turnos cierra el patrón viejo y abre uno nuevo; no se edita en sitio — el histórico queda intacto."
     },
     {
       "name": "status",
       "type": "enum",
       "options": [
-        "ACTIVE",
         "DRAFT",
+        "PUBLISHED",
         "RETIRED"
       ],
-      "default_value": "ACTIVE",
+      "default_value": "DRAFT",
       "is_dimension": true,
-      "description": "Estado del ciclo de vida del patrón de turno."
+      "description": "Ciclo de vida en paridad con las demás definiciones (procedure_template, checklist_template): solo las PUBLISHED proyectan capacidad; DRAFT se edita sin regir; RETIRED conserva histórico. Default DRAFT: una definición nueva no rige hasta publicarse."
     }
   ],
   "event_rules": [
@@ -98,7 +98,17 @@
       "event_trigger_type": "on_update",
       "filter_conditions": [],
       "detail_type_output": "system.shift_pattern.changed",
-      "description": "La capacidad proyectada cambió: obliga a reproyectar el capacity_ledger (§5.3)."
+      "description": "La capacidad proyectada cambió: obliga a reproyectar el ledger de capacidad."
+    }
+  ],
+  "constraints": [
+    {
+      "type": "requires_any",
+      "any": [
+        "user_id",
+        "user_group_id"
+      ],
+      "description": "Un patrón sin dueño (ni técnico ni cuadrilla) proyectaría capacidad fantasma: exige al menos uno. Los dos a la vez es válido (un técnico dentro de una cuadrilla con horario distinto)."
     }
   ]
 }

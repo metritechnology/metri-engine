@@ -193,7 +193,9 @@ el camino de escritura. El catálogo falla el arranque si una está malformada
 |---|---|---|---|
 | `unique` | `{type, scope: tenant\|global, attributes[]}` | La clave no se repite en el ámbito: un item de reclamación con `attribute_not_exists` en la MISMA transacción DynamoDB — invariante sin ventanas de carrera. | Escritura (planner) |
 | `requires_when` | `{type, when: {campo: valor}, required: [campos]}` | Si la vista fusionada (estado previo + payload) cumple todos los pares `when`, los campos `required` son obligatorios (presentes y no nulos). | Escritura (chequeo de estado) |
-| `at_most` | `{type, field, of}` | `field` no puede exceder `of` numéricamente (enteros y decimales comparables entre sí). | Escritura (chequeo de estado) |
+| `at_most` | `{type, field, of}` | `field` no puede exceder `of` numéricamente (enteros, decimales y epochs comparables entre sí). | Escritura (chequeo de estado) |
+| `at_least` | `{type, field, of}` | `field` no puede ser menor/ anterior a `of` numéricamente (ej. `end_time ≥ start_time`, turnos que cruzan medianoche incluidos). | Escritura (chequeo de estado) |
+| `requires_any` | `{type, any: [campos]}` | Al menos UNO de los campos debe estar presente (ej. un patrón de turnos exige `user_id` o `user_group_id`). | Escritura (chequeo de estado) |
 | `ref_state` | `{type, attr, conditions: {campo: valor}}` | La entidad apuntada por `attr` —solo cuando la referencia se escribe— cumple todas las `conditions`. | Escritura (comprobación con lectura) |
 
 Notas de diseño:

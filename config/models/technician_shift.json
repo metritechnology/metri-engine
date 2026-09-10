@@ -17,7 +17,8 @@
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
       "required": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Día calendario OPERATIVO del turno: la fecha de inicio start_time expresada en la zona del patrón (o del técnico). Es dimensión OLAP a propósito — agrupar capacidad por día del negocio es la consulta natural, y derivar la fecha por zona en cada query es caro. La coherencia shift_date↔start_time la garantiza la app (el motor no compara string contra epoch)."
     },
     {
       "name": "start_time",
@@ -36,10 +37,12 @@
         "SCHEDULED",
         "IN_PROGRESS",
         "COMPLETED",
-        "MISSED"
+        "MISSED",
+        "CANCELLED"
       ],
       "default_value": "SCHEDULED",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Ciclo de vida del turno. CANCELLED = el plan anuló el turno antes de que ocurriera; MISSED = el turno estaba programado y no se ejecutó (falta del técnico)."
     },
     {
       "name": "shift_pattern_id",
@@ -67,7 +70,92 @@
       "subtype": "terminology",
       "terminologyUri": "urn:api:system:absence_reason",
       "is_dimension": true,
-      "description": "Solo con kind = ABSENCE. Vocabulario controlado (P6): vacaciones, baja, formación, permiso. Es exactamente el eje por el que se pregunta «por qué se pierde capacidad», y en texto libre esa pregunta no se responde."
+      "description": "Solo con kind = ABSENCE (obligatorio entonces: constraint requires_when). Vocabulario controlado: vacaciones, baja, formación, permiso. Es exactamente el eje por el que se pregunta «por qué se pierde capacidad», y en texto libre esa pregunta no se responde."
+    },
+    {
+      "name": "completed_by",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "one",
+      "description": "Quien registró la ejecución o el fallo del turno (COMPLETED/MISSED). Constraint: obligatorio en ambos estados."
+    },
+    {
+      "name": "completed_at",
+      "type": "epoch",
+      "description": "Momento del registro de la ejecución o del fallo."
+    }
+  ],
+  "constraints": [
+    {
+      "type": "requires_when",
+      "when": {
+        "kind": "OVERRIDE"
+      },
+      "required": [
+        "shift_pattern_id"
+      ],
+      "description": "Un OVERRIDE desplaza la ocurrencia de UN patrón concreto: sin shift_pattern_id es contradictorio (override de qué?)."
+    },
+    {
+      "type": "requires_when",
+      "when": {
+        "kind": "ABSENCE"
+      },
+      "required": [
+        "absence_reason"
+      ],
+      "description": "Una ausencia sin motivo cierra la pregunta «por qué se perdió capacidad»."
+    },
+    {
+      "type": "requires_when",
+      "when": {
+        "status": "COMPLETED"
+      },
+      "required": [
+        "completed_by",
+        "completed_at"
+      ],
+      "description": "Un turno COMPLETED lleva quién lo registró y cuándo."
+    },
+    {
+      "type": "requires_when",
+      "when": {
+        "status": "MISSED"
+      },
+      "required": [
+        "completed_by",
+        "completed_at"
+      ],
+      "description": "Un turno MISSED también tiene autor y momento del registro del fallo."
+    },
+    {
+      "type": "at_least",
+      "field": "end_time",
+      "of": "start_time",
+      "description": "El turno termina cuando empieza + span: end_time nunca anterior a start_time."
+    }
+  ],
+  "event_rules": [
+    {
+      "rule_code": "TECHNICIAN_SHIFT_CHANGED",
+      "event_trigger_type": "on_create",
+      "filter_conditions": [],
+      "detail_type_output": "system.technician_shift.changed",
+      "description": "Un turno nuevo (EXTRA/ABSENCE/OVERRIDE) cambia la capacidad proyectada: obliga a reproyectar el ledger de capacidad, igual que SHIFT_PATTERN_CHANGED."
+    },
+    {
+      "rule_code": "TECHNICIAN_SHIFT_CHANGED_UPDATE",
+      "event_trigger_type": "on_update",
+      "filter_conditions": [],
+      "detail_type_output": "system.technician_shift.changed",
+      "description": "Cambiar el estado o el horario de un turno mueve capacidad: misma señal de reproyección."
+    },
+    {
+      "rule_code": "TECHNICIAN_SHIFT_CHANGED_DELETE",
+      "event_trigger_type": "on_delete",
+      "filter_conditions": [],
+      "detail_type_output": "system.technician_shift.changed",
+      "description": "Retirar una ausencia o un extra restaura capacidad: misma señal de reproyección."
     }
   ]
 }

@@ -422,3 +422,54 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         .any(|c| c.kind == crate::codice::registry::ConstraintKind::RefState
             && c.attributes == ["checklist_template_id"]));
 }
+
+/// La familia de turnos declara sus contratos de capacidad: el override cita
+/// patrón, la ausencia tiene motivo, el cierre lleva actor, el horario es
+/// coherente y el patrón tiene dueño.
+#[test]
+fn la_familia_de_turnos_declara_los_contratos_de_capacidad() {
+    let models_dir = std::path::Path::new("config/models");
+    let (registry, _rules) = CodeRegistry::build(models_dir)
+        .expect("config/models debe compilar con la familia de turnos");
+
+    let ts = registry
+        .get_model("technician_shift")
+        .expect("technician_shift debe estar registrado");
+    let tipos: Vec<(crate::codice::registry::ConstraintKind, Vec<String>)> = ts
+        .constraints
+        .iter()
+        .map(|c| (c.kind, c.attributes.clone()))
+        .collect();
+    for esperado in [
+        (crate::codice::registry::ConstraintKind::RequiresWhen, vec!["shift_pattern_id".to_string()]),
+        (crate::codice::registry::ConstraintKind::RequiresWhen, vec!["absence_reason".to_string()]),
+        (crate::codice::registry::ConstraintKind::RequiresWhen, vec!["completed_by".to_string(), "completed_at".to_string()]),
+        (crate::codice::registry::ConstraintKind::AtLeast, vec!["end_time".to_string(), "start_time".to_string()]),
+    ] {
+        assert!(
+            tipos.iter().any(|(k, a)| *k == esperado.0 && *a == esperado.1),
+            "falta la constraint {:?} {:?} en technician_shift: {tipos:?}",
+            esperado.0,
+            esperado.1
+        );
+    }
+    assert!(ts
+        .attributes
+        .iter()
+        .any(|a| a.name == "status"
+            && a.attr_type == AttrType::Enum
+            && a.options.contains(&"CANCELLED".to_string())));
+    assert_eq!(ts.event_rules.len(), 3, "create/update/delete emiten la señal de reproyección");
+
+    let sp = registry
+        .get_model("shift_pattern")
+        .expect("shift_pattern debe estar registrado");
+    assert!(sp
+        .constraints
+        .iter()
+        .any(|c| c.kind == crate::codice::registry::ConstraintKind::RequiresAny
+            && c.attributes == ["user_id", "user_group_id"]));
+    assert!(sp.attributes.iter().any(|a| a.name == "status"
+        && a.attr_type == AttrType::Enum
+        && a.options.contains(&"PUBLISHED".to_string())));
+}

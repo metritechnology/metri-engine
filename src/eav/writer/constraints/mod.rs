@@ -239,6 +239,39 @@ pub fn check_state_constraints(
                     }
                 }
             }
+            crate::codice::registry::ConstraintKind::AtLeast => {
+                if let [campo, piso] = c.attributes.as_slice() {
+                    if let (Some(valor), Some(minimo)) =
+                        (como_numero(&merged, campo), como_numero(&merged, piso))
+                    {
+                        if valor < minimo {
+                            return Err(DomainError::codice(
+                                crate::domain::errors::ErrorCode::Cod001,
+                                format!(
+                                    "restricción '{}': {campo} ({valor}) no puede ser anterior/menor a {piso} ({minimo})",
+                                    model.entity
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
+            crate::codice::registry::ConstraintKind::RequiresAny => {
+                if !c
+                    .attributes
+                    .iter()
+                    .any(|campo| !presente(&merged, campo))
+                {
+                    return Err(DomainError::codice(
+                        crate::domain::errors::ErrorCode::Cod001,
+                        format!(
+                            "restricción '{}': exige al menos uno de [{}]",
+                            model.entity,
+                            c.attributes.join(", ")
+                        ),
+                    ));
+                }
+            }
             _ => {}
         }
     }
@@ -291,6 +324,8 @@ fn como_numero(merged: &HashMap<String, DatomValue>, campo: &str) -> Option<f64>
     match merged.get(campo)? {
         DatomValue::Long(i) => Some(*i as f64),
         DatomValue::Double(f) => Some(*f),
+        // Epoch: los instantes son comparables numéricamente (end ≥ start).
+        DatomValue::Instant(i) => Some(*i as f64),
         _ => None,
     }
 }
@@ -549,5 +584,108 @@ mod claims_tests {
         let items = plan_claims_para(&planners(), "tnt_1", "tbl", &[a, b])
             .expect("claves distintas: ambas reclaman");
         assert_eq!(items.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod at_least_any_tests {
+    use super::*;
+    use crate::codice::registry::{Constraint, ConstraintKind, ConstraintScope, EngineChannel};
+
+    fn modelo(constraints: Vec<Constraint>) -> EntityModel {
+        EntityModel {
+            entity: "technician_shift".to_string(),
+            label: None,
+            icon: None,
+            primary_key: None,
+            fts_fields: vec![],
+            engine: EngineChannel::Oltp,
+            attributes: vec![],
+            event_rules: vec![],
+            is_sequence_scope_provider: false,
+            write_path_locked: false,
+            is_system: false,
+            disable_eda: false,
+            shadow_sagas_mapping: None,
+            constraints,
+        }
+    }
+
+    fn at_least(campo: &str, piso: &str) -> Constraint {
+        Constraint {
+            kind: ConstraintKind::AtLeast,
+            scope: ConstraintScope::Tenant,
+            attributes: vec![campo.to_string(), piso.to_string()],
+            when: None,
+        }
+    }
+
+    fn requires_any(campos: &[&str]) -> Constraint {
+        Constraint {
+            kind: ConstraintKind::RequiresAny,
+            scope: ConstraintScope::Tenant,
+            attributes: campos.iter().map(|s| s.to_string()).collect(),
+            when: None,
+        }
+    }
+
+    fn pares(vals: &[(&str, DatomValue)]) -> HashMap<String, DatomValue> {
+        vals.iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn end_time_anterior_a_start_time_falla() {
+        let m = modelo(vec![at_least("end_time", "start_time")]);
+        // Epoch en segundos de un mismo día: end 10:00 < start 14:00.
+        let escrito = pares(&[
+            ("start_time", DatomValue::Instant(50_400)),
+            ("end_time", DatomValue::Instant(36_000)),
+        ]);
+        let err = check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
+            .expect_err("end < start debe fallar");
+        assert!(err.detail.contains("no puede ser anterior"), "{err:?}");
+    }
+
+    #[test]
+    fn turnos_que_cruzan_medianoche_pasan() {
+        let m = modelo(vec![at_least("end_time", "start_time")]);
+        // Guardia 24x48: start 22:00 del día 1, end 22:00 del día 2.
+        let escrito = pares(&[
+            ("start_time", DatomValue::Instant(79_200)),
+            ("end_time", DatomValue::Instant(165_600)),
+        ]);
+        check_state_constraints(&m, TransactOp::Create, &escrito, &HashMap::new())
+            .expect("el turno que cruza medianoche es end > start");
+    }
+
+    #[test]
+    fn requires_any_exige_al_menos_un_dueno() {
+        let m = modelo(vec![requires_any(&["user_id", "user_group_id"])]);
+
+        // Patrón huérfano: ni técnico ni cuadrilla.
+        let err = check_state_constraints(
+            &m,
+            TransactOp::Create,
+            &pares(&[("name", DatomValue::Str("fantasma".into()))]),
+            &HashMap::new(),
+        )
+        .expect_err("patrón sin dueño debe fallar");
+        assert!(err.detail.contains("al menos uno"), "{err:?}");
+
+        // Técnico: pasa. Cuadrilla: pasa.
+        for dueño in [
+            ("user_id", DatomValue::Str("01CARLOS".into())),
+            ("user_group_id", DatomValue::Str("01CUADRILLA".into())),
+        ] {
+            check_state_constraints(
+                &m,
+                TransactOp::Create,
+                &pares(&[dueño]),
+                &HashMap::new(),
+            )
+            .expect("con un dueño basta");
+        }
     }
 }

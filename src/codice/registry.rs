@@ -174,6 +174,11 @@ pub enum ConstraintKind {
     RequiresWhen,
     /// `attributes[0]` no puede exceder a `attributes[1]` (numérico).
     AtMost,
+    /// `attributes[0]` no puede ser menor a `attributes[1]` (numérico).
+    /// Espejo de `AtMost` — p. ej. end_time ≥ start_time.
+    AtLeast,
+    /// Al menos UNO de los campos en `attributes` debe estar presente.
+    RequiresAny,
     /// La entidad apuntada por `attributes[0]` debe cumplir todos los pares
     /// `when`. Comprobación con lectura: tolera la carrera por diseño (ver
     /// `constraints::check_ref_conditions`).
@@ -727,6 +732,26 @@ fn parse_constraints(json: &serde_json::Value) -> Vec<Constraint> {
                         .iter()
                         .filter_map(|k| c[*k].as_str().map(str::to_string))
                         .collect(),
+                    None,
+                ),
+                "at_least" => (
+                    ConstraintKind::AtLeast,
+                    ["field", "of"]
+                        .iter()
+                        .filter_map(|k| c[*k].as_str().map(str::to_string))
+                        .collect(),
+                    None,
+                ),
+                "requires_any" => (
+                    ConstraintKind::RequiresAny,
+                    c["any"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
                     None,
                 ),
                 "ref_state" => (
