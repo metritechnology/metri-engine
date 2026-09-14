@@ -40,6 +40,17 @@ jobs:
       - name: Infra local (DynamoDB · MinIO · ElasticMQ)
         run: make infra
 
+      # Los tests de integración dan por sentado las tablas locales
+      # (metri-eav/schemas/quota-local): en una DynamoDB Local fresca hay que
+      # crearlas. reset_local.py usa boto3 (no viene en el runner) y creds
+      # dummy (en CI no hay perfil AWS).
+      - name: Seed de tablas locales
+        run: |
+          python3 -m pip install --user boto3 \
+            || python3 -m pip install --user --break-system-packages boto3
+          AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+            AWS_DEFAULT_REGION=us-east-1 make seed
+
       - name: Tests de integración (#[ignore])
         run: make test-integration
 
