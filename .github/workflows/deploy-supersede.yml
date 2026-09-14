@@ -1,0 +1,36 @@
+name: Deploy — cancelar obsoletos
+
+# Último push gana. Un run de deploy esperando aprobación humana OCUPA la
+# cola serializada (concurrency deploy-production): los pushes siguientes
+# quedan en pending sin poder ni compilar. Este vigía corre al instante en
+# cada push — FUERA de esa cola — y cancela los runs de deploy de commits
+# anteriores que aún no hayan completado.
+#
+# Nota: un deploy manual (workflow_dispatch) de un ref viejo esperando
+# aprobación también será cancelado si llega un push nuevo — re-dispáchalo
+# después si era intencional (rollback).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: write
+
+jobs:
+  supersede:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Cancelar deploys de commits anteriores sin completar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ github.sha }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/workflows/deploy-production.yml/runs?per_page=20" \
+            --jq '.workflow_runs[] | select(.head_sha != "'"$CURRENT"'" and (.status == "queued" or .status == "pending" or .status == "waiting")) | .id' |
+          while read -r id; do
+            [ -n "$id" ] || continue
+            echo "Cancelando deploy obsoleto $id (superseded por $CURRENT)"
+            gh api -X POST "repos/${{ github.repository }}/actions/runs/$id/cancel" || true
+          done
