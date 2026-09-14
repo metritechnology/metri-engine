@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Pre-commit — espejo barato de los gates de CI (ver `make ci`, `make hooks`).
+#
+# Caza antes del push las tres clases de fallo que ya tumbaron el CI de este
+# repo: formato sin hacer, referencia generada desfasada y archivos de fuente
+# silenciosamente excluidos por .gitignore (caso src/domain/events/).
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+status=0
+
+echo "▶ cargo fmt --check"
+cargo fmt --check || status=1
+
+echo "▶ referencia generada al día (modelos ↔ docs/reference)"
+python3 scripts/docs/gen_reference.py --check || status=1
+
+echo "▶ guard: archivos de fuente excluidos por .gitignore"
+# Solo importan fuentes; los artefactos derivados (.pyc, __pycache__) están
+# bien ignorados.
+leaked=$(git ls-files --others --ignored --exclude-standard src tests proto config build.rs | grep -v -e '\.DS_Store' -e '__pycache__' -e '\.pyc$' || true)
+if [ -n "$leaked" ]; then
+  echo ":: .gitignore está tragando archivos de fuente — commitea o corrige la regla:"
+  echo "$leaked"
+  status=1
+fi
+
+if [ "$status" -ne 0 ]; then
+  echo "✗ pre-commit falló: el CI rechazaría este push. Corrige, o sáltalo bajo tu riesgo con git commit --no-verify."
+fi
+exit $status

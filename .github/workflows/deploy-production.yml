@@ -39,6 +39,7 @@ concurrency:
 permissions:
   contents: read
   id-token: write # OIDC → AWS (aws-actions/configure-aws-credentials)
+  actions: write # cancelar runs de deploy obsoletos
 
 env:
   AWS_REGION: us-east-1
@@ -54,6 +55,20 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Último push gana: los runs previos en cola o esperando aprobación ya
+      # no representan a main y solo ocupan la cola serializada del deploy.
+      - name: Cancelar runs de deploy anteriores sin completar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/workflows/deploy-production.yml/runs?per_page=20" \
+            --jq '.workflow_runs[] | select(.id != ${{ github.run_id }} and (.status == "queued" or .status == "pending" or .status == "waiting")) | .id' |
+          while read -r id; do
+            [ -n "$id" ] || continue
+            echo "Cancelando run obsoleto $id"
+            gh api -X POST "repos/${{ github.repository }}/actions/runs/$id/cancel" || true
+          done
 
       - uses: dtolnay/rust-toolchain@stable
         with:
