@@ -29,7 +29,11 @@
       "area_unit": {
         "m2": "m²",
         "ft2": "ft²",
-        "sq_yd": "yd²"
+        "sq_yd": "yd²",
+        "ha": "ha",
+        "acre": "ac",
+        "km2": "km²",
+        "sq_mi": "mi²"
       }
     }
   }
