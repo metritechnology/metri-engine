@@ -64,6 +64,13 @@
       "doc_scope": "Cuando is_sequence_scope=true, este campo actúa como scope automático del contador secuencial. El OLTPChannel verifica que la entidad referenciada (location) declare is_sequence_scope_provider=true, resuelve su tag y lo usa en el sequence_code. Sin configuración adicional."
     },
     {
+      "name": "require_location_verification",
+      "type": "boolean",
+      "default_value": "false",
+      "is_dimension": true,
+      "description": "Exige la verificación obligatoria de coordenadas GPS y geocerca en los registros de trabajo de la orden."
+    },
+    {
       "name": "assignees",
       "type": "reference",
       "entityRef": "user",
@@ -110,13 +117,11 @@
       "name": "priority",
       "type": "enum",
       "options": [
-        "NONE",
         "LOW",
         "MEDIUM",
-        "HIGH",
-        "CRITICAL"
+        "HIGH"
       ],
-      "default_value": "NONE",
+      "default_value": "MEDIUM",
       "is_dimension": true
     },
     {
@@ -125,96 +130,16 @@
       "index": true
     },
     {
-      "name": "total_cost_cents",
-      "type": "number",
-      "is_measure": true,
-      "default_rollup": "sum",
-      "description": "Costo total de la orden de trabajo en la unidad menor de la divisa (céntimos)."
-    },
-    {
-      "name": "currency",
-      "type": "string",
-      "subtype": "terminology",
-      "terminologyUri": "urn:api:system:currency",
-      "pattern": "^[A-Z]{3}$",
-      "default_value": "USD",
-      "is_dimension": true,
-      "description": "Código de divisa ISO 4217 de tres letras validado contra el sistema terminológico (ej: USD, EUR, MXN)."
-    },
-    {
-      "name": "checkin_latitude",
-      "type": "decimal",
-      "description": "Latitud GPS de origen registrada por el dispositivo móvil al iniciar la orden de trabajo."
-    },
-    {
-      "name": "checkin_longitude",
-      "type": "decimal",
-      "description": "Longitud GPS de origen registrada por el dispositivo móvil al iniciar la orden de trabajo."
-    },
-    {
-      "name": "checkin_at",
-      "type": "epoch",
-      "description": "Timestamp epoch ms del check-in presencial del técnico."
-    },
-    {
-      "name": "checkout_latitude",
-      "type": "decimal",
-      "description": "Latitud GPS de destino registrada por el dispositivo móvil al cerrar la orden de trabajo."
-    },
-    {
-      "name": "checkout_longitude",
-      "type": "decimal",
-      "description": "Longitud GPS de destino registrada por el dispositivo móvil al cerrar la orden de trabajo."
-    },
-    {
-      "name": "checkout_at",
-      "type": "epoch",
-      "description": "Timestamp epoch ms del check-out final del técnico."
-    },
-    {
-      "name": "is_geofence_verified",
-      "type": "boolean",
-      "default_value": "false",
-      "is_dimension": true,
-      "description": "Flag de auditoría que confirma si el check-in ocurrió dentro del radio de geocerca del activo asignado."
-    },
-    {
-      "name": "sla_response_due_date",
-      "type": "epoch",
-      "index": true,
-      "description": "Fecha límite pactada para que el técnico responda o inicie el trabajo en campo."
-    },
-    {
-      "name": "sla_resolution_due_date",
-      "type": "epoch",
-      "index": true,
-      "description": "Fecha límite pactada para la resolución y cierre completo de la orden de trabajo."
-    },
-    {
-      "name": "sla_response_breached",
-      "type": "boolean",
-      "default_value": "false",
-      "is_dimension": true,
-      "description": "Indica si se incumplió el tiempo límite de respuesta del SLA."
-    },
-    {
-      "name": "sla_resolution_breached",
-      "type": "boolean",
-      "default_value": "false",
-      "is_dimension": true,
-      "description": "Indica si se incumplió el tiempo límite de resolución del SLA."
-    },
-    {
       "name": "scheduled_start",
       "type": "epoch",
       "index": true,
       "description": "Inicio previsto de la orden de trabajo."
     },
     {
-      "name": "scheduled_end",
-      "type": "epoch",
-      "index": true,
-      "description": "Fin previsto de la orden de trabajo."
+      "name": "estimated_duration_minutes",
+      "type": "decimal",
+      "is_measure": true,
+      "description": "Duración o tiempo estimado para la ejecución de la orden de trabajo en minutos."
     },
     {
       "name": "preventive_maintenance_id",
@@ -260,7 +185,7 @@
       "name": "completed_at",
       "type": "epoch",
       "index": true,
-      "description": "Momento del cierre efectivo de la OT (el completedAt de MaintainX). El KPI de cumplimiento a plazo compara este instante contra sla_resolution_due_date."
+      "description": "Momento del cierre efectivo de la OT (el completedAt de MaintainX). El KPI de cumplimiento a plazo compara este instante contra due_date."
     },
     {
       "name": "custom_attributes",

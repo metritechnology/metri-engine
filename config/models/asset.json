@@ -86,6 +86,12 @@
       "description": "Activo padre en la jerarquía de equipos / sub-ensambles."
     },
     {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Descripción del activo: qué hace, contexto operativo y notas para el técnico."
+    },
+    {
       "name": "manufacturer_company_id",
       "type": "reference",
       "entityRef": "company",

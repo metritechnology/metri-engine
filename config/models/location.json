@@ -35,28 +35,6 @@
       "description": "Código de Ubicación Funcional (Functional Location FLOC) estandarizado tipo SAP (único por tenant)."
     },
     {
-      "name": "type",
-      "type": "enum",
-      "options": [
-        "ENTERPRISE",
-        "SITE",
-        "PLANT",
-        "AREA",
-        "PRODUCTION_LINE",
-        "WORK_CENTER",
-        "CELL",
-        "BUILDING",
-        "FLOOR",
-        "ROOM",
-        "ZONE",
-        "WAREHOUSE",
-        "MOBILE_UNIT"
-      ],
-      "required": true,
-      "is_dimension": true,
-      "description": "Nivel jerárquico según norma ISA-95 / ISO 14224 estandarizado en MAYÚSCULAS."
-    },
-    {
       "name": "status",
       "type": "enum",
       "options": [
@@ -122,9 +100,21 @@
       "description": "Nombre o descripción verbal correspondiente al código de clasificación OmniClass Table 13."
     },
     {
-      "name": "coordinates_geojson",
-      "type": "string",
-      "description": "Geolocalización espacial en formato GeoJSON (Point, Polygon o MultiPolygon)."
+      "name": "is_primary",
+      "type": "boolean",
+      "default_value": "false",
+      "is_dimension": true,
+      "description": "Indica si es una ubicación o sede principal que requiere dirección física y coordenadas geográficas."
+    },
+    {
+      "name": "latitude",
+      "type": "decimal",
+      "description": "Latitud geográfica en grados decimales (WGS 84)."
+    },
+    {
+      "name": "longitude",
+      "type": "decimal",
+      "description": "Longitud geográfica en grados decimales (WGS 84)."
     },
     {
       "name": "address_street",
@@ -168,18 +158,15 @@
       "options": [
         "m2",
         "ft2",
-        "sq_yd"
+        "sq_yd",
+        "ha",
+        "acre",
+        "km2",
+        "sq_mi"
       ],
       "default_value": "m2",
       "is_dimension": true,
       "description": "Unidad de medida de superficie."
-    },
-    {
-      "name": "timezone",
-      "type": "string",
-      "default_value": "UTC",
-      "is_dimension": true,
-      "description": "Zona horaria IANA oficial de la ubicación (ej: 'America/Mexico_City')."
     },
     {
       "name": "cost_center",

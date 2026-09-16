@@ -3,7 +3,6 @@
   "engine": "oltp",
   "is_system": false,
   "track_history": true,
-  "partition_strategy": "YYYY-MM-DD",
   "attributes": [
     {
       "name": "work_order_id",
@@ -46,12 +45,31 @@
       "description": "Tarifa horaria al momento del registro, en la unidad menor de la divisa (céntimos)."
     },
     {
-      "name": "currency",
-      "type": "string",
-      "pattern": "^[A-Z]{3}$",
+      "name": "start_latitude",
+      "type": "decimal",
+      "description": "Latitud GPS registrada por el dispositivo móvil al iniciar la labor."
+    },
+    {
+      "name": "start_longitude",
+      "type": "decimal",
+      "description": "Longitud GPS registrada por el dispositivo móvil al iniciar la labor."
+    },
+    {
+      "name": "end_latitude",
+      "type": "decimal",
+      "description": "Latitud GPS registrada por el dispositivo móvil al finalizar la labor."
+    },
+    {
+      "name": "end_longitude",
+      "type": "decimal",
+      "description": "Longitud GPS registrada por el dispositivo móvil al finalizar la labor."
+    },
+    {
+      "name": "is_geofence_verified",
+      "type": "boolean",
+      "default_value": "false",
       "is_dimension": true,
-      "default_value": "USD",
-      "description": "Divisa ISO 4217 de la tarifa. Por defecto hereda la del tenant."
+      "description": "Flag de auditoría que confirma si el fichaje ocurrió dentro del radio de geocerca del activo/ubicación asignada."
     }
   ]
 }
