@@ -293,16 +293,6 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
     assert!(wo
         .attributes
         .iter()
-        .any(|a| a.name == "parent_work_order_id"
-            && a.attr_type == AttrType::Reference
-            && a.indexed));
-    assert!(wo
-        .attributes
-        .iter()
-        .any(|a| a.name == "is_parent" && a.indexed));
-    assert!(wo
-        .attributes
-        .iter()
         .any(|a| a.name == "completed_at" && a.indexed));
 }
 

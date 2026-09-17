@@ -136,10 +136,10 @@
       "description": "Inicio previsto de la orden de trabajo."
     },
     {
-      "name": "estimated_duration_minutes",
+      "name": "estimated_duration_hours",
       "type": "decimal",
       "is_measure": true,
-      "description": "Duración o tiempo estimado para la ejecución de la orden de trabajo en minutos."
+      "description": "Duración o tiempo estimado para la ejecución de la orden de trabajo en horas."
     },
     {
       "name": "preventive_maintenance_id",
@@ -158,21 +158,9 @@
       "description": "Job puntual que disparó esta OT. Único por tenant vía constraint — la capa definitiva de idempotencia del loop: un reintento del bus puede repetir el fired, pero no puede duplicar la OT."
     },
     {
-      "name": "parent_work_order_id",
-      "type": "reference",
-      "entityRef": "work_order",
-      "cardinality": "one",
-      "index": true,
-      "is_dimension": true,
-      "description": "OT padre que organiza esta sub-OT (el parentId de MaintainX): parte el trabajo en hijos por activo o por oficio. Auto-referencia con el mismo patrón de asset.parent_asset_id. Los hijos de una OT se listan por este índice en O(1); el árbol completo, con el bloque hierarchy de MQL."
-    },
-    {
-      "name": "is_parent",
-      "type": "boolean",
-      "default_value": false,
-      "index": true,
-      "is_dimension": true,
-      "description": "Flag de contenedora (el isParent de MaintainX): true cuando la OT actúa como organizadora de sub-OTs. Permite filtrar PARENT / SUB_WORK_ORDER / STANDALONE en ListEntities sin negar un índice."
+      "name": "cron_job",
+      "type": "string",
+      "description": "Expresión cron (ej. '0 9 * * 1-5') para la programación periódica o recurrencia de la orden de trabajo."
     },
     {
       "name": "completed_by",
