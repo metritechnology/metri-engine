@@ -638,7 +638,39 @@ async fn resolve_scope_context(
         .find(|a| a.is_sequence_scope || a.is_sequence_scope_via)?
         .name
         .clone();
-    let root = payload.get(&scope_field)?.as_str()?.to_string();
+    let mut root = payload
+        .get(&scope_field)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // Scope indirecto: sin ubicación pero con el campo `via` (asset_id), el
+    // ámbito es la ubicación del asset — doc del Códice: «Cuando el payload
+    // contiene asset_id pero NO location_id, el generador hace un READ del
+    // asset y usa su location_id como scope».
+    if root.is_empty() {
+        let via_attr = model
+            .attributes
+            .iter()
+            .find(|a| a.is_sequence_scope_via)
+            .map(|a| a.name.clone());
+        if let Some(via_name) = via_attr {
+            let asset = payload
+                .get(&via_name)
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if !asset.is_empty() {
+                if let Ok(attrs) = writer.get_active_attributes(tenant_id, asset).await {
+                    if let Some((_, v)) = attrs.get(&scope_field) {
+                        if let DatomValue::Str(s) = v {
+                            root = s.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if root.is_empty() {
         return None;
     }
