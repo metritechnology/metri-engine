@@ -19,17 +19,13 @@ use crate::iop::core::IopContext;
 use crate::janus_router::olap_channel::OlapChannel;
 use crate::janus_router::router::IWriteChannel;
 
-static INIT: std::sync::Once = std::sync::Once::new();
-
 fn init_codice() {
-    INIT.call_once(|| {
-        if crate::codice::registry::global_opt().is_none() {
-            let models_dir = std::path::Path::new("config/models");
-            if let Ok((registry, _)) = crate::codice::CodeRegistry::build(models_dir) {
-                crate::codice::init_global(registry);
-            }
-        }
-    });
+    // El helper compartido (eav::writer::test_support) ya aprendió la lección
+    // de saga_tests: el `is_none()` + `init_global` de este archivo era una
+    // carrera check-then-act — otro módulo de test que ganara la ventana
+    // entre ambos envenenaba la suite entera con «CodeRegistry ya fue
+    // inicializado», según el orden en que el scheduler repartió los hilos.
+    crate::eav::writer::test_support::init_codice();
 }
 
 fn bulk_ctx(entity: &str, tenant: &str, records: Vec<Value>) -> IopContext {
