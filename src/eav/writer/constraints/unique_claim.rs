@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! PK  = T#<tenant|GLOBAL>#U#<entidad>#<sha256(tupla ordenada)>
-//! SK  = #CLAIM
+//! SK  = b"#CLAIM" (binario: el tipo de la tabla exige B en el SK)
 //! eid = <ulid de la entidad propietaria>
 //! ```
 //!
@@ -133,7 +133,18 @@ impl ConstraintPlanner for UniqueClaimPlanner {
 
             let mut item = HashMap::new();
             item.insert("PK".to_string(), AttributeValue::S(pk));
-            item.insert("SK".to_string(), AttributeValue::S("#CLAIM".to_string()));
+            // El SK del índice es BINARIO (tabla: SK B — [attr_id][tx_id][op]).
+            // Un SK String aquí era rechazado por DynamoDB con
+            // ValidationError "Type mismatch for key SK expected: B actual: S",
+            // lo que cancelaba el transact COMPLETO: ninguna entidad con una
+            // constraint unique cuyos atributos estuvieran presentes podía
+            // escribirse jamás (work_order_procedure, incidente 2026-09-18).
+            // Nadie lee el valor del SK del claim — las condiciones usan
+            // PK/eid — así que el cambio de tipo es seguro.
+            item.insert(
+                "SK".to_string(),
+                AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(b"#CLAIM".to_vec())),
+            );
             item.insert(
                 "eid".to_string(),
                 AttributeValue::S(ctx.entity_id.to_string()),
