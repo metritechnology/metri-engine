@@ -31,6 +31,68 @@ async fn test_generator_inject_empty() {
     assert_eq!(result.unwrap(), payload);
 }
 
+/// El modelo declara `strategy: sequential` (work_order.json): el parseo debe
+/// producir la config del JSON — la rama vacía que lo descartaba dejó a TODA
+/// OT sin `work_order_number` (incidente 2026-09-18).
+#[test]
+fn auto_generate_attrs_parsea_sequential_del_codice() {
+    let model: EntityModel = serde_json::from_value(json!({
+        "entity": "work_order",
+        "engine": "oltp",
+        "fts_fields": [],
+        "event_rules": [],
+        "constraints": [],
+        "label": null,
+        "icon": null,
+        "primary_key": null,
+        "is_sequence_scope_provider": false,
+        "write_path_locked": false,
+        "is_system": false,
+        "disable_eda": false,
+        "shadow_sagas_mapping": null,
+        "attributes": [
+            {
+                "name": "work_order_number",
+                "attr_type": "string",
+                "label": null,
+                "required": false,
+                "unique": "tenant",
+                "indexed": false,
+                "fts": true,
+                "is_dimension": false,
+                "is_metric": false,
+                "entity_ref": null,
+                "options": [],
+                "is_sequence_scope": false,
+                "is_sequence_scope_via": false,
+                "sensitive": false,
+                "auto_generate": {
+                    "strategy": "sequential",
+                    "prefix": "WO-",
+                    "padding": 4,
+                    "scope_resolution": "nearest_registered"
+                },
+                "validation_regex": null,
+                "default_value": null
+            }
+        ]
+    }))
+    .expect("modelo con auto_generate sequential deserializa");
+
+    let attrs = auto_generate_attrs(&model);
+    assert_eq!(attrs.len(), 1, "el atributo sequential NO debe descartarse");
+    let (name, strategy) = &attrs[0];
+    assert_eq!(name, "work_order_number");
+    match strategy {
+        AutoGenStrategy::Sequential(cfg) => {
+            assert_eq!(cfg.prefix, "WO-");
+            assert_eq!(cfg.padding, 4);
+            assert_eq!(cfg.scope_resolution, ScopeResolution::NearestRegistered);
+        }
+        other => panic!("estrategia incorrecta: {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn test_generator_inject_stochastic_base36() {
     let ddb = DynamoClient::new("dummy-table").await;

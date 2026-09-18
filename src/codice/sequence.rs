@@ -63,7 +63,14 @@ fn format_code(prefix: &str, padding: usize, value: u64) -> String {
 }
 
 /// Tabla DynamoDB para sequence_registry.
-const SEQ_REGISTRY_TABLE: &str = "metri-sequence-registry";
+/// El nombre viaja por env (`SEQUENCE_REGISTRY_TABLE`, IaC: MetriSequenceRegistryTable
+/// en template.yaml) con el valor canónico como fallback: que el stack y el
+/// binario no puedan divergir es lo que evita repetir el incidente de prod del
+/// 2026-09 — tabla ausente, `inject` en Err, OT creada sin número.
+fn sequence_registry_table() -> String {
+    std::env::var("SEQUENCE_REGISTRY_TABLE")
+        .unwrap_or_else(|_| "metri-sequence-registry".to_string())
+}
 
 /// Genera el siguiente código secuencial ACID con scope resolution.
 ///
@@ -134,7 +141,10 @@ pub async fn next(
 /// Lee el current_value del sequence_registry en DynamoDB.
 /// Retorna None si el contador no existe aún.
 async fn read_sequence(ddb: &DynamoClient, seq_code: &str) -> Option<u64> {
-    match ddb.get_item(SEQ_REGISTRY_TABLE, seq_code, None).await {
+    match ddb
+        .get_item(&sequence_registry_table(), seq_code, None)
+        .await
+    {
         Ok(Some(item)) => item.get("current_value").and_then(|v| {
             if let aws_sdk_dynamodb::types::AttributeValue::N(n) = v {
                 n.parse::<u64>().ok()
@@ -174,12 +184,14 @@ async fn write_sequence(
         AttributeValue::N(new_val.to_string()),
     );
 
-    ddb.put_item(SEQ_REGISTRY_TABLE, item).await.map_err(|e| {
-        DomainError::eav(
-            ErrorCode::Eav001,
-            format!("Sequence write falló para '{seq_code}': {e:?}"),
-        )
-    })
+    ddb.put_item(&sequence_registry_table(), item)
+        .await
+        .map_err(|e| {
+            DomainError::eav(
+                ErrorCode::Eav001,
+                format!("Sequence write falló para '{seq_code}': {e:?}"),
+            )
+        })
 }
 
 #[cfg(test)]

@@ -25,6 +25,10 @@ Parameters:
     Type: String
     Default: metri-prod
     Description: "Nombre físico de la tabla EAV principal (Single Table Design con 4 GSIs — EAVT/AEVT/AVET/VAET)."
+  SequenceRegistryTableName:
+    Type: String
+    Default: metri-sequence-registry
+    Description: "Contadores ACID de códigos auto-generados (strategy=sequential, p. ej. work_order_number)."
   AthenaWorkGroup:
     Type: String
     Default: metri-analytics
@@ -591,6 +595,32 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+  # ── Registro de Contadores Secuenciales (auto_generate strategy=sequential) ──
+  # Un contador por (tenant, campo, scope): la fila guarda current_value y el
+  # generador la lee/reescribe para mintear códigos de negocio
+  # (work_order_number → 'WO-0042'). SIN esta tabla el generador falla — y ese
+  # fallo hoy propaga: la OT sin número no se crea (incidente 2026-09-17:
+  # la tabla nunca se declaró y cada CREATE nacía sin número con 200 OK).
+  MetriSequenceRegistryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref SequenceRegistryTableName
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref MetriKmsMasterKey
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+
   # ── Tabla de Metadatos del Sistema (blacklist HMAC, cache schemas) ──
   MetriSchemasTable:
     Type: AWS::DynamoDB::Table
@@ -748,6 +778,14 @@ Resources:
                 - dynamodb:DescribeTable
               Resource: !GetAtt MetriEavTable.Arn
 
+            # ── Contadores secuenciales: read + write del generador auto_generate ──
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:ConditionCheckItem
+              Resource: !GetAtt MetriSequenceRegistryTable.Arn
+
             # ── OLAP: Kinesis Firehose (todos los streams de entidades OLAP) ──
             # Fase 1 PLAN_COSTO_OLAP: el bloque kinesis:* (PutRecord/PutRecords/
             # DescribeStream sobre stream/metri-olap-stream-*) se retiró — el
@@ -787,6 +825,7 @@ Resources:
           ERROR_CATALOG_PATH: "errors/error_catalog.toml" # Path relativo al binario (Makefile copia config/errors → errors/)
           # ── Storage ──
           EAV_TABLE_NAME: !Ref EavTableName # Tabla EAV principal (4 GSIs)
+          SEQUENCE_REGISTRY_TABLE: !Ref SequenceRegistryTableName # Contadores auto_generate
           CEDAR_POLICIES_TABLE: !Ref MetriSchemasTable
           AWS_S3_LAKE_BUCKET: !Ref MetriDataLakeBucket
           ATHENA_WORKGROUP: !Ref AthenaWorkGroup

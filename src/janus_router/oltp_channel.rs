@@ -471,14 +471,23 @@ impl OltpChannel {
 
         if is_create {
             if let Ok(Value::Object(map)) = serde_json::to_value(&coerced) {
-                if let Ok(injected) =
-                    crate::codice::generator::inject(writer.client(), &model, &tenant_id, map).await
-                {
-                    if let Ok(val) = serde_json::to_value(injected) {
-                        coerced = val;
-                    }
+                // Zero-Drop: un fallo del generador — contador caído, tabla de
+                // secuencias ausente — sube y frena el CREATE. Tragarlo aquí
+                // creó OTs sin `work_order_number` con un 200 OK (incidente
+                // 2026-09-17); la fila sin su código de negocio no debe nacer.
+                let injected =
+                    crate::codice::generator::inject(writer.client(), &model, &tenant_id, map)
+                        .await?;
+                if let Ok(val) = serde_json::to_value(injected) {
+                    coerced = val;
                 }
             }
+            // Los `default_value` del Códice son valor DE NACIMIENTO: el seeder
+            // los usaba pero el plano transaccional no, y cada OT nueva nacía
+            // sin `status` — la UI la lee «—». Solo enum/string: el default
+            // tipado de boolean/number/epoch exige negociar su JSON y hoy no
+            // hay modelo que lo pida.
+            apply_declared_defaults(&mut coerced, &model);
         }
 
         // ── Uniqueness constraint checks (identity) ──
@@ -580,6 +589,30 @@ fn parse_op(op: &str) -> Result<TransactOp, DomainError> {
     }
 }
 
+/// Materializa los `default_value` declarados en el Códice para atributos
+/// enum/string que el CREATE no trae. El `status: OPEN` de work_order es el
+/// caso de uso: sin esto la OT nace sin estado y toda la UI la lee «—».
+fn apply_declared_defaults(payload: &mut Value, model: &crate::codice::registry::EntityModel) {
+    let Some(obj) = payload.as_object_mut() else {
+        return;
+    };
+    for attr in &model.attributes {
+        let Some(default) = &attr.default_value else {
+            continue;
+        };
+        if !matches!(
+            attr.attr_type,
+            crate::codice::registry::AttrType::Enum | crate::codice::registry::AttrType::String
+        ) {
+            continue;
+        }
+        let missing = matches!(obj.get(&attr.name), None | Some(Value::Null));
+        if missing {
+            obj.insert(attr.name.clone(), Value::String(default.clone()));
+        }
+    }
+}
+
 /// Extrae el entity_id del payload (field: "entity_id" | "id" | "ulid").
 pub(crate) fn extract_entity_id(payload: &Value) -> Option<String> {
     ["entity_id", "id", "ulid"]
@@ -612,6 +645,47 @@ mod tests {
     use super::*;
     use crate::codice::registry::EntityModel;
     use serde_json::json;
+
+    #[test]
+    fn apply_declared_defaults_solo_enum_string_ausentes() {
+        let model: EntityModel = serde_json::from_value(json!({
+            "entity": "work_order",
+            "engine": "oltp",
+            "fts_fields": [],
+            "event_rules": [],
+            "constraints": [],
+            "label": null,
+            "icon": null,
+            "primary_key": null,
+            "is_sequence_scope_provider": false,
+            "write_path_locked": false,
+            "is_system": false,
+            "disable_eda": false,
+            "shadow_sagas_mapping": null,
+            "attributes": [
+                {"name": "status", "attr_type": "enum", "label": null, "required": false, "unique": null, "indexed": false, "fts": false, "is_dimension": false, "is_metric": false, "entity_ref": null, "options": ["OPEN", "CLOSED"], "is_sequence_scope": false, "is_sequence_scope_via": false, "sensitive": false, "auto_generate": null, "validation_regex": null, "default_value": "OPEN"},
+                {"name": "title", "attr_type": "string", "label": null, "required": false, "unique": null, "indexed": false, "fts": false, "is_dimension": false, "is_metric": false, "entity_ref": null, "options": [], "is_sequence_scope": false, "is_sequence_scope_via": false, "sensitive": false, "auto_generate": null, "validation_regex": null, "default_value": "sin título"},
+                {"name": "require_location_verification", "attr_type": "boolean", "label": null, "required": false, "unique": null, "indexed": false, "fts": false, "is_dimension": false, "is_metric": false, "entity_ref": null, "options": [], "is_sequence_scope": false, "is_sequence_scope_via": false, "sensitive": false, "auto_generate": null, "validation_regex": null, "default_value": "false"},
+                {"name": "category", "attr_type": "enum", "label": null, "required": true, "unique": null, "indexed": false, "fts": false, "is_dimension": false, "is_metric": false, "entity_ref": null, "options": ["CORRECTIVE"], "is_sequence_scope": false, "is_sequence_scope_via": false, "sensitive": false, "auto_generate": null, "validation_regex": null, "default_value": null}
+            ]
+        }))
+        .expect("modelo de prueba deserializa");
+
+        // El title presente MANDA sobre el default; el status ausente lo recibe.
+        let mut payload = json!({ "title": "OT real del cliente", "category": "CORRECTIVE" });
+        apply_declared_defaults(&mut payload, &model);
+
+        assert_eq!(payload["status"], json!("OPEN"));
+        assert_eq!(payload["title"], json!("OT real del cliente"));
+        // Un default tipado (boolean "false") NO se materializa: insertar el
+        // string crudo corrompería el tipo — exige su propio contrato.
+        assert!(payload.get("require_location_verification").is_none());
+
+        // Un null explícito también es ausente: valor DE NACIMIENTO.
+        let mut con_null = json!({ "status": null });
+        apply_declared_defaults(&mut con_null, &model);
+        assert_eq!(con_null["status"], json!("OPEN"));
+    }
 
     #[test]
     fn test_extract_entity_id_fallback_to_ulid_when_invalid() {

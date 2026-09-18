@@ -47,7 +47,31 @@ fn auto_generate_attrs(model: &EntityModel) -> Vec<(String, AutoGenStrategy)> {
                         AutoGenStrategy::StochasticBase36 { prefix, length },
                     ));
                 } else if strategy_str == "sequential" {
-                    // Si en un futuro agregamos validación secuencial explícita en JSON
+                    // La configuración viaja en el JSON del Códice
+                    // (work_order_number: prefix WO-, padding 4,
+                    // scope_resolution nearest_registered). Esta rama estaba
+                    // VACÍA — solo un comentario de futuro — y el atributo se
+                    // descartaba: ninguna OT llevaba su código de negocio
+                    // (incidente 2026-09-18).
+                    let config = SeqAttrConfig {
+                        name: attr.name.clone(),
+                        prefix: auto_gen
+                            .get("prefix")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        padding: auto_gen
+                            .get("padding")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(4) as usize,
+                        scope_resolution: ScopeResolution::from_str(
+                            auto_gen
+                                .get("scope_resolution")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("exact"),
+                        ),
+                    };
+                    return Some((attr.name.clone(), AutoGenStrategy::Sequential(config)));
                 }
             }
 
