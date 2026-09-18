@@ -9,7 +9,7 @@
 //! Zero-Drop Policy: replica next!, build_sequence_code, format_code,
 //! scope resolution (exact / nearest_registered / global fallback).
 
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::infrastructure::dynamodb::DynamoClient;
@@ -57,9 +57,19 @@ fn build_sequence_code(tenant_id: &str, field_name: &str, scope_tag: Option<&str
     }
 }
 
-/// Aplica zero-padding: prefix + zero-padded new-value.
-fn format_code(prefix: &str, padding: usize, value: u64) -> String {
-    format!("{prefix}{:0>width$}", value, width = padding)
+/// Aplica zero-padding: prefix [+ segmento-] + número.
+///
+/// Sin segmento: "WO-0042". Con segmento (el `tag` de la location,
+/// 'L-K92MXA'): "WO-L-K92MXA-0043" — el formato que declara el `pattern`
+/// `^WO(-[A-Z0-9-]+)?-\d{4,6}$` del Códice. La rama anterior ignoraba el
+/// scope al formatear: hasta una OT con ubicación salía "WO-0043".
+fn format_code(prefix: &str, segment: Option<&str>, padding: usize, value: u64) -> String {
+    match segment {
+        Some(seg) if !seg.is_empty() => {
+            format!("{prefix}{seg}-{:0>width$}", value, width = padding)
+        }
+        _ => format!("{prefix}{:0>width$}", value, width = padding),
+    }
 }
 
 /// Tabla DynamoDB para sequence_registry.
@@ -74,51 +84,64 @@ fn sequence_registry_table() -> String {
 
 /// Genera el siguiente código secuencial ACID con scope resolution.
 ///
-/// Flujo (igual que el el stack anterior):
-///   1. Construir sequence_code con scope_tag del payload
-///   2. READ del registro existente en DynamoDB
-///   3. Si no existe + nearest_registered → FALLBACK a código GLOBAL
-///   4. WRITE atómico con ConditionalExpression (UPSERT equivalente)
-///   5. Formatear con prefix + zero-padding
+/// Flujo:
+///   1. Construir sequence_code con scope_tag del payload.
+///   2. READ del registro existente — y si no existe y hay
+///      `ancestor_scopes`, caminar del ancestro más cercano a la raíz:
+///      el contador se HEREDA del primero que ya tenga actividad
+///      (`nearest_registered`, doc del Códice: "el contador se hereda del
+///      ancestro más cercano que ya tiene actividad").
+///   3. Sin actividad en ninguna parte → contador GLOBAL, base 0.
+///   4. WRITE atómico sobre el contador elegido (PutItem con
+///      ConditionalExpression — no lost-update bajo concurrencia).
+///   5. Formatear: prefix + [segmento-] + número con padding. El segmento es
+///      el `tag` de la propia ubicación de la orden, venga el contador de
+///      donde venga: "WO-L-K92MXA-0043".
 ///
-/// Retorna: Ok(String) ej: "WO-L-K92MXA-0043" | Err(DomainError)
+/// Retorna: Ok(String) ej: "WO-0042" | "WO-L-K92MXA-0043" | Err(DomainError)
 pub async fn next(
     ddb: &DynamoClient,
     config: &SeqAttrConfig,
     scope_tag: Option<&str>,
     tenant_id: &str,
+    ancestor_scopes: &[String],
+    segment: Option<&str>,
 ) -> Result<String, DomainError> {
-    // 1. Construir sequence_code
-    let seq_code = build_sequence_code(tenant_id, &config.name, scope_tag);
+    // 1. Contador propio + contadores ancestro (más cercano primero) + global.
+    let own_code = build_sequence_code(tenant_id, &config.name, scope_tag);
+    let mut candidates: Vec<String> = Vec::with_capacity(ancestor_scopes.len() + 1);
+    if scope_tag.is_some() {
+        candidates.push(own_code.clone());
+    }
+    for ancestor in ancestor_scopes {
+        candidates.push(build_sequence_code(tenant_id, &config.name, Some(ancestor)));
+    }
 
-    // 2. Leer el registro actual
-    let current_val = read_sequence(ddb, &seq_code).await;
-
-    // 3. Scope fallback si aplica
-    let (final_code, base_val) = match current_val {
-        Some(val) => (seq_code.clone(), val),
-
-        None if scope_tag.is_some()
-            && config.scope_resolution == ScopeResolution::NearestRegistered =>
-        {
-            // FALLBACK: intentar código global
-            let global_code = build_sequence_code(tenant_id, &config.name, None);
-            let global_val = read_sequence(ddb, &global_code).await.unwrap_or(0);
-            warn!(
-                "[Sequence] nearest_registered fallback: '{}' → '{}'",
-                seq_code, global_code
-            );
-            (global_code, global_val)
+    // 2. El primer contador CON actividad es la base (nearest_registered).
+    let mut base_val: Option<(String, u64)> = None;
+    for candidate in &candidates {
+        if let Some(val) = read_sequence(ddb, candidate).await {
+            base_val = Some((candidate.clone(), val));
+            break;
         }
+    }
 
-        None => (seq_code.clone(), 0),
+    // 3. Sin actividad en ninguna parte → contador global, base 0.
+    let (final_code, base_val) = match base_val {
+        Some((code, val)) => (code, val),
+        None => {
+            let global = build_sequence_code(tenant_id, &config.name, None);
+            if let Some(val) = read_sequence(ddb, &global).await {
+                (global, val)
+            } else {
+                (global, 0)
+            }
+        }
     };
 
     let new_val = base_val + 1;
 
-    // 4. WRITE atómico — UPSERT via DynamoDB PutItem con ConditionalExpression
-    // La condición attribute_not_exists(current_value) OR current_value = base_val
-    // garantiza ACID (no lost-update bajo concurrencia).
+    // 4. WRITE atómico sobre el contador elegido.
     write_sequence(
         ddb,
         &final_code,
@@ -129,11 +152,11 @@ pub async fn next(
     )
     .await?;
 
-    // 5. Formatear resultado
-    let generated = format_code(&config.prefix, config.padding, new_val);
+    // 5. Formatear resultado.
+    let generated = format_code(&config.prefix, segment, config.padding, new_val);
     info!(
-        "[Sequence] {tenant_id}/{} scope={:?} → {generated}",
-        config.name, scope_tag
+        "[Sequence] {tenant_id}/{} scope={:?} contador={} → {generated}",
+        config.name, scope_tag, final_code
     );
     Ok(generated)
 }

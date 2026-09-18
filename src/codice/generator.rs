@@ -102,6 +102,16 @@ fn find_scope_field(model: &EntityModel) -> Option<&str> {
         .map(|a| a.name.as_str())
 }
 
+/// Contexto del ámbito de secuenciación, resuelto por el canal OLTP (que sí
+/// tiene lectura EAV): el `tag` de la ubicación propia —el segmento del
+/// número, 'L-K92MXA'— y la cadena de ubicaciones ancestro, de la más
+/// cercana a la raíz, para heredar el contador (`nearest_registered`).
+#[derive(Debug, Clone, Default)]
+pub struct ScopeContext {
+    pub segment: Option<String>,
+    pub ancestors: Vec<String>,
+}
+
 /// Inyecta los valores auto-generados en el payload.
 ///
 /// Flujo Railway (mismo que el el stack anterior):
@@ -114,6 +124,7 @@ pub async fn inject(
     model: &EntityModel,
     tenant_id: &str,
     payload: Map<String, Value>,
+    scope: Option<ScopeContext>,
 ) -> Result<Map<String, Value>, DomainError> {
     let attrs_to_gen = auto_generate_attrs(model);
 
@@ -143,7 +154,27 @@ pub async fn inject(
                     .and_then(|v| v.as_str())
                     .map(str::to_string);
 
-                sequence::next(ddb, config, scope_tag.as_deref(), tenant_id).await?
+                // La cadena de ancestros SOLO aplica a nearest_registered:
+                // Exact exige el contador del ámbito exacto, sin herencia.
+                // Y sin ubicación no hay segmento que mostrar.
+                let (ancestors, segment) = match (&scope, scope_tag.as_deref()) {
+                    (Some(ctx), Some(_))
+                        if config.scope_resolution == ScopeResolution::NearestRegistered =>
+                    {
+                        (ctx.ancestors.clone(), ctx.segment.clone())
+                    }
+                    _ => (Vec::new(), None),
+                };
+
+                sequence::next(
+                    ddb,
+                    config,
+                    scope_tag.as_deref(),
+                    tenant_id,
+                    &ancestors,
+                    segment.as_deref(),
+                )
+                .await?
             }
         };
 

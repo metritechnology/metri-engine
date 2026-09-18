@@ -26,7 +26,7 @@ async fn test_generator_inject_empty() {
     let mut payload = serde_json::Map::new();
     payload.insert("name".to_string(), Value::String("foo".to_string()));
 
-    let result = inject(&ddb, &model, "tnt_01", payload.clone()).await;
+    let result = inject(&ddb, &model, "tnt_01", payload.clone(), None).await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), payload);
 }
@@ -140,7 +140,7 @@ async fn test_generator_inject_stochastic_base36() {
 
     // Case A: Payload does not have "code". It should inject it.
     let payload = serde_json::Map::new();
-    let result = inject(&ddb, &model, "tnt_01", payload).await;
+    let result = inject(&ddb, &model, "tnt_01", payload, None).await;
     assert!(result.is_ok());
     let enriched = result.unwrap();
     assert!(enriched.contains_key("code"));
@@ -154,7 +154,7 @@ async fn test_generator_inject_stochastic_base36() {
         "code".to_string(),
         Value::String("WO-PRESERVED".to_string()),
     );
-    let result_existing = inject(&ddb, &model, "tnt_01", payload_existing.clone()).await;
+    let result_existing = inject(&ddb, &model, "tnt_01", payload_existing.clone(), None).await;
     assert!(result_existing.is_ok());
     assert_eq!(result_existing.unwrap(), payload_existing);
 }

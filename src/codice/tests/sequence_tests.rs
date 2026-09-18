@@ -15,7 +15,15 @@ fn build_sequence_code_with_scope() {
 
 #[test]
 fn format_code_zero_pads() {
-    assert_eq!(format_code("WO-", 4, 7), "WO-0007");
-    assert_eq!(format_code("WO-", 4, 100), "WO-0100");
-    assert_eq!(format_code("", 6, 1), "000001");
+    assert_eq!(format_code("WO-", None, 4, 7), "WO-0007");
+    assert_eq!(format_code("WO-", None, 4, 100), "WO-0100");
+    assert_eq!(format_code("", None, 6, 1), "000001");
+    // Con segmento (el tag de la location): el formato del pattern del
+    // Códice — ^WO(-[A-Z0-9-]+)?-\d{4,6}$ → "WO-L-K92MXA-0043".
+    assert_eq!(
+        format_code("WO-", Some("L-K92MXA"), 4, 43),
+        "WO-L-K92MXA-0043"
+    );
+    // Un segmento vacío es sin segmento.
+    assert_eq!(format_code("WO-", Some(""), 4, 7), "WO-0007");
 }

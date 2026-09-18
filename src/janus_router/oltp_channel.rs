@@ -475,9 +475,15 @@ impl OltpChannel {
                 // secuencias ausente — sube y frena el CREATE. Tragarlo aquí
                 // creó OTs sin `work_order_number` con un 200 OK (incidente
                 // 2026-09-17); la fila sin su código de negocio no debe nacer.
-                let injected =
-                    crate::codice::generator::inject(writer.client(), &model, &tenant_id, map)
-                        .await?;
+                let scope_ctx = resolve_scope_context(&writer, &model, &coerced, &tenant_id).await;
+                let injected = crate::codice::generator::inject(
+                    writer.client(),
+                    &model,
+                    &tenant_id,
+                    map,
+                    scope_ctx,
+                )
+                .await?;
                 if let Ok(val) = serde_json::to_value(injected) {
                     coerced = val;
                 }
@@ -611,6 +617,67 @@ fn apply_declared_defaults(payload: &mut Value, model: &crate::codice::registry:
             obj.insert(attr.name.clone(), Value::String(default.clone()));
         }
     }
+}
+
+/// Resuelve el contexto de secuenciación para un CREATE con ámbito de
+/// ubicación: el `tag` de la ubicación propia —el segmento del número,
+/// 'L-K92MXA'— y la cadena `parent_location_id` hacia la raíz, para que el
+/// contador se herede del ancestro más cercano con actividad
+/// (`nearest_registered`, doc del Códice). Sin ubicación en el payload, o si
+/// la lectura falla, None: el número sale global — la lectura del árbol no
+/// bloquea el alta, el contador global es la válvula.
+async fn resolve_scope_context(
+    writer: &EavWriter,
+    model: &crate::codice::registry::EntityModel,
+    payload: &Value,
+    tenant_id: &str,
+) -> Option<crate::codice::generator::ScopeContext> {
+    let scope_field = model
+        .attributes
+        .iter()
+        .find(|a| a.is_sequence_scope || a.is_sequence_scope_via)?
+        .name
+        .clone();
+    let root = payload.get(&scope_field)?.as_str()?.to_string();
+    if root.is_empty() {
+        return None;
+    }
+
+    let mut segment: Option<String> = None;
+    let mut ancestors: Vec<String> = Vec::new();
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut cursor = root;
+
+    // Profundidad acotada: un ciclo del árbol no puede colgar el CREATE.
+    for _ in 0..16 {
+        if visited.contains(&cursor) {
+            break;
+        }
+        visited.insert(cursor.clone());
+        let attrs = writer
+            .get_active_attributes(tenant_id, &cursor)
+            .await
+            .ok()?;
+        if segment.is_none() {
+            segment = attrs.get("tag").and_then(|(_, v)| match v {
+                DatomValue::Str(s) => Some(s.clone()),
+                _ => None,
+            });
+        }
+        let parent = attrs.get("parent_location_id").and_then(|(_, v)| match v {
+            DatomValue::Str(s) if !s.is_empty() => Some(s.clone()),
+            _ => None,
+        });
+        match parent {
+            Some(p) if !visited.contains(&p) => {
+                ancestors.push(p.clone());
+                cursor = p;
+            }
+            _ => break,
+        }
+    }
+
+    Some(crate::codice::generator::ScopeContext { segment, ancestors })
 }
 
 /// Extrae el entity_id del payload (field: "entity_id" | "id" | "ulid").

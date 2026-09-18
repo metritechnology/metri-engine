@@ -754,7 +754,7 @@ impl EavWriter {
         map
     }
 
-    async fn get_active_attributes(
+    pub(crate) async fn get_active_attributes(
         &self,
         tenant_id: &str,
         entity_id: &str,
