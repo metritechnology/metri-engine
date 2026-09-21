@@ -279,20 +279,14 @@ impl EavQueryExecutor {
             .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("AVET single err: {e:?}")))?;
 
         // Post-filter en memoria por valor exacto (seguridad contra colisiones de truncamiento)
+        // y DEDUPLICACIÓN por entidad con el datom más reciente: GSI-AVET guarda
+        // UNA fila por datom (assert y retract incluidos), así que una entidad
+        // cuyo atributo fue re-escrito N veces aparece N veces en el índice —
+        // sin esto, la query devolvía la fila duplicada (bug «la OT lista el
+        // mismo procedimiento N veces»). Mismo convenio que el scan AEVT:
+        // sólo cuenta la versión de mayor tx, y sólo si es un assert.
         let expected_v = datom_value_to_string(value);
-        Ok(raw
-            .into_iter()
-            .filter(|item| match item.get("v") {
-                Some(AttributeValue::S(s)) => s == &expected_v,
-                Some(AttributeValue::N(n)) => n == &expected_v,
-                _ => false,
-            })
-            .filter_map(|item| {
-                let pk_str = av_string(item.get("PK")?)?;
-                // PK is T#<tenant>#E#<eid>
-                pk_str.split('#').nth(3).map(|s| s.to_string())
-            })
-            .collect())
+        Ok(dedup_latest_asserted_by_value(raw, &expected_v))
     }
 
     /// GSI-AVET intersección: ejecuta N queries en secuencia y hace HashSet intersection.
@@ -570,5 +564,153 @@ fn datom_value_to_string(value: &DatomValue) -> String {
         }
         DatomValue::Bool(b) => b.to_string(),
         _ => String::new(),
+    }
+}
+
+/// Post-filtro de GSI-AVET: valor exacto + deduplicación por entidad.
+///
+/// El índice guarda una fila por datom — asserts y retracts comparten
+/// `(vp, vs)` pero viven en items distintos (PK/SK de la tabla base)—, así
+/// que una entidad cuyo atributo fue re-escrito aparece una vez por datom.
+/// Devuelve cada entidad UNA vez, sólo si su datom de mayor `tx` bajo ese
+/// valor es un assert (`op=1`) con el valor exacto esperado: un retract
+/// posterior (el atributo cambió o la fila se borró) la excluye.
+///
+/// Los items llegan ordenados por `vs` (valor + entity_id), NO por tx: el
+/// "más reciente" se decide comparando el tx decodificado del SK base, no
+/// por orden de llegada.
+fn dedup_latest_asserted_by_value(
+    raw: Vec<HashMap<String, AttributeValue>>,
+    expected_v: &str,
+) -> Vec<String> {
+    use crate::eav::types::encoding::decode_eavt_sk;
+
+    // eid → (tx, op, value_matches): la versión de mayor tx gana.
+    let mut latest: HashMap<String, (u64, bool, bool)> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+
+    for item in raw {
+        let value_matches = match item.get("v") {
+            Some(AttributeValue::S(s)) => s == expected_v,
+            Some(AttributeValue::N(n)) => n == expected_v,
+            _ => false,
+        };
+        let pk_str = match item.get("PK").and_then(av_string) {
+            Some(pk) => pk,
+            None => continue,
+        };
+        // PK is T#<tenant>#E#<eid>
+        let eid = match pk_str.split('#').nth(3) {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+        // SK base = [attr][tx][op]; sin decodificación canónica no hay versión.
+        let (tx, op) = match item.get("SK").and_then(|v| match v {
+            AttributeValue::B(blob) => decode_eavt_sk(blob.as_ref()),
+            _ => None,
+        }) {
+            Some(decoded) => (decoded.1, decoded.2),
+            None => continue,
+        };
+
+        // Empate de tx: RET (op=0) y SET (op=1) del mismo update comparten tx;
+        // en el orden canónico del SK el assert va después — a igual tx, gana
+        // el op mayor.
+        match latest.get(&eid) {
+            Some((prev_tx, prev_op, _)) if (*prev_tx, *prev_op) >= (tx, op) => {}
+            _ => {
+                if !latest.contains_key(&eid) {
+                    order.push(eid.clone());
+                }
+                latest.insert(eid, (tx, op, value_matches));
+            }
+        }
+    }
+
+    order
+        .into_iter()
+        .filter(|eid| {
+            latest
+                .get(eid)
+                .map(|(_, op, value_matches)| *op && *value_matches)
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod avet_dedup_tests {
+    use super::*;
+
+    fn item(eid: &str, tx: u64, op: bool, v: &str) -> HashMap<String, AttributeValue> {
+        // SK binario canónico: [attr=1][tx][op]
+        let mut sk = Vec::with_capacity(11);
+        sk.extend_from_slice(&1u16.to_be_bytes());
+        sk.extend_from_slice(&tx.to_be_bytes());
+        sk.push(if op { 1 } else { 0 });
+        let mut m = HashMap::new();
+        m.insert("PK".to_string(), AttributeValue::S(format!("T#t#E#{eid}")));
+        m.insert(
+            "SK".to_string(),
+            AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(sk)),
+        );
+        m.insert("v".to_string(), AttributeValue::S(v.to_string()));
+        m
+    }
+
+    #[test]
+    fn reescrituras_del_mismo_valor_devuelven_la_entidad_una_vez() {
+        // El bug real: 1 create + 3 updates (RET+SET) = 7 items del índice
+        // para UNA entidad. La query debe devolver 1 id.
+        let raw = vec![
+            item("E1", 100, true, "WO1"),
+            item("E1", 200, false, "WO1"),
+            item("E1", 200, true, "WO1"),
+            item("E1", 300, false, "WO1"),
+            item("E1", 300, true, "WO1"),
+            item("E1", 400, false, "WO1"),
+            item("E1", 400, true, "WO1"),
+        ];
+        let ids = dedup_latest_asserted_by_value(raw, "WO1");
+        assert_eq!(ids, vec!["E1".to_string()]);
+    }
+
+    #[test]
+    fn datoms_desordenados_por_tx_se_resuelven_por_version() {
+        // GSI-AVET ordena por vs (valor+entity), no por tx: el más reciente
+        // puede llegar primero.
+        let raw = vec![
+            item("E1", 400, true, "WO1"),
+            item("E1", 100, true, "WO1"),
+            item("E1", 300, false, "WO1"),
+        ];
+        let ids = dedup_latest_asserted_by_value(raw, "WO1");
+        assert_eq!(ids, vec!["E1".to_string()]);
+    }
+
+    #[test]
+    fn retract_final_excluye_la_entidad() {
+        // El atributo cambió de valor o la fila se borró: el último datom
+        // bajo este valor es un retract — la entidad ya no matchea.
+        let raw = vec![
+            item("E1", 100, true, "WO1"),
+            item("E1", 200, false, "WO1"),
+            item("E2", 150, true, "WO1"),
+            item("E2", 150, true, "WO1"), // duplicado exacto por colisión de prefix
+        ];
+        let ids = dedup_latest_asserted_by_value(raw, "WO1");
+        assert_eq!(ids, vec!["E2".to_string()]);
+    }
+
+    #[test]
+    fn valor_truncado_que_no_coincide_queda_fuera_en_la_ultima_version() {
+        // begins_with truncado a 31 bytes: colisión de prefijo resuelta por
+        // el post-filtro de valor exacto SOBRE la versión ganadora.
+        let raw = vec![
+            item("E1", 100, true, "WO1"),
+            item("E1", 200, true, "WO1-cola-que-colisiona"),
+        ];
+        let ids = dedup_latest_asserted_by_value(raw, "WO1");
+        assert!(ids.is_empty());
     }
 }
