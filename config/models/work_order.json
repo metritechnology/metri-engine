@@ -71,6 +71,16 @@
       "description": "Exige la verificación obligatoria de coordenadas GPS y geocerca en los registros de trabajo de la orden."
     },
     {
+      "name": "latitude",
+      "type": "decimal",
+      "description": "Latitud del punto de verificación de la orden en grados decimales (WGS 84): donde el técnico debe encontrarse cuando la orden exige comprobación de ubicación."
+    },
+    {
+      "name": "longitude",
+      "type": "decimal",
+      "description": "Longitud del punto de verificación de la orden en grados decimales (WGS 84): donde el técnico debe encontrarse cuando la orden exige comprobación de ubicación."
+    },
+    {
       "name": "assignees",
       "type": "reference",
       "entityRef": "user",
