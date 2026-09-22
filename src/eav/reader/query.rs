@@ -593,6 +593,10 @@ fn dedup_latest_asserted_by_value(
         let value_matches = match item.get("v") {
             Some(AttributeValue::S(s)) => s == expected_v,
             Some(AttributeValue::N(n)) => n == expected_v,
+            // Los booleanos viajan como BOOL nativo (transact.rs): sin este
+            // brazo, TODO filtro eq booleano devolvía cero filas aunque el
+            // índice tuviera el item — el post-filter los descartaba.
+            Some(AttributeValue::Bool(b)) => expected_v == if *b { "true" } else { "false" },
             _ => false,
         };
         let pk_str = match item.get("PK").and_then(av_string) {
@@ -700,6 +704,18 @@ mod avet_dedup_tests {
         ];
         let ids = dedup_latest_asserted_by_value(raw, "WO1");
         assert_eq!(ids, vec!["E2".to_string()]);
+    }
+
+    #[test]
+    fn booleanos_como_bool_nativo_matchean_el_valor_exacto() {
+        // transact.rs escribe booleanos como AttributeValue::Bool: sin el
+        // brazo Bool del post-filtro, eq(is_primary, true) devolvía cero.
+        let mut a = item("E1", 100, true, "placeholder");
+        a.insert("v".to_string(), AttributeValue::Bool(true));
+        let mut b = item("E2", 100, true, "placeholder");
+        b.insert("v".to_string(), AttributeValue::Bool(false));
+        let ids = dedup_latest_asserted_by_value(vec![a, b], "true");
+        assert_eq!(ids, vec!["E1".to_string()]);
     }
 
     #[test]
