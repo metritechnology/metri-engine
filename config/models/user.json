@@ -168,9 +168,12 @@
     {
       "name": "timezone",
       "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:timezone",
+      "pattern": "^[A-Za-z0-9_+\\-]+(/[A-Za-z0-9_+\\-]+)*$",
       "default_value": "America/Mexico_City",
       "is_dimension": true,
-      "description": "Zona horaria preferida por el usuario."
+      "description": "Zona horaria preferida por el usuario bajo la base de datos de zonas IANA (tz database), validada contra el sistema terminológico."
     },
     {
       "name": "locale",

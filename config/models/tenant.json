@@ -96,9 +96,12 @@
     {
       "name": "timezone",
       "type": "string",
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:timezone",
+      "pattern": "^[A-Za-z0-9_+\\-]+(/[A-Za-z0-9_+\\-]+)*$",
       "default_value": "America/Mexico_City",
       "is_dimension": true,
-      "description": "Zona horaria por defecto del tenant para notificaciones y agendamiento de mantenimiento."
+      "description": "Zona horaria por defecto del tenant bajo la base de datos de zonas IANA (tz database), validada contra el sistema terminológico."
     },
     {
       "name": "currency",
