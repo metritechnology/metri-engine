@@ -25,7 +25,7 @@
       "type": "string",
       "required": true,
       "fts": true,
-      "description": "Pregunta mostrada al técnico. Se copia al question_text del work_order_checklist_item al instanciar."
+      "description": "Pregunta mostrada al técnico."
     },
     {
       "name": "type",
@@ -44,7 +44,7 @@
       ],
       "required": true,
       "is_dimension": true,
-      "description": "Mismo enum de 10 tipos que work_order_checklist_item: se copia tal cual al instanciar."
+      "description": "Enum de 10 tipos de respuesta."
     },
     {
       "name": "is_required",

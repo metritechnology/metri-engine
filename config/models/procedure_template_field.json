@@ -42,6 +42,7 @@
         "DATE",
         "HEADING",
         "FILE",
+        "PHOTO",
         "SIGNATURE",
         "MULTIPLE_CHOICE",
         "INSPECTION_CHECK",
@@ -51,7 +52,7 @@
       ],
       "required": true,
       "is_dimension": true,
-      "description": "Tipo del campo, recortado de los 15 de MaintainX: sin METER ni CYCLE_COUNT porque metri aún no tiene master de medidores, y sin UNSUPPORTED. Determina qué attr value_* captura la instancia."
+      "description": "Tipo del campo, recortado de los 15 de MaintainX: sin METER ni CYCLE_COUNT porque metri aún no tiene master de medidores, y sin UNSUPPORTED. PHOTO reincorpora la fotografía de MaintainX como evidencia de cámara dedicada (distinta del adjunto genérico FILE). Determina qué attr value_* captura la instancia; PHOTO/FILE/SIGNATURE no usan value_*: la evidencia vive en file.owner_entity_* / electronic_signature."
     },
     {
       "name": "choices",

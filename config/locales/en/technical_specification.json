@@ -1,0 +1,14 @@
+{
+  "entities": {
+    "technical_specification": {
+      "label": "Technical Specification",
+      "attributes": {
+        "asset_id": "Asset",
+        "concept_code": "UN/CEFACT Concept",
+        "concept_name": "Concept Name",
+        "value": "Value",
+        "spec_order": "Order"
+      }
+    }
+  }
+}

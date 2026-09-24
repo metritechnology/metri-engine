@@ -1,0 +1,58 @@
+{
+  "entity": "technical_specification",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": false,
+  "attributes": [
+    {
+      "name": "asset_id",
+      "type": "reference",
+      "entityRef": "asset",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true,
+      "description": "El activo al que pertenece esta especificación técnica (placa de datos normalizada)."
+    },
+    {
+      "name": "concept_code",
+      "type": "string",
+      "required": true,
+      "subtype": "terminology",
+      "terminologyUri": "urn:api:system:uncefact",
+      "index": true,
+      "is_dimension": true,
+      "description": "Concepto del sistema terminológico UN/CEFACT Rec 20 que nombra la magnitud (ej. 'KWT' kilovatios, 'VLT' voltios, 'CEL' grados Celsius). La fila ES la cantidad: unidad estandarizada + valor numérico."
+    },
+    {
+      "name": "concept_name",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Nombre del concepto denormalizado del vocabulario al seleccionar (companion de concept_code, patrón omniclass_name): permite listar la placa sin resolver cada código contra el terminology-engine."
+    },
+    {
+      "name": "value",
+      "type": "decimal",
+      "required": true,
+      "is_measure": true,
+      "description": "Valor numérico de la especificación expresado en la unidad que nombra el concepto UN/CEFACT."
+    },
+    {
+      "name": "spec_order",
+      "type": "integer",
+      "index": true,
+      "description": "Orden de la fila dentro del activo (1..N), reordenable desde el editor de especificaciones."
+    }
+  ],
+  "constraints": [
+    {
+      "type": "unique",
+      "scope": "tenant",
+      "attributes": [
+        "asset_id",
+        "concept_code"
+      ],
+      "description": "El mismo concepto no se declara dos veces para un activo: una placa de datos tiene un valor por magnitud."
+    }
+  ]
+}

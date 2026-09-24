@@ -1,0 +1,21 @@
+{
+  "entity": "task_template",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "is_dimension": true,
+      "description": "Nombre de la tarea de plantilla (ej: 'Drenar el depósito')."
+    },
+    {
+      "name": "estimated_duration_minutes",
+      "type": "number",
+      "description": "Duración estimada que el compositor convierte en ventana secuencial."
+    }
+  ]
+}

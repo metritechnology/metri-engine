@@ -296,11 +296,12 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
         .any(|a| a.name == "completed_at" && a.indexed));
 }
 
-/// La OT lleva 1..N procedimientos y 1..N checklists (Fase 2 del
-/// PLAN_REFACTORIZACION_MODELO). El orden de ejecución vive en la instancia y
-/// las constraints impiden duplicar la misma plantilla en la misma OT.
+/// La OT lleva 1..N procedimientos (Fase 2 del PLAN_REFACTORIZACION_MODELO).
+/// El orden de ejecución vive en la instancia y las constraints impiden
+/// duplicar la misma plantilla en la misma OT. La familia de checklists de
+/// instancia (work_order_checklist*) fue retirada del catálogo el 2026-09-24.
 #[test]
-fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
+fn la_ot_lleva_n_procedimientos_ordenados() {
     let models_dir = std::path::Path::new("config/models");
     let (registry, _rules) =
         CodeRegistry::build(models_dir).expect("config/models debe compilar con la familia 1-a-N");
@@ -335,43 +336,26 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
         == crate::codice::registry::ConstraintKind::AtMost
         && c.attributes == ["score", "max_score"]));
 
-    let cl = registry
-        .get_model("work_order_checklist")
-        .expect("work_order_checklist debe estar registrado");
-    assert!(cl
-        .attributes
-        .iter()
-        .any(|a| a.name == "checklist_order" && a.indexed));
-    assert!(
-        !cl.attributes.iter().any(|a| a.name == "form_template_id"),
-        "form_template_id fue retirado: la checklist es self-contained"
-    );
-
-    // Toda la capa de definición de formularios está retirada: las preguntas
-    // y su estructura viven solo en las instancias (work_order_checklist*).
+    // Toda la capa de definición de formularios está retirada, y con ella la
+    // familia de checklists de instancia (2026-09-24): la verificación vive
+    // en las tareas y sus ítems.
     for retirada in [
         "form_template",
         "form_template_section",
         "form_template_field",
+        "work_order_checklist",
+        "work_order_checklist_section",
+        "work_order_checklist_item",
     ] {
         assert!(
             registry.get_model(retirada).is_none(),
             "{retirada} fue retirada del catálogo"
         );
     }
-    let cls = registry
-        .get_model("work_order_checklist_section")
-        .expect("work_order_checklist_section debe estar registrado");
-    assert!(
-        cls.attributes
-            .iter()
-            .any(|a| a.name == "section_order" && a.attr_type == AttrType::Number),
-        "work_order_checklist_section.section_order debe ser integer (AttrType::Number)"
-    );
 
-    // La plantilla de checklists es simétrica a procedure: ciclo de vida
-    // PUBLISHED, provenance por pregunta y las mismas constraints en la
-    // instancia (unique WO+template, ref_state).
+    // La plantilla de checklists conserva ciclo de vida PUBLISHED y tipado
+    // por pregunta; quedó sin instancia desde el retiro de la familia
+    // work_order_checklist* (2026-09-24).
     let clt = registry
         .get_model("checklist_template")
         .expect("checklist_template debe estar registrado");
@@ -388,21 +372,64 @@ fn la_ot_lleva_n_procedimientos_y_n_checklists_ordenados() {
     assert!(clt_item.attributes.iter().any(|a| a.name == "type"
         && a.attr_type == AttrType::Enum
         && a.options.contains(&"PASS_FAIL".to_string())));
-    assert!(cl
+}
+
+/// La placa de datos del activo dejó de ser un flat_map libre: cada
+/// especificación técnica es una fila propia (technical_specification) con un
+/// concepto del sistema terminológico UN/CEFACT y un valor numérico. El
+/// atributo `specifications` del asset fue retirado en el mismo movimiento.
+#[test]
+fn la_placa_de_datos_del_activo_es_una_entidad_hija_terminologica() {
+    let models_dir = std::path::Path::new("config/models");
+    let (registry, _rules) = CodeRegistry::build(models_dir)
+        .expect("config/models debe compilar con la placa de datos terminológica");
+
+    let tspec = registry
+        .get_model("technical_specification")
+        .expect("technical_specification debe estar registrado");
+    assert!(tspec.attributes.iter().any(|a| a.name == "asset_id"
+        && a.required
+        && a.indexed
+        && a.entity_ref.as_deref() == Some("asset")));
+    // La fila ES la cantidad: el concepto nombra la magnitud, el valor la mide.
+    assert!(tspec
         .attributes
         .iter()
-        .any(|a| a.name == "checklist_template_id"
-            && a.entity_ref.as_deref() == Some("checklist_template")));
-    cl.constraints
+        .any(|a| a.name == "concept_code" && a.required && a.attr_type == AttrType::String));
+    assert!(tspec
+        .attributes
+        .iter()
+        .any(|a| a.name == "value" && a.required && a.attr_type == AttrType::Decimal));
+    // Companion denormalizado (patrón omniclass_name) y orden de fila.
+    assert!(tspec
+        .attributes
+        .iter()
+        .any(|a| a.name == "concept_name" && a.attr_type == AttrType::String));
+    assert!(tspec
+        .attributes
+        .iter()
+        .any(|a| a.name == "spec_order" && a.attr_type == AttrType::Number && a.indexed));
+    // Un valor por magnitud: el mismo concepto no se declara dos veces.
+    let unique = tspec
+        .constraints
         .iter()
         .find(|c| {
             c.kind == crate::codice::registry::ConstraintKind::Unique
-                && c.attributes == ["work_order_id", "checklist_template_id"]
+                && c.attributes == ["asset_id", "concept_code"]
         })
-        .expect("la misma plantilla de checklist no debe instanciarse dos veces en una OT");
-    assert!(cl.constraints.iter().any(|c| c.kind
-        == crate::codice::registry::ConstraintKind::RefState
-        && c.attributes == ["checklist_template_id"]));
+        .expect("el mismo concepto UN/CEFACT no debe declararse dos veces por activo");
+    assert_eq!(
+        unique.scope,
+        crate::codice::registry::ConstraintScope::Tenant
+    );
+
+    let asset = registry
+        .get_model("asset")
+        .expect("asset debe estar registrado");
+    assert!(
+        !asset.attributes.iter().any(|a| a.name == "specifications"),
+        "asset.specifications fue retirado: la placa de datos vive en technical_specification"
+    );
 }
 
 /// La familia de turnos declara sus contratos de capacidad: el override cita

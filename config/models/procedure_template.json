@@ -5,11 +5,6 @@
   "track_history": true,
   "attributes": [
     {
-      "name": "procedure_order",
-      "type": "integer",
-      "description": "Orden del procedimiento en el protocolo. El materializador ordena por este campo; empates por name para determinismo."
-    },
-    {
       "name": "name",
       "type": "string",
       "required": true,
@@ -35,23 +30,34 @@
       "description": "Un DRAFT no se instancia en órdenes de trabajo (regla de MaintainX): el materializador sólo expansiona PUBLISHED. RETIRED conserva el histórico sin ofrecerse a nuevas OTs."
     },
     {
-      "name": "max_score",
-      "type": "number",
-      "is_measure": true,
-      "description": "Puntaje máximo del procedimiento: suma de los score de sus campos. No lo edita el técnico: lo determina la plantilla."
+      "name": "template_type",
+      "type": "enum",
+      "options": [
+        "PROTOCOL",
+        "CHECKLIST"
+      ],
+      "default_value": "PROTOCOL",
+      "is_dimension": true,
+      "description": "Naturaleza de la plantilla: PROTOCOL es el procedimiento formal con pasos tipados y scoring; CHECKLIST es la lista de chequeo ligera, sin puntuación."
     },
     {
-      "name": "estimated_duration_minutes",
-      "type": "decimal",
-      "is_measure": true,
-      "description": "Duración estimada del procedimiento completo en MINUTOS."
+      "name": "version",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Versión del documento para control documental (ej: '1.0', 'v2.1'). La fija el tenant; el sistema no la autoincrementa."
     },
     {
-      "name": "required_role_id",
+      "name": "document_code",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Código de control documental del protocolo (ej: 'PR-001'), al estilo ISO 9001. Único por convenio del tenant, no impuesto por el motor."
+    },
+    {
+      "name": "custom_logo",
       "type": "reference",
-      "entityRef": "role",
+      "entityRef": "file",
       "cardinality": "one",
-      "description": "Rol o skill mínimo requerido para ejecutar este procedimiento."
+      "description": "Logotipo opcional que encabeza el documento del protocolo (File entity). Vacío: el documento usa el logo corporativo del tenant."
     }
   ]
 }

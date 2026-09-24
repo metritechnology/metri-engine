@@ -1,0 +1,23 @@
+{
+  "entity": "task_template_item",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": false,
+  "attributes": [
+    {
+      "name": "task_template_id",
+      "type": "reference",
+      "entityRef": "task_template",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "description": "Tarea de plantilla a la que pertenece el ítem."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Enunciado del ítem de verificación."
+    }
+  ]
+}

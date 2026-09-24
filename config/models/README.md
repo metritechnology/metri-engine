@@ -209,51 +209,48 @@ Notas de diseño:
 - Activar una `unique` con duplicados vivos haría fallar la siguiente
   escritura: conciliar el dato antes de declarar.
 
-## V. Procedures y checklists: dos sistemas simétricos
+## V. Procedures y checklists
 
 **Regla de nombres en todo el catálogo: lo reutilizable lleva `_template`; lo
-que vive en una orden de trabajo lleva `work_order_`.** Dos sistemas cuelgan
-de la OT con la misma mecánica: definición con ciclo de vida, provenance hacia
+que vive en una orden de trabajo lleva `work_order_`.** Los procedures cuelgan
+de la OT con mecánica completa: definición con ciclo de vida, provenance hacia
 atrás, snapshots al instanciar e instanciación atómica vía `CompositeTransact`.
+Los checklists conservan su capa de definición, pero su familia de instancia
+(`work_order_checklist*`) fue retirada del catálogo el 2026-09-24.
 
 | Sistema | Definición | Instancia | Frontera |
 |---|---|---|---|
 | **Procedures** | `procedure_template` → `procedure_template_field` (12 tipos de campo, scoring) | `work_order_procedure` → `work_order_procedure_field` | **Protocolo formal con puntaje**: se aprueba/reprueba por `score` contra `max_score`. |
-| **Checklists** | `checklist_template` → `checklist_template_section` → `checklist_template_item` (10 tipos de respuesta) | `work_order_checklist` → `work_order_checklist_section` → `work_order_checklist_item` | **Verificación** (pasa/falla/sí/no), sin puntaje. |
+| **Checklists** | `checklist_template` → `checklist_template_section` → `checklist_template_item` (10 tipos de respuesta) | — retirada (`work_order_checklist*`, 2026-09-24) | **Verificación** (pasa/falla/sí/no), sin puntaje; definición sin instancia desde el retiro. |
 
 Reglas:
 
 1. Con puntaje → `procedure_template`; verificación sin puntaje →
    `checklist_template`.
 2. Solo se instancian definiciones **PUBLISHED** — el motor lo enforcea con
-   `ref_state` en ambos sistemas. Default de una definición nueva: DRAFT.
+   `ref_state`. Default de una definición nueva: DRAFT.
 3. La misma definición no se instancia dos veces en la misma OT — constraint
-   `unique(work_order_id, <id de plantilla>)` en ambos. Las instancias sin
-   plantilla (ad-hoc, sin `procedure_template_id`/`checklist_template_id`) no
+   `unique(work_order_id, procedure_template_id)` en `work_order_procedure`.
+   Las instancias sin plantilla (ad-hoc, sin `procedure_template_id`) no
    reclaman nada.
 4. Provenance hacia atrás en cada nivel (instancia → definición): editar o
    retirar la definición no corrompe ejecutadas, y el OLAP agrupa por id de
    definición aunque cambien los textos.
 5. Los ítems son self-contained (pregunta/paso + tipo + respuesta copiados al
    instanciar). Los órdenes son `integer` en toda la familia:
-   `section_order`, `item_order`, `procedure_order`, `checklist_order`.
-6. Las tareas de una OT son atributos y evidencias de la propia `work_order`
-   (notas, horas de `labor_log`, adjuntos vía `file`): no existe entidad de
-   tarea.
+   `section_order`, `item_order`, `procedure_order`.
+6. Las tareas de una OT son entidades propias (`work_order_task` →
+   `work_order_task_item`, de vuelta en el catálogo desde el 2026-09-23);
+   notas y horas no cuelgan de ellas — `note` y `labor_log` anclan a la OT, y
+   los adjuntos van vía `file.owner_entity_*`.
 
-### La OT lleva 1..N procedimientos y 1..N checklists
+### La OT lleva 1..N procedimientos
 
-Una `work_order` instancia **uno a varios** procedimientos y **una a varias**
-checklists — no hay límite de uno por OT ni de plantillas distintas:
+Una `work_order` instancia **uno a varios** procedimientos — no hay límite de
+uno por OT ni de plantillas distintas:
 
 - Cada instancia de procedimiento (`work_order_procedure`) lleva
-  `procedure_order` (1..N): el orden de ejecución dentro de la OT, copiado de
-  `procedure.procedure_order` al instanciar y reordenable sin tocar la
-  plantilla. Constraint: el mismo `procedure` no se instancia dos veces en la
-  misma OT (`unique` tenant sobre `work_order_id + procedure_id`).
-- Cada checklist (`work_order_checklist`) lleva `checklist_order` (1..N) y
-  nace de una `checklist_template` PUBLISHED o se construye a mano: la
-  constraint `unique(work_order_id, checklist_template_id)` impide duplicar
-  plantilla y las manuales no reclaman nada.
-- Los N procedimientos y las N checklists de una OT son independientes entre
-  sí: ni los protocolos generan checklists ni las checklists generan pasos.
+  `procedure_order` (1..N): el orden de ejecución dentro de la OT, editable en
+  la instancia sin tocar la plantilla. Constraint: el mismo
+  `procedure_template` no se instancia dos veces en la misma OT (`unique`
+  tenant sobre `work_order_id + procedure_template_id`).

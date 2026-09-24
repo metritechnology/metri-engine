@@ -49,6 +49,7 @@
         "DATE",
         "HEADING",
         "FILE",
+        "PHOTO",
         "SIGNATURE",
         "MULTIPLE_CHOICE",
         "INSPECTION_CHECK",

@@ -18,7 +18,7 @@
       "type": "integer",
       "required": true,
       "index": true,
-      "description": "Orden de la sección dentro de la plantilla (1..N). Al instanciar se copia al section_order de la work_order_checklist_section."
+      "description": "Orden de la sección dentro de la plantilla (1..N)."
     },
     {
       "name": "title",

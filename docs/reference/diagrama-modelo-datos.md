@@ -33,7 +33,7 @@ flowchart LR
         TT["procedure"]
     end
     subgraph EXEC["Instancias de formulario"]
-        CL["work_order_checklist · work_order_procedure"]
+        CL["work_order_procedure"]
     end
     subgraph ACT["Activos y ubicaciones"]
         AS["asset · location · company"]
@@ -79,7 +79,6 @@ flowchart TB
 
     WO -->|"asset_id"| ASSET["asset"]
     WO -->|"location_id (scope ⭑)"| LOC["location"]
-    WO -->|"client_id"| CO["company (CLIENT)"]
     WO -. "assignees" .-> U["user"]
     WO -. "assigned_group_ids" .-> UG["user_group"]
     WO -->|"preventive_maintenance_id"| PM["preventive_maintenance"]
@@ -91,11 +90,6 @@ flowchart TB
 
     LL["labor_log<br/>hora × tarifa"] -->|"work_order_id"| WO
     LL -->|"user_id"| U
-
-    WCL["work_order_checklist<br/>(1..N por OT · checklist_order)"]
-    WO -->|"work_order_id"| WCL
-    WCLS["work_order_checklist_section"] -->|"work_order_checklist_id"| WCL
-    WCLI["work_order_checklist_item<br/>(10 tipos de respuesta)"] -->|"work_order_checklist_section_id"| WCLS
 
     WPROC["work_order_procedure<br/>(1..N por OT · procedure_order)"]
     WO -->|"work_order_id"| WPROC
@@ -118,28 +112,32 @@ resuelve vía `is_sequence_scope_via` (nearest_registered).
 
 ## 3. De la planificación y los protocolos a la orden de trabajo
 
-Dos sistemas de "protocolo → instancia" cuelgan **directamente de la OT**. La
-capa intermedia `work_order_template` (+ paradas de ruta) y el sistema de
-tareas `task_template(_item)` + `work_order_task(_item)` se retiraron del
-catálogo el 2026-09-09: los procedimientos son el único protocolo formal.
+Un único sistema de "protocolo → instancia" cuelga **directamente de la OT**:
+los procedures. La capa intermedia `work_order_template` (+ paradas de ruta)
+se retiró del catálogo (decisión 2026-09-09; los JSON se eliminaron físicamente
+el 2026-09-24, tras la reestructuración de PM que hizo de la pauta el molde).
+El sistema de tareas `task_template(_item)` + `work_order_task(_item)`,
+retirado en esa misma ola, **volvió al catálogo** (2026-09-23) y es el
+mecanismo vivo de tareas de la OT. La familia de checklists de instancia
+(`work_order_checklist*`) se retiró el **2026-09-24**: `checklist_template*`
+queda como capa de definición sin instancia.
 
 ```mermaid
 flowchart LR
     subgraph DEFS["Definición (solo PUBLISHED se instancia)"]
         PR["procedure_template → procedure_template_field<br/>(12 tipos · scoring)"]
-        CLT["checklist_template → sections → items<br/>(10 tipos de respuesta)"]
+        CLT["checklist_template → sections → items<br/>(10 tipos · sin instancia desde 2026-09-24)"]
     end
 
     subgraph GEN["Generación preventiva"]
-        PM["preventive_maintenance<br/>(CRON o umbral de medidor)"]
-        PM -->|"saga (shadow_sagas_mapping)"| SJ["scheduled_job 🔒"]
+        PM["preventive_maintenance<br/>(recurrencia estructurada recurrence_* o umbral de medidor)"]
+        PM -.->|"pm-orchestrator crea/retira (convergencia)"| SJ["scheduled_job 🔒"]
         SJ -->|"materializa + constraint unique"| WO2["work_order"]
         SEQ["sequence_registry 🔒"] -.->|"scope del contador"| WO2
     end
 
-    subgraph RUN["Instancia runtime — la OT lleva 1..N procedimientos y 1..N checklists"]
+    subgraph RUN["Instancia runtime — la OT lleva 1..N procedimientos"]
         WO2 --> WPR2["work_order_procedure ← procedure_template<br/>(procedure_order · unique WO+template)"]
-        WO2 --> CL2["work_order_checklist ← checklist_template<br/>(checklist_order · unique WO+template)"]
         REQ2["request"] -.->|"convert_to_work_order"| WO2
     end
 ```
@@ -147,7 +145,7 @@ flowchart LR
 | Sistema | Definición | Instancia | Uso |
 |---|---|---|---|
 | Procedures | `procedure_template(_field)` | `work_order_procedure(_field)` | Protocolo formal con scoring (estilo MaintainX) |
-| Checklists | `checklist_template(_section/_item)` | `work_order_checklist(_section/_item)` | Verificación sin puntaje (provenance por pregunta; manuales permitidas) |
+| Checklists | `checklist_template(_section/_item)` | — retirada (`work_order_checklist*`, 2026-09-24) | Verificación sin puntaje; definición sin instancia desde el retiro |
 
 ---
 
@@ -266,18 +264,27 @@ catálogo no las valida estructuralmente:
 **Capa retirada por decisión de simplificación (2026-09-09):**
 
 - `work_order_template` y `work_order_template_stop` ya no existen en el
-  catálogo. Consecuencias aplicadas: `preventive_maintenance.template_id`
-  eliminada (la saga sigue materializando la OT con asset + trazabilidad de
-  pauta y job); los protocolos quedan anclados directamente a la OT. El
-  validador descarta claves desconocidas,
-  así que los payloads que aún envíen `template_id`/`work_order_template_id` no
-  se rompen — metri-app debe dejar de enviarlos.
+  catálogo (los JSON se eliminaron físicamente el **2026-09-24**: la decisión
+  era del 2026-09-09, pero los archivos permanecían; el cierre lo dio la
+  reestructuración de PM — el molde es la pauta y `wo-composer` ya no lee
+  `template_id`, así que la ruta ENUMERATED/paradas estaba muerta en runtime).
+  Limpieza aplicada en la misma fecha: fuera los FK
+  `work_order_task.work_order_template_stop_id` y
+  `task_template.work_order_template_id`. Consecuencias de la decisión
+  original: `preventive_maintenance.template_id` eliminada (la saga sigue
+  materializando la OT con asset + trazabilidad de pauta y job); los
+  protocolos quedan anclados directamente a la OT. El validador descarta
+  claves desconocidas, así que los payloads que aún envíen
+  `template_id`/`work_order_template_id`/`work_order_template_stop_id` no se
+  rompen — metri-app debe dejar de enviarlos.
 - Segunda ola, misma fecha: `work_order_task`, `work_order_task_item`,
-  `task_template` y `task_template_item` retirados — **los procedimientos son
-  el único protocolo formal**. Reencuadres aplicados: `note` ahora ancla a
-  `work_order_id` (antes `work_order_task_id`); `labor_log` imputa solo a la OT
-  (fuera `work_order_task_id` y `work_order_task_item_id`); `check_list` perdió
-  su anclaje jerárquico a tareas.
+  `task_template` y `task_template_item` retirados — **revertida el
+  2026-09-23**: el sistema de tareas volvió al catálogo y es el mecanismo
+  vivo de tareas de la OT (UI en ambas apps). Los reencuadres de esa ola sí
+  se mantienen: `note` ancla a `work_order_id` (antes `work_order_task_id`);
+  `labor_log` imputa solo a la OT (fuera `work_order_task_id` y
+  `work_order_task_item_id`); `check_list` no recuperó su anclaje jerárquico
+  a tareas.
 
 **Fases 3-5 y 7 del [plan](../architecture/PLAN_REFACTORIZACION_MODELO.md) aplicadas (2026-09-09):**
 

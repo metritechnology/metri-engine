@@ -1,0 +1,36 @@
+{
+  "entity": "work_order_task_item",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": false,
+  "attributes": [
+    {
+      "name": "work_order_task_id",
+      "type": "reference",
+      "entityRef": "work_order_task",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "description": "Tarea dueña del ítem."
+    },
+    {
+      "name": "task_template_item_id",
+      "type": "reference",
+      "entityRef": "task_template_item",
+      "cardinality": "one",
+      "description": "Ítem de plantilla que la engendró (provenance)."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Enunciado del ítem de verificación."
+    },
+    {
+      "name": "is_completed",
+      "type": "boolean",
+      "default_value": false,
+      "description": "Marca de verificación del ítem."
+    }
+  ]
+}

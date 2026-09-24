@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **57**
+Total de modelos: **59**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -12,7 +12,7 @@ Total de modelos: **57**
 | `approval_instance` | oltp | `policy_id`, `target_entity_name`, `target_entity_id`, `canonical_state`, `sub_state`, `current_tier_level`, `idempotency_hash`, `sla_due_date` |
 | `approval_policy` | oltp | `policy_code`, `target_entity_name`, `trigger_condition_ast`, `min_required_tiers`, `tier_configurations`, `sla_duration_hours`, `is_active` |
 | `approval_step_execution` | oltp | `approval_instance_id`, `tier_level`, `actor_user_id`, `decision`, `rejection_reason_code`, `rejection_comment`, `electronic_signature_id`, `evaluated_at` |
-| `asset` | oltp | `name`, `tag`, `serial_number`, `barcode_qr_code`, `status`, `criticality`, `location_id`, `parent_asset_id`, `description`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `specifications`, `custom_attributes` |
+| `asset` | oltp | `name`, `tag`, `serial_number`, `barcode_qr_code`, `status`, `criticality`, `location_id`, `parent_asset_id`, `description`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `custom_attributes` |
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | oltp | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
 | `checklist_template` | oltp | `name`, `description`, `status` |
@@ -43,8 +43,8 @@ Total de modelos: **57**
 | `note` | oltp | `content`, `author_id`, `timestamp`, `work_order_id` |
 | `outbox_event` | oltp | `status`, `detail_type`, `payload`, `retry_count`, `retry_at`, `claimed_at`, `created_at` |
 | `part` | oltp | `name`, `sku`, `barcode`, `description`, `category`, `default_unit_cost_cents`, `min_quantity`, `uom`, `currency` |
-| `preventive_maintenance` | oltp | `asset_id`, `cron_expression`, `advance_notice_days`, `meter_based_trigger`, `advance_notice_meter_value`, `iana_timezone`, `prenotify_before_minutes`, `next_due_date`, `recurrence_basis`, `status` |
-| `procedure_template` | oltp | `procedure_order`, `name`, `description`, `lifecycle_state`, `max_score`, `estimated_duration_minutes`, `required_role_id` |
+| `preventive_maintenance` | oltp | `asset_id`, `location_id`, `title`, `description`, `priority`, `status`, `estimated_duration_hours`, `assignees`, `assigned_group_ids`, `category`, `require_location_verification`, `latitude`, `longitude`, `custom_attributes`, `recurrence_start_date`, `recurrence_interval`, `recurrence_unit`, `recurrence_at_time`, `cron_expression`, `iana_timezone`, `next_due_date`, `recurrence_basis`, `advance_notice_value`, `advance_notice_unit`, `advance_notice_time`, `prenotify_before_minutes`, `meter_based_trigger` |
+| `procedure_template` | oltp | `name`, `description`, `lifecycle_state`, `template_type`, `version`, `document_code`, `custom_logo` |
 | `procedure_template_field` | oltp | `procedure_template_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `score`, `field_order` |
 | `reminder` | oltp | `title`, `message`, `target_user_id`, `target_group_id`, `reminder_datetime`, `prenotify_minutes_array`, `iana_timezone`, `status` |
 | `request` | oltp | `title`, `description`, `requested_by_user`, `requested_by_email`, `form_data`, `status`, `priority`, `asset_id`, `location_id` |
@@ -52,15 +52,17 @@ Total de modelos: **57**
 | `scheduled_job` | oltp | `parent_entity_ref`, `created_by`, `trigger_type`, `trigger_expression`, `iana_timezone`, `action_type`, `target_user_id`, `target_group_id`, `target_role_id`, `target_webhook_id`, `action_payload`, `idempotency_hash`, `status`, `last_run_at`, `run_count`, `last_error` |
 | `sequence_registry` | oltp | `tenant_id`, `sequence_code`, `prefix`, `padding_length`, `current_value`, `parent_scope_tag` |
 | `shift_pattern` | oltp | `name`, `user_id`, `user_group_id`, `grammar`, `cron_expression`, `iana_timezone`, `span_minutes`, `productive_factor`, `reactive_reserve_pct`, `effective_from`, `effective_to`, `status` |
+| `task_template` | oltp | `name`, `estimated_duration_minutes` |
+| `task_template_item` | oltp | `task_template_id`, `description` |
+| `technical_specification` | oltp | `asset_id`, `concept_code`, `concept_name`, `value`, `spec_order` |
 | `technician_shift` | oltp | `user_id`, `shift_date`, `start_time`, `end_time`, `status`, `shift_pattern_id`, `kind`, `absence_reason`, `completed_by`, `completed_at` |
 | `tenant` | oltp | `name`, `tag`, `status`, `tier`, `require_mfa_for_new_users`, `mfa_policy`, `mfa_allowed_methods`, `session_max_idle_minutes`, `industry`, `timezone`, `currency`, `language`, `billing_admin_email`, `logo`, `config` |
 | `tenant_plugin` | oltp | `tenant_id`, `plugin_id`, `status`, `config` |
 | `user` | oltp | `username`, `password_hash`, `email`, `primary_phone`, `first_name`, `last_name`, `job_title`, `avatar`, `badge_id`, `status`, `user_type`, `role_ids`, `group_ids`, `tenant_id`, `company_id`, `primary_location_id`, `hourly_rate_cents`, `currency`, `skills`, `timezone`, `locale`, `failed_attempts`, `locked_until`, `mfa_enabled`, `mfa_secret`, `registration_method`, `registered_at`, `last_login_at` |
 | `user_group` | oltp | `name`, `description`, `allowed_locations`, `allowed_assets`, `parent_user_group_id`, `time_restrictions` |
 | `webhook_endpoint` | oltp | `name`, `target_url`, `http_method`, `authentication_type`, `auth_token`, `subscribed_rule_ids`, `max_retries`, `is_active` |
-| `work_order` | oltp | `work_order_number`, `title`, `description`, `request_id`, `client_id`, `asset_id`, `location_id`, `require_location_verification`, `latitude`, `longitude`, `assignees`, `assigned_group_ids`, `category`, `status`, `priority`, `due_date`, `scheduled_start`, `estimated_duration_hours`, `preventive_maintenance_id`, `scheduled_job_id`, `cron_job`, `completed_by`, `completed_at`, `custom_attributes` |
-| `work_order_checklist` | oltp | `work_order_id`, `title`, `description`, `is_completed`, `checklist_order`, `checklist_template_id` |
-| `work_order_checklist_item` | oltp | `work_order_checklist_section_id`, `question_text`, `type`, `response_boolean`, `response_text`, `response_number`, `response_signature_id`, `observations`, `completed_by`, `completed_at`, `checklist_template_item_id` |
-| `work_order_checklist_section` | oltp | `work_order_checklist_id`, `section_order`, `title`, `description`, `is_completed`, `checklist_template_section_id` |
+| `work_order` | oltp | `work_order_number`, `title`, `description`, `request_id`, `asset_id`, `location_id`, `require_location_verification`, `latitude`, `longitude`, `assignees`, `assigned_group_ids`, `category`, `status`, `priority`, `due_date`, `scheduled_start`, `estimated_duration_hours`, `preventive_maintenance_id`, `scheduled_job_id`, `completed_by`, `completed_at`, `custom_attributes` |
 | `work_order_procedure` | oltp | `work_order_id`, `procedure_template_id`, `name`, `status`, `score`, `max_score`, `completed_by`, `completed_at`, `procedure_order` |
 | `work_order_procedure_field` | oltp | `work_order_procedure_id`, `procedure_template_field_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `field_order`, `score`, `max_score`, `value_text`, `value_number`, `value_boolean`, `value_epoch`, `value_choice`, `answered_by`, `answered_at` |
+| `work_order_task` | oltp | `work_order_id`, `task_template_id`, `description`, `status`, `asset_id`, `location_id`, `assigned_user_id`, `assigned_group_id`, `scheduled_start`, `scheduled_end`, `estimated_duration_minutes`, `completed_by`, `completed_at` |
+| `work_order_task_item` | oltp | `work_order_task_id`, `task_template_item_id`, `description`, `is_completed` |

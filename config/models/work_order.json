@@ -22,8 +22,7 @@
       "name": "title",
       "type": "string",
       "required": true,
-      "fts": true,
-      "is_dimension": true
+      "fts": true
     },
     {
       "name": "description",
@@ -36,14 +35,6 @@
       "entityRef": "request",
       "cardinality": "one",
       "description": "Links the WO back to an external citizen/employee request if applicable."
-    },
-    {
-      "name": "client_id",
-      "type": "reference",
-      "entityRef": "company",
-      "cardinality": "one",
-      "is_dimension": true,
-      "description": "Empresa cliente destinataria del servicio (company con company_type=CLIENT). Corrige la referencia previa a la entidad inexistente 'client'."
     },
     {
       "name": "asset_id",
@@ -166,11 +157,6 @@
       "cardinality": "one",
       "index": true,
       "description": "Job puntual que disparó esta OT. Único por tenant vía constraint — la capa definitiva de idempotencia del loop: un reintento del bus puede repetir el fired, pero no puede duplicar la OT."
-    },
-    {
-      "name": "cron_job",
-      "type": "string",
-      "description": "Expresión cron (ej. '0 9 * * 1-5') para la programación periódica o recurrencia de la orden de trabajo."
     },
     {
       "name": "completed_by",

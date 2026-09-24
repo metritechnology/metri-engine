@@ -176,12 +176,6 @@
       "description": "Vida útil proyectada en meses según fabricante."
     },
     {
-      "name": "specifications",
-      "type": "json",
-      "subtype": "flat_map",
-      "description": "Placa de datos / especificaciones técnicas (ej: {'power_kw': '45', 'voltage_v': '480', 'rpm': '1750'})."
-    },
-    {
       "name": "custom_attributes",
       "type": "json",
       "subtype": "flat_map",

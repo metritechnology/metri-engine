@@ -338,6 +338,22 @@ fn test_enum_field_type_de_procedure_rechaza_valores_fuera_de_catalogo() {
     );
     assert!(ok.is_ok(), "MULTIPLE_CHOICE está en el catálogo: {ok:?}");
 
+    // PHOTO es la evidencia de cámara reincorporada de MaintainX: no captura
+    // value_*, su evidencia vive en file.owner_entity_* — pero el enum lo
+    // acepta igual que cualquier otro tipo del catálogo.
+    let photo = validate_payload(
+        model,
+        &json!({
+            "work_order_procedure_id": "01WOP",
+            "label": "Foto del punto de inspección",
+            "field_type": "PHOTO",
+            "field_order": 4
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(photo.is_ok(), "PHOTO está en el catálogo: {photo:?}");
+
     // METER existe en MaintainX pero metri no lo adoptó (sin master de
     // medidores): el payload completo se rechaza, no se ignora el campo.
     let bad = validate_payload(

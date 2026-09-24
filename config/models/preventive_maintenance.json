@@ -14,35 +14,145 @@
       "description": "Sujeto de la pauta: el activo al que se le ejecuta el mantenimiento periódico."
     },
     {
+      "name": "location_id",
+      "type": "reference",
+      "entityRef": "location",
+      "cardinality": "one",
+      "is_dimension": true,
+      "description": "Sujeto de la pauta cuando el mantenimiento es del sitio y no de un activo concreto."
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "fts": true,
+      "description": "Nombre humano del plan («Mantenimiento semanal — bomba hidráulica»). La saga lo presta a cada OT que engendra: una orden sin título no valida contra este Códice."
+    },
+    {
+      "name": "description",
+      "type": "string",
+      "fts": true,
+      "description": "Qué cubre el plan y por qué existe: el contexto que hereda cada orden que engendra."
+    },
+    {
+      "name": "priority",
+      "type": "enum",
+      "options": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+      ],
+      "default_value": "MEDIUM",
+      "is_dimension": true,
+      "description": "Prioridad que hereda cada orden engendrada: el plan es el molde de sus ocurrencias."
+    },
+    {
+      "name": "status",
+      "type": "enum",
+      "options": [
+        "ACTIVE",
+        "PAUSED",
+        "RETIRED"
+      ],
+      "default_value": "ACTIVE",
+      "is_dimension": true
+    },
+    {
+      "name": "estimated_duration_hours",
+      "type": "decimal",
+      "is_measure": true,
+      "description": "Duración estimada que hereda cada orden engendrada (horas)."
+    },
+    {
+      "name": "assignees",
+      "type": "reference",
+      "entityRef": "user",
+      "cardinality": "many",
+      "description": "Responsables que hereda cada orden engendrada."
+    },
+    {
+      "name": "assigned_group_ids",
+      "type": "reference",
+      "entityRef": "user_group",
+      "cardinality": "many",
+      "description": "Cuadrillas que hereda cada orden engendrada."
+    },
+    {
+      "name": "category",
+      "type": "enum",
+      "options": [
+        "CORRECTIVE",
+        "PREVENTIVE",
+        "PREDICTIVE",
+        "CALIBRATION",
+        "SAFETY",
+        "IMPROVEMENT"
+      ],
+      "default_value": "PREVENTIVE",
+      "is_dimension": true,
+      "description": "Categoría que hereda cada orden engendrada: el plan es preventivo por definición (default PREVENTIVE, no CORRECTIVE como la OT manual), pero una pauta telemétrica (meter_based_trigger) puede sellar sus OTs como PREDICTIVE."
+    },
+    {
+      "name": "require_location_verification",
+      "type": "boolean",
+      "default_value": "false",
+      "is_dimension": true,
+      "description": "Si la orden engendrada exige verificación de coordenadas GPS y geocerca al fichar."
+    },
+    {
+      "name": "latitude",
+      "type": "decimal",
+      "description": "Latitud del punto de verificación que hereda cada orden engendrada, en grados decimales (WGS 84): donde el técnico debe encontrarse cuando la pauta exige comprobación de ubicación."
+    },
+    {
+      "name": "longitude",
+      "type": "decimal",
+      "description": "Longitud del punto de verificación que hereda cada orden engendrada, en grados decimales (WGS 84): donde el técnico debe encontrarse cuando la pauta exige comprobación de ubicación."
+    },
+    {
+      "name": "custom_attributes",
+      "type": "json",
+      "subtype": "flat_map",
+      "is_dimension": true,
+      "description": "Campos personalizados del cliente que el molde estampa en cada orden engendrada, sin alterar el esquema."
+    },
+    {
+      "name": "recurrence_start_date",
+      "type": "epoch",
+      "description": "Primera ocurrencia teórica de la pauta (ancla del ciclo). Su día de semana (unidad WEEKS), día de mes (MONTHS) y mes+día (YEARS) fijan el patrón; recurrence_interval avanza desde esta fecha. Sin ancla no hay ciclo."
+    },
+    {
+      "name": "recurrence_interval",
+      "type": "number",
+      "default_value": 1,
+      "description": "Cada N unidades de recurrence_unit (1, 2, 3, 5… — los presets del panel). ≥1."
+    },
+    {
+      "name": "recurrence_unit",
+      "type": "enum",
+      "options": [
+        "HOURS",
+        "DAYS",
+        "WEEKS",
+        "MONTHS",
+        "YEARS"
+      ],
+      "default_value": "MONTHS",
+      "description": "Unidad del ciclo temporal."
+    },
+    {
+      "name": "recurrence_at_time",
+      "type": "string",
+      "description": "Hora local (HH:MM) de la ocurrencia, interpretada en iana_timezone. Obligatoria con unidades ≥ DAYS; con HOURS manda el minuto de recurrence_start_date."
+    },
+    {
       "name": "cron_expression",
       "type": "string",
-      "description": "Expesión CRON de Linux (ej. '0 0 1 * *') dictando el gatillo periódico temporal"
-    },
-    {
-      "name": "advance_notice_days",
-      "type": "integer",
-      "description": "Para CRON: Tolerancia de holgura. Si está seteado en 5, el sistema engendrará la Orden de Trabajo 5 días antes de la fecha teórica."
-    },
-    {
-      "name": "meter_based_trigger",
-      "type": "json",
-      "description": "Rules for triggering PM based on meter readings. e.g. { meterId: uuid, condition: '>', value: 5000, meter_interval_value: 5000 }. El campo meter_interval_value (opcional) es el REARME del ciclo tras cada disparo: el CompleteOccurrence suma value += meter_interval_value (5000 → 10000) y la pauta actualizada reprovisiona la iot_alert_rule vía Kairos. Sin intervalo, el trigger es de un solo uso."
-    },
-    {
-      "name": "advance_notice_meter_value",
-      "type": "decimal",
-      "description": "Para TELEMETRY: Holgura mecánica anticipada. Ej. Si el límite es 5000 y esto dice 200, la Orden se disparará en el 4800, fijando el Due_Date en el 5000."
+      "description": "DERIVADA — no editar a mano. La compila el cliente/orchestrator al guardar, desde el bloque recurrence_*, cuando el patrón es expresable en cron Linux de 5 campos (ej. '0 8 1 */3 *'). Patrones no expresables ('cada 2 años', 'cada 45 días') la dejan vacía: el disparo vive como EXACT_TIME en el scheduled_job a partir de next_due_date. Legado: pm-orchestrator aún la lee."
     },
     {
       "name": "iana_timezone",
       "type": "string",
-      "description": "Pilar contra DST. Dictamina en qué zona local de la física se aplica el cronograma para este mantenimiento (Ej. America/Bogota). Obligatorio si existe un cron_expression."
-    },
-    {
-      "name": "prenotify_before_minutes",
-      "type": "array",
-      "of": "integer",
-      "description": "Matriz multi-disparo. Ejemplo [1440, 30]. Inyecta la doctrina obligatoria al Interceptor para que fraccione y paralele N Entidades Sombra enfocadas en Notificaciones."
+      "description": "Pilar contra DST. Zona local donde vive la física del cronograma (Ej. America/Bogota): gobierna tanto cron_expression como recurrence_at_time. Obligatoria si existe disparo temporal."
     },
     {
       "name": "next_due_date",
@@ -61,31 +171,51 @@
       "description": "Política de recálculo del ciclo. FIXED_CALENDAR: el calendario manda — el 1 de marzo toca aunque la OT anterior se cerrara tarde (contratos, normativas). FROM_COMPLETION: el reloj arranca en el cierre real de la OT anterior (condicionados por uso real del equipo). El CompleteOccurrence del ejecutor lo consulta tras cada disparo."
     },
     {
-      "name": "status",
+      "name": "advance_notice_value",
+      "type": "number",
+      "default_value": 0,
+      "description": "Cuánto antes de la fecha teórica se GENERA la orden: 0 = en el momento. La unidad la fija advance_notice_unit."
+    },
+    {
+      "name": "advance_notice_unit",
       "type": "enum",
       "options": [
-        "ACTIVE",
-        "PAUSED",
-        "RETIRED"
+        "MINUTES",
+        "HOURS",
+        "DAYS",
+        "WEEKS"
       ],
-      "default_value": "ACTIVE",
-      "is_dimension": true
+      "default_value": "DAYS",
+      "description": "Unidad de la anticipación. Con DAYS/WEEKS, advance_notice_time fija la hora local de generación."
+    },
+    {
+      "name": "advance_notice_time",
+      "type": "string",
+      "description": "Hora local de generación (HH:MM) cuando la unidad es días o semanas: «1 día antes a las 08:00». Vacía = misma hora de la ocurrencia."
+    },
+    {
+      "name": "prenotify_before_minutes",
+      "type": "array",
+      "of": "integer",
+      "description": "Matriz multi-disparo. Ejemplo [1440, 30]. Inyecta la doctrina obligatoria al Interceptor para que fraccione y paralele N Entidades Sombra enfocadas en Notificaciones."
+    },
+    {
+      "name": "meter_based_trigger",
+      "type": "json",
+      "description": "Rules for triggering PM based on meter readings. e.g. { metric_code: 'HOURS_METER', condition: '>', value: 5000, meter_interval_value: 5000 }. El campo meter_interval_value (opcional) es el REARME del ciclo tras cada disparo: el CompleteOccurrence suma value += meter_interval_value (5000 → 10000) y la pauta actualizada reprovisiona la iot_alert_rule vía Kairos. Sin intervalo, el trigger es de un solo uso."
     }
   ],
-  "shadow_sagas_mapping": {
-    "action_type": [
-      "__const:RPC_CALL"
-    ],
-    "action_payload.entity_type": [
-      "__const:work_order"
-    ],
-    "action_payload.content.asset_id": [
-      "asset_id"
-    ],
-    "action_payload.payload.preventive_maintenance_id": [
-      "__self"
-    ]
-  },
+  "constraints": [
+    {
+      "type": "requires_any",
+      "any": [
+        "recurrence_start_date",
+        "cron_expression",
+        "meter_based_trigger"
+      ],
+      "description": "Una pauta sin disparo temporal o telemétrico no proyecta nada: fail-closed. Precedente: shift_pattern.json."
+    }
+  ],
   "event_rules": [
     {
       "rule_code": "PM_CREATED",
@@ -108,5 +238,6 @@
       "detail_type_output": "system.preventive_maintenance.deleted",
       "description": "Evento final de retiro. Permite desencadenar limpieza logística en integraciones ERP de terceros."
     }
-  ]
+  ],
+  "description": "Plan preventivo. Las trampas (scheduled_job) las crea/retira el pm-orchestrator de metri-cmms-plugin por convergencia; el motor almacena y valida."
 }
