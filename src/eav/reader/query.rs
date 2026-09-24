@@ -18,12 +18,27 @@ use tracing::debug;
 
 pub const MAX_AEVT_SCAN_CACHE_SIZE: usize = 2_000;
 
-pub static AEVT_SCAN_CACHE: Lazy<RwLock<HashMap<(String, String), Vec<String>>>> =
+/// Vida máxima de una entrada del scan-cache. OBLIGATORIA: la invalidación
+/// por escritura (writer/cache_policy) sólo alcanza a la INSTANCIA que
+/// commitó — otra instancia Lambda (o una escritura externa: sagas, composer,
+/// schedulers) no invalida nada, y sin TTL su lista quedaría congelada hasta
+/// que la instancia se recicle. Es el bug «el activo nuevo tarda en aparecer
+/// en el listado»: read-your-write se garantiza por TTL, no por invalidación.
+pub const AEVT_SCAN_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Entrada del scan-cache: los eids vivos del (tenant, tipo) y CUÁNDO se
+/// leyeron. Sin `cached_at` la entrada sería eterna.
+pub struct CachedAevtScan {
+    pub ids: Vec<String>,
+    pub cached_at: std::time::Instant,
+}
+
+pub static AEVT_SCAN_CACHE: Lazy<RwLock<HashMap<(String, String), CachedAevtScan>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// Inserta una entrada en AEVT_SCAN_CACHE asegurando que no exceda MAX_AEVT_SCAN_CACHE_SIZE.
 pub fn insert_aevt_scan_cache_entry(
-    cache: &mut HashMap<(String, String), Vec<String>>,
+    cache: &mut HashMap<(String, String), CachedAevtScan>,
     key: (String, String),
     ids: Vec<String>,
 ) {
@@ -37,7 +52,13 @@ pub fn insert_aevt_scan_cache_entry(
             cache.remove(&k);
         }
     }
-    cache.insert(key, ids);
+    cache.insert(
+        key,
+        CachedAevtScan {
+            ids,
+            cached_at: std::time::Instant::now(),
+        },
+    );
 }
 
 use aws_sdk_dynamodb::types::AttributeValue;
@@ -204,6 +225,25 @@ impl EavQueryExecutor {
         let mut ids = self
             .execute_avet_single_for_tenant(target_tenant, attr_name, value)
             .await?;
+
+        // Tolerancia de tipo textual: el mismo valor escrito como Str (tag
+        // 0x04) o Uuid (0x05) comparte forma — el AVET prefix no. Los filtros
+        // del gRPC llegan como Str aunque el attr se almacene como Uuid
+        // (parent_entity_ref, referencias): sin este reintento, la query
+        // devuelve cero filas para un datom que existe (hallazgo del
+        // pm-orchestrator: inventario de trampas siempre vacío).
+        if ids.is_empty() {
+            let alt = match value {
+                DatomValue::Str(s) => Some(DatomValue::Uuid(s.clone())),
+                DatomValue::Uuid(s) => Some(DatomValue::Str(s.clone())),
+                _ => None,
+            };
+            if let Some(alt) = alt {
+                ids = self
+                    .execute_avet_single_for_tenant(target_tenant, attr_name, &alt)
+                    .await?;
+            }
+        }
 
         if ids.is_empty()
             && tenant == "system"
@@ -431,15 +471,17 @@ impl EavQueryExecutor {
         if limit == 0 {
             if let Ok(cache) = AEVT_SCAN_CACHE.read() {
                 let cache_key = (tenant.to_string(), entity_type.to_string());
-                if let Some(cached_ids) = cache.get(&cache_key) {
-                    if !cached_ids.is_empty() {
+                if let Some(entry) = cache.get(&cache_key) {
+                    // Caducada se trata como miss: re-escanear (y repoblar).
+                    // Ésta es la corrección del read-your-write multi-instancia.
+                    if entry.cached_at.elapsed() < AEVT_SCAN_CACHE_TTL && !entry.ids.is_empty() {
                         tracing::debug!(
                             "AEVT_SCAN_CACHE HIT for tenant={}, type={}. Count={}",
                             tenant,
                             entity_type,
-                            cached_ids.len()
+                            entry.ids.len()
                         );
-                        return Ok(cached_ids.clone());
+                        return Ok(entry.ids.clone());
                     }
                 }
             }
@@ -554,6 +596,13 @@ impl EavQueryExecutor {
 fn datom_value_to_string(value: &DatomValue) -> String {
     match value {
         DatomValue::Str(s) => s.clone(),
+        // Uuid/Ref/Instant viven en el índice con la misma forma que Str/Long:
+        // sin estos brazos, TODO filtro eq sobre esos tipos devolvía cero filas
+        // aunque el item existiera (la reproducción del loop con la query por
+        // parent_entity_ref lo dejó ver: la reproyección no encontraba a sus hijos).
+        DatomValue::Uuid(s) => s.clone(),
+        DatomValue::Ref(r) => r.to_string(),
+        DatomValue::Instant(n) => n.to_string(),
         DatomValue::Long(n) => n.to_string(),
         DatomValue::Double(f) => {
             if f.fract() == 0.0 {
@@ -728,5 +777,20 @@ mod avet_dedup_tests {
         ];
         let ids = dedup_latest_asserted_by_value(raw, "WO1");
         assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn uuid_y_referencia_matchean_el_valor_exacto() {
+        // parent_entity_ref es uuid: sin su brazo en datom_value_to_string,
+        // la query AVET por la madre devolvía cero hijos (bug de la reproyección).
+        let raw = vec![
+            item("E1", 100, true, "01M365N0KHB9A4SK0ZRKEP6WAT"),
+            item("E2", 100, true, "01M365N0KHB9A4SK0ZRKEP6WA9"),
+        ];
+        let ids = dedup_latest_asserted_by_value(
+            raw,
+            &datom_value_to_string(&DatomValue::Uuid("01M365N0KHB9A4SK0ZRKEP6WAT".to_string())),
+        );
+        assert_eq!(ids, vec!["E1".to_string()]);
     }
 }

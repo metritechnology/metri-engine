@@ -28,7 +28,17 @@ use std::sync::RwLock;
 pub struct CacheEntry {
     pub is_complete: bool,
     pub map: EntityMap,
+    /// Nacimiento de la entrada: la caché es por-instancia y la invalidación
+    /// por escritura sólo limpia la instancia que escribió — otra instancia
+    /// caliente serviría el snapshot viejo INDEFINIDAMENTE. El TTL acota el
+    /// staleness entre instancias Lambda (hallazgo del molde del plan,
+    /// 2026-09-23: un detalle del plan leyó 1,5 h de retraso).
+    pub cached_at: std::time::Instant,
 }
+
+/// Vida máxima de una entrada de caché de lectura. Consciente: calienta lo
+/// caliente sin convertir la instancia en una verdad propia por siempre.
+pub const EAV_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// Global thread-safe in-memory cache for fully assembled EAV entities.
 /// Keyed by PK: "T#<tenant_id>#E#<entity_id>"
@@ -106,11 +116,12 @@ impl EavReader {
         // 1. Check in-memory cache
         if let Ok(cache) = EAV_CACHE.read() {
             if let Some(entry) = cache.get(&pk) {
+                let fresh = entry.cached_at.elapsed() <= EAV_CACHE_TTL;
                 // Las entidades transaccionales críticas de cuota no deben servirse de la caché local para evitar inconsistencias en clúster/Lambda
                 let is_quota = entry.map.contains_key("resource_domain")
                     || entry.map.contains_key("domain_quota/resource_domain");
 
-                let is_sufficient = if is_quota {
+                let is_sufficient = if !fresh || is_quota {
                     false
                 } else if entry.is_complete {
                     true
@@ -187,6 +198,7 @@ impl EavReader {
                     CacheEntry {
                         is_complete: true,
                         map: full_entity_map.clone(),
+                        cached_at: std::time::Instant::now(),
                     },
                 );
             }
@@ -588,6 +600,7 @@ impl EavReader {
                 let entry = cache.entry(pk).or_insert_with(|| CacheEntry {
                     is_complete: false,
                     map: HashMap::new(),
+                    cached_at: std::time::Instant::now(),
                 });
                 entry.map.extend(final_map);
                 cache_write_count += 1;

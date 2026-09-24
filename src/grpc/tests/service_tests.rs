@@ -136,6 +136,7 @@ async fn test_group_cycle_prevention() {
         cache.insert(
             "T#tnt_01#E#group_a".to_string(),
             CacheEntry {
+                cached_at: std::time::Instant::now(),
                 is_complete: true,
                 map: group_a,
             },
@@ -143,6 +144,7 @@ async fn test_group_cycle_prevention() {
         cache.insert(
             "T#tnt_01#E#group_b".to_string(),
             CacheEntry {
+                cached_at: std::time::Instant::now(),
                 is_complete: true,
                 map: group_b,
             },
@@ -150,6 +152,7 @@ async fn test_group_cycle_prevention() {
         cache.insert(
             "T#tnt_01#E#group_c".to_string(),
             CacheEntry {
+                cached_at: std::time::Instant::now(),
                 is_complete: true,
                 map: group_c,
             },
@@ -272,6 +275,7 @@ async fn test_cache_invalidation_pubsub() {
         cache.insert(
             entry_key.clone(),
             CacheEntry {
+                cached_at: std::time::Instant::now(),
                 is_complete: true,
                 map: HashMap::new(),
             },
@@ -995,6 +999,61 @@ async fn test_tenant_and_quota_master_crud_gates() {
     assert!(err
         .message()
         .contains("Only master tenant users can read tenants or quotas"));
+
+    // 4b. Query OWN 'domain_quota' as non-master -> the READ self-service
+    //     gate PASSES (rules.rs::is_self_service_read): the panel reads its
+    //     own plan usage (QuotaPersistenceService de metri-app). Mutating
+    //     quotas remains master-only (see 6. below) and cross-tenant reads
+    //     die in tenant isolation, not here.
+    let q_req = crate::grpc::pb::QueryRequest {
+        tenant_id: "tnt_regular".to_string(),
+        queries: {
+            let mut m = std::collections::HashMap::new();
+            m.insert(
+                "q1".to_string(),
+                crate::grpc::pb::AnalyticsRequest {
+                    tenant_id: "tnt_regular".to_string(),
+                    entity: "domain_quota".to_string(),
+                    ..Default::default()
+                },
+            );
+            m
+        },
+        ..Default::default()
+    };
+    let mut grpc_req = tonic::Request::new(q_req);
+    grpc_req
+        .metadata_mut()
+        .insert("test-tenant", "tnt_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-user", "usr_regular".parse().unwrap());
+    grpc_req
+        .metadata_mut()
+        .insert("test-roles", "regular-role".parse().unwrap());
+    let token = generate_test_token("tnt_regular", "usr_regular");
+    grpc_req
+        .metadata_mut()
+        .insert("authorization", token.parse().unwrap());
+    grpc_req
+        .extensions_mut()
+        .insert(crate::grpc::interceptors::AuthenticatedSession {
+            tenant_id: "tnt_regular".to_string(),
+            user_id: "usr_regular".to_string(),
+            jti: "test-jti".to_string(),
+        });
+
+    let res = service.query(grpc_req).await;
+    if let Err(err) = &res {
+        // La puerta maestro-only NO puede ser el fallo; otros errores
+        // posteriores (canal, OLTP) son asunto del resto del arnés.
+        assert_ne!(
+            err.code(),
+            tonic::Code::PermissionDenied,
+            "Self-service read of own quota must pass the master-only gate: {:?}",
+            err
+        );
+    }
 
     // 5. Explore 'domain_quota' as non-master user -> Expect PermissionDenied
     let exp_req = crate::grpc::pb::ExploreRequest {

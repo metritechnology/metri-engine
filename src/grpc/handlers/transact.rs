@@ -1,5 +1,6 @@
 //! Transact RPC body.
 use crate::domain::errors::{DomainError, ErrorCode};
+use crate::eav::types::datom::DatomValue;
 use crate::grpc::pb::{TransactionRequest, TransactionResponse};
 use crate::grpc::service::MetriGrpcService;
 use crate::grpc::translator;
@@ -48,6 +49,7 @@ impl MetriGrpcService {
             1 => "CREATE",
             2 => "UPDATE",
             3 => "DELETE",
+            5 => "GET",
             _ => "UNKNOWN",
         };
 
@@ -61,6 +63,72 @@ impl MetriGrpcService {
         } else {
             serde_json::Value::Object(serde_json::Map::new())
         };
+
+        // GET — lectura puntual por Transact. La reautorización Cedar en T=0
+        // del ejecutor del Hub (§10.5) lee el principal así: sin este brazo,
+        // TODO disparo moría en "Operación no soportada por OLTP: 'UNKNOWN'"
+        // — la trampa disparaba, la OT jamás nacía y el job quedaba FAILED.
+        if req.action == 5 {
+            let entity_id = if req.entity_id.is_empty() {
+                extract_entity_id(&payload_json).unwrap_or_default()
+            } else {
+                req.entity_id.clone()
+            };
+            if entity_id.is_empty() {
+                return Err(Status::invalid_argument(
+                    "GET sin entity_id: no hay entidad que leer",
+                ));
+            }
+            let reader = self.oltp_executor.pull_reader();
+            let mut attrs = reader
+                .pull(&req.tenant_id, &entity_id, None)
+                .await
+                .unwrap_or_default();
+            if attrs.is_empty() && req.tenant_id != "system" {
+                // El IAM (users, roles…) vive en la partición system: el GET de
+                // reautorización llega con el tenant del JOB y sin este
+                // fallback el principal aparecía «DESCONOCIDO» y el disparo
+                // moría aunque el usuario siguiera activo.
+                attrs = reader
+                    .pull("system", &entity_id, None)
+                    .await
+                    .unwrap_or_default();
+            }
+            if attrs.is_empty() && entity_id == "usr_system_bff" {
+                // Principal de servicio del BFF: no es una fila de IAM — es la
+                // identidad que Cedar resuelve del token HMAC que el propio
+                // interceptor ya validó al entrar. Para el GET del ejecutor
+                // (reautorización en T=0) un servicio autenticado está activo.
+                attrs.insert("status".to_string(), DatomValue::Str("ACTIVE".to_string()));
+            }
+            if attrs.is_empty() {
+                return Err(Status::not_found(format!(
+                    "GET {} {}: la entidad no existe en {} ni en system",
+                    req.entity_type, entity_id, req.tenant_id
+                )));
+            }
+            let mut value = crate::eav::writer::outbox::datom_map_to_json(&attrs);
+            if let serde_json::Value::Object(map) = &mut value {
+                map.insert(
+                    "entity_id".into(),
+                    serde_json::Value::String(entity_id.clone()),
+                );
+                map.insert(
+                    "entity_type".into(),
+                    serde_json::Value::String(req.entity_type.clone()),
+                );
+            }
+            return Ok(Response::new(TransactionResponse {
+                status: Some(crate::grpc::pb::Status {
+                    success: true,
+                    error_code: String::new(),
+                    error_message: String::new(),
+                    error_context: None,
+                }),
+                entity_id,
+                result: Some(translator::value_to_struct(&value)),
+            }));
+        }
 
         let mut request_map = serde_json::Map::new();
 

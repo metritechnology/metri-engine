@@ -175,198 +175,6 @@ async fn entidad_sin_mapping_no_proyecta_nada() {
     );
 }
 
-#[tokio::test]
-async fn preventive_maintenance_deriva_cron_del_atributo_declarado() {
-    let m = model("preventive_maintenance");
-    let payload = json!({
-        "asset_id": "01ASSET",
-        "cron_expression": "0 8 1 */6 *",
-        "iana_timezone": "America/Bogota",
-        "next_due_date": 1_780_300_800i64
-    });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
-        .await
-        .unwrap();
-    assert_eq!(
-        jobs.len(),
-        1,
-        "sin prenotify sólo existe el disparo principal"
-    );
-    assert!(matches!(jobs[0].attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "CRON"));
-    assert!(
-        matches!(jobs[0].attrs.get("trigger_expression"), Some(DatomValue::Str(s)) if s == "0 8 1 */6 *")
-    );
-}
-
-#[tokio::test]
-async fn la_condicion_fisica_gana_al_calendario() {
-    let m = model("preventive_maintenance");
-    let payload = json!({
-        "asset_id": "01ASSET",
-        "cron_expression": "0 8 1 */6 *",
-        "meter_based_trigger": { "metric_code": "VIBRATION", "operator": "GT", "threshold": 5000.0 }
-    });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
-        .await
-        .unwrap();
-    assert!(
-        matches!(jobs[0].attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "TELEMETRY")
-    );
-    assert!(
-        matches!(jobs[0].attrs.get("trigger_expression"), Some(DatomValue::Str(s)) if s == "VIBRATION > 5000"),
-        "debe emitir la gramática que exige Schedulers: {:?}",
-        jobs[0].attrs.get("trigger_expression")
-    );
-}
-
-#[tokio::test]
-async fn telemetry_omite_las_prenotificaciones() {
-    let m = model("preventive_maintenance");
-    let payload = json!({
-        "asset_id": "01ASSET",
-        "meter_based_trigger": { "metric_code": "VIBRATION", "operator": "GT", "threshold": 5000.0 },
-        "prenotify_before_minutes": [1440, 30]
-    });
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
-        .await
-        .unwrap();
-    assert_eq!(
-        jobs.len(),
-        1,
-        "una condición física no tiene 'antes' que programar"
-    );
-}
-
-#[tokio::test]
-async fn test_preventive_maintenance_saga_projection_extensions() {
-    let m = model("preventive_maintenance");
-    let payload = json!({
-        "asset_id": "01ASSET",
-        "cron_expression": "0 8 1 */6 *",
-        "iana_timezone": "America/Bogota",
-        "next_due_date": 1_780_300_800i64
-    });
-    let jobs = build_saga_projections(
-        &reader().await,
-        "tnt_1",
-        &m,
-        &payload,
-        "01PM_PARENT",
-        "01USER",
-    )
-    .await
-    .unwrap();
-    assert_eq!(jobs.len(), 1);
-
-    // RUT-H2: action_type es RPC_CALL
-    assert_eq!(
-        jobs[0].attrs.get("action_type").unwrap(),
-        &DatomValue::Str("RPC_CALL".to_string())
-    );
-
-    // RUT-H3, RUT-D5 y extensiones __const y __self dentro de action_payload
-    let ap = match jobs[0].attrs.get("action_payload").unwrap() {
-        DatomValue::Str(s) => serde_json::from_str::<serde_json::Value>(s).unwrap(),
-        o => panic!("{o:?}"),
-    };
-    assert_eq!(ap["entity_type"], json!("work_order"));
-    assert_eq!(ap["content"]["asset_id"], json!("01ASSET"));
-    assert_eq!(
-        ap["payload"]["preventive_maintenance_id"],
-        json!("01PM_PARENT")
-    );
-}
-
-/// Regresión de producción (2026-09-03): el CREATE de una pauta desde el panel
-/// llegaba al engine con el cron en `null` y el motor rechazaba con JNS_001;
-/// corregido el cron por el lado del panel, la validación de la entidad pasaba
-/// a quejarse de que `template_id` «está ausente» con el atributo presente en
-/// el payload. Este test congela el payload EXACTO que envía metri-app —con la
-/// referencia escalar, el `advance_notice_meter_value` nulo de la sección
-/// oculta y sin `id` de cliente (ADR-006)— y exige que valide y proyecte.
-///
-/// Actualización (2026-09-09): la capa work_order_template se eliminó del
-/// Códice; `template_id` ya no es atributo del modelo y el validador descarta
-/// la clave en silencio (itera el esquema, no el payload). metri-app debe
-/// dejar de enviarla; mientras tanto, el CREATE no se rompe.
-#[tokio::test]
-async fn el_payload_de_create_del_panel_valida_y_proyecta() {
-    let m = model("preventive_maintenance");
-    let payload = json!({
-        "asset_id": "01M1F9PB4RW8X73SP4F55Q7TED",
-        "template_id": "01M1EYF5MPFCH65NRRAGJJ8KY6",
-        "status": "ACTIVE",
-        "cron_expression": "0 9 * * *",
-        "iana_timezone": "UTC",
-        "advance_notice_meter_value": null,
-        "advance_notice_days": 7.0,
-        "tenant_id": "01M12AGKPCR3YDYW9HG9ZQYXS6"
-    });
-
-    // 1. La validación de la entidad acepta el payload completo y descarta
-    //    `template_id` (clave huérfana desde la retirada de la plantilla).
-    let attrs = crate::codice::validator::validate_payload(&m, &payload, "tnt_1", true)
-        .expect("el payload de Create PM Plan debe validar contra el Códice");
-    assert!(
-        attrs.get("template_id").is_none(),
-        "template_id ya no es atributo del modelo y debe descartarse: {:?}",
-        attrs.get("template_id")
-    );
-
-    // 2. Y el SagaBuilder deriva el disparo sin quejarse de fuentes de trigger.
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
-        .await
-        .expect("el saga debe proyectar con el cron presente");
-    assert_eq!(jobs.len(), 1);
-    assert!(matches!(jobs[0].attrs.get("trigger_type"), Some(DatomValue::Str(s)) if s == "CRON"));
-    assert!(matches!(
-        jobs[0].attrs.get("trigger_expression"),
-        Some(DatomValue::Str(s)) if s == "0 9 * * *"
-    ));
-}
-
-// ── Contrato del loop PM cerrado (Tramo 2 de la integración metri-schedulers) ─
-
-/// El payload que la saga proyecta para cada scheduled_job debe validar
-/// completo contra el Códice. Es la costura exacta donde el fired del ejecutor
-/// toca al motor: si un atributo proyectado no existe en el modelo, la OT
-/// jamás se creará — y el fallo se descubriría meses después, el día que
-/// tocaba el mantenimiento.
-#[tokio::test]
-async fn saga_payload_valida_contra_el_codice() {
-    let m = model("preventive_maintenance");
-    let payload = json!({
-        "asset_id": "01ASSET",
-        "cron_expression": "0 9 * * *",
-        "iana_timezone": "UTC",
-        "next_due_date": 1767225600000i64,
-        "recurrence_basis": "FIXED_CALENDAR"
-    });
-
-    let jobs = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
-        .await
-        .expect("la proyección debe validar");
-    assert!(
-        !jobs.is_empty(),
-        "una pauta cron debe proyectar al menos el job principal"
-    );
-
-    let job_model = model("scheduled_job");
-    for job in &jobs {
-        let attrs_json = crate::eav::writer::outbox::datom_map_to_json(&job.attrs);
-        crate::codice::validator::validate_payload(&job_model, &attrs_json, "tnt_1", true)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "el payload proyectado del job debe validar contra el Códice: {e:?}\n{attrs_json}"
-                )
-            });
-    }
-}
-
-/// La trazabilidad del loop: una OT generada por un disparo lleva la pauta y
-/// el job que la engendraron. Ambas referencias deben existir en el modelo —
-/// antes del Tramo 2 el validador las rechazaría y el fired del Hub habría
-/// muerto con un CDX_001 el día del mantenimiento.
 #[test]
 fn work_order_de_trazabilidad_valida_contra_codice() {
     let m = model("work_order");
@@ -404,3 +212,137 @@ fn constraint_unico_de_trazabilidad_compila() {
         m.constraints
     );
 }
+
+// ── P0c: el diff de convergencia de la reproyección ─────────────────────────
+
+fn proj(hash: &str) -> SagaProjection {
+    let mut attrs = HashMap::new();
+    attrs.insert(
+        "idempotency_hash".to_string(),
+        DatomValue::Str(hash.to_string()),
+    );
+    SagaProjection {
+        entity_type: "scheduled_job".to_string(),
+        entity_id: format!("01J_{hash}"),
+        attrs,
+    }
+}
+
+fn live(id: &str, hash: Option<&str>, status: &str) -> LiveSagaJob {
+    LiveSagaJob {
+        job_id: id.to_string(),
+        idempotency_hash: hash.map(str::to_string),
+        status: status.to_string(),
+    }
+}
+
+fn hashes_of(projs: &[SagaProjection]) -> Vec<String> {
+    projs
+        .iter()
+        .map(|p| match p.attrs.get("idempotency_hash") {
+            Some(DatomValue::Str(h)) => h.clone(),
+            _ => String::new(),
+        })
+        .collect()
+}
+
+/// Editar el cron de la madre: el job viejo queda huérfano (muere) y el nuevo
+/// nace — nunca coexisten dos verdades del calendario.
+#[test]
+fn diff_cron_editado_mata_el_viejo_y_crea_el_nuevo() {
+    let recon = diff_sagas(
+        vec![proj("HASH_NUEVO")],
+        vec![live("01JOB_A", Some("HASH_VIEJO"), "ACTIVE")],
+        "ACTIVE",
+    );
+    assert_eq!(recon.to_delete, vec!["01JOB_A".to_string()]);
+    assert_eq!(hashes_of(&recon.to_create), vec!["HASH_NUEVO".to_string()]);
+    assert!(recon.to_restatus.is_empty());
+}
+
+/// Pausar la madre: el hash sigue vivo — el job NO muere, converge a SUSPENDED
+/// (Chronos lo mapea a DISABLED sin destruirlo: reactivar es barato).
+#[test]
+fn diff_pausa_convierte_el_estado_sin_destruir() {
+    let recon = diff_sagas(
+        vec![proj("HASH_A")],
+        vec![live("01JOB_A", Some("HASH_A"), "ACTIVE")],
+        "SUSPENDED",
+    );
+    assert!(recon.to_delete.is_empty());
+    assert!(recon.to_create.is_empty());
+    assert_eq!(
+        recon.to_restatus,
+        vec![("01JOB_A".to_string(), "SUSPENDED".to_string())]
+    );
+}
+
+/// Un update que no toca el calendario ni la salud: nada que hacer.
+#[test]
+fn diff_sin_cambios_es_noop() {
+    let recon = diff_sagas(
+        vec![proj("HASH_A")],
+        vec![live("01JOB_A", Some("HASH_A"), "ACTIVE")],
+        "ACTIVE",
+    );
+    assert!(recon.to_create.is_empty());
+    assert!(recon.to_delete.is_empty());
+    assert!(recon.to_restatus.is_empty());
+}
+
+/// COMPLETED cerró su ciclo: ni se resucita ni se suspende — la bitácora del
+/// pasado no se reescribe.
+#[test]
+fn diff_no_toca_jobs_con_ciclo_cerrado() {
+    let recon = diff_sagas(
+        vec![proj("HASH_A")],
+        vec![live("01JOB_A", Some("HASH_A"), "COMPLETED")],
+        "SUSPENDED",
+    );
+    assert!(recon.to_restatus.is_empty());
+    assert!(recon.to_delete.is_empty());
+}
+
+/// Un job sin hash no tiene identidad comparable: se conserva (conservador) y
+/// no cuenta como huérfano.
+#[test]
+fn diff_conserva_el_job_sin_hash() {
+    let recon = diff_sagas(
+        vec![proj("HASH_A")],
+        vec![live("01JOB_LEGACY", None, "ACTIVE")],
+        "ACTIVE",
+    );
+    assert!(recon.to_delete.is_empty());
+    assert!(recon.to_restatus.is_empty());
+}
+
+/// Un aviso previo nuevo (prenotify) sólo añade su job: el principal sigue
+/// vivo con su hash intacto.
+#[test]
+fn diff_prenotify_nuevo_solo_crea_el_suyo() {
+    let recon = diff_sagas(
+        vec![proj("HASH_MAIN"), proj("HASH_PRE_1440")],
+        vec![live("01JOB_MAIN", Some("HASH_MAIN"), "ACTIVE")],
+        "ACTIVE",
+    );
+    assert!(recon.to_delete.is_empty());
+    assert_eq!(
+        hashes_of(&recon.to_create),
+        vec!["HASH_PRE_1440".to_string()]
+    );
+}
+
+/// La salud de la madre dicta el estado de sus trampas.
+#[test]
+fn desired_status_sigue_la_salud_de_la_madre() {
+    assert_eq!(desired_job_status(None), "ACTIVE");
+    assert_eq!(desired_job_status(Some("ACTIVE")), "ACTIVE");
+    assert_eq!(desired_job_status(Some("PAUSED")), "SUSPENDED");
+    assert_eq!(desired_job_status(Some("RETIRED")), "SUSPENDED");
+}
+
+// NOTA (PLAN_DESCACOPLE_PM_ENGINE.md D2): los tests que ejercitaban la
+// proyección de `preventive_maintenance` (trigger cron/telemetría, molde,
+// anticipación) se retiraron con el mapping — la pauta ya no proyecta. La
+// cobertura del SagaBuilder genérico vive en los tests de `reminder` y en los
+// del pm-orchestrator (metri-cmms-plugin/internal/usecases).

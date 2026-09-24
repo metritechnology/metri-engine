@@ -54,6 +54,23 @@ impl SystemSecurityRules {
         entity_type == "tenant_plugin" && row_tenant_id == caller_tenant_id
     }
 
+    /// Autoservicio de LECTURA: qué filas de sistema puede LEER un NO-maestro
+    /// de su propio tenant. A `tenant_plugin` (mutación vía
+    /// `is_self_service_row`) se suma `domain_quota`: el panel consulta la fila
+    /// de cuota PROPIA para pintar el uso del plan
+    /// (QuotaPersistenceService de metri-app) y el BFF no expone endpoint de
+    /// cuotas. Sólo afecta la puerta de LECTURA del Query — mutar cuotas
+    /// sigue siendo maestro-only (validations.rs usa `is_self_service_row`,
+    /// que NO incluye `domain_quota`) y la exploración queda cerrada.
+    pub fn is_self_service_read(
+        entity_type: &str,
+        row_tenant_id: &str,
+        caller_tenant_id: &str,
+    ) -> bool {
+        (entity_type == "tenant_plugin" || entity_type == "domain_quota")
+            && row_tenant_id == caller_tenant_id
+    }
+
     /// Autorización CRUD (Query, Explore, Mutation) sobre un tipo de entidad.
     /// Las entidades maestro-only solo son accesibles a usuarios del tenant
     /// maestro o a la cuenta BFF de sistema.

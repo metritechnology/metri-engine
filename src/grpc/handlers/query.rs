@@ -82,11 +82,13 @@ impl MetriGrpcService {
             .await?;
 
         // Only master tenant users (or system BFF) can query tenants or quotas.
-        // Excepción de autoservicio: leer la fila `tenant_plugin` PROPIA es
-        // parte del panel de módulos del tenant (rules.rs::is_self_service_row);
-        // el scope de la consulta (`req.tenant_id`) es el tenant de la fila.
+        // Excepciones de autoservicio (LECTURA de la fila PROPIA): la config
+        // de módulos `tenant_plugin` y la cuota `domain_quota` del propio
+        // tenant — el panel pinta el uso del plan con ella
+        // (rules.rs::is_self_service_read); el scope de la consulta
+        // (`req.tenant_id`) es el tenant de la fila.
         for entity in &query_entities {
-            if crate::cedar::SystemSecurityRules::is_self_service_row(
+            if crate::cedar::SystemSecurityRules::is_self_service_read(
                 entity,
                 &req.tenant_id,
                 &authenticated_ctx.tenant_id,

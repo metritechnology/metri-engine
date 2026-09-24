@@ -8,7 +8,7 @@
 //!
 //! El builder no inventa valores: el trigger se deriva de atributos declarados en la madre.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -237,6 +237,92 @@ async fn resolve_source(
     }
 }
 
+/// Job vivo de una madre, leído por AVET + pull para el diff de convergencia.
+#[derive(Debug, Clone)]
+pub struct LiveSagaJob {
+    pub job_id: String,
+    pub idempotency_hash: Option<String>,
+    pub status: String,
+}
+
+/// Convergencia de las sagas de una madre que se actualiza (P0c).
+#[derive(Debug, Clone, Default)]
+pub struct SagaReconciliation {
+    /// Jobs que deben nacer en la misma TX que el update de la madre.
+    pub to_create: Vec<SagaProjection>,
+    /// Jobs huérfanos (hash que la madre ya no declara): se retiran tras el commit.
+    pub to_delete: Vec<String>,
+    /// Jobs en ciclo activo cuyo estado diverge del dictado por la madre.
+    pub to_restatus: Vec<(String, String)>,
+}
+
+/// El estado que la salud de la madre dicta para sus trampas: una madre
+/// PAUSED/RETIRED no engendra — sus jobs viven SUSPENDED (Chronos los mapea a
+/// DISABLED sin destruirlos: reactivar es barato y no recalcula nada).
+pub fn desired_job_status(mother_status: Option<&str>) -> &'static str {
+    match mother_status {
+        Some("ACTIVE") | None => "ACTIVE",
+        Some(_) => "SUSPENDED",
+    }
+}
+
+fn projection_hash(p: &SagaProjection) -> Option<&str> {
+    match p.attrs.get("idempotency_hash") {
+        Some(DatomValue::Str(h)) => Some(h.as_str()),
+        _ => None,
+    }
+}
+
+/// Diff puro de convergencia (P0c). `desired` ya lleva el estado dictado por la
+/// salud de la madre. Un hash presente en lo vivo se conserva (salvo divergencia
+/// de estado en ciclo activo); un hash sin job vivo nace; un job con hash
+/// huérfano muere. COMPLETED/FAILED cerraron su ciclo y no se tocan: la bitácora
+/// del pasado no se reescribe.
+pub fn diff_sagas(
+    desired: Vec<SagaProjection>,
+    live: Vec<LiveSagaJob>,
+    desired_status: &str,
+) -> SagaReconciliation {
+    let mut pending: HashSet<String> = desired
+        .iter()
+        .filter_map(projection_hash)
+        .map(str::to_string)
+        .collect();
+
+    let mut to_delete = Vec::new();
+    let mut to_restatus = Vec::new();
+    for job in &live {
+        let Some(hash) = job.idempotency_hash.as_deref() else {
+            // Sin hash no hay identidad que comparar: se conserva (conservador).
+            continue;
+        };
+        if pending.remove(hash) {
+            if matches!(job.status.as_str(), "ACTIVE" | "SUSPENDED" | "PENDING")
+                && job.status != desired_status
+            {
+                to_restatus.push((job.job_id.clone(), desired_status.to_string()));
+            }
+        } else {
+            to_delete.push(job.job_id.clone());
+        }
+    }
+
+    let to_create = desired
+        .into_iter()
+        .filter(|p| {
+            projection_hash(p)
+                .map(|h| pending.contains(h))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    SagaReconciliation {
+        to_create,
+        to_delete,
+        to_restatus,
+    }
+}
+
 /// Construye las proyecciones `scheduled_job` de una entidad madre recién creada.
 ///
 /// Emite un Job por cada offset de pre-notificación **más** el disparo principal.
@@ -332,11 +418,6 @@ pub async fn build_saga_projections(
         obj.insert("action_type".into(), json!("DISPATCH_NOTIFICATION"));
         obj.insert("status".into(), json!("ACTIVE"));
         obj.insert("run_count".into(), json!(0));
-        // El offset entra en el hash: dos avisos del mismo padre no deben deduplicarse entre sí.
-        obj.insert(
-            "idempotency_hash".into(),
-            json!(sha256_hex(&[parent_id, &expr, &offset_min.to_string()])),
-        );
 
         let mut action_payload = Map::new();
         action_payload.insert("source_entity".into(), json!(model.entity));
@@ -354,6 +435,27 @@ pub async fn build_saga_projections(
                 assoc_path(&mut obj, dest, v);
             }
         }
+
+        // El hash de idempotencia cubre expr, offset y AHORA el action_payload
+        // completo. El payload es ESTÁTICO en T=0 — AWS lo reproduce meses
+        // después tal como nació — así que cualquier cambio del molde (título,
+        // prioridad, duración, asignados…) cambia el hash y la convergencia de
+        // la saga re-hornea la trampa con el payload fresco. Sin esto, editar
+        // la prioridad del plan dejaba la trampa sirviendo el payload viejo
+        // para siempre (hallazgo del diseño del plan, 2026-09-23).
+        let payload_fingerprint = obj
+            .get("action_payload")
+            .and_then(|v| serde_json::to_string(v).ok())
+            .unwrap_or_default();
+        obj.insert(
+            "idempotency_hash".into(),
+            json!(sha256_hex(&[
+                parent_id,
+                &expr,
+                &offset_min.to_string(),
+                &payload_fingerprint
+            ])),
+        );
 
         let job_payload = Value::Object(obj);
         let attrs =

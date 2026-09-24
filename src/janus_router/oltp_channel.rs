@@ -20,10 +20,14 @@ use tracing::{error, info, warn};
 
 use crate::codice::{global as codice_global, validator};
 use crate::domain::errors::{DomainError, ErrorCode};
+use crate::eav::reader::query::{EavQueryExecutor, NativeQueryPlan};
 use crate::eav::types::datom::DatomValue;
 use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
 use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
+use crate::janus_router::saga::{
+    self, build_saga_projections, desired_job_status, diff_sagas, LiveSagaJob, SagaReconciliation,
+};
 use crate::janus_router::ulid;
 
 // ── OltpChannel ───────────────────────────────────────────────────────────────
@@ -300,40 +304,87 @@ impl OltpChannel {
             suppress_events,
         };
 
-        // Proyección de sagas: sólo en CREATE y sólo si la madre declara el mapping.
-        // Los scheduled_job resultantes viajan en la MISMA TX ACID (Componente Externo 05 §6).
-        let projections = if op == TransactOp::Create && model.shadow_sagas_mapping.is_some() {
-            match crate::janus_router::saga::build_saga_projections(
-                &self.writer.reader(),
-                tenant_id,
-                model,
-                &payload,
-                &entity_id,
-                &ctx.user_id,
-            )
-            .await
-            {
-                Ok(p) => {
-                    if !p.is_empty() {
+        // Proyección y convergencia de sagas:
+        //
+        // CREATE — los jobs nacen en la MISMA TX ACID que la madre (Componente
+        //          Externo 05 §6), como siempre.
+        // UPDATE — diff por idempotency_hash: los faltantes nacen en la misma TX;
+        //          huérfanos y estados divergentes se reconcilian DESPUÉS del
+        //          commit. La madre nunca queda sin sus trampas nuevas; si la
+        //          reconciliación muere a medias el error es ruidoso y el
+        //          reintento del usuario sana (retirar huérfanos es idempotente).
+        // DELETE — los jobs se retiran ANTES que la madre: una trampa huérfana
+        //          seguiría engendrando OTs para una madre que ya no existe.
+        let mut projections: Vec<saga::SagaProjection> = Vec::new();
+        let mut pending_reconciliation: Option<SagaReconciliation> = None;
+        if model.shadow_sagas_mapping.is_some() {
+            match op {
+                TransactOp::Create => {
+                    projections = match build_saga_projections(
+                        &self.writer.reader(),
+                        tenant_id,
+                        model,
+                        &payload,
+                        &entity_id,
+                        &ctx.user_id,
+                    )
+                    .await
+                    {
+                        Ok(p) => {
+                            if !p.is_empty() {
+                                info!(
+                                    entity = %entity_type,
+                                    parent = %entity_id,
+                                    jobs   = p.len(),
+                                    "[OltpChannel] SagaBuilder proyecta scheduled_job(s) en la misma TX"
+                                );
+                            }
+                            p
+                        }
+                        Err(e) => {
+                            // Falla la TX entera: una madre sin sus sagas es un mantenimiento que
+                            // nunca se ejecutará, y nadie se enteraría hasta el día que tocaba.
+                            error!(entity = %entity_type, err = ?e, "[OltpChannel] SagaBuilder falló");
+                            return Err(e);
+                        }
+                    };
+                }
+                TransactOp::Update => {
+                    let recon = self
+                        .plan_saga_reconciliation(
+                            tenant_id,
+                            model,
+                            &payload,
+                            &entity_id,
+                            &ctx.user_id,
+                        )
+                        .await?;
+                    if !recon.to_create.is_empty() {
                         info!(
                             entity = %entity_type,
                             parent = %entity_id,
-                            jobs   = p.len(),
-                            "[OltpChannel] SagaBuilder proyecta scheduled_job(s) en la misma TX"
+                            creates = recon.to_create.len(),
+                            "[OltpChannel] reproyección: trampas nuevas nacen con el update"
                         );
                     }
-                    p
+                    if !recon.to_delete.is_empty() || !recon.to_restatus.is_empty() {
+                        warn!(
+                            entity = %entity_type,
+                            parent = %entity_id,
+                            deletes = recon.to_delete.len(),
+                            restatus = recon.to_restatus.len(),
+                            "[OltpChannel] reproyección: trampas viejas se retiran tras el commit"
+                        );
+                    }
+                    projections = recon.to_create.clone();
+                    pending_reconciliation = Some(recon);
                 }
-                Err(e) => {
-                    // Falla la TX entera: una madre sin sus sagas es un mantenimiento que
-                    // nunca se ejecutará, y nadie se enteraría hasta el día que tocaba.
-                    error!(entity = %entity_type, err = ?e, "[OltpChannel] SagaBuilder falló");
-                    return Err(e);
+                TransactOp::Delete => {
+                    self.purge_saga_children(tenant_id, &entity_id, &ctx.user_id)
+                        .await?;
                 }
             }
-        } else {
-            Vec::new()
-        };
+        }
 
         // Colisión de tx (EAV_TX_004): la condición append-only protegió el
         // histórico — el reintento mintea un tx nuevo y es siempre seguro.
@@ -431,10 +482,64 @@ impl OltpChannel {
                             );
                         }
                     }
+
+                    // Las PROYECCIONES también son scheduled_job y el Hub sólo
+                    // aprende de ellas por el sobre del contrato: el outbox
+                    // viaja en formato legacy ({entity}.{op}) que la regla de
+                    // Chronos no matchea. Sin esto, la trampa jamás se arma y
+                    // el mantenimiento no dispara (hallazgo E2E 2026-09-22).
+                    for proj in &projections {
+                        if proj.entity_type != "scheduled_job" {
+                            continue;
+                        }
+                        let proj_result = crate::eav::writer::TransactResult {
+                            entity_id: proj.entity_id.clone(),
+                            tx_id: result.tx_id,
+                            datoms: 0,
+                            outbox_count: 0,
+                            mutation_ulid: ulid::generate(),
+                            delta: None,
+                            deleted_attrs: None,
+                        };
+                        let proj_payload =
+                            crate::eav::writer::outbox::datom_map_to_json(&proj.attrs);
+                        if let Some((detail_type, detail)) =
+                            crate::infrastructure::domain_event_bus::build_scheduled_job_detail(
+                                &proj_result,
+                                "CREATE",
+                                &proj_payload,
+                                tenant_id,
+                            )
+                        {
+                            crate::application::ports::publish_detached(
+                                self.event_publisher.clone(),
+                                detail_type,
+                                detail,
+                            );
+                        }
+                    }
                 }
 
                 if let Ok(mut cache) = crate::eav::reader::query::AEVT_SCAN_CACHE.write() {
                     cache.remove(&(tenant_id.clone(), entity_type.clone()));
+                }
+
+                // Convergencia post-commit (P0c): la madre y sus trampas nuevas
+                // ya viven; retirar las viejas puede fallar sin corromper nada.
+                // Ruidoso a propósito — el reintento del update sana porque el
+                // diff recalcula y retirar huérfanos es idempotente.
+                if let Some(recon) = pending_reconciliation {
+                    if let Err(e) = self
+                        .apply_saga_reconciliation(tenant_id, &ctx.user_id, recon)
+                        .await
+                    {
+                        error!(
+                            entity = %entity_type,
+                            err = ?e,
+                            "[OltpChannel] ⚠️ el update vivió pero sus trampas viejas siguen armadas — reintentar el update para converger"
+                        );
+                        return Err(e);
+                    }
                 }
 
                 Ok(json!({
@@ -456,6 +561,189 @@ impl OltpChannel {
                 Err(e)
             }
         }
+    }
+
+    /// P0c — plan de convergencia de las sagas de una madre que se actualiza.
+    ///
+    /// Falla el update si el estado post-update no puede derivar trigger: la
+    /// misma doctrina fail-closed del CREATE (una madre sin sagas es un
+    /// mantenimiento que nunca se ejecutará).
+    async fn plan_saga_reconciliation(
+        &self,
+        tenant_id: &str,
+        model: &crate::codice::registry::EntityModel,
+        delta: &Value,
+        entity_id: &str,
+        actor: &str,
+    ) -> Result<SagaReconciliation, DomainError> {
+        let reader = self.writer.reader();
+
+        // Estado post-update: lo vivo hoy + el parche que esta TX va a escribir.
+        let current = reader.pull(tenant_id, entity_id, None).await?;
+        let mut merged = crate::eav::writer::outbox::datom_map_to_json(&current);
+        if let (Value::Object(merged_map), Value::Object(delta_map)) = (&mut merged, delta) {
+            for (k, v) in delta_map {
+                if !v.is_null() {
+                    merged_map.insert(k.clone(), v.clone());
+                }
+            }
+        }
+
+        let mut desired =
+            build_saga_projections(&reader, tenant_id, model, &merged, entity_id, actor).await?;
+
+        // La salud de la madre manda sobre el estado de sus trampas: una madre
+        // PAUSED no engendra — los jobs que nazcan llegan SUSPENDED, y los vivos
+        // convergen a SUSPENDED sin ser destruidos (reactivar es barato).
+        let mother_status = desired_job_status(merged.get("status").and_then(|v| v.as_str()));
+        for proj in &mut desired {
+            proj.attrs.insert(
+                "status".to_string(),
+                DatomValue::Str(mother_status.to_string()),
+            );
+        }
+
+        let live = self.list_saga_jobs(tenant_id, entity_id).await?;
+        Ok(diff_sagas(desired, live, mother_status))
+    }
+
+    /// P0c — los jobs vivos de una madre (AVET por `parent_entity_ref`).
+    async fn list_saga_jobs(
+        &self,
+        tenant_id: &str,
+        parent_id: &str,
+    ) -> Result<Vec<LiveSagaJob>, DomainError> {
+        let query = EavQueryExecutor::new(
+            std::sync::Arc::clone(self.writer.client()),
+            self.writer.table().to_string(),
+        );
+        let job_ids = query
+            .execute_native_plan(&NativeQueryPlan::AvetSingle {
+                tenant_id: tenant_id.to_string(),
+                attr_name: "parent_entity_ref".to_string(),
+                value: DatomValue::Uuid(parent_id.to_string()),
+            })
+            .await?;
+
+        let reader = self.writer.reader();
+        let mut live = Vec::with_capacity(job_ids.len());
+        for job_id in job_ids {
+            let attrs = reader
+                .pull(tenant_id, &job_id, Some(&["idempotency_hash", "status"]))
+                .await?;
+            // El índice AVET puede exhumar ids de jobs ya borrados (sus datoms
+            // retractados siguen indexados por valor). Un pull sin attrs vivos
+            // es un cadáver: NO es hijo que purgar — borrarlo de nuevo sería
+            // EAV_005 y abortaría el retiro de la madre entera (hallazgo E2E).
+            if attrs.is_empty() {
+                continue;
+            }
+            let hash = match attrs.get("idempotency_hash") {
+                Some(DatomValue::Str(h)) => Some(h.clone()),
+                _ => None,
+            };
+            if hash.is_none() {
+                warn!(
+                    job = %job_id,
+                    parent = %parent_id,
+                    "[OltpChannel] job sin idempotency_hash — se conserva sin converger (conservador)"
+                );
+            }
+            let status = match attrs.get("status") {
+                Some(DatomValue::Str(s)) => s.clone(),
+                _ => String::new(),
+            };
+            live.push(LiveSagaJob {
+                job_id,
+                idempotency_hash: hash,
+                status,
+            });
+        }
+        Ok(live)
+    }
+
+    /// P0c — aplica la convergencia calculada. Cada escritura es un Transact
+    /// completo del canal: valida, escribe y PUBLICA el sobre que metri-schedulers
+    /// consume (`scheduled_job.updated/deleted`) para mover las trampas de AWS.
+    async fn apply_saga_reconciliation(
+        &self,
+        tenant_id: &str,
+        actor: &str,
+        recon: SagaReconciliation,
+    ) -> Result<(), DomainError> {
+        for (job_id, status) in recon.to_restatus {
+            self.transact_scheduled_job(
+                tenant_id,
+                actor,
+                "UPDATE",
+                json!({ "id": job_id, "status": status }),
+            )
+            .await?;
+        }
+        for job_id in recon.to_delete {
+            self.transact_scheduled_job(tenant_id, actor, "DELETE", json!({ "id": job_id }))
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// P0c — retiro de la madre: sus trampas mueren primero, mientras la madre
+    /// aún vive (si el borrado de la madre fallara, el reintento sana; al
+    /// revés quedarían trampas fantasma engendrando OTs de una madre muerta).
+    async fn purge_saga_children(
+        &self,
+        tenant_id: &str,
+        entity_id: &str,
+        actor: &str,
+    ) -> Result<(), DomainError> {
+        let live = self.list_saga_jobs(tenant_id, entity_id).await?;
+        for job in &live {
+            self.transact_scheduled_job(tenant_id, actor, "DELETE", json!({ "id": job.job_id }))
+                .await?;
+        }
+        if !live.is_empty() {
+            info!(
+                parent = %entity_id,
+                jobs = live.len(),
+                "[OltpChannel] sagas retiradas antes que la madre"
+            );
+        }
+        Ok(())
+    }
+
+    /// Transact sintético sobre un scheduled_job, reentrando por el canal:
+    /// hereda validación, bitácora y — lo decisivo — la publicación del sobre
+    /// metri-contracts que mueve la trampa de EventBridge. Sin reentrada, el
+    /// job moriría en DynamoDB y la trampa de AWS seguiría viva.
+    async fn transact_scheduled_job(
+        &self,
+        tenant_id: &str,
+        actor: &str,
+        operation: &str,
+        payload: Value,
+    ) -> Result<(), DomainError> {
+        let model = codice_global().get_model("scheduled_job").ok_or_else(|| {
+            DomainError::janus(
+                ErrorCode::Jns001,
+                "[OltpChannel] 'scheduled_job' no está en el Códice".to_string(),
+            )
+        })?;
+        let op = parse_op(operation)?;
+        let mut request = serde_json::Map::new();
+        request.insert("payload".to_string(), payload);
+        let ctx = IopContext::new(
+            tenant_id.to_string(),
+            actor.to_string(),
+            "scheduled_job".to_string(),
+            operation.to_string(),
+            request,
+        );
+        // La reentrada es finita por construcción (scheduled_job no declara
+        // shadow_sagas_mapping), pero el compilador no lo sabe: Box::pin corta
+        // el tamaño infinito del future recursivo.
+        Box::pin(self.route_single(ctx, model, op))
+            .await
+            .map(|_| ())
     }
 
     /// Prepara el payload convirtiendo strings a números/booleanos nativos y ejecutando lógicas auto-generadas de Códice (versión estática para tokio::spawn).
