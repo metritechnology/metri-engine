@@ -873,7 +873,7 @@ Los **gates ROI** son condiciones medibles con los datos del shadow/métricas (�
 
 ## 15. Definition of Done
 
-> **Estado (2026-09-25):** implementación de código completa y verificada hasta `cargo check --lib` + `cargo fmt --check` + compilación de tests. La EJECUCIÓN de `cargo test` quedó bloqueada en la máquina de desarrollo por la licencia de Xcode sin aceptar (`sudo xcodebuild -license accept`, requiere admin) — el paso de linkeo de los binarios de test la requiere. Ejecutar tras aceptar: `make test` y `make test-integration` (con `make infra && make seed`). Los ítems operativos (gates ROI, T5/T6) siguen pendientes por diseño.
+> **Estado (2026-09-25):** implementación completa y verificada: `cargo build --all-targets` limpio, `cargo test --lib` 510/510 ✓, `cargo fmt --check` ✓, clippy sin hallazgos nuevos en el código de la caché. (La licencia de Xcode sin aceptar en la máquina solo afecta al shim `cc` por defecto; se ejecutó con el toolchain de CommandLineTools: `PATH=/Library/Developer/CommandLineTools/usr/bin:$PATH CC=.../clang SDKROOT=.../SDKs/MacOSX.sdk`. El CI de GitHub ejecuta en Linux y es el gate definitivo.) Pendientes: `make test-integration` con DynamoDB Local y los ítems operativos (gates ROI, T5/T6).
 
 - [ ] `make ci` verde: fmt, docs check, result-pattern strict, clippy (≤ línea base), `cargo test --lib`.
 - [ ] `make infra && make seed && make test-integration` verde con la tabla local creada.

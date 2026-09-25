@@ -95,6 +95,7 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
         oltp_executor: oltp_exec,
         eav_writer,
         janus_router,
+        query_cache: std::sync::Arc::new(metri_engine::janus::cache::QueryCacheFrontend::disabled()),
         audit_interceptor,
         athena_engine: None,
         moira_emitter: None,

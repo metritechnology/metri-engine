@@ -1,12 +1,12 @@
 //! OLAP channel execution — compile to FBS and query Athena.
 use crate::domain::protocols::{CacheEntry, IQueryEngine, QueryResults};
 use crate::janus::ast_compiler::compile_ast_internal;
-use crate::janus::cache::{self, CacheCandidate, CacheChannel, LookupOutcome, QueryCacheFrontend};
+use crate::janus::cache::{self, CacheCandidate, CacheChannel, LookupOutcome};
 use crate::janus::fbs::AnalyticsRequestT;
 use crate::janus::normalizer::normalize_chunk;
 use crate::janus::router::post_processor;
 use crate::janus::router::translator::analytics_request_to_json;
-use crate::janus::router::{CedarCtx, QueryChunk};
+use crate::janus::router::{CedarCtx, QueryChunk, QueryExecCtx};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -16,10 +16,13 @@ pub async fn execute_olap_query(
     cedar_ctx: &CedarCtx,
     schema: &Value,
     athena_engine: Option<&Arc<dyn IQueryEngine>>,
-    explain_plan: bool,
-    cache: &QueryCacheFrontend,
+    ctx: QueryExecCtx<'_>,
     start_time: std::time::Instant,
 ) -> Vec<QueryChunk> {
+    let QueryExecCtx {
+        explain_plan,
+        cache,
+    } = ctx;
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
     let query_desc_json = analytics_request_to_json(query_map);
 

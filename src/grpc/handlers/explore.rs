@@ -264,8 +264,10 @@ impl MetriGrpcService {
                 &cedar_ctx,
                 &exec,
                 self.athena_engine.as_ref(),
-                false,
-                &self.query_cache,
+                crate::janus::router::QueryExecCtx {
+                    explain_plan: false,
+                    cache: &self.query_cache,
+                },
             )
             .await;
 

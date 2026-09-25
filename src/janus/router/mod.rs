@@ -104,8 +104,10 @@ pub async fn run_query_pipeline(
                 &cedar,
                 &exec_clone,
                 athena_clone.as_ref(),
-                explain_plan,
-                &cache_clone,
+                QueryExecCtx {
+                    explain_plan,
+                    cache: &cache_clone,
+                },
             )
             .await
         }));
@@ -131,6 +133,13 @@ pub async fn run_query_pipeline(
 
 // ── process_single_query ──────────────────────────────────────────────────────
 
+/// Contexto de ejecución del read path — lo que viaja junto por los pasos
+/// 4-8 además de la petición misma: el dry-run flag y el frontend de caché.
+pub struct QueryExecCtx<'a> {
+    pub explain_plan: bool,
+    pub cache: &'a QueryCacheFrontend,
+}
+
 /// Procesa un sub-query individual (Pasos 4–8).
 pub async fn process_single_query(
     query_key: &str,
@@ -138,8 +147,7 @@ pub async fn process_single_query(
     cedar_ctx: &CedarCtx,
     executor: &OltpExecutor,
     athena_engine: Option<&Arc<dyn IQueryEngine>>,
-    explain_plan: bool,
-    cache: &QueryCacheFrontend,
+    ctx: QueryExecCtx<'_>,
 ) -> Vec<QueryChunk> {
     let start_time = std::time::Instant::now();
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
@@ -159,21 +167,13 @@ pub async fn process_single_query(
             cedar_ctx,
             &schema,
             athena_engine,
-            explain_plan,
-            cache,
+            ctx,
             start_time,
         )
         .await
     } else {
         oltp::execute_oltp_query(
-            query_key,
-            query_map,
-            cedar_ctx,
-            &schema,
-            executor,
-            explain_plan,
-            cache,
-            start_time,
+            query_key, query_map, cedar_ctx, &schema, executor, ctx, start_time,
         )
         .await
     }

@@ -253,8 +253,10 @@ impl MetriGrpcService {
                         &cedar,
                         &exec,
                         athena.as_ref(),
-                        explain_plan,
-                        &cache_qk,
+                        crate::janus::router::QueryExecCtx {
+                            explain_plan,
+                            cache: &cache_qk,
+                        },
                     )
                     .await;
                     for chunk in chunks {

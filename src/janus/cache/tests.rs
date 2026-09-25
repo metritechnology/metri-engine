@@ -102,8 +102,10 @@ fn entry(tenant: &str, expires_at: i64) -> CacheEntry {
 }
 
 fn ddb_frontend(backend: Arc<dyn IQueryCache>) -> QueryCacheFrontend {
-    let mut policy = QueryCachePolicy::default();
-    policy.mode = CacheMode::Ddb;
+    let policy = QueryCachePolicy {
+        mode: CacheMode::Ddb,
+        ..QueryCachePolicy::default()
+    };
     QueryCacheFrontend::ddb(backend, policy).with_clock(test_now)
 }
 
@@ -169,9 +171,14 @@ fn gate_history_path_bypasses() {
 
 #[test]
 fn gate_channel_disabled_bypasses() {
-    let mut policy = QueryCachePolicy::default();
-    policy.mode = CacheMode::Ddb;
-    policy.channels.olap = false;
+    let policy = QueryCachePolicy {
+        mode: CacheMode::Ddb,
+        channels: ChannelFlags {
+            oltp: true,
+            olap: false,
+        },
+        ..QueryCachePolicy::default()
+    };
     let fe = QueryCacheFrontend::ddb(Arc::new(FakeCache::new()), policy).with_clock(test_now);
     let c = CacheCandidate {
         channel: CacheChannel::Olap,
@@ -187,9 +194,11 @@ fn gate_channel_disabled_bypasses() {
 
 #[test]
 fn gate_tenant_allowlist_bypasses_non_canary() {
-    let mut policy = QueryCachePolicy::default();
-    policy.mode = CacheMode::Ddb;
-    policy.tenant_allowlist = Some(vec!["canario".to_string()]);
+    let policy = QueryCachePolicy {
+        mode: CacheMode::Ddb,
+        tenant_allowlist: Some(vec!["canario".to_string()]),
+        ..QueryCachePolicy::default()
+    };
     let fe = QueryCacheFrontend::ddb(Arc::new(FakeCache::new()), policy).with_clock(test_now);
     assert!(matches!(
         fe.evaluate(&cand("otro", "asset")),
@@ -252,9 +261,11 @@ async fn lookup_backend_error_degrades_open() {
 #[tokio::test]
 async fn store_respects_size_cap_and_marks_oversize() {
     let fake = Arc::new(FakeCache::new());
-    let mut policy = QueryCachePolicy::default();
-    policy.mode = CacheMode::Ddb;
-    policy.max_item_bytes = 64;
+    let policy = QueryCachePolicy {
+        mode: CacheMode::Ddb,
+        max_item_bytes: 64,
+        ..QueryCachePolicy::default()
+    };
     let fe = QueryCacheFrontend::ddb(Arc::clone(&fake) as Arc<dyn IQueryCache>, policy)
         .with_clock(test_now);
 
@@ -296,8 +307,10 @@ async fn store_is_noop_in_off_and_shadow() {
         .store("QC#qc1#x", "t1", CacheChannel::Oltp, &json!({}))
         .await;
 
-    let mut policy = QueryCachePolicy::default();
-    policy.mode = CacheMode::Shadow;
+    let policy = QueryCachePolicy {
+        mode: CacheMode::Shadow,
+        ..QueryCachePolicy::default()
+    };
     let fe_shadow = QueryCacheFrontend::shadow(policy).with_clock(test_now);
     fe_shadow
         .store("QC#qc1#x", "t1", CacheChannel::Oltp, &json!({}))
@@ -311,8 +324,10 @@ async fn store_is_noop_in_off_and_shadow() {
 
 #[tokio::test]
 async fn shadow_mode_never_changes_outcome() {
-    let mut policy = QueryCachePolicy::default();
-    policy.mode = CacheMode::Shadow;
+    let policy = QueryCachePolicy {
+        mode: CacheMode::Shadow,
+        ..QueryCachePolicy::default()
+    };
     let fe = QueryCacheFrontend::shadow(policy).with_clock(test_now);
 
     // Primera observación: miss; segunda (dentro de TTL): would-be-hit.

@@ -35,7 +35,8 @@ fn ensure_metadata(body: &mut Value) {
     let cache_hits = cache_block
         .as_ref()
         .and_then(|c| c.get("hit"))
-        .and_then(|v| v.as_i64())
+        .and_then(|v| v.as_bool())
+        .map(i64::from)
         .unwrap_or(0);
     let cache_ttl = cache_block
         .as_ref()

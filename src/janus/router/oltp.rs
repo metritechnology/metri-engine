@@ -3,12 +3,12 @@ use crate::aegis::oltp::executor::OltpExecutor;
 use crate::codice::global as codice_global;
 use crate::janus::aggregator::apply_output_cast_fbs;
 use crate::janus::ast_compiler::compile_ast_fbs;
-use crate::janus::cache::{self, CacheCandidate, CacheChannel, LookupOutcome, QueryCacheFrontend};
+use crate::janus::cache::{self, CacheCandidate, CacheChannel, LookupOutcome};
 use crate::janus::fbs::AnalyticsRequestT;
 use crate::janus::normalizer::normalize_chunk;
 use crate::janus::plan_selector::select_plan_fbs;
 use crate::janus::router::post_processor;
-use crate::janus::router::{CedarCtx, QueryChunk};
+use crate::janus::router::{CedarCtx, QueryChunk, QueryExecCtx};
 use serde_json::{json, Value};
 use tracing::{error, info};
 
@@ -18,10 +18,13 @@ pub async fn execute_oltp_query(
     cedar_ctx: &CedarCtx,
     schema: &Value,
     executor: &OltpExecutor,
-    explain_plan: bool,
-    cache: &QueryCacheFrontend,
+    ctx: QueryExecCtx<'_>,
     start_time: std::time::Instant,
 ) -> Vec<QueryChunk> {
+    let QueryExecCtx {
+        explain_plan,
+        cache,
+    } = ctx;
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
 
     let ast_ir = match compile_ast_fbs(query_map, cedar_ctx, schema) {
@@ -93,10 +96,7 @@ pub async fn execute_oltp_query(
         tenant_id: &cedar_ctx.tenant_id,
         entity: entity_type,
         explain_plan,
-        overlay_entity: executor
-            .overlay_entities()
-            .iter()
-            .any(|e| *e == entity_type),
+        overlay_entity: executor.overlay_entities().contains(&entity_type),
     };
     let cacheable = !matches!(cache.evaluate(&candidate), LookupOutcome::Bypass { .. });
 
