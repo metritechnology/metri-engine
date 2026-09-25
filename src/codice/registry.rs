@@ -224,6 +224,12 @@ pub struct EntityModel {
 pub struct RegistryEntry {
     pub model: EntityModel,
     pub fingerprint: String, // SHA-256 hex — COD_003 collision detection
+    /// SHA-256 del JSON completo del modelo (orden canónico). Lo usa la
+    /// caché del read path (§4.6 PLAN_CACHE_JANUS_DYNAMODB.md): un cambio
+    /// de modelo — label templates, tipos, no solo nombres de atributos —
+    /// rompe las claves de caché automáticamente. Costo por request: un
+    /// clone de String; se computa UNA vez en `build()`.
+    pub cache_fingerprint: String,
 }
 
 /// CodeRegistry — registro en memoria de todos los modelos compilados.
@@ -402,7 +408,15 @@ impl CodeRegistry {
             }
 
             by_hash.insert(fingerprint.clone(), entity_name.clone());
-            by_entity.insert(entity_name, RegistryEntry { model, fingerprint });
+            let cache_fingerprint = model_cache_fingerprint(&json);
+            by_entity.insert(
+                entity_name,
+                RegistryEntry {
+                    model,
+                    fingerprint,
+                    cache_fingerprint,
+                },
+            );
         }
 
         let registry = CodeRegistry {
@@ -461,6 +475,15 @@ impl CodeRegistry {
         self.by_entity
             .get(entity_type)
             .map(|e| e.fingerprint.as_str())
+    }
+
+    /// Fingerprint SHA-256 del JSON COMPLETO del modelo (para claves de la
+    /// caché del read path — más fino que `get_fingerprint`, que solo cubre
+    /// nombres de atributos para COD_003).
+    pub fn get_cache_fingerprint(&self, entity_type: &str) -> Option<&str> {
+        self.by_entity
+            .get(entity_type)
+            .map(|e| e.cache_fingerprint.as_str())
     }
 
     /// Lista todos los nombres de entidades registradas.
@@ -589,6 +612,13 @@ fn schema_fingerprint(entity_name: &str, json: &serde_json::Value) -> String {
 
     let input = format!("{entity_name}{attr_names:?}");
     let hash = Sha256::digest(input.as_bytes());
+    hex::encode(hash)
+}
+
+/// Fingerprint del JSON completo del modelo, computado una vez en `build()`.
+/// serde_json ordena las claves (`BTreeMap`) ⇒ determinista entre instancias.
+fn model_cache_fingerprint(json: &serde_json::Value) -> String {
+    let hash = Sha256::digest(json.to_string().as_bytes());
     hex::encode(hash)
 }
 

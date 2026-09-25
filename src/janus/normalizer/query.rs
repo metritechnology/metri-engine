@@ -18,11 +18,30 @@ impl NormalizerStrategy for QueryNormalizer {
 }
 
 /// Garantiza :metadata en un chunk de QueryResponse.
+///
+/// `body.cache` (insertado por el router cuando la caché está activa) se
+/// consume aquí: sus campos pasan a `metadata.cache_hits`/`cache_ttl_seconds`
+/// — los campos ya reservados en el contrato proto — y la clave de
+/// transporte desaparece del body final. Único punto que escribe el metadata
+/// de caché (DRY, §8.1 de PLAN_CACHE_JANUS_DYNAMODB.md).
 fn ensure_metadata(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;
     };
     let root_exec_time = obj.get("execution_time_ms").and_then(|v| v.as_i64());
+
+    // Transporte de la caché → metadata del contrato. Se consume siempre.
+    let cache_block = obj.remove("cache").filter(|v| v.is_object());
+    let cache_hits = cache_block
+        .as_ref()
+        .and_then(|c| c.get("hit"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let cache_ttl = cache_block
+        .as_ref()
+        .and_then(|c| c.get("remaining_secs"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
 
     if !obj.contains_key("metadata") {
         let channel = obj
@@ -43,12 +62,15 @@ fn ensure_metadata(body: &mut Value) {
                 "total_count":        total,
                 "total_queries":      1,
                 "parallelism_factor": 1.0,
-                "cache_hits":         0,
+                "cache_hits":         cache_hits,
+                "cache_ttl_seconds":  cache_ttl,
                 "execution_time_ms":  root_exec_time.unwrap_or(0),
             }),
         );
     } else {
         if let Some(metadata_obj) = obj.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+            metadata_obj.insert("cache_hits".to_string(), json!(cache_hits));
+            metadata_obj.insert("cache_ttl_seconds".to_string(), json!(cache_ttl));
             if !metadata_obj.contains_key("execution_time_ms") {
                 metadata_obj.insert(
                     "execution_time_ms".to_string(),

@@ -147,6 +147,11 @@ pub struct EavWriter {
     /// obliga a tocar el camino de escritura, y un test puede inyectar los
     /// suyos sin DynamoDB.
     planners: Arc<Vec<Box<dyn crate::eav::writer::constraints::ConstraintPlanner>>>,
+    /// Invalidador de la caché de consultas (puerto de dominio, DIP). `None`
+    /// cuando la caché está apagada. Un bump por commit — D4 de
+    /// PLAN_CACHE_JANUS_DYNAMODB.md — best-effort: el TTL es la cota dura.
+    query_cache_invalidator:
+        Option<std::sync::Arc<dyn crate::domain::protocols::QueryCacheInvalidator>>,
 }
 
 impl EavWriter {
@@ -168,6 +173,25 @@ impl EavWriter {
             ddb,
             table: table.into(),
             planners,
+            query_cache_invalidator: None,
+        }
+    }
+
+    /// Inyecta el invalidador de la caché de consultas (composición en el
+    /// arranque, mismo patrón que `OltpExecutor::with_overlay`).
+    pub fn with_query_cache_invalidator(
+        mut self,
+        invalidator: std::sync::Arc<dyn crate::domain::protocols::QueryCacheInvalidator>,
+    ) -> Self {
+        self.query_cache_invalidator = Some(invalidator);
+        self
+    }
+
+    /// Bump de generación de la caché de consultas del tenant. Best-effort:
+    /// nunca falla la mutación ya confirmada (el TTL acota el staleness).
+    pub async fn invalidate_query_cache(&self, tenant_id: &str) {
+        if let Some(inv) = &self.query_cache_invalidator {
+            let _ = inv.invalidate_tenant(tenant_id).await;
         }
     }
 
@@ -567,6 +591,9 @@ impl EavWriter {
                 &payload.tenant_id,
                 &escritas,
             );
+            // Caché de consultas distribuida: invalidación lógica del tenant
+            // completo (bump de generación) — embudo único post-commit.
+            self.invalidate_query_cache(&payload.tenant_id).await;
         }
         // DEFERRED: el caller (route_bulk) invalida una sola vez al final del
         // lote — ver cache_policy::invalidate_aevt_scan.

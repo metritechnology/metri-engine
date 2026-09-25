@@ -186,3 +186,52 @@ pub trait IExportStorage: Send + Sync {
         rows: &[crate::grpc::pb::DataRow],
     ) -> Result<String, crate::domain::errors::DomainError>;
 }
+
+// ── Query Result Cache (Janus read path) ─────────────────────────────────────
+
+/// Entrada cacheada del read path. `expires_at` es epoch-segs LÓGICO —
+/// verificado por la app en cada lectura; la expiración física la hace
+/// DynamoDB TTL sobre su atributo y jamás participa en la decisión de servir.
+#[derive(Debug, Clone)]
+pub struct CacheEntry {
+    pub payload: serde_json::Value,
+    pub tenant_id: String,
+    pub expires_at: i64,
+    /// Sello de generación del tenant al escribir (invalidación por escritura).
+    pub generation: Option<u64>,
+    pub stored_at_ms: i64,
+}
+
+/// Escritura de una entrada de caché — best-effort: un fallo nunca debe
+/// ser observable como error de query.
+#[derive(Debug, Clone)]
+pub struct CachePut {
+    pub tenant_id: String,
+    /// PK completo: `QC#v1#<sha256>`.
+    pub key: String,
+    pub payload: serde_json::Value,
+    /// TTL efectivo en segundos (jitter ya aplicado por el llamador).
+    pub ttl_secs: u64,
+}
+
+/// IQueryCache — caché KV de resultados de consulta del read path.
+/// Implementaciones: adaptador DynamoDB en `infrastructure`, Null Object y
+/// fakes en `janus::cache` / tests. Precedente de granularidad: IQueryEngine.
+#[async_trait]
+pub trait IQueryCache: Send + Sync {
+    /// `Ok(None)` = miss (ausente, vencido, tenant distinto o generación
+    /// invalidada). El llamador decide la degradación ante `Err` (fail-open).
+    async fn get(&self, key: &str, tenant_id: &str) -> DomainResult<Option<CacheEntry>>;
+
+    /// Almacena una entrada. Idempotente (último-gana).
+    async fn put(&self, entry: &CachePut) -> DomainResult<()>;
+}
+
+/// QueryCacheInvalidator — invalidación lógica tras escritura (ISP: el write
+/// path solo necesita esto, no lectura/escritura de entradas).
+#[async_trait]
+pub trait QueryCacheInvalidator: Send + Sync {
+    /// Invalida lógicamente todas las entradas del tenant (bump de
+    /// generación). Best-effort: el TTL sigue siendo la cota dura.
+    async fn invalidate_tenant(&self, tenant_id: &str) -> DomainResult<()>;
+}

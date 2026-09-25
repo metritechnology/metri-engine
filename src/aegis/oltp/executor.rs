@@ -72,6 +72,13 @@ impl OltpExecutor {
         &self.query_executor
     }
 
+    /// Entidades con un `RowOverlay` registrado. La caché del read path las
+    /// deriva de aquí para excluirlas (gate G2): registrar un overlay nuevo
+    /// excluye su entidad de la caché automáticamente, sin lista duplicada.
+    pub fn overlay_entities(&self) -> Vec<&str> {
+        self.overlays.iter().map(|o| o.entity()).collect()
+    }
+
     pub fn pull_reader(&self) -> &EavReader {
         &self.pull_reader
     }

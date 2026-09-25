@@ -8,6 +8,7 @@ use crate::aegis::oltp::executor::OltpExecutor;
 use crate::codice::global as codice_global;
 use crate::domain::protocols::IQueryEngine;
 use crate::iop::core::IopContext;
+use crate::janus::cache::QueryCacheFrontend;
 use crate::janus::fbs::AnalyticsRequestT;
 use crate::janus::validator;
 use serde_json::{json, Value};
@@ -63,6 +64,7 @@ pub async fn run_query_pipeline(
     executor: &OltpExecutor,
     athena_engine: Option<&Arc<dyn IQueryEngine>>,
     explain_plan: bool,
+    cache: &Arc<QueryCacheFrontend>,
 ) -> Vec<QueryChunk> {
     // Paso 1: Gate Zero-Trust
     if let Err(e) = validator::validate_tenant(tenant_id) {
@@ -83,6 +85,7 @@ pub async fn run_query_pipeline(
         let cedar = cedar_ctx.clone();
         let exec_clone = executor.clone();
         let athena_clone = athena_engine.cloned();
+        let cache_clone = Arc::clone(cache);
 
         handles.push(tokio::spawn(async move {
             // Paso 1.5: Validación Semántica del Contrato FlatBuffers
@@ -102,6 +105,7 @@ pub async fn run_query_pipeline(
                 &exec_clone,
                 athena_clone.as_ref(),
                 explain_plan,
+                &cache_clone,
             )
             .await
         }));
@@ -135,6 +139,7 @@ pub async fn process_single_query(
     executor: &OltpExecutor,
     athena_engine: Option<&Arc<dyn IQueryEngine>>,
     explain_plan: bool,
+    cache: &QueryCacheFrontend,
 ) -> Vec<QueryChunk> {
     let start_time = std::time::Instant::now();
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
@@ -155,6 +160,7 @@ pub async fn process_single_query(
             &schema,
             athena_engine,
             explain_plan,
+            cache,
             start_time,
         )
         .await
@@ -166,6 +172,7 @@ pub async fn process_single_query(
             &schema,
             executor,
             explain_plan,
+            cache,
             start_time,
         )
         .await

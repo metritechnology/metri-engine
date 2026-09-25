@@ -86,6 +86,19 @@ TABLES_CONFIG = {
             }
         ],
         "TimeToLiveAttribute": "ttl"
+    },
+
+    # Caché KV del read path Janus (PLAN_CACHE_JANUS_DYNAMODB.md). Tabla
+    # EXCLUSIVA con TTL físico; la expiración LÓGICA (attr `exp`) la verifica
+    # la app — DynamoDB Local no ejecuta el borrado por TTL y no importa.
+    "metri-query-cache-local": {
+        "KeySchema": [
+            {"AttributeName": "PK", "KeyType": "HASH"}
+        ],
+        "AttributeDefinitions": [
+            {"AttributeName": "PK", "AttributeType": "S"}
+        ],
+        "TimeToLiveAttribute": "ttl"
     }
 }
 

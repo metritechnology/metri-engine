@@ -212,6 +212,9 @@ impl OltpChannel {
 
         // Deferred cache invalidation: single invalidation for the entire bulk operation
         crate::eav::writer::cache_policy::invalidate_aevt_scan(tenant_id, entity_type);
+        // La caché de consultas distribuida sigue el mismo principio del
+        // diferido: UN bump de generación por lote completo, no por fila.
+        self.writer.invalidate_query_cache(tenant_id).await;
 
         info!(
             entity   = %entity_type,

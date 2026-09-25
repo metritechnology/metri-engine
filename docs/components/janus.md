@@ -16,8 +16,8 @@ Convertir peticiones de lectura (Query, Discovery, Explore, BulkIngest responses
 ```text
 request gRPC ─▶ normalizer (por RPC) ─▶ validator ─▶ abac_clauses
              ─▶ ast_compiler (IR FlatBuffers) ─▶ plan_selector
-             ─▶ router::oltp | router::olap ─▶ aggregator (OutputCast)
-             ─▶ post_processor (labels) ─▶ respuesta
+             ─▶ router::oltp | router::olap ─▶ [cache::QueryCacheFrontend ─▶ executor]
+             ─▶ aggregator (OutputCast) ─▶ post_processor (labels) ─▶ respuesta
 multi-series: sub-queries por group-id ─▶ full outer join fusionado
 ```
 
@@ -27,12 +27,14 @@ multi-series: sub-queries por group-id ─▶ full outer join fusionado
 2. **Un normalizador por forma de RPC** — el trait `NormalizerStrategy` mantiene el dispatch sin condicionales dispersos.
 3. **Zero-copy en la frontera** — el contrato con eav/aegis viaja en FlatBuffers; el ownership del buffer está documentado en `janus::fbs`.
 4. **Las cláusulas ABAC se inyectan antes de compilar** — ningún filtro de seguridad viaja por fuera del AST (ver `abac_clauses.rs`).
+5. **Caché: nada dependiente del llamador antes del punto de caché** — se cachea la salida del executor (user-independiente); la redacción FLS y los overlays corren SIEMPRE post-caché. La clave es el hash del AST compilado post-ABAC ⇒ aislamiento por construcción (ADR-008). Fail-open en disponibilidad, fail-closed en corrección (entrada vencida/de otro tenant/generación invalidada ⇒ miss).
 
 ## Entry points
 
 - [`janus::normalizer`] — uno por RPC (`query`, `bulk`, `discovery`, `explore`, `transaction`, `match_rules`).
 - [`janus::ast_compiler`] / [`janus::validator`] / [`janus::plan_selector`].
 - [`janus::aggregator`] / [`janus::multi_series`].
+- [`janus::cache`] — frontend de caché del read path (modos `off|shadow|ddb`, gates, key builder; ver ADR-008 y `PLAN_CACHE_JANUS_DYNAMODB.md`).
 
 ## Errors
 

@@ -29,6 +29,10 @@ Parameters:
     Type: String
     Default: metri-sequence-registry
     Description: "Contadores ACID de códigos auto-generados (strategy=sequential, p. ej. work_order_number)."
+  QueryCacheTableName:
+    Type: String
+    Default: metri-query-cache
+    Description: "Caché KV del read path Janus con TTL nativo (PLAN_CACHE_JANUS_DYNAMODB.md). Tabla EXCLUSIVA: no un prefijo en la EAV."
   AthenaWorkGroup:
     Type: String
     Default: metri-analytics
@@ -645,6 +649,34 @@ Resources:
         - AttributeName: PK
           KeyType: HASH
 
+  # ── Caché de consultas del read path (Janus) ──
+  # KV read-through con TTL nativo. EXCLUSIVA a propósito (§5.4 del plan):
+  # (1) habilitar TTL en la EAV arriesgaría borrado físico de datoms,
+  # (2) la EAV es append-only sin DeleteItem — la caché sobrescribe/expira,
+  # (3) aísla el churn de Put de las TransactWriteItems del write path,
+  # (4) es regenerable: sin PITR, DeletionPolicy Delete. Sin GSI (la
+  # invalidación es lógica por generación, no por borrado).
+  MetriQueryCacheTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Ref QueryCacheTableName
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref MetriKmsMasterKey
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+
   # ── HMAC Signing Secret ─────────────────────────────────────────────────
   # Secret auto-generado de 64 bytes (512 bits) para firmar tokens HMAC-SHA256.
   # Rotación: rotar este secret invalida TODOS los tokens emitidos (revocación masiva).
@@ -786,6 +818,17 @@ Resources:
                 - dynamodb:ConditionCheckItem
               Resource: !GetAtt MetriSequenceRegistryTable.Arn
 
+            # ── Caché de consultas: mínimo privilegio, sin Query/Scan/Transact ──
+            # UpdateItem solo para el bump de generación (invalidación F3).
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:DeleteItem
+                - dynamodb:BatchGetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt MetriQueryCacheTable.Arn
+
             # ── OLAP: Kinesis Firehose (todos los streams de entidades OLAP) ──
             # Fase 1 PLAN_COSTO_OLAP: el bloque kinesis:* (PutRecord/PutRecords/
             # DescribeStream sobre stream/metri-olap-stream-*) se retiró — el
@@ -819,7 +862,7 @@ Resources:
           AWS_LWA_INVOKE_MODE: "response_stream" # Soporte gRPC trailers y streaming
           AWS_LAMBDA_EXEC_WRAPPER: "/opt/bootstrap" # REQUERIDO para provided.al2023
           # ── Rust Engine — variables de arranque ──
-          RUST_LOG: "warn" # Fase 1 PLAN_COSTO_OLAP: "info" emitía ~15 MB/mes de ruido por ingesta; "debug" solo para troubleshooting
+          RUST_LOG: "warn,metri_engine::janus::cache=info" # Base warn (Fase 1 PLAN_COSTO_OLAP); la caché de consultas emite sus eventos HIT/MISS/SHADOW_* en info para los metric filters — sin esto el modo shadow no produce datos (R13 del plan)
           GRPC_PORT: "9090" # Puerto interno Lambda (Function URL redirige aquí)
           CODICE_MODELS_DIR: "models" # <-- Directorio donde el Makefile empaquetó los modelos # Path relativo al binario; S3 sync en FASE 4
           ERROR_CATALOG_PATH: "errors/error_catalog.toml" # Path relativo al binario (Makefile copia config/errors → errors/)
@@ -832,6 +875,10 @@ Resources:
           # ── OLAP ──
           KINESIS_STREAM_PREFIX: "metri-olap-stream" # Naming: <prefix>-<entity-slug>
           GLUE_DATABASE_NAME: "metri_olap"
+          # ── Caché de consultas (rollout shadow-first; los gates ROI viven en el plan) ──
+          QUERY_CACHE_MODE: "shadow" # off | shadow | ddb — shadow mide hit rate sin costo
+          QUERY_CACHE_TABLE: !Ref QueryCacheTableName
+          QUERY_CACHE_GENERATION: "off" # F3: invalidación por escritura (bump de generación)
           # ── EDA ──
           OUTBOX_QUEUE_URL: !GetAtt MetriOutboxQueue.QueueUrl
           FAULT_BUS_NAME: "metri-faults"
@@ -854,6 +901,69 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-metri-engine"
       RetentionInDays: 14
 
+  # ── Métricas de la caché de consultas (§8.3 del plan) ──
+  # Metric filters sobre los eventos info de la caché (target
+  # metri_engine::janus::cache) — no se espera a OTel: CloudWatch Insights
+  # alimenta los gates ROI con estas métricas.
+  QueryCacheHitMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref MetriEngineLogGroup
+      FilterPattern: '{ $.cache_status = "HIT" }'
+      MetricTransformations:
+        - MetricName: QueryCacheHits
+          MetricNamespace: MetriEngine
+          MetricValue: "1"
+  QueryCacheMissMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref MetriEngineLogGroup
+      FilterPattern: '{ $.cache_status = "MISS" }'
+      MetricTransformations:
+        - MetricName: QueryCacheMisses
+          MetricNamespace: MetriEngine
+          MetricValue: "1"
+  QueryCacheShadowHitMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref MetriEngineLogGroup
+      FilterPattern: '{ $.cache_status = "SHADOW_HIT" }'
+      MetricTransformations:
+        - MetricName: QueryCacheShadowHits
+          MetricNamespace: MetriEngine
+          MetricValue: "1"
+  QueryCacheShadowMissMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref MetriEngineLogGroup
+      FilterPattern: '{ $.cache_status = "SHADOW_MISS" }'
+      MetricTransformations:
+        - MetricName: QueryCacheShadowMisses
+          MetricNamespace: MetriEngine
+          MetricValue: "1"
+  QueryCacheLookupErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref MetriEngineLogGroup
+      FilterPattern: '{ $.cache_status = "ERROR" }'
+      MetricTransformations:
+        - MetricName: QueryCacheLookupErrors
+          MetricNamespace: MetriEngine
+          MetricValue: "1"
+  QueryCacheLookupErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: "Caché de consultas degradando (fail-open) — errores de lookup contra DynamoDB"
+      Namespace: MetriEngine
+      MetricName: QueryCacheLookupErrors
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      EvaluationPeriods: 1
+      Period: 300
+      Statistic: Sum
+      Threshold: 10 # la caché degrada correctamente, pero >10 errores/5min = investigar DDB
+      TreatMissingData: notBreaching
+      AlarmActions: []
+
 Outputs:
   MetriEngineFunctionPublicUrl:
     Description: "URL base del Lambda Rust (protegida por CloudFront + WAF)"
@@ -867,6 +977,9 @@ Outputs:
   MetriEavTableArn:
     Description: "ARN de la tabla EAV principal (OLTP — Single Table Design 4 GSIs)"
     Value: !GetAtt MetriEavTable.Arn
+  MetriQueryCacheTableName:
+    Description: "Tabla KV de caché del read path (TTL nativo, métricas MetriEngine/QueryCache*)"
+    Value: !Ref MetriQueryCacheTable
   MetriEavTableName:
     Description: "Nombre físico de la tabla EAV"
     Value: !Ref MetriEavTable

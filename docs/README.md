@@ -19,6 +19,7 @@
 | [PLAN_CORRECCIONES_PENDIENTES.md](architecture/PLAN_CORRECCIONES_PENDIENTES.md) | Equipo | Correcciones planificadas y su estado |
 | [PLAN_COSTO_OLAP.md](architecture/PLAN_COSTO_OLAP.md) · [MEDICION_COSTO_OLAP.md](architecture/MEDICION_COSTO_OLAP.md) | Equipo | Costos y medición del canal OLAP |
 | [PLAN_IMPLEMENTACION_LIST_ENTITIES.md](architecture/PLAN_IMPLEMENTACION_LIST_ENTITIES.md) | Equipo | RPC `ListEntities` |
+| [PLAN_CACHE_JANUS_DYNAMODB.md](architecture/PLAN_CACHE_JANUS_DYNAMODB.md) | Equipo | Caché KV distribuida con TTL de DynamoDB para la capa de consulta Janus (diseño + fases) |
 
 #### ADRs (`docs/architecture/adr/`) — decisiones inmutables
 
@@ -31,6 +32,7 @@
 | [ADR-005](architecture/adr/ADR-005-codigos-de-error-canonicos.md) | Códigos de error canónicos |
 | [ADR-006](architecture/adr/ADR-006-identidad-de-entidades.md) | Identidad de entidades |
 | [ADR-007](architecture/adr/ADR-007-materializacion-generica.md) | Materialización genérica — **SUPERADO**: la composición de OTs vive en metri-cmms-plugin |
+| [ADR-008](architecture/adr/ADR-008-cache-janus-dynamodb.md) | Caché de consultas Janus sobre DynamoDB con TTL (tabla exclusiva, clave = AST post-ABAC) |
 
 ### Components (`docs/components/`) — fichas por módulo
 

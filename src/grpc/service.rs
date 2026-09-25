@@ -24,6 +24,8 @@ pub struct ServiceDeps {
     /// Solo para fabricar el contador de cuota; el motor escribe por Janus.
     pub eav_writer: crate::eav::writer::EavWriter,
     pub janus_router: std::sync::Arc<crate::janus_router::router::JanusRouter>,
+    /// Caché del read path (Null Object si `QUERY_CACHE_MODE=off`).
+    pub query_cache: std::sync::Arc<crate::janus::cache::QueryCacheFrontend>,
     pub audit_interceptor:
         std::sync::Arc<crate::infrastructure::audit::interceptor::AuditInterceptorImpl>,
     pub athena_engine: Option<std::sync::Arc<dyn crate::domain::protocols::IQueryEngine>>,
@@ -47,6 +49,7 @@ pub struct MetriGrpcService {
     /// Escritor EAV inyectado: el composite lo usa directo (instanciación
     /// atómica — madre + hijos en una TransactWriteItems).
     pub(crate) eav_writer: crate::eav::writer::EavWriter,
+    pub(crate) query_cache: std::sync::Arc<crate::janus::cache::QueryCacheFrontend>,
     pub(crate) iop_orchestrator: std::sync::Arc<dyn crate::iop::core::IIopOrchestrator>,
     pub(crate) athena_engine: Option<std::sync::Arc<dyn crate::domain::protocols::IQueryEngine>>,
     pub(crate) valkey_store: std::sync::Arc<dyn crate::domain::protocols::ISessionStore>,
@@ -66,6 +69,7 @@ impl MetriGrpcService {
             oltp_executor,
             eav_writer,
             janus_router,
+            query_cache,
             audit_interceptor,
             athena_engine,
             moira_emitter,
@@ -111,6 +115,7 @@ impl MetriGrpcService {
         Self {
             oltp_executor,
             eav_writer,
+            query_cache,
             iop_orchestrator,
             athena_engine,
             valkey_store,

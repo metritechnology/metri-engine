@@ -8,7 +8,7 @@ Aislar el SDK de AWS detrás de puertos: el dominio no sabe que existe DynamoDB;
 
 ## Responsibilities / non-responsibilities
 
-**Hace:** clientes AWS (`dynamodb`, `athena`, `kinesis`, `sqs`, `eventbridge`, `glue`, `s3_export`); `TenantGuard` (aislamiento en la capa EAV); `HmacTokenStore` (`session_store`); bus de eventos de dominio (EventBridge real + outbox); motor local de query S3 (`local_s3_query_engine`); seeder OLAP puro (`seeder`); auditoría (`audit`).
+**Hace:** clientes AWS (`dynamodb`, `athena`, `kinesis`, `sqs`, `eventbridge`, `glue`, `s3_export`); caché KV de consultas sobre tabla DynamoDB dedicada con TTL (`dynamodb_query_cache`, puertos `IQueryCache`/`QueryCacheInvalidator` — ADR-008); `TenantGuard` (aislamiento en la capa EAV); `HmacTokenStore` (`session_store`); bus de eventos de dominio (EventBridge real + outbox); motor local de query S3 (`local_s3_query_engine`); seeder OLAP puro (`seeder`); auditoría (`audit`).
 **No hace:** decidir nada de negocio; los interruptores `*_MODE` (stub/real) son configuración, no política.
 
 ## Internal flow
@@ -17,6 +17,7 @@ Aislar el SDK de AWS detrás de puertos: el dominio no sabe que existe DynamoDB;
 puerto (application/domain) ◀── implementación ── adaptador AWS
    stub/real por servicio: ATHENA_MODE · KINESIS_MODE · EVENTBRIDGE_MODE · S3_MODE · SQS_MODE
 local: Aegis SQL ─▶ sql_parse ─▶ pipeline (memoria) ─▶ lake_reader (S3 real, sin Athena)
+query-cache: IQueryCache ─▶ DynamoKvCache (tabla exclusiva con TTL; QUERY_CACHE_MODE off|shadow|ddb)
 ```
 
 ## Invariants
@@ -28,6 +29,7 @@ local: Aegis SQL ─▶ sql_parse ─▶ pipeline (memoria) ─▶ lake_reader (
 ## Entry points
 
 - [`infrastructure::dynamodb`] — el cliente base.
+- [`infrastructure::dynamodb_query_cache`] — caché KV del read path (`DynamoKvCache` + `DynamoGenInvalidator`).
 - [`infrastructure::tenant_guard`] — aislamiento.
 - [`infrastructure::domain_event_bus`] — publicadores de eventos.
 - [`infrastructure::local_s3_query_engine`] — OLAP local.

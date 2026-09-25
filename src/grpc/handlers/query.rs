@@ -111,6 +111,7 @@ impl MetriGrpcService {
 
         let exec_clone = self.oltp_executor.clone();
         let athena_clone = self.athena_engine.clone();
+        let query_cache_clone = self.query_cache.clone();
         let authenticated_ctx_clone = authenticated_ctx.clone();
         let fault_notifier_clone = self.fault_notifier.clone();
         let olap_channel_clone = self.olap_channel.clone();
@@ -202,6 +203,7 @@ impl MetriGrpcService {
                 let fault_notifier_qk = fault_notifier_clone.clone();
                 let olap_channel_qk = olap_channel_clone.clone();
                 let export_storage_qk = export_storage_clone.clone();
+                let cache_qk = query_cache_clone.clone();
                 let user_id_qk = user_id_str.clone();
                 let target_entity_qk = target_entity.clone();
 
@@ -252,6 +254,7 @@ impl MetriGrpcService {
                         &exec,
                         athena.as_ref(),
                         explain_plan,
+                        &cache_qk,
                     )
                     .await;
                     for chunk in chunks {

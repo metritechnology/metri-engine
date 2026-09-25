@@ -1,7 +1,9 @@
 //! OLTP channel execution — native EAV plan execution and casting.
 use crate::aegis::oltp::executor::OltpExecutor;
+use crate::codice::global as codice_global;
 use crate::janus::aggregator::apply_output_cast_fbs;
 use crate::janus::ast_compiler::compile_ast_fbs;
+use crate::janus::cache::{self, CacheCandidate, CacheChannel, LookupOutcome, QueryCacheFrontend};
 use crate::janus::fbs::AnalyticsRequestT;
 use crate::janus::normalizer::normalize_chunk;
 use crate::janus::plan_selector::select_plan_fbs;
@@ -17,6 +19,7 @@ pub async fn execute_oltp_query(
     schema: &Value,
     executor: &OltpExecutor,
     explain_plan: bool,
+    cache: &QueryCacheFrontend,
     start_time: std::time::Instant,
 ) -> Vec<QueryChunk> {
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
@@ -71,25 +74,78 @@ pub async fn execute_oltp_query(
         "[Janus] Plan seleccionado"
     );
 
-    let executor_result = match executor
-        .run_oltp_query_fbs(&cedar_ctx.tenant_id, &ast_ir)
-        .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            error!("[Janus] Error EAV Query: {:?}", e);
-            let elapsed_ms = std::cmp::max(start_time.elapsed().as_millis() as i64, 1);
-            return vec![QueryChunk {
-                query_key: query_key.to_string(),
-                body: normalize_chunk(&json!({
-                    "code":              "JANUS_500",
-                    "reason":            e.to_string(),
-                    "query_key":         query_key,
-                    "execution_time_ms": elapsed_ms,
-                })),
-                success: false,
-            }];
+    // ── Cache-aside (D1/D6): la clave se calcula sobre el AST YA compilado
+    // (tenant + ABAC inyectados) + ventana resuelta + fingerprint del
+    // schema. Lo cacheado es la salida del executor — user-independiente;
+    // el post-proceso dependiente del llamador (FLS) corre siempre, abajo.
+    let window = query_map
+        .time_frame
+        .as_ref()
+        .and_then(|tf| crate::aegis::temporal_bridge::resolve_fbs_time_frame(tf))
+        .unwrap_or_else(crate::aegis::temporal_bridge::no_time_range);
+    let schema_fp = codice_global()
+        .get_cache_fingerprint(entity_type)
+        .unwrap_or("no-model");
+    let cache_key = cache::keys::oltp_key(&ast_ir, &window, schema_fp, &cedar_ctx.tenant_id);
+
+    let candidate = CacheCandidate {
+        channel: CacheChannel::Oltp,
+        tenant_id: &cedar_ctx.tenant_id,
+        entity: entity_type,
+        explain_plan,
+        overlay_entity: executor
+            .overlay_entities()
+            .iter()
+            .any(|e| *e == entity_type),
+    };
+    let cacheable = !matches!(cache.evaluate(&candidate), LookupOutcome::Bypass { .. });
+
+    let mut hit_remaining_secs: Option<i64> = None;
+    let mut cached_payload: Option<Value> = None;
+    if cacheable {
+        if let LookupOutcome::Hit { entry } = cache
+            .lookup(&cache_key, &cedar_ctx.tenant_id, CacheChannel::Oltp)
+            .await
+        {
+            hit_remaining_secs = Some(cache.remaining_secs(entry.expires_at));
+            cached_payload = Some(entry.payload);
         }
+    }
+
+    let executor_result = if let Some(hit) = cached_payload {
+        hit
+    } else {
+        let result = match executor
+            .run_oltp_query_fbs(&cedar_ctx.tenant_id, &ast_ir)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                error!("[Janus] Error EAV Query: {:?}", e);
+                let elapsed_ms = std::cmp::max(start_time.elapsed().as_millis() as i64, 1);
+                return vec![QueryChunk {
+                    query_key: query_key.to_string(),
+                    body: normalize_chunk(&json!({
+                        "code":              "JANUS_500",
+                        "reason":            e.to_string(),
+                        "query_key":         query_key,
+                        "execution_time_ms": elapsed_ms,
+                    })),
+                    success: false,
+                }];
+            }
+        };
+        if cacheable {
+            cache
+                .store(
+                    &cache_key,
+                    &cedar_ctx.tenant_id,
+                    CacheChannel::Oltp,
+                    &result,
+                )
+                .await;
+        }
+        result
     };
 
     let (raw_rows, total_count, pagination_meta) =
@@ -215,6 +271,21 @@ pub async fn execute_oltp_query(
                     .or_insert(json!(label_template));
                 obj.insert("decoration".to_string(), Value::Object(dec_map));
             }
+        }
+    }
+
+    // Transporte de caché para el normalizer (§8.1): solo en modo ddb — en
+    // shadow/off la respuesta es byte-idéntica a pre-caché.
+    if cache.reports_metadata() {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert(
+                "cache".to_string(),
+                json!({
+                    "hit":           hit_remaining_secs.is_some(),
+                    "remaining_secs": hit_remaining_secs.unwrap_or(0),
+                    "channel":       "oltp",
+                }),
+            );
         }
     }
 

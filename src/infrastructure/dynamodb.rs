@@ -239,6 +239,108 @@ impl DynamoClient {
 
     // ── Query (para GSI y tabla principal) ────────────────────────────────────
 
+    /// BatchGetItem de hasta 25 claves de una misma tabla. Con reintentos
+    /// sobre UnprocessedKeys (análogo a batch_write_item). NO garantiza el
+    /// orden de la respuesta: el llamador correlaciona por clave — el item
+    /// lleva su PK en el atributo "PK".
+    pub async fn batch_get_item(
+        &self,
+        table_name: &str,
+        mut keys: Vec<HashMap<String, AttributeValue>>,
+        consistent_read: bool,
+    ) -> Result<Vec<HashMap<String, AttributeValue>>, DomainError> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut collected: Vec<HashMap<String, AttributeValue>> = Vec::new();
+        let mut retries = 0u32;
+
+        while !keys.is_empty() && retries < 5 {
+            let keys_and_attrs = aws_sdk_dynamodb::types::KeysAndAttributes::builder()
+                .set_keys(Some(keys.clone()))
+                .consistent_read(consistent_read)
+                .build()
+                .map_err(|e| {
+                    DomainError::infra(
+                        ErrorCode::Infra001,
+                        format!("KeysAndAttributes build falló en '{table_name}': {e}"),
+                    )
+                })?;
+
+            let mut req_map = HashMap::new();
+            req_map.insert(table_name.to_string(), keys_and_attrs);
+
+            let resp = self
+                .client
+                .batch_get_item()
+                .set_request_items(Some(req_map))
+                .send()
+                .await
+                .map_err(|e| map_sdk_error(e, ErrorCode::Infra001, table_name))?;
+
+            if let Some(mut responses) = resp.responses {
+                if let Some(items) = responses.remove(table_name) {
+                    collected.extend(items);
+                }
+            }
+
+            if let Some(mut unprocessed) = resp.unprocessed_keys {
+                if let Some(failed) = unprocessed.remove(table_name) {
+                    let failed_keys: Vec<_> = failed.keys().to_vec();
+                    if failed_keys.is_empty() {
+                        break;
+                    }
+                    tracing::warn!("BatchGetItem UnprocessedKeys: {}", failed_keys.len());
+                    keys = failed_keys;
+                    retries += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * (2_u64.pow(retries))))
+                        .await;
+                    continue;
+                }
+            }
+            break;
+        }
+
+        Ok(collected)
+    }
+
+    /// UpdateItem atómico numérico (`SET attr = if_not_exists(attr, 0) + delta`).
+    /// Retorna el valor RESULTANTE del contador. Lo usa la invalidación por
+    /// generación de la caché de consultas (PLAN_CACHE_JANUS_DYNAMODB.md D4).
+    pub async fn update_item_add(
+        &self,
+        table_name: &str,
+        pk: &str,
+        attr: &str,
+        delta: i64,
+    ) -> Result<i64, DomainError> {
+        let resp = self
+            .client
+            .update_item()
+            .table_name(table_name)
+            .key("PK", AttributeValue::S(pk.to_string()))
+            .update_expression("SET #v = if_not_exists(#v, :zero) + :delta")
+            .expression_attribute_names("#v", attr)
+            .expression_attribute_values(":zero", AttributeValue::N("0".to_string()))
+            .expression_attribute_values(":delta", AttributeValue::N(delta.to_string()))
+            .return_values(aws_sdk_dynamodb::types::ReturnValue::AllNew)
+            .send()
+            .await
+            .map_err(|e| map_sdk_error(e, ErrorCode::Infra001, table_name))?;
+
+        resp.attributes()
+            .and_then(|attrs| attrs.get(attr))
+            .and_then(av_number)
+            .and_then(|n| n.parse::<i64>().ok())
+            .ok_or_else(|| {
+                DomainError::infra(
+                    ErrorCode::Infra001,
+                    format!("update_item_add: respuesta sin contador '{attr}' en '{table_name}'"),
+                )
+            })
+    }
+
     /// Ejecuta una Query en una tabla o GSI con condición de partition key.
     /// Retorna todos los items (paginados automáticamente).
     pub async fn query(

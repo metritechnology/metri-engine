@@ -265,6 +265,7 @@ impl MetriGrpcService {
                 &exec,
                 self.athena_engine.as_ref(),
                 false,
+                &self.query_cache,
             )
             .await;
 

@@ -7,6 +7,7 @@ pub mod athena;
 pub mod audit;
 pub mod domain_event_bus;
 pub mod dynamodb;
+pub mod dynamodb_query_cache;
 pub mod eventbridge;
 pub mod glue;
 pub mod kinesis;

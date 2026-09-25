@@ -3,6 +3,7 @@
 //! janus/ — Read Path del Metri Engine.
 //! Write Path → ver src/janus_router/
 
+pub mod cache; // Caché KV del read path (PLAN_CACHE_JANUS_DYNAMODB.md)
 pub mod fbs;
 pub mod normalizer;
 pub mod router;

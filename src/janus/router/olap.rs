@@ -1,6 +1,7 @@
 //! OLAP channel execution — compile to FBS and query Athena.
-use crate::domain::protocols::IQueryEngine;
+use crate::domain::protocols::{CacheEntry, IQueryEngine, QueryResults};
 use crate::janus::ast_compiler::compile_ast_internal;
+use crate::janus::cache::{self, CacheCandidate, CacheChannel, LookupOutcome, QueryCacheFrontend};
 use crate::janus::fbs::AnalyticsRequestT;
 use crate::janus::normalizer::normalize_chunk;
 use crate::janus::router::post_processor;
@@ -16,6 +17,7 @@ pub async fn execute_olap_query(
     schema: &Value,
     athena_engine: Option<&Arc<dyn IQueryEngine>>,
     explain_plan: bool,
+    cache: &QueryCacheFrontend,
     start_time: std::time::Instant,
 ) -> Vec<QueryChunk> {
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
@@ -126,32 +128,74 @@ pub async fn execute_olap_query(
         }
     };
 
-    let exec_id = match athena.start_query(&compiled_sql.sql, &db_name).await {
-        Ok(id) => id,
-        Err(e) => {
-            let elapsed_ms = std::cmp::max(start_time.elapsed().as_millis() as i64, 1);
-            return vec![QueryChunk {
-                query_key: query_key.to_string(),
-                body: normalize_chunk(&json!({
-                    "code":              "JANUS_500",
-                    "reason":            format!("Error al iniciar query en Athena: {}", e),
-                    "query_key":         query_key,
-                    "execution_time_ms": elapsed_ms,
-                })),
-                success: false,
-            }];
+    // ── Cache-aside (D1/D6): alrededor de start_query + polling. El SQL ya
+    // contiene tenant + ABAC (gate ast_contains_tenant de arriba), así que
+    // hashearlo captura toda la dependencia de seguridad. El payload guarda
+    // el exec_id original para trazabilidad del body.query_id.
+    let cache_key = cache::keys::olap_key(
+        &compiled_sql.sql,
+        &db_name,
+        &time_range,
+        &cedar_ctx.tenant_id,
+    );
+    let candidate = CacheCandidate {
+        channel: CacheChannel::Olap,
+        tenant_id: &cedar_ctx.tenant_id,
+        entity: entity_type,
+        explain_plan,
+        overlay_entity: false, // overlays son retoques OLTP
+    };
+    let cacheable = !matches!(cache.evaluate(&candidate), LookupOutcome::Bypass { .. });
+
+    let mut hit_remaining_secs: Option<i64> = None;
+    let mut cached_entry: Option<CacheEntry> = None;
+    if cacheable {
+        if let LookupOutcome::Hit { entry } = cache
+            .lookup(&cache_key, &cedar_ctx.tenant_id, CacheChannel::Olap)
+            .await
+        {
+            hit_remaining_secs = Some(cache.remaining_secs(entry.expires_at));
+            cached_entry = Some(entry);
         }
+    }
+
+    let executed: Result<(String, QueryResults), String> = if let Some(entry) = cached_entry {
+        match results_from_payload(&entry.payload) {
+            Some(pair) => Ok(pair),
+            // Entrada ilegible (formato inesperado): ejecutar como miss.
+            None => execute_athena(athena, &compiled_sql.sql, &db_name).await,
+        }
+    } else {
+        let executed = execute_athena(athena, &compiled_sql.sql, &db_name).await;
+        if let Ok((ref exec_id, ref results)) = executed {
+            if cacheable {
+                let payload = json!({
+                    "exec_id": exec_id,
+                    "columns": results.columns,
+                    "rows":    results.rows,
+                });
+                cache
+                    .store(
+                        &cache_key,
+                        &cedar_ctx.tenant_id,
+                        CacheChannel::Olap,
+                        &payload,
+                    )
+                    .await;
+            }
+        }
+        executed
     };
 
-    let query_results = match athena.get_query_results(&exec_id).await {
-        Ok(res) => res,
-        Err(e) => {
+    let (exec_id, query_results) = match executed {
+        Ok(pair) => pair,
+        Err(reason) => {
             let elapsed_ms = std::cmp::max(start_time.elapsed().as_millis() as i64, 1);
             return vec![QueryChunk {
                 query_key: query_key.to_string(),
                 body: normalize_chunk(&json!({
                     "code":              "JANUS_500",
-                    "reason":            format!("Error al obtener resultados de Athena: {}", e),
+                    "reason":            reason,
                     "query_key":         query_key,
                     "execution_time_ms": elapsed_ms,
                 })),
@@ -256,9 +300,69 @@ pub async fn execute_olap_query(
         }
     }
 
+    // Transporte de caché para el normalizer (§8.1): solo en modo ddb.
+    if cache.reports_metadata() {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert(
+                "cache".to_string(),
+                json!({
+                    "hit":            hit_remaining_secs.is_some(),
+                    "remaining_secs": hit_remaining_secs.unwrap_or(0),
+                    "channel":       "olap",
+                }),
+            );
+        }
+    }
+
     vec![QueryChunk {
         query_key: query_key.to_string(),
         body: normalize_chunk(&body),
         success: true,
     }]
+}
+
+/// Ejecuta la query en Athena (start + polling de resultados). Factorizado
+/// del cuerpo principal para que el camino cacheado y el ejecutado compartan
+/// exactamente el mismo manejo de errores.
+async fn execute_athena(
+    athena: &Arc<dyn IQueryEngine>,
+    sql: &str,
+    db_name: &str,
+) -> Result<(String, QueryResults), String> {
+    let exec_id = athena
+        .start_query(sql, db_name)
+        .await
+        .map_err(|e| format!("Error al iniciar query en Athena: {e}"))?;
+
+    let results = athena
+        .get_query_results(&exec_id)
+        .await
+        .map_err(|e| format!("Error al obtener resultados de Athena: {e}"))?;
+
+    Ok((exec_id, results))
+}
+
+/// Reconstruye `(exec_id, QueryResults)` desde el payload cacheado.
+/// `None` si el formato no es el esperado — el llamador ejecuta como miss.
+fn results_from_payload(payload: &Value) -> Option<(String, QueryResults)> {
+    let exec_id = payload.get("exec_id")?.as_str()?.to_string();
+    let columns = payload
+        .get("columns")?
+        .as_array()?
+        .iter()
+        .map(|c| c.as_str().map(str::to_string))
+        .collect::<Option<Vec<String>>>()?;
+    let rows = payload
+        .get("rows")?
+        .as_array()?
+        .iter()
+        .map(|r| {
+            r.as_object().map(|o| {
+                o.iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<std::collections::HashMap<String, Value>>()
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((exec_id, QueryResults { columns, rows }))
 }

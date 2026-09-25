@@ -38,6 +38,48 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), &eav_table);
     let pull_read = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), &eav_table);
 
+    // ── Query result cache (PLAN_CACHE_JANUS_DYNAMODB.md) ───────────────────
+    // Modo por env (default off — el motor arranca sin la tabla). La
+    // política se valida fail-fast aquí, una sola vez (ADR-004).
+    let query_cache_policy = crate::janus::cache::QueryCachePolicy::from_env()?;
+    let query_cache_table = std::env::var("QUERY_CACHE_TABLE")
+        .unwrap_or_else(|_| "metri-query-cache-local".to_string());
+    let query_cache: Arc<crate::janus::cache::QueryCacheFrontend> = match query_cache_policy.mode {
+        crate::janus::cache::CacheMode::Ddb => {
+            info!(
+                "[Server] QueryCache en MODO DDB | tabla: {} | canales: {}",
+                query_cache_table,
+                if query_cache_policy.channels.oltp {
+                    "oltp"
+                } else {
+                    ""
+                }
+            );
+            Arc::new(crate::janus::cache::QueryCacheFrontend::ddb(
+                Arc::new(
+                    crate::infrastructure::dynamodb_query_cache::DynamoKvCache::new(
+                        Arc::clone(&ddb_client),
+                        query_cache_table.clone(),
+                    ),
+                ),
+                query_cache_policy.clone(),
+            ))
+        }
+        crate::janus::cache::CacheMode::Shadow => {
+            info!("[Server] QueryCache en MODO SHADOW — medición de hit rate sin costo");
+            Arc::new(crate::janus::cache::QueryCacheFrontend::shadow(
+                query_cache_policy.clone(),
+            ))
+        }
+        crate::janus::cache::CacheMode::Off => {
+            info!("[Server] QueryCache DESACTIVADA (QUERY_CACHE_MODE=off)");
+            Arc::new(crate::janus::cache::QueryCacheFrontend::disabled())
+        }
+    };
+    let generation_on = std::env::var("QUERY_CACHE_GENERATION")
+        .map(|v| v == "on")
+        .unwrap_or(false);
+
     // El consumo de cuota vive en un contador atómico, fuera del log de datoms.
     // Superponerlo al leer `domain_quota` es lo que permite que el camino de
     // escritura no tenga que mantener una copia al día: ver quota/projection.rs.
@@ -51,7 +93,20 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
 
     // ── Write Path — channel registry ────────────────────────────────────────
     // OLTP: EavWriter → TransactWriteItems DynamoDB (tabla: EAV_TABLE_NAME)
-    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), &eav_table);
+    // F3: con generación activa, el escritor bumpa la caché de consultas del
+    // tenant en el embudo post-commit (un bump por commit, no por entidad).
+    let mut eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), &eav_table);
+    if generation_on && query_cache_policy.mode == crate::janus::cache::CacheMode::Ddb {
+        info!(
+            "[Server] Invalidación por generación ACTIVA para la caché de consultas | tabla: {query_cache_table}"
+        );
+        eav_writer = eav_writer.with_query_cache_invalidator(Arc::new(
+            crate::infrastructure::dynamodb_query_cache::DynamoGenInvalidator::new(
+                Arc::clone(&ddb_client),
+                query_cache_table,
+            ),
+        ));
+    }
     let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
         crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
     );
@@ -234,6 +289,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         oltp_executor: oltp_exec.clone(),
         eav_writer: eav_writer.clone(),
         janus_router,
+        query_cache,
         audit_interceptor,
         athena_engine,
         moira_emitter: Some(Arc::clone(&moira_emitter) as Arc<dyn crate::iop::core::MoiraEmitter>),
