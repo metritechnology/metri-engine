@@ -12,9 +12,9 @@
 //! falla por la caché; fail-closed en corrección — entrada vencida, de otro
 //! tenant o con generación invalidada NUNCA se sirve.
 
-pub mod keys;
 #[cfg(test)]
-mod tests;
+mod cache_tests;
+pub mod keys;
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -240,8 +240,12 @@ impl ShadowKeyRing {
     }
 
     /// Registra la clave; retorna `true` si ya estaba VIVA (would-be-hit).
+    /// Ring envenenado ⇒ `false` (mide miss y sigue): la medición nunca
+    /// justifica tumbar la query — mismo patrón que `cache_policy.rs`.
     fn observe(&self, key: &str, ttl_secs: i64, now: i64) -> bool {
-        let mut map = self.inner.write().expect("shadow ring envenenado");
+        let Ok(mut map) = self.inner.write() else {
+            return false;
+        };
         let was_fresh = map.get(key).map(|exp| now < *exp).unwrap_or(false);
         if map.len() >= SHADOW_RING_CAPACITY && !map.contains_key(key) {
             let evict: Vec<String> = map.keys().take(SHADOW_RING_CAPACITY / 5).cloned().collect();
@@ -270,31 +274,27 @@ impl OversizeKeyRing {
     }
 
     fn contains_fresh(&self, key: &str, now: i64) -> bool {
-        self.inner
-            .read()
-            .expect("oversize ring envenenado")
-            .get(key)
-            .map(|exp| now < *exp)
-            .unwrap_or(false)
+        if let Ok(map) = self.inner.read() {
+            map.get(key).map(|exp| now < *exp).unwrap_or(false)
+        } else {
+            false
+        }
     }
 
     fn mark(&self, key: &str, exp: i64) {
-        let mut map = self.oversize_write();
-        if map.len() >= OVERSIZE_RING_CAPACITY && !map.contains_key(key) {
-            let evict: Vec<String> = map
-                .keys()
-                .take(OVERSIZE_RING_CAPACITY / 5)
-                .cloned()
-                .collect();
-            for k in evict {
-                map.remove(&k);
+        if let Ok(mut map) = self.inner.write() {
+            if map.len() >= OVERSIZE_RING_CAPACITY && !map.contains_key(key) {
+                let evict: Vec<String> = map
+                    .keys()
+                    .take(OVERSIZE_RING_CAPACITY / 5)
+                    .cloned()
+                    .collect();
+                for k in evict {
+                    map.remove(&k);
+                }
             }
+            map.insert(key.to_string(), exp);
         }
-        map.insert(key.to_string(), exp);
-    }
-
-    fn oversize_write(&self) -> std::sync::RwLockWriteGuard<'_, HashMap<String, i64>> {
-        self.inner.write().expect("oversize ring envenenado")
     }
 }
 

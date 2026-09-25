@@ -1,4 +1,5 @@
 //! OLAP channel execution — compile to FBS and query Athena.
+use crate::domain::errors::DomainError;
 use crate::domain::protocols::{CacheEntry, IQueryEngine, QueryResults};
 use crate::janus::ast_compiler::compile_ast_internal;
 use crate::janus::cache::{self, CacheCandidate, CacheChannel, LookupOutcome};
@@ -162,7 +163,7 @@ pub async fn execute_olap_query(
         }
     }
 
-    let executed: Result<(String, QueryResults), String> = if let Some(entry) = cached_entry {
+    let executed: Result<(String, QueryResults), DomainError> = if let Some(entry) = cached_entry {
         match results_from_payload(&entry.payload) {
             Some(pair) => Ok(pair),
             // Entrada ilegible (formato inesperado): ejecutar como miss.
@@ -198,7 +199,7 @@ pub async fn execute_olap_query(
                 query_key: query_key.to_string(),
                 body: normalize_chunk(&json!({
                     "code":              "JANUS_500",
-                    "reason":            reason,
+                    "reason":            reason.to_string(),
                     "query_key":         query_key,
                     "execution_time_ms": elapsed_ms,
                 })),
@@ -326,21 +327,26 @@ pub async fn execute_olap_query(
 
 /// Ejecuta la query en Athena (start + polling de resultados). Factorizado
 /// del cuerpo principal para que el camino cacheado y el ejecutado compartan
-/// exactamente el mismo manejo de errores.
+/// exactamente el mismo manejo de errores. Err es `DomainError` (R4 del
+/// patrón Result: ningún error transitable viaja como String).
 async fn execute_athena(
     athena: &Arc<dyn IQueryEngine>,
     sql: &str,
     db_name: &str,
-) -> Result<(String, QueryResults), String> {
-    let exec_id = athena
-        .start_query(sql, db_name)
-        .await
-        .map_err(|e| format!("Error al iniciar query en Athena: {e}"))?;
+) -> Result<(String, QueryResults), crate::domain::errors::DomainError> {
+    let exec_id = athena.start_query(sql, db_name).await.map_err(|e| {
+        crate::domain::errors::DomainError::janus(
+            crate::domain::errors::ErrorCode::Janus500,
+            format!("Error al iniciar query en Athena: {e}"),
+        )
+    })?;
 
-    let results = athena
-        .get_query_results(&exec_id)
-        .await
-        .map_err(|e| format!("Error al obtener resultados de Athena: {e}"))?;
+    let results = athena.get_query_results(&exec_id).await.map_err(|e| {
+        crate::domain::errors::DomainError::janus(
+            crate::domain::errors::ErrorCode::Janus500,
+            format!("Error al obtener resultados de Athena: {e}"),
+        )
+    })?;
 
     Ok((exec_id, results))
 }
