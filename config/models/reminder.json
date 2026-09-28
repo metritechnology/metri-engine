@@ -64,6 +64,7 @@
     }
   ],
   "shadow_sagas_mapping": {
+    "trigger_source": "reminder_datetime",
     "target_user_id": [
       "target_user_id"
     ],
