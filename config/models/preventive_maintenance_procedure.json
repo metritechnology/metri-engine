@@ -1,0 +1,41 @@
+{
+  "entity": "preventive_maintenance_procedure",
+  "engine": "oltp",
+  "is_system": false,
+  "track_history": true,
+  "attributes": [
+    {
+      "name": "preventive_maintenance_id",
+      "type": "reference",
+      "entityRef": "preventive_maintenance",
+      "cardinality": "one",
+      "required": true,
+      "index": true,
+      "is_dimension": true,
+      "description": "La pauta dueña de la selección."
+    },
+    {
+      "name": "procedure_template_id",
+      "type": "reference",
+      "entityRef": "procedure_template",
+      "cardinality": "one",
+      "index": true,
+      "is_dimension": true,
+      "description": "Provenance de plantilla: qué protocolo ejecutará cada orden que la pauta engendre. La foto de pasos se toma al instanciar la orden (work_order_procedure_field), no aquí."
+    },
+    {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "fts": true,
+      "is_dimension": true,
+      "description": "Título copiado de la plantilla al seleccionar. La pauta guarda la foto del momento, no una referencia viva."
+    },
+    {
+      "name": "procedure_order",
+      "type": "number",
+      "description": "Posición de ejecución dentro del plan; la asigna el reconciliador por posición de la lista."
+    }
+  ],
+  "description": "Selección de protocolos del plan preventivo: qué procedimientos ejecutará cada orden engendrada y en qué orden. Es MOLDE, no instancia de ejecución — sin estado ni respuestas, que viven en las work_order_procedure de cada orden."
+}

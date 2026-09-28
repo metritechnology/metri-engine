@@ -118,7 +118,12 @@
     {
       "name": "recurrence_start_date",
       "type": "epoch",
-      "description": "Primera ocurrencia teórica de la pauta (ancla del ciclo). Su día de semana (unidad WEEKS), día de mes (MONTHS) y mes+día (YEARS) fijan el patrón; recurrence_interval avanza desde esta fecha. Sin ancla no hay ciclo."
+      "description": "Fecha de inicio (2026-09-28): primer DÍA calendario local de generación, inclusive. Ocurrencias cuyo vencimiento T cae antes de ese día no generan orden (sin backfill: el ciclo arranca en la primera ocurrencia del patrón dentro de vigencia). Vacío = desde ahora. Legado: fue el ancla del bloque recurrence_* (día de semana/mes del patrón), sin consumidor en el camino del cron — el patrón lo codifica cron_expression."
+    },
+    {
+      "name": "recurrence_end_date",
+      "type": "epoch",
+      "description": "Fecha final (2026-09-28): último DÍA calendario local de generación, inclusive — la ocurrencia que vence ese día sí nace. Ocurrencias posteriores no generan orden y la cadena de trampas acaba sin tocar el status (retirar es decisión humana). Vacío = sin fin. Lo lee el pm-orchestrator al converger."
     },
     {
       "name": "recurrence_interval",
@@ -192,6 +197,25 @@
       "name": "advance_notice_time",
       "type": "string",
       "description": "Hora local de generación (HH:MM) cuando la unidad es días o semanas: «1 día antes a las 08:00». Vacía = misma hora de la ocurrencia."
+    },
+    {
+      "name": "advance_notice_weekday",
+      "type": "enum",
+      "options": [
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+        "SATURDAY",
+        "SUNDAY"
+      ],
+      "description": "Modo día de semana del nacimiento (2026-09-25): presente ⇒ la orden se genera el ÚLTIMO {weekday} ESTRICTAMENTE anterior a la fecha teórica (si el vencimiento cae en ese día, el de la semana anterior), a la hora advance_notice_time local; advance_notice_value/unit se conservan pero no participan. Ausente ⇒ modo relativo (value/unit)."
+    },
+    {
+      "name": "inactive_periods",
+      "type": "json",
+      "description": "Ventanas de inactividad [{from_month, from_year, to_month, to_year}] (meses 1-12, Enero=1, ambas puntas inclusive, pueden atravesar el año). Ocurrencias cuyo vencimiento T cae en un mes local dentro de una ventana NO generan orden y no se recuperan. Ausente o vacío = sin ventanas. Lo lee el pm-orchestrator al converger las trampas."
     },
     {
       "name": "prenotify_before_minutes",
