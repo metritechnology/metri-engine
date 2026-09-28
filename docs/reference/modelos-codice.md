@@ -3,7 +3,7 @@
 > Generado desde `config/models/*.json` — el registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos: **59**
+Total de modelos: **60**
 
 | Entidad | Motor | Atributos |
 |---|---|---|
@@ -43,7 +43,8 @@ Total de modelos: **59**
 | `note` | oltp | `content`, `author_id`, `timestamp`, `work_order_id` |
 | `outbox_event` | oltp | `status`, `detail_type`, `payload`, `retry_count`, `retry_at`, `claimed_at`, `created_at` |
 | `part` | oltp | `name`, `sku`, `barcode`, `description`, `category`, `default_unit_cost_cents`, `min_quantity`, `uom`, `currency` |
-| `preventive_maintenance` | oltp | `asset_id`, `location_id`, `title`, `description`, `priority`, `status`, `estimated_duration_hours`, `assignees`, `assigned_group_ids`, `category`, `require_location_verification`, `latitude`, `longitude`, `custom_attributes`, `recurrence_start_date`, `recurrence_interval`, `recurrence_unit`, `recurrence_at_time`, `cron_expression`, `iana_timezone`, `next_due_date`, `recurrence_basis`, `advance_notice_value`, `advance_notice_unit`, `advance_notice_time`, `prenotify_before_minutes`, `meter_based_trigger` |
+| `preventive_maintenance` | oltp | `asset_id`, `location_id`, `title`, `description`, `priority`, `status`, `estimated_duration_hours`, `assignees`, `assigned_group_ids`, `category`, `require_location_verification`, `latitude`, `longitude`, `custom_attributes`, `recurrence_start_date`, `recurrence_end_date`, `recurrence_interval`, `recurrence_unit`, `recurrence_at_time`, `cron_expression`, `iana_timezone`, `next_due_date`, `recurrence_basis`, `advance_notice_value`, `advance_notice_unit`, `advance_notice_time`, `advance_notice_weekday`, `inactive_periods`, `prenotify_before_minutes`, `meter_based_trigger` |
+| `preventive_maintenance_procedure` | oltp | `preventive_maintenance_id`, `procedure_template_id`, `name`, `procedure_order` |
 | `procedure_template` | oltp | `name`, `description`, `lifecycle_state`, `template_type`, `version`, `document_code`, `custom_logo` |
 | `procedure_template_field` | oltp | `procedure_template_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `score`, `field_order` |
 | `reminder` | oltp | `title`, `message`, `target_user_id`, `target_group_id`, `reminder_datetime`, `prenotify_minutes_array`, `iana_timezone`, `status` |

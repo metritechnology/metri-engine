@@ -86,6 +86,13 @@ pub fn plan_entity_datoms(
             }
         }
 
+        // D1 (PLAN_PM_FECHA_INICIO_FIN): null = SÓLO el retract — limpiar el
+        // atributo por parche. Sin assert, sin FTS. En CREATE un null no
+        // genera nada: el atributo nace ausente, como si no viajara.
+        if matches!(new_value, DatomValue::Null) {
+            continue;
+        }
+
         // Assert — el nuevo valor
         let assert = Datom::assert(
             tenant_id,
@@ -243,7 +250,11 @@ pub(crate) fn compute_transact_delta(
     let mut delta = crate::domain::events::Delta::new();
     for (name, new_val) in new_attrs {
         let old_val = active_attrs.get(name).map(|(_, v)| v);
-        if old_val != Some(new_val) {
+        // D1: null sobre un atributo AUSENTE no es cambio (el retract de algo
+        // que no existe es el no-op que ya era) — sin esta guarda, un null
+        // cosmético parecería mutación ante el guard de idempotencia.
+        let sin_cambio = old_val.is_none() && matches!(new_val, DatomValue::Null);
+        if !sin_cambio && old_val != Some(new_val) {
             delta.insert(
                 name.clone(),
                 crate::domain::events::DeltaEntry {
@@ -341,6 +352,79 @@ mod tests {
             .filter(|d| d.attr_name == "meta/updated_at" && !d.op)
             .count();
         assert_eq!(retracts_updated, 1, "el updated_at previo se retracta");
+    }
+
+    #[test]
+    fn update_con_null_solo_retracta_sin_assert() {
+        registry();
+        let mut attrs = HashMap::new();
+        attrs.insert("title".to_string(), DatomValue::Null);
+        let p = TransactPayload {
+            tenant_id: "t1".to_string(),
+            entity_id: Some("ent_1".to_string()),
+            entity_type: "reminder".to_string(),
+            attrs,
+            op: TransactOp::Update,
+            suppress_events: false,
+        };
+        let previos = activos(&[("title", 77, DatomValue::Str("vieja".into()))]);
+        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos).expect("planifica");
+
+        assert!(
+            retract_de(&plan.datoms, "title", "vieja"),
+            "el valor previo se retracta"
+        );
+        assert!(
+            !plan.datoms.iter().any(|d| d.attr_name == "title" && d.op),
+            "null NO genera assert"
+        );
+        // El contrato del bus: after = null (la limpieza es visible).
+        let delta = plan.delta.expect("el null sobre valor vivo es cambio");
+        let entry = delta.get("title").expect("title en el delta");
+        assert_eq!(entry.after, Some(serde_json::Value::Null));
+    }
+
+    #[test]
+    fn null_de_atributo_ausente_es_el_no_op_que_ya_era() {
+        registry();
+        let mut attrs = HashMap::new();
+        attrs.insert("title".to_string(), DatomValue::Null);
+        let p = TransactPayload {
+            tenant_id: "t1".to_string(),
+            entity_id: Some("ent_1".to_string()),
+            entity_type: "reminder".to_string(),
+            attrs,
+            op: TransactOp::Update,
+            suppress_events: false,
+        };
+        let previos = activos(&[("status", 88, DatomValue::Str("open".into()))]);
+        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos).expect("planifica");
+
+        assert!(
+            !plan.datoms.iter().any(|d| d.attr_name == "title"),
+            "null sin valor previo no genera datom"
+        );
+        assert!(plan.delta.is_none(), "ausente→null no es cambio");
+    }
+
+    #[test]
+    fn create_con_null_el_atributo_no_nace() {
+        registry();
+        let mut attrs = HashMap::new();
+        attrs.insert("title".to_string(), DatomValue::Null);
+        let p = TransactPayload {
+            tenant_id: "t1".to_string(),
+            entity_id: Some("ent_1".to_string()),
+            entity_type: "reminder".to_string(),
+            attrs,
+            op: TransactOp::Create,
+            suppress_events: false,
+        };
+        let plan = plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new()).expect("planifica");
+        assert!(
+            !plan.datoms.iter().any(|d| d.attr_name == "title"),
+            "create con null: el atributo nace ausente"
+        );
     }
 
     #[test]

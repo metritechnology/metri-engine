@@ -246,6 +246,31 @@ fn test_validate_payload_success() {
 }
 
 #[test]
+fn test_validate_payload_null_opcional_es_retraccion() {
+    // D1 (PLAN_PM_FECHA_INICIO_FIN): un null explícito sobre un atributo
+    // declarado NO requerido entra al mapa como DatomValue::Null — el
+    // planificador lo traduce a retract-sin-assert. Antes se descartaba en
+    // silencio y la «limpieza por parche» de los formularios nunca llegaba
+    // a Dynamo.
+    let model = make_test_model();
+    let payload = json!({
+        "id": "asset-001",
+        "name": "Compressor A",
+        "cost": null
+    });
+
+    let attrs = validate_payload(&model, &payload, "tnt_01", false).expect("null válido");
+    assert_eq!(attrs.get("cost").unwrap(), &DatomValue::Null);
+
+    // Los requeridos-null siguen siendo violación, no retracción.
+    let payload_req = json!({ "id": "asset-001", "name": null, "cost": 1.0 });
+    let err = validate_payload(&model, &payload_req, "tnt_01", false).unwrap_err();
+    assert!(err
+        .detail
+        .contains("Campo requerido 'name' no puede ser nulo"));
+}
+
+#[test]
 fn test_validate_payload_missing_required() {
     let model = make_test_model();
     // Missing 'is_active' (required) and 'name' (required)

@@ -154,9 +154,8 @@ pub fn build_scheduled_job_detail(
         }
     };
 
-    // La correlación del loop completo: el padre de la saga (la pauta
-    // preventive_maintenance) viaja como correlation_id — de la pauta al fired
-    // a la OT generada.
+    // La correlación del loop completo: el padre de la saga viaja como
+    // correlation_id — de la madre al fired a la entidad que el disparo genere.
     if envelope.correlation_id.is_none() {
         envelope.correlation_id = attrs
             .get("parent_entity_ref")

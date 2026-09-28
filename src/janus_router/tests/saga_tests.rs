@@ -341,6 +341,32 @@ fn desired_status_sigue_la_salud_de_la_madre() {
     assert_eq!(desired_job_status(Some("RETIRED")), "SUSPENDED");
 }
 
+/// El mapping DECLARA su fuente de trigger: sin `trigger_source` la
+/// proyección falla explícito — la plataforma no adivina attrs de ningún
+/// dominio por nombre (PLAN_DESCACOLE_PM_TOTAL F1).
+#[tokio::test]
+async fn mapping_sin_trigger_source_falla_explicitamente() {
+    let mut m = model("reminder");
+    m.shadow_sagas_mapping
+        .as_mut()
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .remove("trigger_source");
+    let payload = json!({
+        "title": "t", "message": "m", "target_user_id": "01U",
+        "reminder_datetime": "2026-06-01T08:00:00Z"
+    });
+    let err = build_saga_projections(&reader().await, "tnt_1", &m, &payload, "01P", "01ME")
+        .await
+        .expect_err("sin trigger_source declarado no hay proyección");
+    assert!(
+        err.detail.contains("trigger_source"),
+        "el error debe nombrar la clave faltante: {}",
+        err.detail
+    );
+}
+
 // NOTA (PLAN_DESCACOPLE_PM_ENGINE.md D2): los tests que ejercitaban la
 // proyección de `preventive_maintenance` (trigger cron/telemetría, molde,
 // anticipación) se retiraron con el mapping — la pauta ya no proyecta. La

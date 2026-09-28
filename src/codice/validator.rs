@@ -86,6 +86,14 @@ pub fn validate_payload(
                     }
                 } else if attr_desc.required {
                     violations.push(format!("Campo requerido '{}' no puede ser nulo", attr_name));
+                } else {
+                    // X-03 (PLAN_PM_FECHA_INICIO_FIN D1): null explícito =
+                    // RETRAER el atributo. Antes se descartaba en silencio y
+                    // la «limpieza por parche» que los formularios prometen
+                    // (null viaja en edición) nunca llegaba a Dynamo — el
+                    // valor viejo sobrevivía. El planificador traduce el
+                    // Null a retract-sin-assert.
+                    attrs.insert(attr_name.clone(), DatomValue::Null);
                 }
             }
             None => {

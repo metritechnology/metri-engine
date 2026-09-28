@@ -6,7 +6,11 @@
 //! `scheduled_job` en la MISMA transacción ACID. Metri Schedulers los consume por el bus.
 //! Ver docs/architecture/COMPONENTE_EXTERNO_05_METRI_SCHEDULERS.md §3 y 03B §III.2.
 //!
-//! El builder no inventa valores: el trigger se deriva de atributos declarados en la madre.
+//! El builder no inventa valores y NO CONOCE dominios: la madre declara en su
+//! mapping de qué atributo sale el disparo (`trigger_source`, un instante
+//! ISO-8601) y qué attrs viajan al job. Los dominios con semánticas de ciclo
+//! propias (p. ej. el recurrente de las pautas preventivas) implementan su
+//! lógica en su plugin — aquí sólo plataforma (PLAN_DESCACOLE_PM_TOTAL.md).
 
 use std::collections::{HashMap, HashSet};
 
@@ -28,115 +32,54 @@ pub struct SagaProjection {
     pub attrs: HashMap<String, DatomValue>,
 }
 
-/// Trigger derivado de la entidad madre. Nunca se inventa: sale de atributos declarados.
-enum Trigger {
-    Cron { expr: String },
-    ExactTime { epoch_secs: i64 },
-    Telemetry { expr: String },
-}
-
-/// Deriva el trigger de la entidad madre.
-///
-/// Orden deliberado: la condición física gana al calendario. Un mantenimiento con
-/// `meter_based_trigger` debe dispararse cuando la máquina lo pida, no cuando toque en el
-/// almanaque. `next_due_date` es el último recurso porque es un valor calculado, no una
-/// intención declarada por el usuario.
-fn resolve_trigger(entity: &str, payload: &Value) -> Result<Trigger, DomainError> {
-    let s = |k: &str| {
-        payload
-            .get(k)
-            .and_then(|v| v.as_str())
-            .filter(|v| !v.is_empty())
-    };
-
-    if let Some(meter) = payload.get("meter_based_trigger").filter(|v| !v.is_null()) {
-        return Ok(Trigger::Telemetry {
-            expr: telemetry_expr(meter)?,
-        });
-    }
-    if let Some(cron) = s("cron_expression") {
-        return Ok(Trigger::Cron {
-            expr: cron.to_string(),
-        });
-    }
-    if let Some(iso) = s("reminder_datetime") {
-        return Ok(Trigger::ExactTime {
-            epoch_secs: iso_to_epoch_secs(iso)?,
-        });
-    }
-    if let Some(n) = payload.get("next_due_date").and_then(epoch_secs_of) {
-        return Ok(Trigger::ExactTime { epoch_secs: n });
-    }
-
-    Err(DomainError::janus(
-        ErrorCode::Jns001,
-        format!(
-            "[SagaBuilder] '{entity}' declara shadow_sagas_mapping pero no expone ninguna fuente \
-             de trigger (meter_based_trigger, cron_expression, reminder_datetime, next_due_date). \
-             La proyección no puede inventar cuándo disparar."
-        ),
-    ))
-}
-
-/// Traduce `meter_based_trigger` a la gramática `<METRIC_CODE> <OPERADOR> <VALOR>`
-/// que exige Metri Schedulers (Componente Externo 05 §3.2).
-fn telemetry_expr(meter: &Value) -> Result<String, DomainError> {
-    let metric = meter
-        .get("metric_code")
-        .or_else(|| meter.get("meterId"))
+/// Trigger derivado del mapping DECLARATIVO. La plataforma sólo sabe traducir
+/// un instante ISO-8601 a EXACT_TIME — sin vocabulario de dominio: la madre
+/// declara de qué attr sale su disparo (`trigger_source`) y los dominios con
+/// semánticas propias (cron recurrente, telemetría) implementan su ciclo en su
+/// plugin, no aquí (PLAN_DESCACOLE_PM_TOTAL.md: esquema = dato del motor,
+/// comportamiento = plugin).
+fn resolve_trigger(
+    entity: &str,
+    mapping: &Map<String, Value>,
+    payload: &Value,
+) -> Result<i64, DomainError> {
+    let source = mapping
+        .get("trigger_source")
         .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .ok_or_else(|| {
             DomainError::janus(
                 ErrorCode::Jns001,
-                "[SagaBuilder] meter_based_trigger sin metric_code".to_string(),
+                format!(
+                    "[SagaBuilder] '{entity}' declara shadow_sagas_mapping sin 'trigger_source': \
+                     la proyección no puede inventar cuándo disparar."
+                ),
             )
         })?;
-    let op = meter
-        .get("operator")
+    let iso = payload
+        .get(source)
         .and_then(|v| v.as_str())
-        .unwrap_or("GT");
-    let sym = match op {
-        "GT" | ">" => ">",
-        "LT" | "<" => "<",
-        "GTE" | ">=" => ">=",
-        "LTE" | "<=" => "<=",
-        "EQ" | "==" => "==",
-        other => {
-            return Err(DomainError::janus(
-                ErrorCode::Jns001,
-                format!("[SagaBuilder] operador telemétrico no soportado: '{other}'"),
-            ))
-        }
-    };
-    let threshold = meter
-        .get("threshold")
-        .or_else(|| meter.get("value"))
-        .and_then(|v| v.as_f64())
+        .filter(|v| !v.is_empty())
         .ok_or_else(|| {
             DomainError::janus(
                 ErrorCode::Jns001,
-                "[SagaBuilder] meter_based_trigger sin threshold numérico".to_string(),
+                format!(
+                    "[SagaBuilder] '{entity}' no expone '{source}' (su trigger_source declarado): \
+                     la proyección no puede inventar cuándo disparar."
+                ),
             )
         })?;
-    Ok(format!("{metric} {sym} {threshold}"))
-}
-
-fn epoch_secs_of(v: &Value) -> Option<i64> {
-    let n = v
-        .as_i64()
-        .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))?;
-    // Heurística de unidad: los epoch en ms de este siglo superan 1e12.
-    Some(if n > 1_000_000_000_000 { n / 1000 } else { n })
+    iso_to_epoch_secs(source, iso)
 }
 
 /// ISO 8601 → epoch en segundos. Acepta `Z` y offsets explícitos.
-fn iso_to_epoch_secs(iso: &str) -> Result<i64, DomainError> {
+fn iso_to_epoch_secs(source: &str, iso: &str) -> Result<i64, DomainError> {
     chrono::DateTime::parse_from_rfc3339(iso)
         .map(|dt| dt.timestamp())
         .map_err(|e| {
             DomainError::janus(
                 ErrorCode::Jns001,
-                format!("[SagaBuilder] reminder_datetime '{iso}' no es ISO 8601 válido: {e}"),
+                format!("[SagaBuilder] trigger_source '{source}' con '{iso}' no es ISO 8601 válido: {e}"),
             )
         })
 }
@@ -356,7 +299,7 @@ pub async fn build_saga_projections(
             )
         })?;
 
-    let trigger = resolve_trigger(&model.entity, payload)?;
+    let base_epoch = resolve_trigger(&model.entity, mapping, payload)?;
     let tz = payload
         .get("iana_timezone")
         .and_then(|v| v.as_str())
@@ -369,50 +312,17 @@ pub async fn build_saga_projections(
     let mut out = Vec::with_capacity(offsets.len());
 
     for offset_min in offsets {
-        // Un aviso previo es siempre un instante concreto, aunque la madre sea recurrente:
-        // desplazar una expresión cron no es expresable en el caso general (cruces de mes).
-        // Para la recurrencia, el Job principal se reproyecta en cada disparo.
-        let (kind, expr) = match (&trigger, offset_min) {
-            (t, 0) => match t {
-                Trigger::Cron { expr } => ("CRON", expr.clone()),
-                Trigger::Telemetry { expr } => ("TELEMETRY", expr.clone()),
-                Trigger::ExactTime { epoch_secs } => ("EXACT_TIME", epoch_secs.to_string()),
-            },
-            (Trigger::ExactTime { epoch_secs }, off) => {
-                ("EXACT_TIME", (epoch_secs - off * 60).to_string())
-            }
-            (Trigger::Cron { .. }, off) => {
-                // La madre es recurrente pero el aviso previo necesita un instante.
-                // `next_due_date` es la única referencia temporal concreta disponible.
-                match payload.get("next_due_date").and_then(epoch_secs_of) {
-                    Some(due) => ("EXACT_TIME", (due - off * 60).to_string()),
-                    None => {
-                        tracing::warn!(
-                            entity = %model.entity, offset = off,
-                            "[SagaBuilder] pre-notificación omitida: la madre es CRON y no expone \
-                             next_due_date, así que no hay instante concreto que desplazar"
-                        );
-                        continue;
-                    }
-                }
-            }
-            (Trigger::Telemetry { .. }, off) => {
-                // Una condición física no tiene 'antes': no se sabe cuándo ocurrirá.
-                tracing::warn!(
-                    entity = %model.entity, offset = off,
-                    "[SagaBuilder] pre-notificación omitida: un trigger TELEMETRY no tiene \
-                     instante conocido que desplazar"
-                );
-                continue;
-            }
-        };
+        // La madre declarativa es de UN instante: el aviso previo es aritmética
+        // directa sobre el epoch. El fan-out recurrente de un dominio (p. ej.
+        // las pautas) vive en su plugin, no en esta proyección.
+        let expr = (base_epoch - offset_min * 60).to_string();
 
         let job_id = ulid::generate();
 
         let mut obj = Map::new();
         obj.insert("parent_entity_ref".into(), json!(parent_id));
         obj.insert("created_by".into(), json!(created_by));
-        obj.insert("trigger_type".into(), json!(kind));
+        obj.insert("trigger_type".into(), json!("EXACT_TIME"));
         obj.insert("trigger_expression".into(), json!(expr));
         obj.insert("iana_timezone".into(), json!(tz));
         obj.insert("action_type".into(), json!("DISPATCH_NOTIFICATION"));
@@ -427,6 +337,8 @@ pub async fn build_saga_projections(
         obj.insert("action_payload".into(), Value::Object(action_payload));
 
         // Proyección declarativa: el mapping sobrescribe lo anterior si coincide.
+        // `trigger_source` (string) no es una entrada dest→src y se salta solo:
+        // el loop sólo consume valores-array.
         for (dest, src) in mapping {
             let Some(src_arr) = src.as_array() else {
                 continue;
