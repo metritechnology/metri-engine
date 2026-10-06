@@ -40,12 +40,32 @@ fn id_list(val: Option<&DatomValue>) -> Vec<String> {
 }
 
 /// Lista de strings desde un datom (array o string único).
+///
+/// Tolerante en la lectura: los perímetros (`allowed_locations`,
+/// `allowed_assets`, `permitted_locations`) llegaron históricamente
+/// serializados — el datom es un STRING que contiene un array JSON
+/// (`"[\"loc_1\"]"`) o un array cuyos elementos son strings JSON. Envolverlo
+/// tal cual producía `["[\"loc_1\"]"]` y el filtro ABAC `location_id IN …`
+/// no matcheaba NINGUNA fila: todo IAM vacío para sesiones de tenant cuyos
+/// usuarios pertenecen a un grupo con perímetro (hallazgo 2026-09-29, grupo
+/// G1 del tenant demo). `id_list` ya hacía el unwrap para strings — este es
+/// el mismo contrato para los perímetros.
 fn str_list(val: Option<&DatomValue>) -> Vec<String> {
     match val {
-        Some(DatomValue::Array(arr)) => arr.clone(),
-        Some(DatomValue::Str(s)) => vec![s.clone()],
+        Some(DatomValue::Array(arr)) => arr.iter().flat_map(|s| unwrap_json_array(s)).collect(),
+        Some(DatomValue::Str(s)) => unwrap_json_array(s),
         _ => vec![],
     }
+}
+
+fn unwrap_json_array(s: &str) -> Vec<String> {
+    let trimmed = s.trim();
+    if trimmed.starts_with('[') {
+        if let Ok(parsed) = serde_json::from_str::<Vec<String>>(trimmed) {
+            return parsed;
+        }
+    }
+    vec![s.to_string()]
 }
 
 fn ensure_not_suspended(status: &str, user_id: &str) -> Result<(), DomainError> {
@@ -527,4 +547,51 @@ async fn consolidate_boundary(
         permitted_locations: intersect_or_inherit(expanded_locations, group_locations.clone()),
         permitted_assets: intersect_or_inherit(expanded_assets, group_assets.clone()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regresión 2026-09-29: un `allowed_locations` de grupo serializado como
+    /// STRING JSON (`"[\"loc_1\"]"`) se envolvía tal cual y el filtro ABAC
+    /// `location_id IN ["[\"loc_1\"]"]` no matcheaba ninguna fila — todas las
+    /// lecturas de `user` vacías para sesiones de tenant con perímetro de grupo.
+    #[test]
+    fn str_list_desenvuelve_arrays_json_serializados_como_string() {
+        let datom = DatomValue::Str("[\"01M1ETZ0ECAHHYZQBHBQV5RM7D\"]".to_string());
+        assert_eq!(str_list(Some(&datom)), vec!["01M1ETZ0ECAHHYZQBHBQV5RM7D"]);
+    }
+
+    #[test]
+    fn str_list_desenvuelve_elementos_json_dentro_de_array() {
+        let datom = DatomValue::Array(vec!["[\"loc_1\"]".to_string(), "loc_2".to_string()]);
+        assert_eq!(str_list(Some(&datom)), vec!["loc_1", "loc_2"]);
+    }
+
+    #[test]
+    fn str_list_conserva_strings_planos_y_arrays_normales() {
+        assert_eq!(
+            str_list(Some(&DatomValue::Str("loc_plano".to_string()))),
+            vec!["loc_plano"]
+        );
+        assert_eq!(
+            str_list(Some(&DatomValue::Array(vec![
+                "a".to_string(),
+                "b".to_string()
+            ]))),
+            vec!["a", "b"]
+        );
+        assert_eq!(str_list(None), Vec::<String>::new());
+    }
+
+    #[test]
+    fn str_list_no_corrompe_strings_que_empiezan_por_corchete_sin_ser_json() {
+        assert_eq!(
+            str_list(Some(&DatomValue::Str(
+                "[doc] referencia interna".to_string()
+            ))),
+            vec!["[doc] referencia interna"]
+        );
+    }
 }

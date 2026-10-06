@@ -48,12 +48,11 @@
         "IN_MAINTENANCE",
         "DOWN",
         "STANDBY",
-        "DECOMMISSIONED",
-        "SCRAPPED"
+        "DECOMMISSIONED"
       ],
       "default_value": "ACTIVE",
       "is_dimension": true,
-      "description": "Estado operativo del activo. 'DOWN' activa métricas de parada no planificada."
+      "description": "Estado operativo del activo. 'DOWN' activa métricas de parada no planificada; 'DECOMMISSIONED' cierra el ciclo de vida (baja definitiva, incluye retiro y despiece)."
     },
     {
       "name": "criticality",

@@ -811,11 +811,16 @@ Resources:
               Resource: !GetAtt MetriEavTable.Arn
 
             # ── Contadores secuenciales: read + write del generador auto_generate ──
+            # UpdateItem: incremento atómico del contador (ADD current_value 1)
+            # y upsert condicional de la política (RPC SequenceConfig).
+            # Scan: listado de contadores del tenant (ListSequenceConfigs).
             - Effect: Allow
               Action:
                 - dynamodb:GetItem
                 - dynamodb:PutItem
                 - dynamodb:ConditionCheckItem
+                - dynamodb:UpdateItem
+                - dynamodb:Scan
               Resource: !GetAtt MetriSequenceRegistryTable.Arn
 
             # ── Caché de consultas: mínimo privilegio, sin Query/Scan/Transact ──

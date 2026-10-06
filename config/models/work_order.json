@@ -8,9 +8,9 @@
       "name": "work_order_number",
       "type": "string",
       "unique": "tenant",
-      "pattern": "^WO(-[A-Z0-9-]+)?-\\d{4,6}$",
+      "pattern": "^[A-Z0-9][A-Z0-9-]*\\d{2,8}$",
       "fts": true,
-      "doc": "Código de negocio autogenerado. Sin scope: 'WO-0042'. Con scope location: 'WO-L-K92MXA-0043'. El contador se hereda del ancestro más cercano que ya tiene actividad (nearest_registered).",
+      "doc": "Código de negocio autogenerado. Sin scope: 'WO-0042'. Con scope location: 'WO-L-K92MXA-0043'. El contador se hereda del ancestro más cercano que ya tiene actividad (nearest_registered). El prefijo/padding son configurables por tenant desde /settings/plugins (RPC SequenceConfig): el pattern admite cualquier prefijo [A-Z0-9-] terminado en '-' con 2-8 dígitos.",
       "auto_generate": {
         "strategy": "sequential",
         "prefix": "WO-",

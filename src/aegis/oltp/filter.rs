@@ -30,13 +30,6 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
             }
         }
 
-        if bare_field == "status" {
-            println!(
-                "[DEBUG FILTER] field={}, bare_field={}, row_val={:?}, row={}",
-                field, bare_field, row_val, row
-            );
-        }
-
         let op = crit.op_ref;
         let fv = crit.value.as_deref();
 
@@ -126,19 +119,29 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
             }
             FilterOperator::IS_NULL => row_val.map(|v| v.is_null()).unwrap_or(true),
             FilterOperator::IS_NOT_NULL => row_val.map(|v| !v.is_null()).unwrap_or(false),
+            // Contains semántico por tipo: substring sobre strings (como
+            // siempre) y pertenencia sobre arrays. El hidratador entrega los
+            // atributos lista (role_ids, …) como Value::Array — el as_str()
+            // anterior los colapsaba a "" y el filtro devolvía false siempre,
+            // con lo que pestañas como «Usuarios con este rol» quedaban vacías.
             FilterOperator::CONTAINS => {
-                let rv = remove_accents(
-                    &row_val
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_lowercase(),
-                );
                 let pattern = remove_accents(
                     &fv.and_then(|v| v.string_val.as_deref())
                         .unwrap_or("")
                         .to_lowercase(),
                 );
-                rv.contains(&pattern)
+                if pattern.is_empty() {
+                    return false;
+                }
+                let str_contains = |s: &str| remove_accents(&s.to_lowercase()).contains(&pattern);
+                match row_val {
+                    Some(Value::String(s)) => str_contains(s),
+                    Some(Value::Array(items)) => items.iter().any(|item| match item {
+                        Value::String(s) => str_contains(s),
+                        other => str_contains(&other.to_string()),
+                    }),
+                    _ => false,
+                }
             }
             FilterOperator::LIKE => {
                 let rv = remove_accents(
@@ -254,5 +257,75 @@ pub fn eval_filter_node(row: &Value, node: &FilterNodeT) -> bool {
         }
     } else {
         true // nodo vacío → pass-through
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn contains_node(field: &str, pattern: &str) -> FilterNodeT {
+        FilterNodeT {
+            criteria: Some(Box::new(crate::janus::fbs::FilterCriteriaT {
+                field: Some(field.to_string()),
+                value: Some(Box::new(crate::janus::fbs::FilterValueT {
+                    string_val: Some(pattern.to_string()),
+                    ..Default::default()
+                })),
+                op_ref: FilterOperator::CONTAINS,
+            })),
+            group: None,
+        }
+    }
+
+    #[test]
+    fn contains_substring_en_string() {
+        let row = json!({ "description": "Rol de Administrador" });
+        assert!(eval_filter_node(
+            &row,
+            &contains_node("description", "administrador")
+        ));
+        assert!(!eval_filter_node(
+            &row,
+            &contains_node("description", "operador")
+        ));
+    }
+
+    #[test]
+    fn contains_sobre_array_por_elemento() {
+        // El hidratador entrega role_ids como Value::Array (regresión de la
+        // tab «Usuarios con este rol»: as_str() lo colapsaba a "").
+        let row =
+            json!({ "role_ids": ["01M12AHKP6RP7SCWBX29J9N4AM", "01KYR7D1X0DN0FAY8MBJFC6KJP"] });
+        assert!(eval_filter_node(
+            &row,
+            &contains_node("role_ids", "01M12AHKP6RP7SCWBX29J9N4AM")
+        ));
+        assert!(eval_filter_node(
+            &row,
+            &contains_node("role_ids", "01KYR7D1X0DN0FAY8MBJFC6KJP")
+        ));
+        assert!(!eval_filter_node(
+            &row,
+            &contains_node("role_ids", "01M9NOEXISTE")
+        ));
+    }
+
+    #[test]
+    fn contains_array_vacio_y_pattern_vacio() {
+        let row = json!({ "role_ids": [] });
+        assert!(!eval_filter_node(
+            &row,
+            &contains_node("role_ids", "01M12AHKP6RP7SCWBX29J9N4AM")
+        ));
+        let row2 = json!({ "role_ids": ["x"] });
+        assert!(!eval_filter_node(&row2, &contains_node("role_ids", "")));
+    }
+
+    #[test]
+    fn contains_ignora_mayusculas_y_acentos() {
+        let row = json!({ "name": "Técnico de Mantenimiento" });
+        assert!(eval_filter_node(&row, &contains_node("name", "tecnico")));
     }
 }

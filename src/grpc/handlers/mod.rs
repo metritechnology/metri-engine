@@ -12,5 +12,6 @@ pub(crate) mod list_support;
 pub(crate) mod query;
 pub(crate) mod query_support;
 pub(crate) mod routing;
+pub(crate) mod sequence_config;
 pub(crate) mod transact;
 pub(crate) mod validations;

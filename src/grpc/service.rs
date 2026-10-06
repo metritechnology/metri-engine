@@ -9,8 +9,10 @@ use crate::grpc::pb::metri_service_server::MetriService;
 use crate::grpc::pb::{
     BulkRequest, BulkResponse, CompositeTransactRequest, CompositeTransactResponse,
     DiscoveryRequest, DiscoveryResponse, ExploreRequest, ExploreResponse, ListEntitiesRequest,
-    ListEntitiesResponse, MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse,
-    QueryRequest, QueryResponse, TransactionRequest, TransactionResponse,
+    ListEntitiesResponse, ListSequenceConfigsRequest, ListSequenceConfigsResponse,
+    MatchRoutingRulesBatchRequest, MatchRoutingRulesBatchResponse, QueryRequest, QueryResponse,
+    TransactionRequest, TransactionResponse, UpsertSequenceConfigRequest,
+    UpsertSequenceConfigResponse,
 };
 /// Dependencias del servicio, resueltas una sola vez en la raíz de
 /// composición (`grpc/server.rs` en producción). Sustituye al constructor de
@@ -189,6 +191,20 @@ impl MetriService for MetriGrpcService {
         request: Request<MatchRoutingRulesBatchRequest>,
     ) -> Result<Response<MatchRoutingRulesBatchResponse>, Status> {
         self.match_routing_rules_batch_impl(request).await
+    }
+
+    async fn list_sequence_configs(
+        &self,
+        request: Request<ListSequenceConfigsRequest>,
+    ) -> Result<Response<ListSequenceConfigsResponse>, Status> {
+        self.list_sequence_configs_impl(request).await
+    }
+
+    async fn upsert_sequence_config(
+        &self,
+        request: Request<UpsertSequenceConfigRequest>,
+    ) -> Result<Response<UpsertSequenceConfigResponse>, Status> {
+        self.upsert_sequence_config_impl(request).await
     }
 }
 

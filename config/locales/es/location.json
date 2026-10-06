@@ -19,6 +19,12 @@
   },
   "enums": {
     "location": {
+      "status": {
+        "OPERATIONAL": "Operativa",
+        "NON_OPERATIONAL": "Fuera de servicio",
+        "UNDER_MAINTENANCE": "En mantenimiento",
+        "DECOMMISSIONED": "Dado de baja"
+      },
       "type": {
         "SITE": "Sitio",
         "BUILDING": "Edificio",

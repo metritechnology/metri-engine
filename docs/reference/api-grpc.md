@@ -13,6 +13,8 @@
 - `MetriService.CompositeTransact`
 - `MetriService.BulkIngest`
 - `MetriService.MatchRoutingRulesBatch`
+- `MetriService.ListSequenceConfigs`
+- `MetriService.UpsertSequenceConfig`
 
 ### Mensaje `Status`
 
@@ -174,3 +176,15 @@
 ### Mensaje `AgentModuleConfig`
 
 ### Mensaje `NavigationRouteConfig`
+
+### Mensaje `SequenceDefaults`
+
+### Mensaje `SequenceCounter`
+
+### Mensaje `ListSequenceConfigsRequest`
+
+### Mensaje `ListSequenceConfigsResponse`
+
+### Mensaje `UpsertSequenceConfigRequest`
+
+### Mensaje `UpsertSequenceConfigResponse`

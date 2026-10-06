@@ -148,6 +148,13 @@ pub async fn inject(
                 base36::generate(prefix, *length)
             }
             AutoGenStrategy::Sequential(config) => {
+                // Política del tenant (fila global del contador, RPC de
+                // configuración) manda sobre la config estática del Códice:
+                // el admin cambia prefix/padding/modo sin redeploy.
+                let mut effective = config.clone();
+                let policy = sequence::read_global_policy(ddb, tenant_id, &config.name).await?;
+                effective.apply_policy(&policy);
+
                 // Resolver scope_tag del payload si hay campo de scope
                 let scope_tag: Option<String> = scope_field
                     .and_then(|field_name| enriched.get(field_name))
@@ -159,7 +166,7 @@ pub async fn inject(
                 // Y sin ubicación no hay segmento que mostrar.
                 let (ancestors, segment) = match (&scope, scope_tag.as_deref()) {
                     (Some(ctx), Some(_))
-                        if config.scope_resolution == ScopeResolution::NearestRegistered =>
+                        if effective.scope_resolution == ScopeResolution::NearestRegistered =>
                     {
                         (ctx.ancestors.clone(), ctx.segment.clone())
                     }
@@ -168,7 +175,7 @@ pub async fn inject(
 
                 sequence::next(
                     ddb,
-                    config,
+                    &effective,
                     scope_tag.as_deref(),
                     tenant_id,
                     &ancestors,

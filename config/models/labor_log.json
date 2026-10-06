@@ -71,5 +71,13 @@
       "is_dimension": true,
       "description": "Flag de auditoría que confirma si el fichaje ocurrió dentro del radio de geocerca del activo/ubicación asignada."
     }
+  ],
+  "constraints": [
+    {
+      "type": "at_least",
+      "field": "end_time",
+      "of": "start_time",
+      "description": "Un fichaje no puede terminar antes de empezar: end_time nunca anterior a start_time."
+    }
   ]
 }

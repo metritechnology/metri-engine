@@ -42,6 +42,13 @@ service MetriService {
   // High-Performance Batch Router for O(1) Network Hopping
   // Exclusive bridge for the SAM Event Router to evaluate AST logic inversely for arrays of SQS records.
   rpc MatchRoutingRulesBatch(MatchRoutingRulesBatchRequest) returns (MatchRoutingRulesBatchResponse);
+
+  // --- Sequence Config Domain (numeración de registros) ---
+  // Administración de la política de numeración por tenant sobre la tabla
+  // metri-sequence-registry (los contadores que producen 'WO-0042' /
+  // 'WO-L-K92MXA-0043'). El tenant viaja SIEMPRE del JWT — jamás del payload.
+  rpc ListSequenceConfigs(ListSequenceConfigsRequest) returns (ListSequenceConfigsResponse);
+  rpc UpsertSequenceConfig(UpsertSequenceConfigRequest) returns (UpsertSequenceConfigResponse);
 }
 
 // =============================================================================
@@ -1109,4 +1116,62 @@ message NavigationRouteConfig {
   string label_es = 2;
   string label_en = 3;
   repeated string keywords = 4;
+}
+
+// =============================================================================
+// SEQUENCE CONFIG (numeración de registros — ej. work_order_number)
+// =============================================================================
+//
+// La política viva del tenant (prefix/padding/scope_resolution) vive en la
+// fila GLOBAL de la tabla metri-sequence-registry (`{tenant}:{field}_seq`) y
+// manda sobre la config estática del Códice (work_order.json auto_generate).
+// Los contadores por ubicación (`{tenant}:{field}:{tag}_seq`) son de SOLO
+// LECTURA aquí: la herencia nearest_registered los gestiona el motor.
+
+// Config de respaldo declarada en el Códice — lo que aplica cuando la fila
+// global del tenant aún no existe.
+message SequenceDefaults {
+  string prefix = 1;           // ej. "WO-"
+  int32 padding_length = 2;    // ej. 4 → "WO-0007"
+  string scope_resolution = 3; // "exact" | "nearest_registered"
+}
+
+// Un contador de la tabla dedicada. `current_value` es el ÚLTIMO número
+// usado: el próximo código que emitirá el motor es current_value + 1.
+message SequenceCounter {
+  string scope_tag = 1;        // vacío = contador global del tenant
+  string prefix = 2;
+  int32 padding_length = 3;
+  int64 current_value = 4;
+  string scope_resolution = 5; // vacío si la fila no lo declara (cae al Códice)
+  bool exists = 6;             // false: contador sin actividad aún
+}
+
+message ListSequenceConfigsRequest {
+  string entity_type = 1;      // ej. "work_order"
+  string field_name = 2;       // ej. "work_order_number"
+}
+
+message ListSequenceConfigsResponse {
+  Status status = 1;
+  SequenceDefaults defaults = 2;                 // fallback estático del Códice
+  SequenceCounter global_counter = 3;            // política/contador global
+  repeated SequenceCounter scoped_counters = 4;  // contadores por ubicación
+}
+
+message UpsertSequenceConfigRequest {
+  string entity_type = 1;
+  string field_name = 2;
+  string prefix = 3;             // se normaliza a MAYÚSCULAS y a terminar en '-'
+  int32 padding_length = 4;      // 1..=8; 0 = usar el default del Códice
+  string scope_resolution = 5;   // vacío = usar el default del Códice
+  // Próximo número DESEADO para el contador global (emitirá este valor).
+  // Solo hacia adelante: el motor rechaza retroceder (duplicados con el
+  // check unique del modelo). Ausente = no tocar el contador.
+  optional int64 set_next_value = 6;
+}
+
+message UpsertSequenceConfigResponse {
+  Status status = 1;
+  SequenceCounter global_counter = 2;
 }

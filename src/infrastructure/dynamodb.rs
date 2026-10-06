@@ -401,6 +401,141 @@ impl DynamoClient {
         Ok(items)
     }
 
+    // ── Sequence registry (numeración de registros) ──────────────────────────
+    // Tabla dedicada metri-sequence-registry (PK = sequence_code). Ver
+    // codice/sequence.rs y grpc/handlers/sequence_config.rs.
+
+    /// Incremento ATÓMICO del contador (`ADD current_value :one`) — sin
+    /// read-modify-write, inmune a la concurrencia. UpdateItem es upsert:
+    /// crea la fila si aún no existe. Escribe `tenant_id` para que el
+    /// listado por tenant (scan filtrado) la encuentre. NO toca prefix/
+    /// padding: la política la escribe SOLO el RPC de configuración —
+    /// fijarla aquí pineaba la config estática del Códice sobre el
+    /// override del tenant.
+    pub async fn sequence_increment(
+        &self,
+        table_name: &str,
+        seq_code: &str,
+        tenant_id: &str,
+    ) -> Result<i64, DomainError> {
+        let resp = self
+            .client
+            .update_item()
+            .table_name(table_name)
+            .key("PK", AttributeValue::S(seq_code.to_string()))
+            .update_expression("SET tenant_id = :t ADD #v :one")
+            .expression_attribute_names("#v", "current_value")
+            .expression_attribute_values(":t", AttributeValue::S(tenant_id.to_string()))
+            .expression_attribute_values(":one", AttributeValue::N("1".to_string()))
+            .return_values(aws_sdk_dynamodb::types::ReturnValue::AllNew)
+            .send()
+            .await
+            .map_err(|e| map_sdk_error(e, ErrorCode::Infra001, table_name))?;
+
+        resp.attributes()
+            .and_then(|attrs| attrs.get("current_value"))
+            .and_then(av_number)
+            .and_then(|n| n.parse::<i64>().ok())
+            .ok_or_else(|| {
+                DomainError::infra(
+                    ErrorCode::Infra001,
+                    format!("sequence_increment: respuesta sin 'current_value' para '{seq_code}'"),
+                )
+            })
+    }
+
+    /// Upsert de la POLÍTICA de una secuencia (prefix/padding/
+    /// scope_resolution). Con `set_current_value` exige que el contador NO
+    /// retroceda: `attribute_not_exists(current_value) OR current_value < :cv`
+    /// (el próximo número deseado es set_current_value + 1). Retorna `false`
+    /// si la condición falló — el contador ya estaba más adelante.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn sequence_config_upsert(
+        &self,
+        table_name: &str,
+        seq_code: &str,
+        tenant_id: &str,
+        prefix: &str,
+        padding: usize,
+        scope_resolution: &str,
+        set_current_value: Option<i64>,
+    ) -> Result<bool, DomainError> {
+        let mut update = self
+            .client
+            .update_item()
+            .table_name(table_name)
+            .key("PK", AttributeValue::S(seq_code.to_string()))
+            .update_expression("SET tenant_id = :t, #p = :p, #pd = :pd, #sr = :sr")
+            .expression_attribute_names("#p", "prefix")
+            .expression_attribute_names("#pd", "padding")
+            .expression_attribute_names("#sr", "scope_resolution")
+            .expression_attribute_values(":t", AttributeValue::S(tenant_id.to_string()))
+            .expression_attribute_values(":p", AttributeValue::S(prefix.to_string()))
+            .expression_attribute_values(":pd", AttributeValue::N(padding.to_string()))
+            .expression_attribute_values(":sr", AttributeValue::S(scope_resolution.to_string()));
+
+        if let Some(cv) = set_current_value {
+            update = update
+                .update_expression("SET tenant_id = :t, #p = :p, #pd = :pd, #sr = :sr, #v = :cv")
+                .condition_expression("attribute_not_exists(#v) OR #v < :cv")
+                .expression_attribute_names("#v", "current_value")
+                .expression_attribute_values(":cv", AttributeValue::N(cv.to_string()));
+        }
+
+        match update.send().await {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                let conditional = e
+                    .as_service_error()
+                    .map(|se| {
+                        se.meta().code() == Some("TransactionCanceledException")
+                            && se.to_string().contains("ConditionalCheckFailed")
+                    })
+                    .unwrap_or(false);
+                if conditional {
+                    Ok(false)
+                } else {
+                    Err(map_sdk_error(e, ErrorCode::Infra001, table_name))
+                }
+            }
+        }
+    }
+
+    /// Scan con FilterExpression, paginado automáticamente. Para listar los
+    /// contadores de un tenant: la tabla dedicada de secuencias es pequeña
+    /// (una fila por contador) y no tiene GSI por tenant — el PK es la
+    /// sequence_code, que ya embebe el tenant.
+    pub async fn scan_with_filter(
+        &self,
+        table_name: &str,
+        filter_expression: &str,
+        names: HashMap<String, String>,
+        values: HashMap<String, AttributeValue>,
+    ) -> Result<Vec<HashMap<String, AttributeValue>>, DomainError> {
+        let mut req = self
+            .client
+            .scan()
+            .table_name(table_name)
+            .filter_expression(filter_expression)
+            .set_expression_attribute_names(Some(names))
+            .set_expression_attribute_values(Some(values));
+
+        let mut items = Vec::new();
+        loop {
+            let resp = req
+                .clone()
+                .send()
+                .await
+                .map_err(|e| map_sdk_error(e, ErrorCode::Infra001, table_name))?;
+            items.extend(resp.items.unwrap_or_default());
+            match resp.last_evaluated_key {
+                Some(key) if !key.is_empty() => req = req.set_exclusive_start_key(Some(key)),
+                _ => break,
+            }
+        }
+        Ok(items)
+    }
+
     // ── DeleteItem ────────────────────────────────────────────────────────────
 
     /// Elimina un item. Idempotente — no lanza si no existía.

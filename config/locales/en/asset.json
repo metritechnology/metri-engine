@@ -30,15 +30,12 @@
   "enums": {
     "asset": {
       "status": {
-        "ACTIVE": "Active",
+        "ACTIVE": "Operational",
         "INACTIVE": "Inactive",
-        "IN_MAINTENANCE": "In Maintenance",
-        "active": "Active",
-        "inactive": "Inactive",
-        "maintenance": "In Maintenance",
-        "in_maintenance": "In Maintenance",
-        "broken": "Broken",
-        "decommissioned": "Decommissioned"
+        "IN_MAINTENANCE": "Under maintenance",
+        "DOWN": "Out of service",
+        "STANDBY": "Standby",
+        "DECOMMISSIONED": "Decommissioned"
       },
       "criticality": {
         "A": "Critical",
