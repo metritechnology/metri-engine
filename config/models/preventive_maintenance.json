@@ -96,7 +96,7 @@
       "type": "boolean",
       "default_value": "false",
       "is_dimension": true,
-      "description": "Si la orden engendrada exige verificación de coordenadas GPS y geocerca al fichar."
+      "description": "Si la orden engendrada exige verificar la ubicación del técnico al registrar tiempo."
     },
     {
       "name": "latitude",

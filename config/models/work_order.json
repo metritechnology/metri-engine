@@ -59,7 +59,7 @@
       "type": "boolean",
       "default_value": "false",
       "is_dimension": true,
-      "description": "Exige la verificación obligatoria de coordenadas GPS y geocerca en los registros de trabajo de la orden."
+      "description": "Exige verificar la ubicación del técnico en los registros de tiempo de la orden."
     },
     {
       "name": "latitude",

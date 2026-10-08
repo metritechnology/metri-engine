@@ -12,7 +12,10 @@ echo "▶ cargo fmt --check"
 cargo fmt --check || status=1
 
 echo "▶ referencia generada al día (modelos ↔ docs/reference)"
-python3 scripts/docs/gen_reference.py --check || status=1
+# El script usa tomllib (Python ≥ 3.11); el python3 del sistema puede ser más viejo.
+PY=.venv/bin/python3
+[ -x "$PY" ] || PY=python3
+"$PY" scripts/docs/gen_reference.py --check || status=1
 
 echo "▶ guard: archivos de fuente excluidos por .gitignore"
 # Solo importan fuentes; los artefactos derivados (.pyc, __pycache__) están

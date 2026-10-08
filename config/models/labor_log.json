@@ -69,7 +69,7 @@
       "type": "boolean",
       "default_value": "false",
       "is_dimension": true,
-      "description": "Flag de auditoría que confirma si el fichaje ocurrió dentro del radio de geocerca del activo/ubicación asignada."
+      "description": "Marca de auditoría que confirma si el registro se hizo dentro del radio de ubicación permitido del activo o la ubicación asignada."
     }
   ],
   "constraints": [
