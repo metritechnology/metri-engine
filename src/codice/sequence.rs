@@ -133,6 +133,13 @@ pub fn global_sequence_code(tenant_id: &str, field_name: &str) -> String {
     build_sequence_code(tenant_id, field_name, None)
 }
 
+/// Clave del contador de una UBICACIÓN (`scope_tag` = id de la ubicación).
+/// La usa el RPC de configuración para sembrar/reajustar contadores scoped:
+/// el minteo nunca los crea, solo los incrementa cuando ya tienen actividad.
+pub(crate) fn scoped_sequence_code(tenant_id: &str, field_name: &str, scope_tag: &str) -> String {
+    build_sequence_code(tenant_id, field_name, Some(scope_tag))
+}
+
 /// Extrae el scope_tag de un PK scoped: `{tenant}:{field}:{tag}_seq` → tag.
 /// `None` si el PK es la fila global.
 pub fn scope_tag_from_pk(pk: &str, tenant_id: &str, field_name: &str) -> Option<String> {

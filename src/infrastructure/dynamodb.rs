@@ -501,6 +501,50 @@ impl DynamoClient {
         }
     }
 
+    /// Siembra/reajusta el contador de una UBICACIÓN: escribe SOLO
+    /// `current_value` (+ `tenant_id` para el listado) — la política
+    /// (prefix/padding/scope_resolution) es exclusiva de la fila global.
+    /// Misma guarda que `sequence_config_upsert`: nunca retrocede
+    /// (`attribute_not_exists(current_value) OR current_value < :cv`; el
+    /// próximo número deseado es current_value + 1). Retorna `false` si la
+    /// condición falló — el contador ya estaba más adelante.
+    pub async fn sequence_scoped_set(
+        &self,
+        table_name: &str,
+        seq_code: &str,
+        tenant_id: &str,
+        current_value: i64,
+    ) -> Result<bool, DomainError> {
+        let update = self
+            .client
+            .update_item()
+            .table_name(table_name)
+            .key("PK", AttributeValue::S(seq_code.to_string()))
+            .update_expression("SET tenant_id = :t, #v = :cv")
+            .condition_expression("attribute_not_exists(#v) OR #v < :cv")
+            .expression_attribute_names("#v", "current_value")
+            .expression_attribute_values(":t", AttributeValue::S(tenant_id.to_string()))
+            .expression_attribute_values(":cv", AttributeValue::N(current_value.to_string()));
+
+        match update.send().await {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                let conditional = e
+                    .as_service_error()
+                    .map(|se| {
+                        se.meta().code() == Some("TransactionCanceledException")
+                            && se.to_string().contains("ConditionalCheckFailed")
+                    })
+                    .unwrap_or(false);
+                if conditional {
+                    Ok(false)
+                } else {
+                    Err(map_sdk_error(e, ErrorCode::Infra001, table_name))
+                }
+            }
+        }
+    }
+
     /// Scan con FilterExpression, paginado automáticamente. Para listar los
     /// contadores de un tenant: la tabla dedicada de secuencias es pequeña
     /// (una fila por contador) y no tiene GSI por tenant — el PK es la

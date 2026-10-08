@@ -146,6 +146,32 @@ fn ok_status() -> Option<PbStatus> {
     })
 }
 
+/// Valida la rama SCOPED del upsert: con `scope_tag` informado (id de la
+/// ubicación, no vacío) exige un `set_next_value` positivo y devuelve
+/// `(scope_tag, current_value destino)` — el próximo número deseado n se
+/// persiste como current_value = n - 1. Sin scope_tag → `None` (flujo
+/// global de siempre).
+fn validate_scoped_request(
+    scope_tag: Option<&str>,
+    set_next_value: Option<i64>,
+) -> Result<Option<(String, i64)>, Status> {
+    let tag = match scope_tag.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    let next = set_next_value.ok_or_else(|| {
+        Status::invalid_argument(
+            "set_next_value es obligatorio al fijar el contador de una ubicación",
+        )
+    })?;
+    if next < 1 {
+        return Err(Status::invalid_argument(
+            "set_next_value debe ser un número positivo",
+        ));
+    }
+    Ok(Some((tag.to_string(), next - 1)))
+}
+
 impl MetriGrpcService {
     /// Lista la política/contadores de numeración de un campo secuencial:
     /// defaults del Códice, fila global (editable) y contadores por
@@ -269,6 +295,48 @@ impl MetriGrpcService {
         let req = request.into_inner();
         let defaults = resolve_sequential(&req.entity_type, &req.field_name)?;
 
+        let tenant_id = principal.tenant_id;
+        let ddb = self.eav_writer.client();
+        let table = sequence::sequence_registry_table();
+
+        // Rama SCOPED (scope_tag = id de la ubicación): siembra o reajuste
+        // del contador de ESA ubicación. Los contadores por ubicación nunca
+        // nacen al emitir (el minteo solo incrementa filas con actividad):
+        // esta es su única vía de creación. Solo aplica set_next_value — la
+        // política (prefix/padding/modo) es exclusiva de la fila global.
+        if let Some((scope_tag, target_value)) =
+            validate_scoped_request(req.scope_tag.as_deref(), req.set_next_value)?
+        {
+            let scoped_code =
+                sequence::scoped_sequence_code(&tenant_id, &req.field_name, &scope_tag);
+            // Misma guarda que el global: nunca retrocede (duplicados contra
+            // el check unique del modelo).
+            let applied = ddb
+                .sequence_scoped_set(&table, &scoped_code, &tenant_id, target_value)
+                .await?;
+            if !applied {
+                return Err(Status::failed_precondition(
+                    "El contador de esa ubicación ya está más adelante — no se puede retroceder",
+                ));
+            }
+            info!(
+                "[SequenceConfig] tenant={} {} contador ubicación {} fijado: next={}",
+                tenant_id,
+                req.field_name,
+                scope_tag,
+                target_value + 1,
+            );
+            let (policy, current) = match ddb.get_item(&table, &scoped_code, None).await? {
+                Some(item) => sequence::parse_counter_item(&item),
+                None => (sequence::SequencePolicy::default(), None),
+            };
+            return Ok(Response::new(UpsertSequenceConfigResponse {
+                status: ok_status(),
+                global_counter: None,
+                scoped_counter: Some(counter_pb(Some(scope_tag), &policy, current)),
+            }));
+        }
+
         let prefix =
             normalize_prefix(&req.prefix, &defaults.prefix).map_err(Status::invalid_argument)?;
         let padding = effective_padding(req.padding_length, defaults.padding)
@@ -276,9 +344,6 @@ impl MetriGrpcService {
         let resolution = effective_resolution(&req.scope_resolution, &defaults.scope_resolution)
             .map_err(Status::invalid_argument)?;
 
-        let tenant_id = principal.tenant_id;
-        let ddb = self.eav_writer.client();
-        let table = sequence::sequence_registry_table();
         let global_code = sequence::global_sequence_code(&tenant_id, &req.field_name);
 
         // El próximo número deseado (`n`) fija current_value = n - 1, solo
@@ -347,6 +412,7 @@ impl MetriGrpcService {
         Ok(Response::new(UpsertSequenceConfigResponse {
             status: ok_status(),
             global_counter: Some(counter_pb(None, &policy, current)),
+            scoped_counter: None,
         }))
     }
 }
@@ -401,5 +467,36 @@ mod tests {
             ScopeResolution::Exact
         );
         assert!(effective_resolution("global_continuo", &ScopeResolution::Exact).is_err());
+    }
+
+    #[test]
+    fn scoped_sin_scope_tag_es_flujo_global() {
+        assert_eq!(validate_scoped_request(None, None).unwrap(), None);
+        // Vacío o blancos = ausente.
+        assert_eq!(validate_scoped_request(Some(""), None).unwrap(), None);
+        assert_eq!(validate_scoped_request(Some("   "), Some(5)).unwrap(), None);
+    }
+
+    #[test]
+    fn scoped_exige_set_next_value_positivo() {
+        assert!(
+            validate_scoped_request(Some("01JLOC"), None).is_err(),
+            "sin set_next_value no hay nada que sembrar"
+        );
+        assert!(validate_scoped_request(Some("01JLOC"), Some(0)).is_err());
+        assert!(validate_scoped_request(Some("01JLOC"), Some(-4)).is_err());
+    }
+
+    #[test]
+    fn scoped_ok_devuelve_tag_y_current_destino() {
+        // El próximo número deseado n se persiste como current_value = n - 1.
+        assert_eq!(
+            validate_scoped_request(Some(" 01JLOC "), Some(1)).unwrap(),
+            Some(("01JLOC".to_string(), 0))
+        );
+        assert_eq!(
+            validate_scoped_request(Some("01JLOC"), Some(500)).unwrap(),
+            Some(("01JLOC".to_string(), 499))
+        );
     }
 }

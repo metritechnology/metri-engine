@@ -1169,9 +1169,18 @@ message UpsertSequenceConfigRequest {
   // Solo hacia adelante: el motor rechaza retroceder (duplicados con el
   // check unique del modelo). Ausente = no tocar el contador.
   optional int64 set_next_value = 6;
+  // Ámbito del contador: el id de la ubicación (ULID). Ausente/vacío = fila
+  // GLOBAL (política del tenant, comportamiento de siempre). Informado =
+  // siembra/reajuste del contador de ESA ubicación: solo aplica
+  // set_next_value (obligatorio); prefix/padding/scope_resolution se ignoran
+  // — la política es solo de la fila global. Los contadores por ubicación
+  // nunca nacen al emitir: esta es su única vía de creación.
+  optional string scope_tag = 7;
 }
 
 message UpsertSequenceConfigResponse {
   Status status = 1;
   SequenceCounter global_counter = 2;
+  // Contador de ubicación escrito cuando la request traía scope_tag.
+  SequenceCounter scoped_counter = 3;
 }
