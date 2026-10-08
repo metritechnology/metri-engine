@@ -40,16 +40,32 @@ pub fn validate_payload(
         match obj.get(attr_name) {
             Some(val) => {
                 if !val.is_null() {
-                    // X-01: Validar enum options
+                    // X-01: Validar enum options.
+                    // Un enum con `enum_open: true` declara `options` como
+                    // catálogo canónico/sugerido (se expone en Explore como
+                    // enum_values) pero acepta cualquier string: el catálogo
+                    // efectivo lo gobierna la config del tenant desde el
+                    // frontend. El valor fuera de lista es camino legítimo
+                    // (nivel debug, no warn).
                     if matches!(attr_desc.attr_type, AttrType::Enum)
                         && !attr_desc.options.is_empty()
                     {
                         if let Some(s) = val.as_str() {
                             if !attr_desc.options.iter().any(|o| o == s) {
-                                violations.push(format!(
-                                    "Campo '{}': Valor '{}' no permitido para enum. Opciones válidas: {}",
-                                    attr_name, s, attr_desc.options.join(", ")
-                                ));
+                                if attr_desc.enum_open {
+                                    tracing::debug!(
+                                        "[Codice Validator] enum abierto '{}': valor '{}' \
+                                         fuera del catálogo canónico {:?} — aceptado",
+                                        attr_name,
+                                        s,
+                                        attr_desc.options
+                                    );
+                                } else {
+                                    violations.push(format!(
+                                        "Campo '{}': Valor '{}' no permitido para enum. Opciones válidas: {}",
+                                        attr_name, s, attr_desc.options.join(", ")
+                                    ));
+                                }
                             }
                         }
                     }

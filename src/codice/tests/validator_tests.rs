@@ -24,6 +24,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -43,6 +44,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -62,6 +64,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -81,6 +84,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -100,6 +104,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -119,6 +124,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -138,6 +144,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: Some("location".to_string()),
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -157,6 +164,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec!["ACTIVE".to_string(), "INACTIVE".to_string()],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -176,6 +184,7 @@ fn make_test_model() -> EntityModel {
                 is_metric: false,
                 entity_ref: None,
                 options: vec![],
+                enum_open: false,
                 is_sequence_scope: false,
                 is_sequence_scope_via: false,
                 sensitive: false,
@@ -321,6 +330,53 @@ fn test_validate_payload_enum_validation() {
     assert!(err.detail.contains("Valor 'BANANA' no permitido para enum"));
 }
 
+/// X-01 con `enum_open: true`: el enum acepta valores fuera de `options` —
+/// el catálogo efectivo lo gobierna el tenant desde el frontend y `options`
+/// queda como metadato canónico (enum_values del RPC Explore). El mapeo a
+/// DatomValue sigue exigiendo string.
+#[test]
+fn test_validate_payload_enum_open_acepta_valores_fuera_de_options() {
+    let mut model = make_test_model();
+    let status = model
+        .attributes
+        .iter_mut()
+        .find(|a| a.name == "status")
+        .expect("status en el modelo de prueba");
+    status.enum_open = true;
+
+    let payload = json!({
+        "id": "asset-001",
+        "name": "Compressor A",
+        "is_active": true,
+        "status": "BANANA" // Fuera de options, válido en enum abierto
+    });
+
+    let attrs = validate_payload(&model, &payload, "tnt_01", true)
+        .expect("enum_open acepta valores fuera del catálogo canónico");
+    assert_eq!(
+        attrs.get("status").unwrap(),
+        &DatomValue::Str("BANANA".to_string())
+    );
+
+    // Los valores canónicos siguen pasando.
+    let canonical = json!({
+        "id": "asset-001",
+        "name": "Compressor A",
+        "is_active": true,
+        "status": "ACTIVE"
+    });
+    assert!(validate_payload(&model, &canonical, "tnt_01", true).is_ok());
+
+    // Un enum abierto NO relaja el tipado: sigue exigiendo string.
+    let bad_type = json!({
+        "id": "asset-001",
+        "name": "Compressor A",
+        "is_active": true,
+        "status": 42
+    });
+    assert!(validate_payload(&model, &bad_type, "tnt_01", true).is_err());
+}
+
 #[test]
 fn test_validate_payload_pattern_validation() {
     let model = make_test_model();
@@ -396,6 +452,66 @@ fn test_enum_field_type_de_procedure_rechaza_valores_fuera_de_catalogo() {
     let err = bad.unwrap_err();
     assert_eq!(err.code, ErrorCode::Cod001);
     assert!(err.detail.contains("METER"), "{err}");
+}
+
+/// Regresión del bug de producción: el frontend permite estados de
+/// work_order personalizados por tenant (catálogo gobernado en config del
+/// tenant), pero el motor rechazaba la escritura con Cod001. `status` y
+/// `category` del modelo REAL son enums abiertos: `options` documenta los
+/// valores canónicos y el validador acepta cualquier string.
+#[test]
+fn test_work_order_real_acepta_status_y_category_de_tenant() {
+    let dir = std::path::Path::new("config/models");
+    let (registry, _rules) =
+        crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
+    let model = registry
+        .get_model("work_order")
+        .expect("work_order registrado");
+
+    let custom = validate_payload(
+        model,
+        &json!({
+            "title": "OT con catálogo del tenant",
+            "status": "EXAMPLE",
+            "category": "CUSTOM_TENANT_KIND"
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(
+        custom.is_ok(),
+        "enum_open debe aceptar catálogo del tenant: {custom:?}"
+    );
+
+    // Los valores canónicos siguen pasando.
+    let canonical = validate_payload(
+        model,
+        &json!({
+            "title": "OT canónica",
+            "status": "OPEN",
+            "category": "CORRECTIVE"
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(canonical.is_ok(), "valores canónicos: {canonical:?}");
+
+    // priority NO es abierto: la validación estricta por defecto sigue viva.
+    let strict = validate_payload(
+        model,
+        &json!({
+            "title": "OT prioridad inválida",
+            "status": "OPEN",
+            "category": "CORRECTIVE",
+            "priority": "BANANA"
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(
+        strict.is_err(),
+        "priority conserva la validación estricta (enum_open ausente = false)"
+    );
 }
 
 /// lifecycle_state de procedure: un DRAFT se crea, pero el materializador

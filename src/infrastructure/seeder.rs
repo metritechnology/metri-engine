@@ -170,6 +170,7 @@ mod tests {
             is_metric: false,
             entity_ref: None,
             options: Vec::new(),
+            enum_open: false,
             is_sequence_scope: false,
             is_sequence_scope_via: false,
             sensitive: false,

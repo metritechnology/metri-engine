@@ -86,18 +86,36 @@
     },
     {
       "name": "category",
-      "type": "string",
+      "type": "enum",
+      "options": [
+        "CORRECTIVE",
+        "PREVENTIVE",
+        "PREDICTIVE",
+        "CALIBRATION",
+        "SAFETY",
+        "IMPROVEMENT"
+      ],
+      "enum_open": true,
       "default_value": "CORRECTIVE",
       "required": true,
       "is_dimension": true,
-      "description": "Categoría o tipo de mantenimiento a ejecutar, abierto a valores definidos por el tenant (valores típicos: CORRECTIVE, PREVENTIVE, PREDICTIVE, CALIBRATION, SAFETY, IMPROVEMENT)."
+      "description": "Categoría o tipo de mantenimiento a ejecutar. Enum abierto: el catálogo efectivo lo gobierna la config del tenant desde el frontend; 'options' son los valores canónicos/sugeridos."
     },
     {
       "name": "status",
-      "type": "string",
+      "type": "enum",
+      "options": [
+        "OPEN",
+        "ON_HOLD",
+        "IN_PROGRESS",
+        "REVIEW",
+        "CLOSED",
+        "CANCELLED"
+      ],
+      "enum_open": true,
       "default_value": "OPEN",
       "is_dimension": true,
-      "description": "Estado de la orden de trabajo, abierto a valores definidos por el tenant (valores típicos: OPEN, ON_HOLD, IN_PROGRESS, REVIEW, CLOSED, CANCELLED)."
+      "description": "Estado de la orden de trabajo. Enum abierto: el catálogo efectivo lo gobierna la config del tenant desde el frontend; 'options' son los valores canónicos/sugeridos."
     },
     {
       "name": "priority",

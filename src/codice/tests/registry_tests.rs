@@ -495,3 +495,99 @@ fn la_familia_de_turnos_declara_los_contratos_de_capacidad() {
         && a.attr_type == AttrType::Enum
         && a.options.contains(&"PUBLISHED".to_string())));
 }
+
+/// Parseo del flag `enum_open`: el modelo JSON lo declara por atributo y el
+/// descriptor lo refleja. Ausente = false (validación estricta por defecto).
+#[test]
+fn test_enum_open_se_parsea_y_es_false_por_defecto() {
+    let (dir, cleanup) = create_temp_models_dir();
+
+    let model_json = serde_json::json!({
+        "entity": "test_open_enum",
+        "engine": "oltp",
+        "attributes": [
+            {
+                "name": "status",
+                "type": "enum",
+                "options": ["OPEN", "CLOSED"],
+                "enum_open": true
+            },
+            {
+                "name": "priority",
+                "type": "enum",
+                "options": ["LOW", "HIGH"]
+            }
+        ]
+    });
+
+    fs::write(
+        dir.join("test_open_enum.json"),
+        serde_json::to_string(&model_json).unwrap(),
+    )
+    .unwrap();
+
+    let (registry, _rules) = CodeRegistry::build(&dir).expect("compila");
+    let model = registry.get_model("test_open_enum").expect("registrado");
+
+    let status = model
+        .attributes
+        .iter()
+        .find(|a| a.name == "status")
+        .expect("status declarado");
+    assert!(
+        status.enum_open,
+        "enum_open: true debe llegar al descriptor"
+    );
+    assert_eq!(status.attr_type, AttrType::Enum);
+    assert_eq!(
+        status.options,
+        vec!["OPEN".to_string(), "CLOSED".to_string()]
+    );
+
+    let priority = model
+        .attributes
+        .iter()
+        .find(|a| a.name == "priority")
+        .expect("priority declarado");
+    assert!(!priority.enum_open, "enum_open ausente = false (estricto)");
+
+    cleanup();
+}
+
+/// Candado del modelo real: status y category de work_order son enums
+/// ABIERTOS con su catálogo canónico en options (metadato del RPC Explore),
+/// mientras priority conserva la validación estricta.
+#[test]
+fn test_work_order_status_y_category_son_enums_abiertos() {
+    let models_dir = std::path::Path::new("config/models");
+    let (registry, _rules) =
+        CodeRegistry::build(models_dir).expect("config/models debe compilar con enums abiertos");
+
+    let wo = registry
+        .get_model("work_order")
+        .expect("work_order debe estar registrado");
+
+    for (name, canonico) in [("status", "OPEN"), ("category", "CORRECTIVE")] {
+        let attr = wo
+            .attributes
+            .iter()
+            .find(|a| a.name == name)
+            .unwrap_or_else(|| panic!("work_order.{name} debe estar declarado"));
+        assert_eq!(attr.attr_type, AttrType::Enum, "work_order.{name} es enum");
+        assert!(attr.enum_open, "work_order.{name} es enum abierto");
+        assert!(
+            attr.options.iter().any(|o| o == canonico),
+            "work_order.{name} conserva el catálogo canónico en options"
+        );
+    }
+
+    let priority = wo
+        .attributes
+        .iter()
+        .find(|a| a.name == "priority")
+        .expect("work_order.priority debe estar declarado");
+    assert!(
+        !priority.enum_open,
+        "work_order.priority conserva la validación estricta"
+    );
+}

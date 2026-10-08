@@ -96,6 +96,14 @@ pub struct AttributeDescriptor {
     pub is_metric: bool,        // métrica para OLAP
     pub entity_ref: Option<String>, // referencia a otra entidad
     pub options: Vec<String>,   // enum values
+    /// Enum abierto (regla X-01): `options` documenta los valores
+    /// canónicos/sugeridos y se expone como `enum_values` en el RPC Explore,
+    /// pero el validador NO rechaza valores fuera de la lista — el atributo
+    /// acepta cualquier string. Uso: catálogos gobernados por tenant desde el
+    /// frontend (p. ej. `status`/`category` de work_order). Default false:
+    /// todo enum existente conserva la validación estricta contra `options`.
+    #[serde(default)]
+    pub enum_open: bool,
     pub is_sequence_scope: bool,
     pub is_sequence_scope_via: bool,
     /// /// Marca PII — sanitizado en error_response (el stack anterior: :sensitive true).
@@ -652,6 +660,7 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
                         .collect()
                 })
                 .unwrap_or_default(),
+            enum_open: a["enum_open"].as_bool().unwrap_or(false),
             is_sequence_scope: a["is_sequence_scope"].as_bool().unwrap_or(false),
             is_sequence_scope_via: a["is_sequence_scope_via"].as_bool().unwrap_or(false),
             sensitive: a["sensitive"].as_bool().unwrap_or(false),

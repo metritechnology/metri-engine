@@ -122,6 +122,7 @@ async fn test_generator_inject_stochastic_base36() {
             is_metric: false,
             entity_ref: None,
             options: vec![],
+            enum_open: false,
             is_sequence_scope: false,
             is_sequence_scope_via: false,
             sensitive: false,
