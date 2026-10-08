@@ -36,10 +36,17 @@
     },
     {
       "name": "status",
-      "type": "string",
+      "type": "enum",
+      "options": [
+        "OPERATIONAL",
+        "NON_OPERATIONAL",
+        "UNDER_MAINTENANCE",
+        "DECOMMISSIONED"
+      ],
+      "enum_open": true,
       "default_value": "OPERATIONAL",
       "is_dimension": true,
-      "description": "Estado operativo actual de la ubicación, abierto a valores definidos por el tenant (valores típicos: OPERATIONAL, NON_OPERATIONAL, UNDER_MAINTENANCE, DECOMMISSIONED)."
+      "description": "Estado operativo actual de la ubicación. Enum abierto: el catálogo efectivo lo gobierna la config del tenant desde el frontend; 'options' son los valores canónicos/sugeridos."
     },
     {
       "name": "criticality",
