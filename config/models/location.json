@@ -36,16 +36,10 @@
     },
     {
       "name": "status",
-      "type": "enum",
-      "options": [
-        "OPERATIONAL",
-        "NON_OPERATIONAL",
-        "UNDER_MAINTENANCE",
-        "DECOMMISSIONED"
-      ],
+      "type": "string",
       "default_value": "OPERATIONAL",
       "is_dimension": true,
-      "description": "Estado operativo actual de la ubicación."
+      "description": "Estado operativo actual de la ubicación, abierto a valores definidos por el tenant (valores típicos: OPERATIONAL, NON_OPERATIONAL, UNDER_MAINTENANCE, DECOMMISSIONED)."
     },
     {
       "name": "criticality",

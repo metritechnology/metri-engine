@@ -41,18 +41,10 @@
     },
     {
       "name": "status",
-      "type": "enum",
-      "options": [
-        "ACTIVE",
-        "INACTIVE",
-        "IN_MAINTENANCE",
-        "DOWN",
-        "STANDBY",
-        "DECOMMISSIONED"
-      ],
+      "type": "string",
       "default_value": "ACTIVE",
       "is_dimension": true,
-      "description": "Estado operativo del activo. 'DOWN' activa métricas de parada no planificada; 'DECOMMISSIONED' cierra el ciclo de vida (baja definitiva, incluye retiro y despiece)."
+      "description": "Estado operativo del activo, abierto a valores definidos por el tenant (valores típicos: ACTIVE, INACTIVE, IN_MAINTENANCE, DOWN, STANDBY, DECOMMISSIONED). 'DOWN' activa métricas de parada no planificada; 'DECOMMISSIONED' cierra el ciclo de vida (baja definitiva, incluye retiro y despiece)."
     },
     {
       "name": "criticality",

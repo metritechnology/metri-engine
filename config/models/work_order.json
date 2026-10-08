@@ -86,33 +86,18 @@
     },
     {
       "name": "category",
-      "type": "enum",
-      "options": [
-        "CORRECTIVE",
-        "PREVENTIVE",
-        "PREDICTIVE",
-        "CALIBRATION",
-        "SAFETY",
-        "IMPROVEMENT"
-      ],
+      "type": "string",
       "default_value": "CORRECTIVE",
       "required": true,
       "is_dimension": true,
-      "description": "Categoría o tipo de mantenimiento a ejecutar."
+      "description": "Categoría o tipo de mantenimiento a ejecutar, abierto a valores definidos por el tenant (valores típicos: CORRECTIVE, PREVENTIVE, PREDICTIVE, CALIBRATION, SAFETY, IMPROVEMENT)."
     },
     {
       "name": "status",
-      "type": "enum",
-      "options": [
-        "OPEN",
-        "ON_HOLD",
-        "IN_PROGRESS",
-        "REVIEW",
-        "CLOSED",
-        "CANCELLED"
-      ],
+      "type": "string",
       "default_value": "OPEN",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Estado de la orden de trabajo, abierto a valores definidos por el tenant (valores típicos: OPEN, ON_HOLD, IN_PROGRESS, REVIEW, CLOSED, CANCELLED)."
     },
     {
       "name": "priority",
