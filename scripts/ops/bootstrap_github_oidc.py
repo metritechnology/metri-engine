@@ -233,9 +233,15 @@ def deploy_policy() -> dict:
                     "kms:GetKeyRotationStatus",
                     "kms:EnableKeyRotation",
                     "kms:UpdateKeyDescription",
-                    # Necesario para resolver {{resolve:secretsmanager:...}}:
-                    # el secreto HMAC está cifrado con la CMK del stack.
+                    # Necesario para resolver {{resolve:secretsmanager:...}} y
+                    # cifrar variables de entorno de Lambda con KmsKeyArn:
                     "kms:Decrypt",
+                    "kms:Encrypt",
+                    "kms:GenerateDataKey*",
+                    "kms:ReEncrypt*",
+                    "kms:CreateGrant",
+                    "kms:ListGrants",
+                    "kms:RevokeGrant",
                     "kms:CreateAlias",
                     "kms:UpdateAlias",
                     "kms:DeleteAlias",
@@ -292,6 +298,7 @@ def deploy_policy() -> dict:
                 "Effect": "Allow",
                 "Action": [
                     "lambda:CreateFunction",
+                    "lambda:DeleteFunction",
                     "lambda:UpdateFunctionCode",
                     "lambda:UpdateFunctionConfiguration",
                     "lambda:CreateFunctionUrlConfig",
