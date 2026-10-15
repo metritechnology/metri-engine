@@ -1,6 +1,5 @@
 {
   "entity": "scheduled_job",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "attributes": [

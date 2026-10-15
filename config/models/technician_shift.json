@@ -1,6 +1,5 @@
 {
   "entity": "technician_shift",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [

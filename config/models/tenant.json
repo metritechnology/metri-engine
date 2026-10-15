@@ -1,6 +1,5 @@
 {
   "entity": "tenant",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "is_sequence_scope_provider": true,

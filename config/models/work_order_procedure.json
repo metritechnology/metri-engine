@@ -1,6 +1,5 @@
 {
   "entity": "work_order_procedure",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [

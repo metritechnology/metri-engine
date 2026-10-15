@@ -1,6 +1,5 @@
 {
   "entity": "webhook_endpoint",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "attributes": [
@@ -41,7 +40,7 @@
       "name": "auth_token",
       "type": "string",
       "crypto_envelope": true,
-      "description": "Token de autenticaci\u00f3n del destino. Interceptado por Envelope Encryption en el Gateway (KMS) para asentar solo el Ciphertext en la DB."
+      "description": "Token de autenticación del destino. Interceptado por Envelope Encryption en el Gateway (KMS) para asentar solo el Ciphertext en la DB."
     },
     {
       "name": "subscribed_rule_ids",
@@ -49,7 +48,7 @@
       "entityRef": "event_routing_rule",
       "cardinality": "many",
       "required": true,
-      "description": "Lista de las Event Routing Rules (Triggers) que ejecutar\u00e1n este Webhook."
+      "description": "Lista de las Event Routing Rules (Triggers) que ejecutarán este Webhook."
     },
     {
       "name": "max_retries",

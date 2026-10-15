@@ -1,6 +1,5 @@
 {
   "entity": "calendar_event",
-  "engine": "oltp",
   "is_system": true,
   "track_history": false,
   "attributes": [
@@ -16,7 +15,7 @@
       "type": "string",
       "required": true,
       "is_dimension": true,
-      "description": "Permite al Frontend renderizar \u00edconos diferentes. Ej: 'reminder', 'preventive_maintenance', 'work_order'."
+      "description": "Permite al Frontend renderizar íconos diferentes. Ej: 'reminder', 'preventive_maintenance', 'work_order'."
     },
     {
       "name": "start_date",
@@ -29,31 +28,31 @@
       "name": "end_date",
       "type": "string",
       "required": true,
-      "description": "Fecha y hora ISO de finalizaci\u00f3n del evento."
+      "description": "Fecha y hora ISO de finalización del evento."
     },
     {
       "name": "display_title",
       "type": "string",
       "required": true,
-      "description": "El t\u00edtulo abstracto pre-masticado que FullCalendar dibujar\u00e1."
+      "description": "El título abstracto pre-masticado que FullCalendar dibujará."
     },
     {
       "name": "cron_expression",
       "type": "string",
       "required": false,
-      "description": "Permite al Frontend proyectar el evento de forma infinita utilizando librer\u00edas iteradoras de CRON/rrule en FullCalendar, consumiendo coste Cero en el backend."
+      "description": "Permite al Frontend proyectar el evento de forma infinita utilizando librerías iteradoras de CRON/rrule en FullCalendar, consumiendo coste Cero en el backend."
     },
     {
       "name": "iana_timezone",
       "type": "string",
       "required": false,
-      "description": "Vital para la inyecci\u00f3n de recurrencia. Fija el horario base para evadir colisiones por DST (Daylight Saving Time) cuando FullCalendar dibuje repeticiones futuras."
+      "description": "Vital para la inyección de recurrencia. Fija el horario base para evadir colisiones por DST (Daylight Saving Time) cuando FullCalendar dibuje repeticiones futuras."
     },
     {
       "name": "color_hex",
       "type": "string",
       "required": false,
-      "description": "Opcional inyecci\u00f3n Datalog para forzar un color en la grilla visual de la UI."
+      "description": "Opcional inyección Datalog para forzar un color en la grilla visual de la UI."
     }
   ]
 }

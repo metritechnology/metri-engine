@@ -1,6 +1,5 @@
 {
   "entity": "labor_log",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [

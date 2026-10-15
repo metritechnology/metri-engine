@@ -1,6 +1,5 @@
 {
   "entity": "location",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "is_sequence_scope_provider": true,

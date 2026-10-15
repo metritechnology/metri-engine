@@ -1,6 +1,5 @@
 {
   "entity": "tenant_plugin",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "doc": "Represents an active plugin/module enablement and configuration for a specific tenant.",

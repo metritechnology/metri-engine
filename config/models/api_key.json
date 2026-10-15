@@ -1,6 +1,5 @@
 {
   "entity": "api_key",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "attributes": [

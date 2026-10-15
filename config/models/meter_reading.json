@@ -1,6 +1,5 @@
 {
   "entity": "meter_reading",
-  "engine": "olap",
   "is_system": false,
   "track_history": false,
   "disable_eda": true,
@@ -9,17 +8,7 @@
   "routing": {
     "is_iot_target": true,
     "write_path_locked": true,
-    "ingestion_engine": "aws_kinesis_firehose",
-    "storage_engine": "amazon_s3_iceberg",
-    "description": "CQRS Híbrido: Este modelo muta usando dos vías exclusivas. 1) En tiempo real por AWS Firehose directo a S3 Iceberg. 2) Vía 'rpc BulkIngest' (gRPC masivo). Metri Engine tiene strictly censurado procesar telemetría por la vía 1 a 1 transaccional humana ('rpc Transact' y FTS).",
-    "analytical_routing": {
-      "strategy": "CQRS_ROUTING_WINDOW",
-      "raw_table": "metri_olap.meter_reading_raw",
-      "rollup_table": "metri_olap.meter_reading_rollup",
-      "window_threshold_hours": 24,
-      "max_range_years": 3,
-      "description": "Ruteo Inteligente en Janus Router: Consultas analíticas (viz) con rangos <= 24 horas se ejecutan sobre la tabla RAW para máxima resolución. Rangos > 24 horas se redirigen automáticamente a la tabla ROLLUP para optimizar costos de escaneo de disco y acelerar la respuesta a sub-segundo. Protegido por un límite estricto de 3 años."
-    }
+    "description": "CQRS Híbrido: Este modelo muta usando dos vías exclusivas. 1) En tiempo real por AWS Firehose directo a S3 Iceberg. 2) Vía 'rpc BulkIngest' (gRPC masivo). Metri Engine tiene strictly censurado procesar telemetría por la vía 1 a 1 transaccional humana ('rpc Transact' y FTS)."
   },
   "attributes": [
     {

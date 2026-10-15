@@ -1,6 +1,5 @@
 {
   "entity": "work_order_task",
-  "engine": "oltp",
   "is_system": false,
   "track_history": false,
   "attributes": [
@@ -30,7 +29,12 @@
     {
       "name": "status",
       "type": "enum",
-      "options": ["PENDING", "IN_PROGRESS", "COMPLETED", "SKIPPED"],
+      "options": [
+        "PENDING",
+        "IN_PROGRESS",
+        "COMPLETED",
+        "SKIPPED"
+      ],
       "default_value": "PENDING",
       "is_dimension": true,
       "description": "Ciclo de vida de la tarea dentro de la orden."

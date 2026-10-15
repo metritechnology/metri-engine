@@ -1,6 +1,5 @@
 {
   "entity": "domain_fault",
-  "engine": "olap",
   "is_system": true,
   "track_history": false,
   "disable_eda": true,

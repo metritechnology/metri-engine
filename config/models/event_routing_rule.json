@@ -1,17 +1,16 @@
 {
   "entity": "event_routing_rule",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "disable_eda": true,
-  "doc": "Entidad gestionada exclusivamente por el Bootstrapper. disable_eda=true previene que mutaciones v\u00eda API generen outbox_events accidentales. Esta entidad define las reglas EDA \u2014 no puede ser ella misma una fuente de eventos.",
+  "doc": "Entidad gestionada exclusivamente por el Bootstrapper. disable_eda=true previene que mutaciones vía API generen outbox_events accidentales. Esta entidad define las reglas EDA — no puede ser ella misma una fuente de eventos.",
   "attributes": [
     {
       "name": "rule_code",
       "type": "string",
       "unique": "identity",
       "required": true,
-      "description": "Slug \u00fanico (ej: GLOBAL_ASSET_AUDIT) para identificar la regla en el proceso de bootstrap y sincronizaci\u00f3n."
+      "description": "Slug único (ej: GLOBAL_ASSET_AUDIT) para identificar la regla en el proceso de bootstrap y sincronización."
     },
     {
       "name": "description",
@@ -23,7 +22,7 @@
       "type": "boolean",
       "required": true,
       "default_value": "true",
-      "description": "Indica si la regla fue compilada por el Bootstrapper usando el Patr\u00f3n de Herencia Global. Los usuarios tenant no pueden aniquilar, modificar ni deshabilitar estas reglas in-memory, salvando la integridad as\u00edncrona del COTS."
+      "description": "Indica si la regla fue compilada por el Bootstrapper usando el Patrón de Herencia Global. Los usuarios tenant no pueden aniquilar, modificar ni deshabilitar estas reglas in-memory, salvando la integridad asíncrona del COTS."
     },
     {
       "name": "target_entity_name",
@@ -45,7 +44,7 @@
       "type": "array",
       "of": "object",
       "required": true,
-      "description": "Grafo estructurado del AST. Descompone los filtros en tuplas nativas para que el motor eval\u00fae los Webhooks directamente cruzando atributos indexados.",
+      "description": "Grafo estructurado del AST. Descompone los filtros en tuplas nativas para que el motor evalúe los Webhooks directamente cruzando atributos indexados.",
       "schema": [
         {
           "name": "logical_operator",
@@ -61,7 +60,7 @@
           "name": "field_name",
           "type": "string",
           "required": true,
-          "description": "El atributo de la Entidad que detonar\u00e1 la regla (ej: 'status', 'total_cost')."
+          "description": "El atributo de la Entidad que detonará la regla (ej: 'status', 'total_cost')."
         },
         {
           "name": "operator",
@@ -95,7 +94,7 @@
             "uuid"
           ],
           "default_value": "string",
-          "description": "Permite castear visualmente el Datatype en el Motor Anal\u00edtico sin romper el esquema estricto."
+          "description": "Permite castear visualmente el Datatype en el Motor Analítico sin romper el esquema estricto."
         }
       ]
     },

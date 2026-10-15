@@ -1,6 +1,5 @@
 {
   "entity": "iot_alert_rule",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "disable_eda": false,

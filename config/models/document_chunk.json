@@ -1,6 +1,5 @@
 {
   "entity": "document_chunk",
-  "engine": "oltp",
   "is_system": true,
   "track_history": false,
   "attributes": [
@@ -34,7 +33,9 @@
       "type": "bytes",
       "dimensions": 1024,
       "model": "amazon.titan-embed-text-v2",
-      "auto_generate_from": ["chunk_content"],
+      "auto_generate_from": [
+        "chunk_content"
+      ],
       "required": true,
       "description": "El vector densificado de 1024 floats de 32 bits calculado por AWS Bedrock sobre el chunk_content."
     },

@@ -84,7 +84,7 @@ def gen_modelos() -> str:
         names = ", ".join(
             f"`{a['name']}`" if isinstance(a, dict) else f"`{a}`" for a in attrs
         )
-        out.append(f"| `{m.get('entity', f.stem)}` | {m.get('engine','oltp')} | {names} |")
+        out.append(f"| `{m.get('entity', f.stem)}` | {m.get('engine','mbf')} | {names} |")
     out.append("")
     return "\n".join(out)
 

@@ -1,6 +1,5 @@
 {
   "entity": "user",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "doc": "Platform user. The User Master is identified by UUID matching METRI_MASTER_USER_ID (env var). Normal users authenticate via IdP or seeded credentials.",

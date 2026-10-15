@@ -1,6 +1,5 @@
 {
   "entity": "outbox_event",
-  "engine": "oltp",
   "is_system": true,
   "track_history": false,
   "attributes": [

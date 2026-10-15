@@ -1,6 +1,5 @@
 {
   "entity": "part",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [
@@ -41,7 +40,7 @@
     {
       "name": "min_quantity",
       "type": "decimal",
-      "description": "Stock m\u00ednimo recomendado para reorden"
+      "description": "Stock mínimo recomendado para reorden"
     },
     {
       "name": "uom",

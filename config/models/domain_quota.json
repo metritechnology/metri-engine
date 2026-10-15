@@ -1,6 +1,5 @@
 {
   "entity": "domain_quota",
-  "engine": "oltp",
   "is_system": true,
   "track_history": true,
   "attributes": [

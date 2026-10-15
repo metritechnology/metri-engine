@@ -1,6 +1,5 @@
 {
   "entity": "audit_log",
-  "engine": "olap",
   "is_system": false,
   "track_history": false,
   "partition_strategy": "YYYY-MM-DD",

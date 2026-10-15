@@ -152,29 +152,15 @@ pub async fn process_single_query(
     let start_time = std::time::Instant::now();
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
 
+    let _ = athena_engine;
     let registry = codice_global();
     let schema = registry
         .get_model(entity_type)
         .and_then(|m| serde_json::to_value(m).ok())
         .unwrap_or(json!({}));
 
-    let is_olap = schema.get("engine").and_then(|v| v.as_str()) == Some("olap");
-
-    if is_olap {
-        olap::execute_olap_query(
-            query_key,
-            query_map,
-            cedar_ctx,
-            &schema,
-            athena_engine,
-            ctx,
-            start_time,
-        )
-        .await
-    } else {
-        oltp::execute_oltp_query(
-            query_key, query_map, cedar_ctx, &schema, executor, ctx, start_time,
-        )
-        .await
-    }
+    oltp::execute_oltp_query(
+        query_key, query_map, cedar_ctx, &schema, executor, ctx, start_time,
+    )
+    .await
 }

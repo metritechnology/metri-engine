@@ -140,6 +140,9 @@ impl EavQueryExecutor {
         plan: &QueryExecutionPlan,
     ) -> Result<Vec<String>, DomainError> {
         debug!("[EAV] Executing legacy plan: {:?}", plan.strategy);
+        if crate::mbf::is_mbf_primary_cutover(&plan.entity_type) {
+            return Ok(Vec::new());
+        }
 
         let entity_ids = match &plan.strategy {
             IndexStrategy::PointLookup(ulid) => {
@@ -186,13 +189,37 @@ impl EavQueryExecutor {
                 tenant_id,
                 attr_name,
                 value,
-            } => self.execute_avet_single(tenant_id, attr_name, value).await,
+            } => {
+                if attr_name == "entity_type" {
+                    if let DatomValue::Str(et) = value {
+                        if crate::mbf::is_mbf_primary_cutover(et) {
+                            return Ok(Vec::new());
+                        }
+                    }
+                }
+                self.execute_avet_single(tenant_id, attr_name, value).await
+            }
 
             NativeQueryPlan::AvetIntersect { tenant_id, filters } => {
+                for (attr_name, value) in filters {
+                    if attr_name == "entity_type" {
+                        if let DatomValue::Str(et) = value {
+                            if crate::mbf::is_mbf_primary_cutover(et) {
+                                return Ok(Vec::new());
+                            }
+                        }
+                    }
+                }
                 self.execute_avet_intersection(tenant_id, filters).await
             }
 
             NativeQueryPlan::FtsSearch { tenant_id, term } => {
+                if std::env::var("MBF_ENGINE_MODE")
+                    .map(|v| v.eq_ignore_ascii_case("primary"))
+                    .unwrap_or(false)
+                {
+                    return Ok(Vec::new());
+                }
                 self.execute_fts_search(tenant_id, term).await
             }
 
@@ -200,6 +227,9 @@ impl EavQueryExecutor {
                 tenant_id,
                 entity_type,
             } => {
+                if crate::mbf::is_mbf_primary_cutover(entity_type) {
+                    return Ok(Vec::new());
+                }
                 // Pasamos limit=None para que la paginación automática obtenga TODOS los ids.
                 // El limit real de paginación se aplica en el executor (offset/page_limit).
                 self.execute_aevt_scan_by_type(tenant_id, entity_type, 0)

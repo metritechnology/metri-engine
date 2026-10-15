@@ -1,6 +1,5 @@
 {
   "entity": "inventory_movement",
-  "engine": "oltp",
   "is_system": false,
   "track_history": false,
   "attributes": [

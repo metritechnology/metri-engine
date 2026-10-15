@@ -1,6 +1,5 @@
 {
   "entity": "user_group",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [

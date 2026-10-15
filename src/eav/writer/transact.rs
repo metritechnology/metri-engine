@@ -371,6 +371,23 @@ impl EavWriter {
             None => Ulid::new().to_string(),
         };
 
+        if crate::mbf::is_mbf_primary_cutover(&payload.entity_type) {
+            tracing::info!(
+                entity = %payload.entity_type,
+                tenant = %payload.tenant_id,
+                "[MBF Cutover] Conexión de escritura legacy EAV/DynamoDB cortada de raíz (MBF_ENGINE_MODE=primary)"
+            );
+            return Ok(TransactResult {
+                entity_id,
+                tx_id,
+                datoms: 0,
+                outbox_count: 0,
+                mutation_ulid: Ulid::new().to_string(),
+                delta: None,
+                deleted_attrs: None,
+            });
+        }
+
         // 4. Atributos activos (I/O de lectura) y plan puro de datoms: guards,
         // retract+assert, sistema, delta del contrato y deleted_attrs.
         let active_attrs = if payload.op == TransactOp::Update || payload.op == TransactOp::Delete {

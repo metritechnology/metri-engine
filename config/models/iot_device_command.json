@@ -1,6 +1,5 @@
 {
   "entity": "iot_device_command",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "disable_eda": false,

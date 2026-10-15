@@ -79,6 +79,12 @@ impl MetriGrpcService {
                     "GET sin entity_id: no hay entidad que leer",
                 ));
             }
+            if crate::mbf::is_mbf_primary_cutover(&req.entity_type) {
+                return Err(Status::not_found(format!(
+                    "GET {} {}: la entidad no existe en {} (MBF primary cutover)",
+                    req.entity_type, entity_id, req.tenant_id
+                )));
+            }
             let reader = self.oltp_executor.pull_reader();
             let mut attrs = reader
                 .pull(&req.tenant_id, &entity_id, None)

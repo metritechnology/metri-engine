@@ -1,6 +1,5 @@
 {
   "entity": "checklist_template_item",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "attributes": [

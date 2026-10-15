@@ -250,6 +250,9 @@ impl OltpExecutor {
             .get("entity")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
+        if crate::mbf::is_mbf_primary_cutover(entity_type) {
+            return Ok(Value::Array(Vec::new()));
+        }
         let master_tenant_id: &str = &crate::domain::config::engine_config().master_tenant_id;
         let target_tenant = if entity_type == "tenant" {
             master_tenant_id
@@ -466,6 +469,12 @@ impl OltpExecutor {
         ast_ir: &crate::janus::fbs::AnalyticsRequestT,
     ) -> Result<Value, DomainError> {
         let entity_type = ast_ir.entity.as_deref().unwrap_or("unknown");
+        if crate::mbf::is_mbf_primary_cutover(entity_type) {
+            return Ok(json!({
+                "data": [],
+                "total": 0,
+            }));
+        }
         // Config leída una vez en el arranque (EngineConfig), no env::var por consulta.
         let master_tenant_id: &str = &crate::domain::config::engine_config().master_tenant_id;
         let target_tenant = if entity_type == "tenant" {

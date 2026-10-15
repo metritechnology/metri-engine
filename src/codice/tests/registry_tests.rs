@@ -591,3 +591,35 @@ fn test_work_order_status_y_category_son_enums_abiertos() {
         "work_order.priority conserva la validación estricta"
     );
 }
+
+/// Candado de unificación MBF: ningún modelo JSON en `config/models/` discrimina
+/// `"engine": "oltp"` ni `"engine": "olap"`, y `CodeRegistry` asigna un canal
+/// uniforme sin discriminar OLTP/OLAP.
+#[test]
+fn test_models_do_not_discriminate_oltp_olap_engine() {
+    let models_dir = std::path::Path::new("config/models");
+    for entry in std::fs::read_dir(models_dir).expect("config/models debe existir") {
+        let entry = entry.expect("entrada válida");
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            let content = std::fs::read_to_string(&path).expect("leer JSON");
+            let json: serde_json::Value = serde_json::from_str(&content).expect("parsear JSON");
+            assert!(
+                json.get("engine").is_none(),
+                "El modelo {:?} no debe declarar 'engine': 'oltp/olap'",
+                path.file_name()
+            );
+        }
+    }
+
+    let (registry, _rules) =
+        CodeRegistry::build(models_dir).expect("config/models debe compilar sin campo engine");
+    assert_eq!(registry.entity_count(), 60);
+    for name in registry.entity_names() {
+        assert_eq!(
+            registry.get_engine(name),
+            Some(&EngineChannel::Oltp),
+            "La entidad '{name}' no debe discriminar EngineChannel::Olap"
+        );
+    }
+}

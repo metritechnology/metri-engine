@@ -1,6 +1,5 @@
 {
   "entity": "downtime_log",
-  "engine": "oltp",
   "is_system": false,
   "track_history": true,
   "partition_strategy": "YYYY-MM-DD",

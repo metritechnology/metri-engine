@@ -1,6 +1,5 @@
 {
   "entity": "inventory_ledger",
-  "engine": "olap",
   "is_system": true,
   "track_history": false,
   "partition_strategy": "YYYY-MM-DD",

@@ -1,6 +1,5 @@
 {
   "entity": "technical_specification",
-  "engine": "oltp",
   "is_system": false,
   "track_history": false,
   "attributes": [

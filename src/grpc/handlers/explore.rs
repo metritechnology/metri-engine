@@ -209,13 +209,6 @@ impl MetriGrpcService {
         );
         let exec = self.oltp_executor.clone();
 
-        let registry = crate::codice::global();
-        let is_olap = if let Some(model) = registry.get_model(&req.entity) {
-            matches!(model.engine, crate::codice::registry::EngineChannel::Olap)
-        } else {
-            false
-        };
-
         // Use AEVT scan to get distinct values for the attribute
         let limit = if req.limit > 0 {
             req.limit as usize
@@ -243,39 +236,12 @@ impl MetriGrpcService {
 
         let mut values = Vec::new();
 
-        if is_olap {
-            let is_master = crate::cedar::is_master_tenant(&authenticated_ctx.tenant_id);
-            let cedar_ctx = crate::janus::router::CedarCtx {
-                tenant_id: req.tenant_id.clone(),
-                user_id: authenticated_ctx.user_id.clone(),
-                roles: authenticated_ctx.roles.iter().cloned().collect(),
-                is_super_master: is_master,
-                cross_tenant_scope: if is_master {
-                    "FULL".to_string()
-                } else {
-                    "NONE".to_string()
-                },
-                domain_boundaries: authenticated_ctx.domain_boundaries.clone(),
-            };
-
-            let chunks = crate::janus::router::process_single_query(
-                "explore",
-                &ast_ir,
-                &cedar_ctx,
-                &exec,
-                self.athena_engine.as_ref(),
-                crate::janus::router::QueryExecCtx {
-                    explain_plan: false,
-                    cache: &self.query_cache,
-                },
-            )
-            .await;
-
-            if !chunks.is_empty() && chunks[0].success {
-                let body = &chunks[0].body;
-                let rows = body
+        match exec.run_oltp_query_fbs(&req.tenant_id, &ast_ir).await {
+            Ok(result) => {
+                let rows = result
                     .get("data")
                     .and_then(|d| d.as_array())
+                    .or_else(|| result.as_array())
                     .cloned()
                     .unwrap_or_default();
                 for row in &rows {
@@ -291,70 +257,24 @@ impl MetriGrpcService {
                         }
                     }
                 }
-            } else {
-                let err_msg = if !chunks.is_empty() {
-                    chunks[0]
-                        .body
-                        .get("reason")
-                        .and_then(|r| r.as_str())
-                        .unwrap_or("Unknown OLAP query error")
-                        .to_string()
-                } else {
-                    "No OLAP response chunks".to_string()
-                };
-                error!("[gRPC Explore] OLAP query failed: {}", err_msg);
+            }
+            Err(e) => {
+                self.emit_read_error(
+                    &req.tenant_id,
+                    &authenticated_ctx.user_id,
+                    e.clone(),
+                    Some(req.entity.clone()),
+                );
                 let resp = ExploreResponse {
                     status: Some(crate::grpc::pb::Status {
                         success: false,
                         error_code: "EXPLORE_ERROR".to_string(),
-                        error_message: err_msg,
+                        error_message: e.to_string(),
                         error_context: None,
                     }),
                     values: vec![],
                 };
                 return Ok(Response::new(resp));
-            }
-        } else {
-            match exec.run_oltp_query_fbs(&req.tenant_id, &ast_ir).await {
-                Ok(result) => {
-                    let rows = result
-                        .get("data")
-                        .and_then(|d| d.as_array())
-                        .or_else(|| result.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    for row in &rows {
-                        if let Some(v) = row.get(&req.attribute) {
-                            let val_str = match v {
-                                serde_json::Value::String(s) => s.clone(),
-                                serde_json::Value::Number(n) => n.to_string(),
-                                serde_json::Value::Bool(b) => b.to_string(),
-                                _ => continue,
-                            };
-                            if !val_str.is_empty() && !values.contains(&val_str) {
-                                values.push(val_str);
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    self.emit_read_error(
-                        &req.tenant_id,
-                        &authenticated_ctx.user_id,
-                        e.clone(),
-                        Some(req.entity.clone()),
-                    );
-                    let resp = ExploreResponse {
-                        status: Some(crate::grpc::pb::Status {
-                            success: false,
-                            error_code: "EXPLORE_ERROR".to_string(),
-                            error_message: e.to_string(),
-                            error_context: None,
-                        }),
-                        values: vec![],
-                    };
-                    return Ok(Response::new(resp));
-                }
             }
         }
 

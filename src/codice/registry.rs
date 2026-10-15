@@ -73,11 +73,9 @@ pub enum EngineChannel {
 }
 
 impl From<&str> for EngineChannel {
-    fn from(s: &str) -> Self {
-        match s {
-            "olap" => EngineChannel::Olap,
-            _ => EngineChannel::Oltp, // default seguro
-        }
+    fn from(_s: &str) -> Self {
+        // Los modelos del Códice ya no discriminan "engine": "oltp" / "olap"
+        EngineChannel::Oltp
     }
 }
 
@@ -641,7 +639,8 @@ fn model_cache_fingerprint(json: &serde_json::Value) -> String {
 fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainError> {
     let entity = json["entity"].as_str().unwrap_or("unknown").to_string();
 
-    let engine = EngineChannel::from(json["engine"].as_str().unwrap_or("oltp"));
+    // Unificado en MBF: los modelos ya no discriminan "engine": "oltp" / "olap"
+    let engine = EngineChannel::Oltp;
 
     let attributes: Vec<AttributeDescriptor> = json["attributes"]
         .as_array()
