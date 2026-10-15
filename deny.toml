@@ -47,6 +47,8 @@ ignore = [
   "RUSTSEC-2026-0049", # webpki: CRL no autoritativa por distributionPoint (impacto limitado)
   "RUSTSEC-2026-0258", # h2 0.3: DATA frames vacíos sin límite (rama 0.4 ya parcheada)
   "RUSTSEC-2025-0134", # rustls-pemfile archivado — sin upgrade seguro hasta migrar tonic
+  "RUSTSEC-2026-0346", # rustls 0.21/0.22 (tonic 0.11): Debug impl en client session (0.23 ya en 0.23.46)
+  "RUSTSEC-2026-0349", # rustls 0.21/0.22 (tonic 0.11): ServerHello key share fallback (0.23 ya en 0.23.46)
 ]
 
 [bans]
