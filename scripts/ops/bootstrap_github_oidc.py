@@ -109,6 +109,8 @@ def deploy_policy() -> dict:
         f"arn:aws:wafv2:{REGION}:{ACCOUNT_ID}:global/webacl/*/*",
         f"arn:aws:wafv2:{REGION}:{ACCOUNT_ID}:global/ipset/*/*",
         f"arn:aws:wafv2:{REGION}:{ACCOUNT_ID}:global/regexpatternset/*/*",
+        f"arn:aws:wafv2:{REGION}:{ACCOUNT_ID}:global/managedruleset/*/*",
+        f"arn:aws:wafv2:{REGION}:{ACCOUNT_ID}:global/rulegroup/*/*",
     ]
     zone = f"arn:aws:route53:::hostedzone/{HOSTED_ZONE_ID}"
     secret = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT_ID}:secret:metri-hmac-secret-*"
@@ -440,6 +442,7 @@ def deploy_policy() -> dict:
                 "Effect": "Allow",
                 "Action": [
                     "logs:DescribeLogGroups",
+                    "logs:DescribeMetricFilters",
                     "cloudwatch:PutMetricAlarm",
                     "cloudwatch:DeleteAlarms",
                     "cloudwatch:DescribeAlarms",
