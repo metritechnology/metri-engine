@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "work_order": {
+      "label": "Órdenes de trabajo",
+      "attributes": {
+        "work_order_number": "Número de orden",
+        "title": "Título",
+        "description": "Descripción",
+        "request_id": "Solicitud",
+        "asset_id": "Activo",
+        "location_id": "Ubicación",
+        "require_location_verification": "Requiere verificación de ubicación",
+        "latitude": "Latitud",
+        "longitude": "Longitud",
+        "assignees": "Asignados",
+        "assigned_group_ids": "Grupos asignados",
+        "category": "Categoría",
+        "status": "Estado",
+        "priority": "Prioridad",
+        "due_date": "Fecha de vencimiento",
+        "scheduled_start": "Inicio programado",
+        "estimated_duration_hours": "Duración estimada",
+        "preventive_maintenance_id": "Pauta preventiva",
+        "scheduled_job_id": "Job programado",
+        "completed_by": "Completada por",
+        "completed_at": "Fecha de cierre",
+        "custom_attributes": "Atributos personalizados"
+      }
+    }
+  },
+  "enums": {
+    "work_order": {
+      "status": {
+        "OPEN": "Abierta",
+        "ON_HOLD": "En espera",
+        "IN_PROGRESS": "En progreso",
+        "REVIEW": "En revisión",
+        "CLOSED": "Cerrada",
+        "CANCELLED": "Cancelada"
+      },
+      "priority": {
+        "LOW": "Baja",
+        "MEDIUM": "Media",
+        "HIGH": "Alta"
+      },
+      "category": {
+        "CORRECTIVE": "Correctivo",
+        "PREVENTIVE": "Preventivo",
+        "PREDICTIVE": "Predictivo",
+        "CALIBRATION": "Calibración",
+        "SAFETY": "Seguridad",
+        "IMPROVEMENT": "Mejora"
+      }
+    }
+  }
+}

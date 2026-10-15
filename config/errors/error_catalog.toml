@@ -1056,3 +1056,63 @@ grpc_status      = "INTERNAL"
 description      = "Firehose SDK error — delivery stream operation failed"
 context_required = ["stream", "operation", "cause"]
 retryable        = true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FAMILIA MBF — Motor Binario Unificado Metri Vortex (.mbf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+[[errors]]
+code             = "MBF_CORRUPT_001"
+family           = "mbf"
+stage            = "mbf::format"
+severity         = "error"
+http_status      = 500
+grpc_status      = "DATA_LOSS"
+description      = "MBF binary integrity check failed — invalid magic bytes, truncated buffer, or CRC/MAC mismatch"
+context_required = ["reason"]
+retryable        = false
+
+[[errors]]
+code             = "MBF_CAS_CONFLICT_001"
+family           = "mbf"
+stage            = "mbf::tx"
+severity         = "warning"
+http_status      = 409
+grpc_status      = "ABORTED"
+description      = "MBF conditional write conflict — true read/write set overlap detected during CAS commit"
+context_required = ["cell_id", "epoch_id"]
+retryable        = true
+
+[[errors]]
+code             = "MBF_LEDGER_UNBALANCED_001"
+family           = "mbf"
+stage            = "mbf::ledger"
+severity         = "error"
+http_status      = 422
+grpc_status      = "FAILED_PRECONDITION"
+description      = "MBF financial ledger invariant violated — unbalanced double-entry or insufficient stock batch"
+context_required = ["detail"]
+retryable        = false
+
+[[errors]]
+code             = "MBF_FISCAL_CLOSED_001"
+family           = "mbf"
+stage            = "mbf::ledger"
+severity         = "warning"
+http_status      = 403
+grpc_status      = "FAILED_PRECONDITION"
+description      = "MBF fiscal period is locked — cannot mutate accounting records on or before fiscal lock epoch"
+context_required = ["tx_epoch_ms", "fiscal_lock_epoch_ms"]
+retryable        = false
+
+[[errors]]
+code             = "MBF_TENANT_SEAL_001"
+family           = "mbf"
+stage            = "mbf::crypto"
+severity         = "fatal"
+http_status      = 403
+grpc_status      = "PERMISSION_DENIED"
+description      = "MBF cryptographic tenant seal mismatch — block belongs to a different tenant or key is invalid"
+context_required = ["expected_tenant"]
+retryable        = false
+

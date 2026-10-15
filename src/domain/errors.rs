@@ -114,6 +114,13 @@ pub enum ErrorCode {
     Fml011,
     Fml012,
     Fml013,
+
+    // ── Metri Vortex (.mbf) Engine ───────────────────────────────────────────
+    MbfCorrupt001,
+    MbfCasConflict001,
+    MbfLedgerUnbalanced001,
+    MbfFiscalClosed001,
+    MbfTenantSeal001,
 }
 
 impl ErrorCode {
@@ -190,6 +197,11 @@ impl ErrorCode {
         ErrorCode::Fml011,
         ErrorCode::Fml012,
         ErrorCode::Fml013,
+        ErrorCode::MbfCorrupt001,
+        ErrorCode::MbfCasConflict001,
+        ErrorCode::MbfLedgerUnbalanced001,
+        ErrorCode::MbfFiscalClosed001,
+        ErrorCode::MbfTenantSeal001,
     ];
 
     /// Obtiene el código canónico correspondiente en el catálogo de errores (TOML).
@@ -284,6 +296,11 @@ impl ErrorCode {
             ErrorCode::Fml011 => "FML_011",
             ErrorCode::Fml012 => "FML_012",
             ErrorCode::Fml013 => "FML_013",
+            ErrorCode::MbfCorrupt001 => "MBF_CORRUPT_001",
+            ErrorCode::MbfCasConflict001 => "MBF_CAS_CONFLICT_001",
+            ErrorCode::MbfLedgerUnbalanced001 => "MBF_LEDGER_UNBALANCED_001",
+            ErrorCode::MbfFiscalClosed001 => "MBF_FISCAL_CLOSED_001",
+            ErrorCode::MbfTenantSeal001 => "MBF_TENANT_SEAL_001",
         }
     }
 
@@ -320,6 +337,7 @@ impl ErrorCode {
                 | ErrorCode::InfraGlue001
                 | ErrorCode::InfraFirehose001
                 | ErrorCode::Mcp503
+                | ErrorCode::MbfCasConflict001
         )
     }
 
@@ -393,6 +411,10 @@ impl ErrorCode {
             | ErrorCode::Fml011
             | ErrorCode::Fml012
             | ErrorCode::Fml013 => "aegis::formula",
+            ErrorCode::MbfCorrupt001 => "mbf::format",
+            ErrorCode::MbfCasConflict001 => "mbf::tx",
+            ErrorCode::MbfLedgerUnbalanced001 | ErrorCode::MbfFiscalClosed001 => "mbf::ledger",
+            ErrorCode::MbfTenantSeal001 => "mbf::crypto",
         }
     }
 }
@@ -469,6 +491,10 @@ impl DomainError {
     }
 
     pub fn codice(code: ErrorCode, detail: impl Into<String>) -> Self {
+        Self::new(code, detail)
+    }
+
+    pub fn mbf(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }
 }

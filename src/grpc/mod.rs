@@ -2,10 +2,18 @@
 //!
 //! El módulo `pb` aloja el código generado por tonic (`include_proto!`) —
 //! exento de lints y de auditorías por diseño.
+#![allow(clippy::result_large_err)]
+
 pub mod pb {
     // Código generado por tonic (include_proto!) — usa unwrap()/expect() por
     // diseño y queda exento de los lints del patrón Result (§4.4).
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::doc_lazy_continuation,
+        clippy::doc_overindented_list_items
+    )]
 
     tonic::include_proto!("metri");
     pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("metri_descriptor");

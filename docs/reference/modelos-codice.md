@@ -10,7 +10,7 @@ Total de modelos: **60**
 | `agent_metric` | oltp | `tenant_id`, `model`, `request_latency_ms`, `router_latency_ms`, `avg_llm_latency_ms`, `avg_tool_latency_ms`, `iterations`, `input_tokens`, `output_tokens`, `total_tools_called`, `fallback_used`, `modules_selected` |
 | `api_key` | oltp | `name`, `tenant_id`, `role_id`, `secret_token_hash`, `expires_at`, `is_active` |
 | `approval_instance` | oltp | `policy_id`, `target_entity_name`, `target_entity_id`, `canonical_state`, `sub_state`, `current_tier_level`, `idempotency_hash`, `sla_due_date` |
-| `approval_policy` | oltp | `policy_code`, `target_entity_name`, `trigger_condition_ast`, `min_required_tiers`, `tier_configurations`, `sla_duration_hours`, `is_active` |
+| `approval_policy` | oltp | `policy_code`, `target_entity_name`, `trigger_condition_ast`, `min_required_tiers`, `tier_configurations`, `resolution_actions`, `trigger_event`, `sla_duration_hours`, `is_active` |
 | `approval_step_execution` | oltp | `approval_instance_id`, `tier_level`, `actor_user_id`, `decision`, `rejection_reason_code`, `rejection_comment`, `electronic_signature_id`, `evaluated_at` |
 | `asset` | oltp | `name`, `tag`, `serial_number`, `barcode_qr_code`, `status`, `criticality`, `location_id`, `parent_asset_id`, `description`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `custom_attributes` |
 | `audit_log` | olap | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |

@@ -33,6 +33,25 @@
 | [ADR-006](architecture/adr/ADR-006-identidad-de-entidades.md) | Identidad de entidades |
 | [ADR-007](architecture/adr/ADR-007-materializacion-generica.md) | Materialización genérica — **SUPERADO**: la composición de OTs vive en metri-cmms-plugin |
 | [ADR-008](architecture/adr/ADR-008-cache-janus-dynamodb.md) | Caché de consultas Janus sobre DynamoDB con TTL (tabla exclusiva, clave = AST post-ABAC) |
+| [ADR-009](architecture/adr/ADR-009-motor-binario-unificado-mbf.md) | Motor Binario Unificado HTAP Metri Vortex (`.mbf`) sobre AWS S3 y retiro de DynamoDB/Athena |
+
+### Metri Vortex Unified Binary Engine (`docs/mbf/`) — especificación del motor `.mbf`
+
+| Documento | Audiencia | Cuándo consultarlo / When to read it |
+|---|---|---|
+| [mbf/README.md](mbf/README.md) | Todo el equipo | Índice maestro de la especificación del motor binario unificado `.mbf` |
+| [01_ARCHITECTURE_AND_DESIGN.md](mbf/01_ARCHITECTURE_AND_DESIGN.md) | Todo el equipo | Arquitectura HTAP, sinergia IoT/CMMS/Financiero/BI y comparativa vs. IBM Maximo, Oracle, SAP y CMMS SaaS |
+| [02_ARCHITECTURAL_PRINCIPLES_AND_CLEAN_CODE.md](mbf/02_ARCHITECTURAL_PRINCIPLES_AND_CLEAN_CODE.md) | Equipo + contribuidores | Clean Architecture, SOLID, DRY desde Códice, cero `unwrap`/`unsafe` y estándares `rustdoc` |
+| [03_MBF_BINARY_FORMAT_SPEC.md](mbf/03_MBF_BINARY_FORMAT_SPEC.md) | Ingeniería de motor | Layout físico a nivel de byte de `.mbf` v1, `HOT_HEAD.mbf`, `.mbf.idx` y las 5 zonas alineadas a 64 bytes |
+| [04_ALGORITHMS_AND_PAPERS.md](mbf/04_ALGORITHMS_AND_PAPERS.md) | Ingeniería de motor + BI | Papers científicos y ecuaciones: Welford/Chan, Pébay, KLL, Chimp128, Elias-Fano, FSST, CSR Euler, Fenwick y Hamilton |
+| [05_SERVERLESS_LAMBDA_AND_S3_INFRASTRUCTURE.md](mbf/05_SERVERLESS_LAMBDA_AND_S3_INFRASTRUCTURE.md) | Infraestructura + Cloud | Optimización AWS Lambda Graviton ARM64, Cold Start `< 2 ms`, caché `/tmp` 512 MB, CAS S3 y ahorro de costos |
+| [06_FOLDERS_FILES_AND_MODULE_MAP.md](mbf/06_FOLDERS_FILES_AND_MODULE_MAP.md) | Equipo + contribuidores | Árbol exacto de carpetas, archivos nuevos/modificados/eliminados y contratos de módulos Rust |
+| [07_TESTING_AND_ORACLE_STRATEGY.md](mbf/07_TESTING_AND_ORACLE_STRATEGY.md) | QA + Ingeniería | Estrategia `proptest`, fuzzing de corrupción de bits, pruebas contables, concurrencia CAS y Oráculo en Modo Sombra |
+| [08_IMPLEMENTATION_AND_LEGACY_DECOMMISSIONING.md](mbf/08_IMPLEMENTATION_AND_LEGACY_DECOMMISSIONING.md) | Equipo | Plan de implementación en 6 fases, migrador CLI y protocolo de eliminación del motor OLTP/OLAP antiguo |
+| [09_CODICE_METADATA_AND_FUZZY_MATH_ENGINE.md](mbf/09_CODICE_METADATA_AND_FUZZY_MATH_ENGINE.md) | Equipo | Auditoría de `config/models/*.json`, expansión de metadatos sin límite (`MbfHyperSynopsis512`), confiabilidad Weibull/FFT/PCA y motor de búsqueda híbrido (Fuzzy FST + SymSpell + Fonético + BM25F + Vector RaBitQ HNSW + Uber H3) |
+| [10_TEN_OUT_OF_TEN_ARCHITECTURAL_PERFECTION.md](mbf/10_TEN_OUT_OF_TEN_ARCHITECTURAL_PERFECTION.md) | Equipo + Arquitectos | Cierre de brechas al 10/10: Concurrencia OLTP extrema en S3 (Group Commit + 8-Cell Sharding + Auto-Rebase `< 150 µs`), evolución de esquema zero-downtime, sello criptográfico `Keyed BLAKE3` por tenant y compactación Hilbert |
+| [11_COMPREHENSIVE_TESTING_AND_LOCAL_INFRA_PLAN.md](mbf/11_COMPREHENSIVE_TESTING_AND_LOCAL_INFRA_PLAN.md) | QA + Equipo | Plan maestro de pruebas con cobertura del 100% (`cargo-llvm-cov` + `cargo-mutants`), dataset realista de los 60 modelos del Códice e infraestructura local (`Zero-Docker` + `MinIO S3` + `Jaeger OTel`) |
+| [12_STEP_BY_STEP_IMPLEMENTATION_AND_LOCAL_EXECUTION_PLAN.md](mbf/12_STEP_BY_STEP_IMPLEMENTATION_AND_LOCAL_EXECUTION_PLAN.md) | Equipo | Plan de implementación paso a paso en 6 etapas y ejecución verificada de todas las suites de prueba en local |
 
 ### Components (`docs/components/`) — fichas por módulo
 

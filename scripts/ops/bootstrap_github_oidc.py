@@ -416,7 +416,8 @@ def deploy_policy() -> dict:
                 "Resource": "*",
             },
             {
-                # MetriEngineLogGroup (/aws/lambda/metri-engine-metri-engine).
+                # MetriEngineLogGroup (/aws/lambda/metri-engine-metri-engine) +
+                # limpieza de MetricFilters legacy al migrar a .mbf.
                 "Sid": "CloudWatchLogs",
                 "Effect": "Allow",
                 "Action": [
@@ -425,6 +426,9 @@ def deploy_policy() -> dict:
                     "logs:DescribeLogStreams",
                     "logs:PutRetentionPolicy",
                     "logs:DeleteRetentionPolicy",
+                    "logs:PutMetricFilter",
+                    "logs:DeleteMetricFilter",
+                    "logs:DescribeMetricFilters",
                     "logs:TagResource",
                     "logs:UntagResource",
                     "logs:ListTagsForResource",
@@ -434,11 +438,18 @@ def deploy_policy() -> dict:
             {
                 "Sid": "CloudWatchLogsUnscopedReads",
                 "Effect": "Allow",
-                "Action": "logs:DescribeLogGroups",
+                "Action": [
+                    "logs:DescribeLogGroups",
+                    "cloudwatch:PutMetricAlarm",
+                    "cloudwatch:DeleteAlarms",
+                    "cloudwatch:DescribeAlarms",
+                ],
                 "Resource": "*",
             },
             {
-                # Glue Data Catalog: database metri_olap y sus tablas Iceberg.
+                # Glue Data Catalog: conservado en el rol de deploy para que
+                # CloudFormation pueda eliminar limpiamente MetriGlueDatabase
+                # (metri_olap) al actualizar el stack a .mbf.
                 "Sid": "GlueCatalog",
                 "Effect": "Allow",
                 "Action": [

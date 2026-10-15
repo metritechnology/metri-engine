@@ -1372,6 +1372,8 @@ fn resolve_required_attrs(
         let mapped_attr = match raw_attr.as_str() {
             "created_at" | "createdAt" => "meta/created_at".to_string(),
             "updated_at" | "updatedAt" => "meta/updated_at".to_string(),
+            "created_by" | "createdBy" => "meta/created_by".to_string(),
+            "updated_by" | "updatedBy" => "meta/updated_by".to_string(),
             other => other.to_string(),
         };
 

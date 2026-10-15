@@ -235,3 +235,56 @@ pub trait QueryCacheInvalidator: Send + Sync {
     /// generación). Best-effort: el TTL sigue siendo la cota dura.
     async fn invalidate_tenant(&self, tenant_id: &str) -> DomainResult<()>;
 }
+
+// ── Metri Vortex (.mbf) Object Store & Deterministic Clock Ports (ISP) ───────
+
+/// Payload de un objeto `.mbf` recuperado con su ETag de versión atómica.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MbfObjectPayload {
+    pub bytes: Vec<u8>,
+    pub etag: String,
+}
+
+/// Resultado de una lectura condicional con `If-None-Match`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MbfConditionalGet {
+    /// El ETag coincide (`HTTP 304 Not Modified`): la caché en `/tmp` NVMe sigue vigente.
+    NotModified,
+    /// El objeto cambió (`HTTP 200 OK`): entrega los nuevos bytes y el nuevo ETag.
+    Modified(MbfObjectPayload),
+    /// El objeto aún no existe en el bucket.
+    NotFound,
+}
+
+/// Puerto de almacenamiento de objetos optimizado para `.mbf` (S3 / LocalFS / ChaosTest).
+#[async_trait]
+pub trait IMbfObjectStore: Send + Sync {
+    /// Obtiene un objeto completo junto con su `ETag`. Retorna `Ok(None)` si no existe.
+    async fn get_object(&self, key: &str) -> DomainResult<Option<MbfObjectPayload>>;
+
+    /// Revalida un objeto usando `If-None-Match: <cached_etag>`.
+    async fn get_if_none_match(
+        &self,
+        key: &str,
+        cached_etag: &str,
+    ) -> DomainResult<MbfConditionalGet>;
+
+    /// Obtiene un sub-rango exacto de bytes (`Range: bytes=start..end`).
+    async fn get_byte_range(&self, key: &str, start: usize, end: usize) -> DomainResult<Vec<u8>>;
+
+    /// Escritura atómica condicional Compare-And-Swap (`If-Match` / `If-None-Match: *`).
+    /// Si `expected_etag` es `None`, exige que el objeto no exista previamente.
+    /// Si el ETag actual no coincide, retorna `Err(DomainError::mbf(ErrorCode::MbfCasConflict001, ...))`.
+    async fn put_if_match(
+        &self,
+        key: &str,
+        bytes: Vec<u8>,
+        expected_etag: Option<&str>,
+    ) -> DomainResult<String>;
+}
+
+/// Puerto de reloj determinista para pruebas de cierres fiscales, DST y series temporales.
+pub trait IClock: Send + Sync {
+    /// Retorna el timestamp actual en milisegundos epoch UTC.
+    fn now_epoch_ms(&self) -> i64;
+}

@@ -442,6 +442,7 @@ impl EavWriter {
             &entity_id,
             tx_id,
             &active_attrs,
+            opts.actor.unwrap_or("system"),
         )?;
         let delta = plan.delta;
         let deleted_attrs = plan.deleted_attrs;
@@ -465,6 +466,7 @@ impl EavWriter {
                 &payload.attrs,
                 tx_id,
                 &mutation_ulid,
+                opts.actor.unwrap_or("system"),
             )? {
                 datoms.extend(outbox_datoms);
                 outbox_count = 1;
@@ -486,6 +488,7 @@ impl EavWriter {
                 tx_id,
                 true,
                 &std::collections::HashMap::new(),
+                opts.actor.unwrap_or("system"),
             )?;
             datoms.extend(entity_plan.datoms);
             // Los FTS de las proyecciones hoy no se despachan — EntityPlan los
@@ -500,6 +503,7 @@ impl EavWriter {
                     &proj.attrs,
                     tx_id,
                     &Ulid::new().to_string(),
+                    opts.actor.unwrap_or("system"),
                 )? {
                     datoms.extend(proj_outbox);
                     outbox_count += 1;

@@ -141,6 +141,16 @@ Versión del catálogo: **3.0.0**
 | `JNS_SEED_001` | janus | 403 | PERMISSION_DENIED | no | is_system_seeded: entity is bootstrapped by the system and cannot be mutated by clients |
 | `JNS_TX_001` | janus | 500 | INTERNAL | sí | EAV transact failed — full transaction rolled back (entity + all index projections) |
 
+## Familia `mbf` (5 códigos)
+
+| Código | Etapa | HTTP | gRPC | Reintentable | Descripción |
+|---|---|---|---|---|---|
+| `MBF_CAS_CONFLICT_001` | mbf::tx | 409 | ABORTED | sí | MBF conditional write conflict — true read/write set overlap detected during CAS commit |
+| `MBF_CORRUPT_001` | mbf::format | 500 | DATA_LOSS | no | MBF binary integrity check failed — invalid magic bytes, truncated buffer, or CRC/MAC mismatch |
+| `MBF_FISCAL_CLOSED_001` | mbf::ledger | 403 | FAILED_PRECONDITION | no | MBF fiscal period is locked — cannot mutate accounting records on or before fiscal lock epoch |
+| `MBF_LEDGER_UNBALANCED_001` | mbf::ledger | 422 | FAILED_PRECONDITION | no | MBF financial ledger invariant violated — unbalanced double-entry or insufficient stock batch |
+| `MBF_TENANT_SEAL_001` | mbf::crypto | 403 | PERMISSION_DENIED | no | MBF cryptographic tenant seal mismatch — block belongs to a different tenant or key is invalid |
+
 ## Familia `mcp` (1 códigos)
 
 | Código | Etapa | HTTP | gRPC | Reintentable | Descripción |

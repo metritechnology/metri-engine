@@ -83,6 +83,7 @@ pub mod infrastructure;
 pub mod iop; // FASE 2 ✓
 pub mod janus; // FASE 2 ✓ — Read Path (query pipeline)
 pub mod janus_router; // FASE 2 ✓ — Write Path (JanusRouter + channels)
+pub mod mbf; // Metri Vortex (.mbf) Unified HTAP Binary Engine
 pub mod otel;
 pub mod quota; // QuotaGuard — contador con autoridad + resolución de cuota vigente
 pub mod temporal; // FASE 3 ✓ — Primitivas temporales (port de metres.temporal.*) // FASE 3 — cedar-policy ABAC

@@ -423,6 +423,8 @@ impl EavReader {
         target_attrs.insert("tenant/id".to_string());
         target_attrs.insert("meta/created_at".to_string());
         target_attrs.insert("meta/updated_at".to_string());
+        target_attrs.insert("meta/created_by".to_string());
+        target_attrs.insert("meta/updated_by".to_string());
 
         if let Some(attrs_list) = specific_attrs {
             // Calentar únicamente los atributos específicos de negocio requeridos

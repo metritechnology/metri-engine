@@ -57,6 +57,7 @@ pub fn plan_entity_datoms(
     tx_id: u64,
     is_create: bool,
     active_attrs: &HashMap<String, (u16, DatomValue)>,
+    actor: &str,
 ) -> Result<EntityPlan, DomainError> {
     let mut datoms: Vec<Datom> = Vec::new();
     let mut fts_requests = Vec::new();
@@ -120,6 +121,7 @@ pub fn plan_entity_datoms(
         tx_id,
         is_create,
         active_attrs,
+        actor,
     );
 
     // Compatibilidad con consultas legacy que busquen "entity_type" sin slash:
@@ -162,6 +164,7 @@ pub fn plan_payload_datoms(
     entity_id: &str,
     tx_id: u64,
     active_attrs: &HashMap<String, (u16, DatomValue)>,
+    actor: &str,
 ) -> Result<DatomPlan, DomainError> {
     // Delta del contrato (before/after) — sólo tiene sentido en UPDATE, y
     // debe computarse ANTES de que las ramas de abajo consuman active_attrs.
@@ -230,6 +233,7 @@ pub fn plan_payload_datoms(
         tx_id,
         is_create,
         active_attrs,
+        actor,
     )?;
 
     Ok(DatomPlan {
@@ -275,6 +279,9 @@ pub(crate) fn compute_transact_delta(
 mod tests {
     use super::*;
 
+    /// Actor fijo de los planes de prueba.
+    const ACTOR_TEST: &str = "usr_test";
+
     fn registry() {
         crate::eav::writer::test_support::init_codice();
     }
@@ -314,9 +321,14 @@ mod tests {
     #[test]
     fn create_trae_atributos_sistema_y_entity_type_sin_retracts() {
         registry();
-        let plan =
-            plan_payload_datoms(&payload(TransactOp::Create), "ent_1", 1000, &HashMap::new())
-                .expect("create planifica");
+        let plan = plan_payload_datoms(
+            &payload(TransactOp::Create),
+            "ent_1",
+            1000,
+            &HashMap::new(),
+            ACTOR_TEST,
+        )
+        .expect("create planifica");
 
         assert!(plan.delta.is_none(), "create no genera delta");
         assert!(plan.deleted_attrs.is_none());
@@ -338,8 +350,14 @@ mod tests {
             ("status", 88, DatomValue::Str("open".into())),
             ("meta/updated_at", 4, DatomValue::Instant(123)),
         ]);
-        let plan = plan_payload_datoms(&payload(TransactOp::Update), "ent_1", 2000, &previos)
-            .expect("update planifica");
+        let plan = plan_payload_datoms(
+            &payload(TransactOp::Update),
+            "ent_1",
+            2000,
+            &previos,
+            ACTOR_TEST,
+        )
+        .expect("update planifica");
 
         assert!(retract_de(&plan.datoms, "title", "vieja"));
         assert!(assert_de(&plan.datoms, "title", "Bomba 3"));
@@ -368,7 +386,7 @@ mod tests {
             suppress_events: false,
         };
         let previos = activos(&[("title", 77, DatomValue::Str("vieja".into()))]);
-        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos).expect("planifica");
+        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos, ACTOR_TEST).expect("planifica");
 
         assert!(
             retract_de(&plan.datoms, "title", "vieja"),
@@ -398,7 +416,7 @@ mod tests {
             suppress_events: false,
         };
         let previos = activos(&[("status", 88, DatomValue::Str("open".into()))]);
-        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos).expect("planifica");
+        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos, ACTOR_TEST).expect("planifica");
 
         assert!(
             !plan.datoms.iter().any(|d| d.attr_name == "title"),
@@ -420,7 +438,8 @@ mod tests {
             op: TransactOp::Create,
             suppress_events: false,
         };
-        let plan = plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new()).expect("planifica");
+        let plan =
+            plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new(), ACTOR_TEST).expect("planifica");
         assert!(
             !plan.datoms.iter().any(|d| d.attr_name == "title"),
             "create con null: el atributo nace ausente"
@@ -435,6 +454,7 @@ mod tests {
             "fantasma",
             2000,
             &HashMap::new(),
+            ACTOR_TEST,
         )
         .expect_err("sin atributos activos no hay update");
         assert_eq!(err.code, crate::domain::errors::ErrorCode::Eav002);
@@ -448,6 +468,7 @@ mod tests {
             "fantasma",
             2000,
             &HashMap::new(),
+            ACTOR_TEST,
         )
         .expect_err("sin atributos activos no hay delete");
         assert_eq!(err.code, crate::domain::errors::ErrorCode::Eav002);
@@ -460,8 +481,14 @@ mod tests {
             ("title", 77, DatomValue::Str("vieja".into())),
             ("status", 88, DatomValue::Str("open".into())),
         ]);
-        let plan = plan_payload_datoms(&payload(TransactOp::Delete), "ent_1", 3000, &previos)
-            .expect("delete planifica");
+        let plan = plan_payload_datoms(
+            &payload(TransactOp::Delete),
+            "ent_1",
+            3000,
+            &previos,
+            ACTOR_TEST,
+        )
+        .expect("delete planifica");
 
         assert_eq!(plan.datoms.len(), 2, "un retract por atributo activo");
         assert!(plan.datoms.iter().all(|d| !d.op), "delete no aserta nada");
@@ -490,8 +517,8 @@ mod tests {
         let mut p = payload(TransactOp::Create);
         p.attrs
             .insert("attr_inexistente".to_string(), DatomValue::Long(1));
-        let err =
-            plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new()).expect_err("attr desconocido");
+        let err = plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new(), ACTOR_TEST)
+            .expect_err("attr desconocido");
         assert_eq!(err.code, crate::domain::errors::ErrorCode::Eav004);
     }
 
@@ -510,7 +537,7 @@ mod tests {
         let mut p = payload(TransactOp::Update);
         p.attrs = attrs;
 
-        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos).expect("planifica");
+        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos, ACTOR_TEST).expect("planifica");
         let delta = plan.delta.expect("hubo cambios");
 
         assert_eq!(delta.len(), 2, "status idéntico no entra al delta");
@@ -534,7 +561,7 @@ mod tests {
         let mut p = payload(TransactOp::Update);
         p.attrs = attrs;
 
-        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos).expect("planifica");
+        let plan = plan_payload_datoms(&p, "ent_1", 2000, &previos, ACTOR_TEST).expect("planifica");
         assert!(plan.delta.is_none(), "sin cambios reales no hay delta");
     }
 
@@ -552,10 +579,108 @@ mod tests {
         p.entity_type = "asset".to_string();
         p.attrs = attrs;
 
-        let plan = plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new()).expect("planifica");
+        let plan =
+            plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new(), ACTOR_TEST).expect("planifica");
         assert!(
             !plan.fts_requests.is_empty(),
             "asset.name es fts y genera requests"
+        );
+    }
+
+    #[test]
+    fn create_persiste_actor_en_created_by_y_updated_by() {
+        registry();
+        let plan = plan_payload_datoms(
+            &payload(TransactOp::Create),
+            "ent_1",
+            1000,
+            &HashMap::new(),
+            "usr_42",
+        )
+        .expect("create planifica");
+
+        assert!(
+            assert_de(&plan.datoms, "meta/created_by", "usr_42"),
+            "create asienta meta/created_by con el actor"
+        );
+        assert!(
+            assert_de(&plan.datoms, "meta/updated_by", "usr_42"),
+            "create asienta meta/updated_by con el actor"
+        );
+    }
+
+    #[test]
+    fn update_retracta_updated_by_previo_y_asienta_el_nuevo() {
+        registry();
+        let previos = activos(&[(
+            "meta/updated_by",
+            crate::eav::writer::system_attrs::UPDATED_BY_ID,
+            DatomValue::Str("usr_viejo".to_string()),
+        )]);
+        let plan = plan_payload_datoms(
+            &payload(TransactOp::Update),
+            "ent_1",
+            2000,
+            &previos,
+            "usr_nuevo",
+        )
+        .expect("update planifica");
+
+        assert!(
+            retract_de(&plan.datoms, "meta/updated_by", "usr_viejo"),
+            "update retracta el updated_by previo"
+        );
+        assert!(
+            assert_de(&plan.datoms, "meta/updated_by", "usr_nuevo"),
+            "update asienta el actor nuevo"
+        );
+        assert!(
+            !plan.datoms.iter().any(|d| d.attr_name == "meta/created_by"),
+            "update no toca created_by"
+        );
+    }
+
+    #[test]
+    fn update_sin_updated_by_previo_no_retracta_nada() {
+        registry();
+        let previos = activos(&[("title", 99, DatomValue::Str("Bomba 3".to_string()))]);
+        let plan = plan_payload_datoms(
+            &payload(TransactOp::Update),
+            "ent_1",
+            2000,
+            &previos,
+            "usr_nuevo",
+        )
+        .expect("update planifica");
+
+        assert!(assert_de(&plan.datoms, "meta/updated_by", "usr_nuevo"));
+        assert!(
+            plan.datoms
+                .iter()
+                .filter(|d| d.attr_name == "meta/updated_by")
+                .all(|d| d.op),
+            "sin valor previo no hay retract de updated_by"
+        );
+    }
+
+    #[test]
+    fn actor_vacio_no_emite_atribucion() {
+        registry();
+        let plan = plan_payload_datoms(
+            &payload(TransactOp::Create),
+            "ent_1",
+            1000,
+            &HashMap::new(),
+            "",
+        )
+        .expect("create planifica");
+
+        assert!(
+            !plan
+                .datoms
+                .iter()
+                .any(|d| d.attr_name == "meta/created_by" || d.attr_name == "meta/updated_by"),
+            "sin actor no se emite atribución: mejor ausente que valor inventado"
         );
     }
 }

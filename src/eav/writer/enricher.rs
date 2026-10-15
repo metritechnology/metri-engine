@@ -15,6 +15,8 @@ use ulid::Ulid;
 ///   - entity/ulid: el ULID de la entidad (obligatorio)
 ///   - meta/created_at: epoch ms del momento de escritura (solo en Create)
 ///   - meta/updated_at: epoch ms de la última modificación
+///   - meta/created_by: actor (user_id del token) que creó la entidad
+///   - meta/updated_by: actor de la última modificación
 ///   - entity/type: tipo de la entidad (ej. "asset")
 ///   - tenant/id: tenant_id (inyectado siempre, no puede venir del cliente)
 pub fn enrich_datoms(
@@ -25,6 +27,7 @@ pub fn enrich_datoms(
     tx_id: u64,
     is_create: bool,
     active_attrs: &std::collections::HashMap<String, (u16, DatomValue)>,
+    actor: &str,
 ) {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -122,6 +125,43 @@ pub fn enrich_datoms(
         DatomValue::Instant(now_ms),
         tx_id,
     ));
+
+    // Atribución de actor: el engine persiste QUIÉN escribió, agnóstico para
+    // todas las entidades. CREATE nace con created_by + updated_by; UPDATE
+    // retracta el updated_by previo y asienta el nuevo (mismo patrón que
+    // updated_at). Sin actor conocido no se emite nada — mejor ausente que
+    // un valor inventado.
+    let actor = actor.trim();
+    if !actor.is_empty() {
+        if is_create {
+            datoms.push(Datom::assert(
+                tenant_id,
+                entity_id,
+                sys::CREATED_BY_NAME,
+                sys::CREATED_BY_ID,
+                DatomValue::Str(actor.to_string()),
+                tx_id,
+            ));
+        } else if let Some((_, DatomValue::Str(old_actor))) = active_attrs.get(sys::UPDATED_BY_NAME)
+        {
+            datoms.push(Datom::retract(
+                tenant_id,
+                entity_id,
+                sys::UPDATED_BY_NAME,
+                sys::UPDATED_BY_ID,
+                DatomValue::Str(old_actor.clone()),
+                tx_id,
+            ));
+        }
+        datoms.push(Datom::assert(
+            tenant_id,
+            entity_id,
+            sys::UPDATED_BY_NAME,
+            sys::UPDATED_BY_ID,
+            DatomValue::Str(actor.to_string()),
+            tx_id,
+        ));
+    }
 }
 
 /// Genera un nuevo ULID para una entidad recién creada.

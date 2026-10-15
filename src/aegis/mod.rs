@@ -19,6 +19,7 @@
 pub mod ast_ir;
 pub mod formula;
 pub mod label_template;
+pub mod mbf; // Ejecutor vectorizado sobre Metri Binary Format (.mbf)
 pub mod oltp;
 pub mod pagination; // Paginación cursor Base64(offset:limit)
 pub mod sql;

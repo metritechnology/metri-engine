@@ -95,6 +95,7 @@ pub(crate) fn generate_outbox_datoms(
     attrs: &HashMap<String, DatomValue>,
     tx_id: u64,
     mutation_ulid: &str,
+    actor: &str,
 ) -> Result<Option<Vec<Datom>>, DomainError> {
     let disable_eda = crate::codice::global()
         .get_model(entity_type)
@@ -167,6 +168,7 @@ pub(crate) fn generate_outbox_datoms(
         tx_id,
         true, // is_create
         &HashMap::new(),
+        actor,
     );
 
     let outbox_type_datom = Datom::assert(
@@ -210,6 +212,7 @@ mod tests {
             &attrs_de_ejemplo(),
             1000,
             "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "usr_test",
         )
         .expect("sin errores de registry")
         .expect("asset genera outbox");
@@ -259,6 +262,7 @@ mod tests {
                 &attrs_de_ejemplo(),
                 1000,
                 "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+                "usr_test",
             )
             .expect("sin errores")
             .expect("genera outbox");
@@ -287,6 +291,7 @@ mod tests {
             &HashMap::new(),
             1000,
             "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "usr_test",
         )
         .expect("sin errores");
         assert!(fila.is_none(), "outbox_event no genera outbox");
@@ -303,6 +308,7 @@ mod tests {
             &HashMap::new(),
             1000,
             "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "usr_test",
         )
         .expect("sin errores");
         assert!(fila.is_none(), "audit_log declara disable_eda");

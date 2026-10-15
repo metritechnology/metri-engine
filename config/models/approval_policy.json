@@ -37,6 +37,22 @@
       "description": "Matriz declarativa de niveles con roles requeridos, grupos asignados y flag de firma electrónica obligatoria."
     },
     {
+      "name": "resolution_actions",
+      "type": "json",
+      "description": "Acciones que ejecuta el motor (o el servicio ejecutor vía bus de eventos) cuando la instancia se resuelve: [{ on: APPROVED|REJECTED, action, params }]."
+    },
+    {
+      "name": "trigger_event",
+      "type": "enum",
+      "options": [
+        "create",
+        "update",
+        "both"
+      ],
+      "default_value": "create",
+      "description": "Momento de disparo de la política: al crear el registro, al actualizarlo (las condiciones se evalúan contra los atributos escritos en la actualización), o ambos."
+    },
+    {
       "name": "sla_duration_hours",
       "type": "integer",
       "default_value": "24",

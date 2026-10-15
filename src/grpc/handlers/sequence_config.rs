@@ -10,6 +10,8 @@
 //! cubren. La fila global es la POLÍTICA del tenant: manda sobre la config
 //! estática del Códice al mintear (`SeqAttrConfig::apply_policy`).
 
+#![allow(clippy::result_large_err)]
+
 use std::collections::HashMap;
 
 use tonic::{Request, Response, Status};
@@ -35,7 +37,7 @@ const PADDING_MAX: usize = 8;
 /// Normaliza el prefijo de la política: MAYÚSCULAS, `[A-Z0-9-]`, ≤16 y
 /// siempre terminado en `-` (el formato del código es prefix + número).
 /// Vacío → cae al default del Códice.
-fn normalize_prefix(input: &str, fallback: &str) -> Result<String, String> {
+fn normalize_prefix(input: &str, fallback: &str) -> Result<String, Status> {
     let raw = if input.trim().is_empty() {
         fallback
     } else {
@@ -43,18 +45,24 @@ fn normalize_prefix(input: &str, fallback: &str) -> Result<String, String> {
     };
     let upper = raw.to_ascii_uppercase();
     if upper.is_empty() {
-        return Err("El prefijo no puede quedar vacío".to_string());
+        return Err(Status::invalid_argument("El prefijo no puede quedar vacío"));
     }
     if upper.len() > 16 {
-        return Err("El prefijo no puede exceder 16 caracteres".to_string());
+        return Err(Status::invalid_argument(
+            "El prefijo no puede exceder 16 caracteres",
+        ));
     }
     let mut chars = upper.chars();
     let first = chars.next().unwrap_or_default();
     if !first.is_ascii_alphanumeric() {
-        return Err("El prefijo debe empezar con una letra o número".to_string());
+        return Err(Status::invalid_argument(
+            "El prefijo debe empezar con una letra o número",
+        ));
     }
     if !chars.all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Err("El prefijo solo admite letras, números y guiones".to_string());
+        return Err(Status::invalid_argument(
+            "El prefijo solo admite letras, números y guiones",
+        ));
     }
     let mut out = upper;
     if !out.ends_with('-') {
@@ -65,18 +73,18 @@ fn normalize_prefix(input: &str, fallback: &str) -> Result<String, String> {
 
 /// Padding efectivo: 0 (ausente) → default del Códice; negativo → error;
 /// si no, en rango.
-fn effective_padding(input: i32, fallback: usize) -> Result<usize, String> {
+fn effective_padding(input: i32, fallback: usize) -> Result<usize, Status> {
     let padding = match input {
         0 => fallback,
-        n if n < 0 => return Err("El padding no puede ser negativo".to_string()),
+        n if n < 0 => return Err(Status::invalid_argument("El padding no puede ser negativo")),
         n => n as usize,
     };
     if (PADDING_MIN..=PADDING_MAX).contains(&padding) {
         Ok(padding)
     } else {
-        Err(format!(
+        Err(Status::invalid_argument(format!(
             "El padding debe estar entre {PADDING_MIN} y {PADDING_MAX} dígitos"
-        ))
+        )))
     }
 }
 
@@ -84,14 +92,14 @@ fn effective_padding(input: i32, fallback: usize) -> Result<usize, String> {
 fn effective_resolution(
     input: &str,
     fallback: &ScopeResolution,
-) -> Result<ScopeResolution, String> {
+) -> Result<ScopeResolution, Status> {
     match input.trim() {
         "" => Ok(fallback.clone()),
         "exact" => Ok(ScopeResolution::Exact),
         "nearest_registered" => Ok(ScopeResolution::NearestRegistered),
-        other => Err(format!(
+        other => Err(Status::invalid_argument(format!(
             "Modo de numeración desconocido: '{other}' (exact | nearest_registered)"
-        )),
+        ))),
     }
 }
 
@@ -337,12 +345,9 @@ impl MetriGrpcService {
             }));
         }
 
-        let prefix =
-            normalize_prefix(&req.prefix, &defaults.prefix).map_err(Status::invalid_argument)?;
-        let padding = effective_padding(req.padding_length, defaults.padding)
-            .map_err(Status::invalid_argument)?;
-        let resolution = effective_resolution(&req.scope_resolution, &defaults.scope_resolution)
-            .map_err(Status::invalid_argument)?;
+        let prefix = normalize_prefix(&req.prefix, &defaults.prefix)?;
+        let padding = effective_padding(req.padding_length, defaults.padding)?;
+        let resolution = effective_resolution(&req.scope_resolution, &defaults.scope_resolution)?;
 
         let global_code = sequence::global_sequence_code(&tenant_id, &req.field_name);
 

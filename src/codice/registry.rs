@@ -344,12 +344,19 @@ impl CodeRegistry {
             load_locales_recursive(&locales_dir, &locales_dir, &mut locales);
         }
 
-        // Registrar atributos de sistema reservados
-        by_attr_id.insert(0x0000, "entity/ulid".to_string());
-        by_attr_id.insert(0x0001, "entity/type".to_string());
-        by_attr_id.insert(0x0002, "tenant/id".to_string());
-        by_attr_id.insert(0x0003, "meta/created_at".to_string());
-        by_attr_id.insert(0x0004, "meta/updated_at".to_string());
+        // Registrar atributos de sistema reservados. DESDE las constantes de
+        // system_attrs — fuente única real: un id reservado nuevo que no se
+        // añada aquí se lee como `attr_<id>` en todos los caminos de lectura
+        // (drift silenciosa cazada en prod: 0x0005/0x0006 llegaron como
+        // attr_5/attr_6 tras el deploy del actor).
+        use crate::eav::writer::system_attrs as sys;
+        by_attr_id.insert(sys::ULID_ID, sys::ULID_NAME.to_string());
+        by_attr_id.insert(sys::TYPE_ID, sys::TYPE_NAME.to_string());
+        by_attr_id.insert(sys::TENANT_ID, sys::TENANT_NAME.to_string());
+        by_attr_id.insert(sys::CREATED_AT_ID, sys::CREATED_AT_NAME.to_string());
+        by_attr_id.insert(sys::UPDATED_AT_ID, sys::UPDATED_AT_NAME.to_string());
+        by_attr_id.insert(sys::CREATED_BY_ID, sys::CREATED_BY_NAME.to_string());
+        by_attr_id.insert(sys::UPDATED_BY_ID, sys::UPDATED_BY_NAME.to_string());
         by_attr_id.insert(
             crate::eav::types::datom::Datom::hash_attr_name("entity_type"),
             "entity_type".to_string(),

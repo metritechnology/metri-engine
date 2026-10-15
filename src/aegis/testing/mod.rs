@@ -15,3 +15,4 @@ mod formula_integration_tests;
 mod formula_lexer_tests;
 mod formula_parser_tests;
 mod formula_security_tests;
+mod viz_caster_and_ast_tests;
