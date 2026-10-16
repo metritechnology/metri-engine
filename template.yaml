@@ -338,7 +338,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub "metri-lake-${AWS::AccountId}-${AWS::Region}"
+      BucketName: "metri-engine"
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
@@ -494,7 +494,7 @@ Resources:
           METRI_BOOTSTRAP_MASTER_EMAIL: "admin@metri.one"
           METRI_BOOTSTRAP_MASTER_USERNAME: "admin"
           METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
-          FORCE_DEPLOY: "4"
+          FORCE_DEPLOY: "5"
 
   # ── 6. Observabilidad Estructurada con Retención Acotada (14 días) ───────────
   MetriEngineLogGroup:

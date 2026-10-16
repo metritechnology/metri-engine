@@ -147,8 +147,8 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
     };
 
     let s3_mode = std::env::var("S3_MODE").unwrap_or_default();
-    let export_bucket = std::env::var("AWS_S3_EXPORT_BUCKET")
-        .unwrap_or_else(|_| "metri-csv-exports-982592308819-us-east-1".to_string());
+    let export_bucket =
+        std::env::var("AWS_S3_EXPORT_BUCKET").unwrap_or_else(|_| "metri-engine".to_string());
 
     let export_storage: Option<Arc<dyn crate::domain::protocols::IExportStorage>> = if s3_mode
         == "stub"
