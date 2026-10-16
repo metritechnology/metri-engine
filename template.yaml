@@ -477,7 +477,7 @@ Resources:
           # ── Motor Binario Unificado Metri Vortex (.mbf) ──
           MBF_ENGINE_MODE: !Ref MbfEngineMode
           MBF_S3_BUCKET: !Ref MetriDataLakeBucket
-          MBF_S3_PREFIX: "v1/tenants"
+          MBF_S3_PREFIX: "metri-engine"
           MBF_TMP_CACHE_DIR: "/tmp/mbf_cache"
           MBF_TMP_CACHE_MAX_MB: "450"
           MBF_L0_MAX_ROWS: "4096"
@@ -494,7 +494,7 @@ Resources:
           METRI_BOOTSTRAP_MASTER_EMAIL: "admin@metri.one"
           METRI_BOOTSTRAP_MASTER_USERNAME: "admin"
           METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
-          FORCE_DEPLOY: "3"
+          FORCE_DEPLOY: "4"
 
   # ── 6. Observabilidad Estructurada con Retención Acotada (14 días) ───────────
   MetriEngineLogGroup:

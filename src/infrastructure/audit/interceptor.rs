@@ -8,7 +8,6 @@
 //!
 //! Es fire-and-forget, nunca falla el request original.
 
-use chrono::Utc;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{error, info};
@@ -49,10 +48,10 @@ impl IAuditInterceptor for AuditInterceptorImpl {
             .and_then(|v| v.as_str())
             .unwrap_or("UNKNOWN");
 
-        let user_id = request
-            .get("user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("UNKNOWN");
+        let resolved_user_id = match request.get("user_id").and_then(|v| v.as_str()) {
+            Some(u) if !u.is_empty() && u != "UNKNOWN" => u,
+            _ => "usr_system_bff",
+        };
 
         let entity_type = request
             .get("entity_type")
@@ -64,11 +63,8 @@ impl IAuditInterceptor for AuditInterceptorImpl {
             "action_type":      action_type.as_str(),
             "resource_domain":  entity_type,
             "tenant_id":        tenant_id,
-            "user_id":          user_id,
-            "timestamp":        Utc::now().timestamp_millis(),
-            "security_context": self.build_security_snapshot(request),
-            "request_payload":  request.get("payload").cloned().unwrap_or(Value::Null),
-            "status":           if succeeded { "SUCCESS" } else { "FAILURE" }
+            "user_id":          resolved_user_id,
+            "security_context": self.build_security_snapshot(request).to_string(),
         });
 
         info!(
@@ -83,7 +79,13 @@ impl IAuditInterceptor for AuditInterceptorImpl {
         let mut req_map = serde_json::Map::new();
         req_map.insert("data".to_string(), Value::Array(vec![audit_payload]));
 
-        let ctx = IopContext::new(tenant_id, user_id, "audit_log", "BULK_CREATE", req_map);
+        let ctx = IopContext::new(
+            tenant_id,
+            resolved_user_id,
+            "audit_log",
+            "BULK_CREATE",
+            req_map,
+        );
 
         let olap = Arc::clone(&self.olap_channel);
         tokio::spawn(async move {

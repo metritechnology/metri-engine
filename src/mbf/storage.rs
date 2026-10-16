@@ -265,6 +265,7 @@ impl WriteRequestBuilder {
 pub struct S3MbfObjectStore {
     s3_client: aws_sdk_s3::Client,
     bucket: String,
+    prefix: String,
     cache_dir: PathBuf,
 }
 
@@ -285,14 +286,21 @@ impl S3MbfObjectStore {
             aws_sdk_s3::Client::new(&config)
         };
         let cache_dir = std::env::var("MBF_CACHE_DIR")
+            .or_else(|_| std::env::var("MBF_TMP_CACHE_DIR"))
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/tmp/mbf_cache"));
+        let prefix = std::env::var("MBF_S3_PREFIX").unwrap_or_else(|_| "metri-engine".to_string());
         let _ = std::fs::create_dir_all(&cache_dir);
         Self {
             s3_client,
             bucket: bucket.into(),
+            prefix: prefix.trim_matches('/').to_string(),
             cache_dir,
         }
+    }
+
+    pub fn prefix(&self) -> &str {
+        &self.prefix
     }
 
     fn local_cache_path(&self, key: &str) -> PathBuf {
@@ -305,6 +313,87 @@ impl S3MbfObjectStore {
         hasher.update(bytes);
         let digest = hasher.finalize();
         hex::encode(&digest[0..16])
+    }
+
+    /// Writes a binary `.mbf` object directly to S3 and mirrors it to `/tmp/mbf_cache`.
+    pub async fn put_raw_mbf(&self, key: &str, bytes: Vec<u8>) -> DomainResult<String> {
+        let local_path = self.local_cache_path(key);
+        let _ = std::fs::write(&local_path, &bytes);
+
+        let fallback_etag = Self::compute_etag(&bytes);
+        let resp = self
+            .s3_client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .content_type("application/x-metri-mbf")
+            .body(aws_sdk_s3::primitives::ByteStream::from(bytes))
+            .send()
+            .await;
+
+        match resp {
+            Ok(out) => {
+                let s3_etag = out
+                    .e_tag()
+                    .map(|s| s.trim_matches('"').to_string())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(fallback_etag);
+                Ok(s3_etag)
+            }
+            Err(e) => {
+                tracing::warn!("[MBF S3] Error writing {key} to s3://{}: {e}", self.bucket);
+                Ok(fallback_etag)
+            }
+        }
+    }
+
+    /// Fetches a `.mbf` binary from S3 if its ETag differs from `known_s3_etag`.
+    pub async fn fetch_partition_if_changed(
+        &self,
+        key: &str,
+        known_s3_etag: Option<&str>,
+    ) -> DomainResult<MbfConditionalGet> {
+        let mut req = self.s3_client.get_object().bucket(&self.bucket).key(key);
+        if let Some(etag) = known_s3_etag {
+            if !etag.is_empty() {
+                req = req.if_none_match(format!("\"{etag}\""));
+            }
+        }
+
+        match req.send().await {
+            Ok(out) => {
+                let etag = out
+                    .e_tag()
+                    .map(|s| s.trim_matches('"').to_string())
+                    .unwrap_or_default();
+                let collected = out.body.collect().await.map_err(|e| {
+                    DomainError::mbf(
+                        ErrorCode::MbfCorrupt001,
+                        format!("Failed reading S3 body for {key}: {e}"),
+                    )
+                })?;
+                let bytes = collected.into_bytes().to_vec();
+                let resolved_etag = if etag.is_empty() {
+                    Self::compute_etag(&bytes)
+                } else {
+                    etag
+                };
+                let local_path = self.local_cache_path(key);
+                let _ = std::fs::write(&local_path, &bytes);
+                Ok(MbfConditionalGet::Modified(MbfObjectPayload {
+                    bytes,
+                    etag: resolved_etag,
+                }))
+            }
+            Err(sdk_err) => {
+                let status_code = sdk_err.raw_response().map(|r| r.status().as_u16());
+                match status_code {
+                    Some(304) => Ok(MbfConditionalGet::NotModified),
+                    Some(404) => Ok(MbfConditionalGet::NotFound),
+                    _ => Ok(MbfConditionalGet::NotModified),
+                }
+            }
+        }
     }
 }
 
@@ -406,21 +495,15 @@ impl IMbfObjectStore for S3MbfObjectStore {
         let new_etag = Self::compute_etag(&bytes);
         let _ = std::fs::write(&local_path, &bytes);
 
-        let mut req = self
+        let _ = self
             .s3_client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
-            .body(aws_sdk_s3::primitives::ByteStream::from(bytes));
-
-        if let Some(exp) = expected_etag {
-            req = req.if_match(exp);
-        } else {
-            req = req.if_none_match("*");
-        }
-
-        // Best-effort S3 sync when running with real S3 credentials
-        let _ = req.send().await;
+            .content_type("application/x-metri-mbf")
+            .body(aws_sdk_s3::primitives::ByteStream::from(bytes))
+            .send()
+            .await;
         Ok(new_etag)
     }
 }
@@ -428,14 +511,151 @@ impl IMbfObjectStore for S3MbfObjectStore {
 /// Composite key `(PK, SK_bytes)` inside a `.mbf` partition store.
 type PrimaryKey = (String, Vec<u8>);
 
+/// Wire-serializable snapshot of a `.mbf` partition (uses `Vec` of tuples so JSON/binary serialization never fails on tuple map keys).
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+struct MbfPartitionWireSnapshot {
+    pub epoch_id: u64,
+    pub items: Vec<(PrimaryKey, HashMap<String, AttributeValue>)>,
+    pub quota_counters: Vec<((String, String), i64)>,
+    pub quota_idem: Vec<((String, String), (String, i64))>,
+}
+
+/// Wire-serializable snapshot of a single entity (`metri-engine/tenants/<tenant>/entities/<type>/<id>.mbf`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MbfEntityWireSnapshot {
+    pub tenant_id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub epoch_id: u64,
+    pub datoms: Vec<(Vec<u8>, HashMap<String, AttributeValue>)>,
+}
+
+/// Encodes any payload slice into a genuine `.mbf` binary file:
+/// `[MbfHeader (64B, "MBFv0001") | MbfTenantCryptoSeal (64B) | payload | MbfFooterTrailer (64B, "MBFE")]`.
+pub fn encode_mbf_envelope(
+    cell_id: u32,
+    row_count: u64,
+    epoch_id: u64,
+    tenant_id: &str,
+    entity_type: &str,
+    payload: &[u8],
+) -> DomainResult<Vec<u8>> {
+    use crate::mbf::format::{MbfFooterTrailer, MbfHeader, MbfTenantCryptoSeal};
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let header = MbfHeader::new(cell_id, row_count, epoch_id, 0x4D42_4656_0001, 0, now_ms);
+    let seal = MbfTenantCryptoSeal::seal_block(
+        b"METRI_VORTEX_MBF_SEAL_KEY_2026",
+        tenant_id,
+        entity_type,
+        epoch_id,
+        payload,
+    )?;
+
+    let mut seal_bytes = [0u8; 64];
+    seal_bytes[0..16].copy_from_slice(&seal.tenant_context_hash);
+    seal_bytes[16..28].copy_from_slice(&seal.nonce);
+    seal_bytes[28..32].copy_from_slice(&seal.crypto_flags.to_le_bytes());
+    seal_bytes[32..64].copy_from_slice(&seal.keyed_mac);
+
+    let mut buf = Vec::with_capacity(128 + payload.len() + 64);
+    buf.extend_from_slice(&header.to_bytes());
+    buf.extend_from_slice(&seal_bytes);
+    buf.extend_from_slice(payload);
+
+    let mut hasher = Sha256::new();
+    hasher.update(&buf);
+    let digest = hasher.finalize();
+    let full_crc = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
+
+    let payload_end = (128 + payload.len()) as u64;
+    let footer = MbfFooterTrailer {
+        zone1_pax_offset: 128,
+        zone2_csr_offset: payload_end,
+        zone3_iot_offset: payload_end,
+        zone4_ledger_offset: payload_end,
+        zone5_synopsis_offset: payload_end,
+        zone5b_search_offset: payload_end,
+        zone6b_cov_offset: payload_end,
+        footer_magic: MbfFooterTrailer::FOOTER_MAGIC,
+        full_file_crc32: full_crc,
+    };
+    buf.extend_from_slice(&footer.to_bytes());
+    Ok(buf)
+}
+
+/// Validates and decodes a `.mbf` binary file produced by [`encode_mbf_envelope`].
+pub fn decode_mbf_envelope(
+    file_bytes: &[u8],
+) -> DomainResult<(crate::mbf::format::MbfHeader, &[u8])> {
+    use crate::mbf::format::{MbfFooterTrailer, MbfHeader};
+
+    if file_bytes.len() < 192 {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            format!("MBF file too small: {} bytes", file_bytes.len()),
+        ));
+    }
+    let header = MbfHeader::from_bytes(&file_bytes[0..64])?;
+    let footer = MbfFooterTrailer::from_bytes(&file_bytes[file_bytes.len() - 64..])?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(&file_bytes[0..file_bytes.len() - 64]);
+    let digest = hasher.finalize();
+    let expected_crc = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
+    if footer.full_file_crc32 != expected_crc {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Full file CRC32 mismatch in MBF footer",
+        ));
+    }
+
+    Ok((header, &file_bytes[128..file_bytes.len() - 64]))
+}
+
+#[derive(Debug, Default, Clone)]
 struct MbfPartitionStore {
+    epoch_id: u64,
+    last_s3_etag: Option<String>,
+    last_sync_ms: i64,
     /// Primary index `(PK, SK_bytes) -> Item`.
     items: BTreeMap<PrimaryKey, HashMap<String, AttributeValue>>,
     /// Quota counters `(tenant_id, quota_id) -> current_usage`.
     quota_counters: HashMap<(String, String), i64>,
     /// Quota idempotency marks `(tenant_id, idem_key) -> (quota_id, delta)`.
     quota_idem: HashMap<(String, String), (String, i64)>,
+}
+
+impl MbfPartitionStore {
+    fn to_wire_snapshot(&self) -> MbfPartitionWireSnapshot {
+        MbfPartitionWireSnapshot {
+            epoch_id: self.epoch_id,
+            items: self
+                .items
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+            quota_counters: self
+                .quota_counters
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect(),
+            quota_idem: self
+                .quota_idem
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        }
+    }
+
+    fn apply_wire_snapshot(&mut self, snap: MbfPartitionWireSnapshot, etag: String, now_ms: i64) {
+        self.epoch_id = snap.epoch_id;
+        self.items = snap.items.into_iter().collect();
+        self.quota_counters = snap.quota_counters.into_iter().collect();
+        self.quota_idem = snap.quota_idem.into_iter().collect();
+        self.last_s3_etag = Some(etag);
+        self.last_sync_ms = now_ms;
+    }
 }
 
 static GLOBAL_MBF_PARTITIONS: Lazy<RwLock<HashMap<String, Arc<RwLock<MbfPartitionStore>>>>> =
@@ -487,6 +707,7 @@ fn extract_index_key(
 #[derive(Clone)]
 pub struct MbfStorageClient {
     pub default_table: String,
+    s3_store: Option<Arc<S3MbfObjectStore>>,
 }
 
 /// Type alias preserving compatibility across internal modules.
@@ -494,15 +715,44 @@ pub type DynamoClient = MbfStorageClient;
 
 impl MbfStorageClient {
     pub async fn new(default_table: &str) -> Self {
-        info!("[MBF Storage] Metri Vortex (.mbf) engine initialized | namespace: {default_table}");
-        Self {
+        let s3_mode = std::env::var("S3_MODE").unwrap_or_default();
+        let maybe_bucket = std::env::var("MBF_S3_BUCKET")
+            .or_else(|_| std::env::var("MBF_BUCKET_NAME"))
+            .ok()
+            .filter(|b| !b.is_empty());
+
+        let s3_store = if s3_mode != "stub" {
+            if let Some(bucket) = maybe_bucket {
+                let store = Arc::new(S3MbfObjectStore::new(&bucket).await);
+                info!(
+                    "[MBF Storage] Metri Vortex (.mbf) S3 persistence active | s3://{}/{}/ | namespace: {default_table}",
+                    bucket,
+                    store.prefix()
+                );
+                Some(store)
+            } else {
+                info!(
+                    "[MBF Storage] Metri Vortex (.mbf) in-memory mode | namespace: {default_table}"
+                );
+                None
+            }
+        } else {
+            info!("[MBF Storage] Metri Vortex (.mbf) stub mode | namespace: {default_table}");
+            None
+        };
+
+        let client = Self {
             default_table: default_table.to_string(),
-        }
+            s3_store,
+        };
+        let _ = client.sync_from_s3(default_table, true).await;
+        client
     }
 
     pub fn new_stub() -> Self {
         Self {
             default_table: "metri-mbf-local".to_string(),
+            s3_store: None,
         }
     }
 
@@ -510,22 +760,160 @@ impl MbfStorageClient {
         true
     }
 
+    fn vortex_s3_key(&self, s3: &S3MbfObjectStore, table: &str) -> String {
+        format!("{}/vortex/{table}.mbf", s3.prefix())
+    }
+
+    /// Synchronizes the in-memory `.mbf` partition store with S3 if a remote container committed newer state.
+    async fn sync_from_s3(&self, table: &str, force: bool) -> Result<(), DomainError> {
+        let Some(s3) = &self.s3_store else {
+            return Ok(());
+        };
+        let part = partition_for(table);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+
+        let (known_etag, last_sync) = {
+            let guard = part
+                .read()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav002, "Poisoned MBF partition lock"))?;
+            (guard.last_s3_etag.clone(), guard.last_sync_ms)
+        };
+
+        if !force && known_etag.is_some() && (now_ms - last_sync) < 200 {
+            return Ok(());
+        }
+
+        let key = self.vortex_s3_key(s3, table);
+        match s3
+            .fetch_partition_if_changed(&key, known_etag.as_deref())
+            .await?
+        {
+            MbfConditionalGet::NotModified => {
+                if let Ok(mut guard) = part.write() {
+                    guard.last_sync_ms = now_ms;
+                }
+            }
+            MbfConditionalGet::NotFound => {
+                if let Ok(mut guard) = part.write() {
+                    guard.last_sync_ms = now_ms;
+                }
+            }
+            MbfConditionalGet::Modified(payload) => {
+                if let Ok((_, raw_json)) = decode_mbf_envelope(&payload.bytes) {
+                    if let Ok(snap) = serde_json::from_slice::<MbfPartitionWireSnapshot>(raw_json) {
+                        if let Ok(mut guard) = part.write() {
+                            guard.apply_wire_snapshot(snap, payload.etag, now_ms);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Flushes the updated `.mbf` binary partition and per-entity `.mbf` files to S3 (`s3://<bucket>/<prefix>/...`).
+    async fn flush_to_s3(
+        &self,
+        table: &str,
+        touched_entities: Vec<(String, String, String)>,
+    ) -> Result<(), DomainError> {
+        let Some(s3) = &self.s3_store else {
+            return Ok(());
+        };
+        let part = partition_for(table);
+        let prefix = s3.prefix().to_string();
+
+        let (vortex_bytes, entity_files) = {
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            guard.epoch_id += 1;
+            let epoch = guard.epoch_id;
+            let row_count = guard.items.len() as u64;
+            let snap = guard.to_wire_snapshot();
+            let raw_json = serde_json::to_vec(&snap).map_err(|e| {
+                DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    format!("Failed serializing MBF partition: {e}"),
+                )
+            })?;
+            let vortex_bin = encode_mbf_envelope(0, row_count, epoch, "system", table, &raw_json)?;
+
+            let mut extra_files: Vec<(String, Vec<u8>)> = Vec::new();
+            for (tenant_id, entity_type, entity_id) in touched_entities {
+                let target_pk = format!("T#{tenant_id}#E#{entity_id}");
+                let range_start = (target_pk.clone(), Vec::new());
+                let mut datoms = Vec::new();
+                for ((item_pk, item_sk), item) in guard.items.range(range_start..) {
+                    if item_pk != &target_pk {
+                        break;
+                    }
+                    datoms.push((item_sk.clone(), item.clone()));
+                }
+                let ent_snap = MbfEntityWireSnapshot {
+                    tenant_id: tenant_id.clone(),
+                    entity_type: entity_type.clone(),
+                    entity_id: entity_id.clone(),
+                    epoch_id: epoch,
+                    datoms,
+                };
+                if let Ok(ent_json) = serde_json::to_vec(&ent_snap) {
+                    let cell_id =
+                        crate::mbf::tx::DomainCellRouter::resolve_cell_id(&entity_type, &entity_id);
+                    if let Ok(ent_bin) = encode_mbf_envelope(
+                        u32::from(cell_id),
+                        ent_snap.datoms.len() as u64,
+                        epoch,
+                        &tenant_id,
+                        &entity_type,
+                        &ent_json,
+                    ) {
+                        let entity_key = format!(
+                            "{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf"
+                        );
+                        let cell_key =
+                            format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf");
+                        extra_files.push((entity_key, ent_bin.clone()));
+                        extra_files.push((cell_key, ent_bin));
+                    }
+                }
+            }
+            (vortex_bin, extra_files)
+        };
+
+        let vortex_key = self.vortex_s3_key(s3, table);
+        let new_etag = s3.put_raw_mbf(&vortex_key, vortex_bytes).await?;
+        for (ekey, ebytes) in entity_files {
+            let _ = s3.put_raw_mbf(&ekey, ebytes).await;
+        }
+
+        if let Ok(mut guard) = part.write() {
+            guard.last_s3_etag = Some(new_etag);
+            guard.last_sync_ms = chrono::Utc::now().timestamp_millis();
+        }
+        Ok(())
+    }
+
     pub async fn put_item(
         &self,
         table: &str,
         item: HashMap<String, AttributeValue>,
     ) -> Result<(), DomainError> {
+        self.sync_from_s3(table, true).await?;
         let Some(key) = extract_pk_sk(&item) else {
             return Err(DomainError::eav(
                 ErrorCode::Eav001,
                 "Missing PK in MBF put_item",
             ));
         };
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
-        guard.items.insert(key, item);
+        {
+            let part = partition_for(table);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            guard.items.insert(key, item);
+        }
+        self.flush_to_s3(table, Vec::new()).await?;
         Ok(())
     }
 
@@ -535,6 +923,7 @@ impl MbfStorageClient {
         pk: &str,
         sk: Option<&[u8]>,
     ) -> Result<Option<HashMap<String, AttributeValue>>, DomainError> {
+        self.sync_from_s3(table, false).await?;
         let part = partition_for(table);
         let guard = part
             .read()
@@ -556,12 +945,16 @@ impl MbfStorageClient {
         pk: &str,
         sk: Option<&[u8]>,
     ) -> Result<(), DomainError> {
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
-        let sk_vec = sk.map(|b| b.to_vec()).unwrap_or_default();
-        guard.items.remove(&(pk.to_string(), sk_vec));
+        self.sync_from_s3(table, true).await?;
+        {
+            let part = partition_for(table);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            let sk_vec = sk.map(|b| b.to_vec()).unwrap_or_default();
+            guard.items.remove(&(pk.to_string(), sk_vec));
+        }
+        self.flush_to_s3(table, Vec::new()).await?;
         Ok(())
     }
 
@@ -581,83 +974,121 @@ impl MbfStorageClient {
             })
             .unwrap_or_else(|| self.default_table.clone());
 
-        let part = partition_for(&table_name);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+        self.sync_from_s3(&table_name, true).await?;
 
-        // 1. Validate intra-transaction duplicate keys and conditions before mutating
-        let mut staged: Vec<(PrimaryKey, HashMap<String, AttributeValue>)> =
-            Vec::with_capacity(items.len());
-        let mut seen_keys = std::collections::HashSet::new();
+        let touched_entities = {
+            let part = partition_for(&table_name);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
 
-        for tx_item in items {
-            let Some(put) = tx_item.put else {
-                continue;
-            };
-            let Some(key) = extract_pk_sk(&put.item) else {
-                return Err(DomainError::eav(
-                    ErrorCode::Eav001,
-                    "TransactWriteItem missing PK",
-                ));
-            };
-            if !seen_keys.insert(key.clone()) {
-                return Err(DomainError::eav(
-                    ErrorCode::Eav001,
-                    format!("Duplicate key in transaction: {}", key.0),
-                ));
-            }
+            // 1. Validate intra-transaction duplicate keys and conditions before mutating
+            let mut staged: Vec<(PrimaryKey, HashMap<String, AttributeValue>)> =
+                Vec::with_capacity(items.len());
+            let mut seen_keys = std::collections::HashSet::new();
+            let mut touched: Vec<(String, String, String)> = Vec::new();
+            let entity_type_attr_suffix = format!(
+                "#A#{}",
+                crate::eav::types::datom::Datom::hash_attr_name("entity_type")
+            );
 
-            if let Some(cond) = &put.condition_expression {
-                let existing = guard.items.get(&key);
-                if cond == "attribute_not_exists(PK) AND attribute_not_exists(SK)" {
-                    if existing.is_some() {
-                        return Err(DomainError::eav(
-                            ErrorCode::EavTx004,
-                            format!(
-                                "Conflict in append-only MBF log on key ({}, {:?})",
-                                key.0, key.1
-                            ),
-                        ));
-                    }
-                } else if cond == "attribute_not_exists(PK)" {
-                    if existing.is_some() {
-                        return Err(DomainError::codice(
-                            ErrorCode::Cod001,
-                            format!(
-                                "Violación de restricción unique: la clave {} ya está reclamada",
-                                key.0
-                            ),
-                        ));
-                    }
-                } else if cond == "attribute_not_exists(PK) OR eid = :self" {
-                    if let Some(ex_item) = existing {
-                        let existing_eid = ex_item.get("eid").and_then(av_string);
-                        let self_eid = put
-                            .expression_attribute_values
-                            .get(":self")
-                            .and_then(av_string);
-                        if existing_eid != self_eid {
+            for tx_item in items {
+                let Some(put) = tx_item.put else {
+                    continue;
+                };
+                let Some(key) = extract_pk_sk(&put.item) else {
+                    return Err(DomainError::eav(
+                        ErrorCode::Eav001,
+                        "TransactWriteItem missing PK",
+                    ));
+                };
+                if !seen_keys.insert(key.clone()) {
+                    return Err(DomainError::eav(
+                        ErrorCode::Eav001,
+                        format!("Duplicate key in transaction: {}", key.0),
+                    ));
+                }
+
+                if let Some(cond) = &put.condition_expression {
+                    let existing = guard.items.get(&key);
+                    if cond == "attribute_not_exists(PK) AND attribute_not_exists(SK)" {
+                        if existing.is_some() {
+                            return Err(DomainError::eav(
+                                ErrorCode::EavTx004,
+                                format!(
+                                    "Conflict in append-only MBF log on key ({}, {:?})",
+                                    key.0, key.1
+                                ),
+                            ));
+                        }
+                    } else if cond == "attribute_not_exists(PK)" {
+                        if existing.is_some() {
                             return Err(DomainError::codice(
                                 ErrorCode::Cod001,
                                 format!(
-                                    "Violación de restricción unique en UPDATE: la clave {} pertenece a otra entidad",
+                                    "Violación de restricción unique: la clave {} ya está reclamada",
                                     key.0
                                 ),
                             ));
                         }
+                    } else if cond == "attribute_not_exists(PK) OR eid = :self" {
+                        if let Some(ex_item) = existing {
+                            let existing_eid = ex_item.get("eid").and_then(av_string);
+                            let self_eid = put
+                                .expression_attribute_values
+                                .get(":self")
+                                .and_then(av_string);
+                            if existing_eid != self_eid {
+                                return Err(DomainError::codice(
+                                    ErrorCode::Cod001,
+                                    format!(
+                                        "Violación de restricción unique en UPDATE: la clave {} pertenece a otra entidad",
+                                        key.0
+                                    ),
+                                ));
+                            }
+                        }
                     }
                 }
+
+                // Track touched entities from TX log items or entity_type datoms
+                if key.0.starts_with("T#") && key.0.ends_with("#TX") && key.0.len() > 5 {
+                    let tid = key.0[2..key.0.len() - 3].to_string();
+                    if let (Some(et), Some(eid)) = (
+                        put.item.get("entity_type").and_then(av_string),
+                        put.item.get("entity_id").and_then(av_string),
+                    ) {
+                        touched.push((tid, et.to_string(), eid.to_string()));
+                    }
+                } else if let Some(ap) = put.item.get("ap").and_then(av_string) {
+                    if ap.ends_with(&entity_type_attr_suffix) {
+                        if let Some(et) = put.item.get("v").and_then(av_string) {
+                            if let Some(rest) = key.0.strip_prefix("T#") {
+                                if let Some((tid, eid)) = rest.split_once("#E#") {
+                                    touched.push((
+                                        tid.to_string(),
+                                        et.to_string(),
+                                        eid.to_string(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                staged.push((key, put.item));
             }
 
-            staged.push((key, put.item));
-        }
+            // 2. Commit all items atomically
+            for (key, item) in staged {
+                guard.items.insert(key, item);
+            }
+            touched.sort();
+            touched.dedup();
+            touched
+        };
 
-        // 2. Commit all items atomically
-        for (key, item) in staged {
-            guard.items.insert(key, item);
-        }
-
+        self.flush_to_s3(&table_name, touched_entities).await?;
         debug!("[MBF Storage] ACID transaction committed on {table_name}");
         Ok(())
     }
@@ -670,17 +1101,21 @@ impl MbfStorageClient {
         if write_requests.is_empty() {
             return Ok(());
         }
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
-        for req in write_requests {
-            if let Some(put_req) = req.put_request {
-                if let Some(key) = extract_pk_sk(&put_req.item) {
-                    guard.items.insert(key, put_req.item);
+        self.sync_from_s3(table, true).await?;
+        {
+            let part = partition_for(table);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            for req in write_requests {
+                if let Some(put_req) = req.put_request {
+                    if let Some(key) = extract_pk_sk(&put_req.item) {
+                        guard.items.insert(key, put_req.item);
+                    }
                 }
             }
         }
+        self.flush_to_s3(table, Vec::new()).await?;
         Ok(())
     }
 
@@ -695,6 +1130,7 @@ impl MbfStorageClient {
         scan_forward: bool,
         limit: Option<i32>,
     ) -> Result<Vec<HashMap<String, AttributeValue>>, DomainError> {
+        self.sync_from_s3(table, false).await?;
         let part = partition_for(table);
         let guard = part
             .read()
@@ -788,37 +1224,42 @@ impl MbfStorageClient {
         seq_code: &str,
         tenant_id: &str,
     ) -> Result<i64, DomainError> {
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
-        let key = (seq_code.to_string(), Vec::new());
-        let entry = guard.items.entry(key).or_insert_with(|| {
-            let mut m = HashMap::new();
-            m.insert("PK".to_string(), AttributeValue::S(seq_code.to_string()));
-            m.insert(
-                "tenant_id".to_string(),
-                AttributeValue::S(tenant_id.to_string()),
+        self.sync_from_s3(table, true).await?;
+        let next_val = {
+            let part = partition_for(table);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            let key = (seq_code.to_string(), Vec::new());
+            let entry = guard.items.entry(key).or_insert_with(|| {
+                let mut m = HashMap::new();
+                m.insert("PK".to_string(), AttributeValue::S(seq_code.to_string()));
+                m.insert(
+                    "tenant_id".to_string(),
+                    AttributeValue::S(tenant_id.to_string()),
+                );
+                m
+            });
+            let current = entry
+                .get("current_value")
+                .and_then(av_number)
+                .and_then(|n| n.parse::<i64>().ok())
+                .unwrap_or(0);
+            let next_val = current + 1;
+            entry.insert(
+                "current_value".to_string(),
+                AttributeValue::N(next_val.to_string()),
             );
-            m
-        });
-        let current = entry
-            .get("current_value")
-            .and_then(av_number)
-            .and_then(|n| n.parse::<i64>().ok())
-            .unwrap_or(0);
-        let next_val = current + 1;
-        entry.insert(
-            "current_value".to_string(),
-            AttributeValue::N(next_val.to_string()),
-        );
-        entry
-            .entry("tenant_id".to_string())
-            .or_insert_with(|| AttributeValue::S(tenant_id.to_string()));
-        entry.insert(
-            "updated_at".to_string(),
-            AttributeValue::N(chrono::Utc::now().timestamp_millis().to_string()),
-        );
+            entry
+                .entry("tenant_id".to_string())
+                .or_insert_with(|| AttributeValue::S(tenant_id.to_string()));
+            entry.insert(
+                "updated_at".to_string(),
+                AttributeValue::N(chrono::Utc::now().timestamp_millis().to_string()),
+            );
+            next_val
+        };
+        self.flush_to_s3(table, Vec::new()).await?;
         Ok(next_val)
     }
 
@@ -833,62 +1274,69 @@ impl MbfStorageClient {
         scope_resolution: &str,
         set_current_value: Option<i64>,
     ) -> Result<bool, DomainError> {
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
-        let key = (seq_code.to_string(), Vec::new());
-        let existing_current = guard
-            .items
-            .get(&key)
-            .and_then(|item| item.get("current_value"))
-            .and_then(av_number)
-            .and_then(|n| n.parse::<i64>().ok());
+        self.sync_from_s3(table, true).await?;
+        let updated = {
+            let part = partition_for(table);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            let key = (seq_code.to_string(), Vec::new());
+            let existing_current = guard
+                .items
+                .get(&key)
+                .and_then(|item| item.get("current_value"))
+                .and_then(av_number)
+                .and_then(|n| n.parse::<i64>().ok());
 
-        if let Some(target) = set_current_value {
-            if let Some(cur) = existing_current {
-                if cur >= target {
-                    return Ok(false);
+            if let Some(target) = set_current_value {
+                if let Some(cur) = existing_current {
+                    if cur >= target {
+                        return Ok(false);
+                    }
                 }
             }
-        }
 
-        let entry = guard.items.entry(key).or_insert_with(|| {
-            let mut m = HashMap::new();
-            m.insert("PK".to_string(), AttributeValue::S(seq_code.to_string()));
-            m
-        });
-        entry.insert("prefix".to_string(), AttributeValue::S(prefix.to_string()));
-        entry.insert(
-            "padding".to_string(),
-            AttributeValue::N(padding.to_string()),
-        );
-        entry.insert(
-            "scope_resolution".to_string(),
-            AttributeValue::S(scope_resolution.to_string()),
-        );
-        entry.insert(
-            "tenant_id".to_string(),
-            AttributeValue::S(tenant_id.to_string()),
-        );
-        entry.insert(
-            "updated_at".to_string(),
-            AttributeValue::N(chrono::Utc::now().timestamp_millis().to_string()),
-        );
-        match set_current_value {
-            Some(target) => {
-                entry.insert(
-                    "current_value".to_string(),
-                    AttributeValue::N(target.to_string()),
-                );
+            let entry = guard.items.entry(key).or_insert_with(|| {
+                let mut m = HashMap::new();
+                m.insert("PK".to_string(), AttributeValue::S(seq_code.to_string()));
+                m
+            });
+            entry.insert("prefix".to_string(), AttributeValue::S(prefix.to_string()));
+            entry.insert(
+                "padding".to_string(),
+                AttributeValue::N(padding.to_string()),
+            );
+            entry.insert(
+                "scope_resolution".to_string(),
+                AttributeValue::S(scope_resolution.to_string()),
+            );
+            entry.insert(
+                "tenant_id".to_string(),
+                AttributeValue::S(tenant_id.to_string()),
+            );
+            entry.insert(
+                "updated_at".to_string(),
+                AttributeValue::N(chrono::Utc::now().timestamp_millis().to_string()),
+            );
+            match set_current_value {
+                Some(target) => {
+                    entry.insert(
+                        "current_value".to_string(),
+                        AttributeValue::N(target.to_string()),
+                    );
+                }
+                None => {
+                    entry
+                        .entry("current_value".to_string())
+                        .or_insert_with(|| AttributeValue::N("0".to_string()));
+                }
             }
-            None => {
-                entry
-                    .entry("current_value".to_string())
-                    .or_insert_with(|| AttributeValue::N("0".to_string()));
-            }
+            true
+        };
+        if updated {
+            self.flush_to_s3(table, Vec::new()).await?;
         }
-        Ok(true)
+        Ok(updated)
     }
 
     pub async fn sequence_scoped_set(
@@ -898,42 +1346,49 @@ impl MbfStorageClient {
         tenant_id: &str,
         target_value: i64,
     ) -> Result<bool, DomainError> {
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
-        let key = (scoped_code.to_string(), Vec::new());
-        let existing_current = guard
-            .items
-            .get(&key)
-            .and_then(|item| item.get("current_value"))
-            .and_then(av_number)
-            .and_then(|n| n.parse::<i64>().ok());
+        self.sync_from_s3(table, true).await?;
+        let updated = {
+            let part = partition_for(table);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            let key = (scoped_code.to_string(), Vec::new());
+            let existing_current = guard
+                .items
+                .get(&key)
+                .and_then(|item| item.get("current_value"))
+                .and_then(av_number)
+                .and_then(|n| n.parse::<i64>().ok());
 
-        if let Some(cur) = existing_current {
-            if cur >= target_value {
-                return Ok(false);
+            if let Some(cur) = existing_current {
+                if cur >= target_value {
+                    return Ok(false);
+                }
             }
-        }
 
-        let entry = guard.items.entry(key).or_insert_with(|| {
-            let mut m = HashMap::new();
-            m.insert("PK".to_string(), AttributeValue::S(scoped_code.to_string()));
-            m
-        });
-        entry.insert(
-            "current_value".to_string(),
-            AttributeValue::N(target_value.to_string()),
-        );
-        entry.insert(
-            "tenant_id".to_string(),
-            AttributeValue::S(tenant_id.to_string()),
-        );
-        entry.insert(
-            "updated_at".to_string(),
-            AttributeValue::N(chrono::Utc::now().timestamp_millis().to_string()),
-        );
-        Ok(true)
+            let entry = guard.items.entry(key).or_insert_with(|| {
+                let mut m = HashMap::new();
+                m.insert("PK".to_string(), AttributeValue::S(scoped_code.to_string()));
+                m
+            });
+            entry.insert(
+                "current_value".to_string(),
+                AttributeValue::N(target_value.to_string()),
+            );
+            entry.insert(
+                "tenant_id".to_string(),
+                AttributeValue::S(tenant_id.to_string()),
+            );
+            entry.insert(
+                "updated_at".to_string(),
+                AttributeValue::N(chrono::Utc::now().timestamp_millis().to_string()),
+            );
+            true
+        };
+        if updated {
+            self.flush_to_s3(table, Vec::new()).await?;
+        }
+        Ok(updated)
     }
 
     pub async fn scan_with_filter(
@@ -943,6 +1398,7 @@ impl MbfStorageClient {
         _expr_attr_names: HashMap<String, String>,
         expr_attr_values: HashMap<String, AttributeValue>,
     ) -> Result<Vec<HashMap<String, AttributeValue>>, DomainError> {
+        self.sync_from_s3(table, false).await?;
         let part = partition_for(table);
         let guard = part
             .read()
@@ -975,6 +1431,7 @@ impl MbfStorageClient {
         tenant_id: &str,
         quota_ids: &[String],
     ) -> Result<HashMap<String, i64>, DomainError> {
+        self.sync_from_s3(table, false).await?;
         let part = partition_for(table);
         let guard = part
             .read()
@@ -1000,18 +1457,26 @@ impl MbfStorageClient {
         max_limit: i64,
         seed: i64,
     ) -> Result<(bool, i64), DomainError> {
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Infra001, "Poisoned MBF partition lock"))?;
-        let key = (tenant_id.to_string(), quota_id.to_string());
-        let current = guard.quota_counters.get(&key).copied().unwrap_or(seed);
-        if current >= max_limit {
-            return Ok((false, current));
+        self.sync_from_s3(table, true).await?;
+        let (allowed, val) = {
+            let part = partition_for(table);
+            let mut guard = part.write().map_err(|_| {
+                DomainError::eav(ErrorCode::Infra001, "Poisoned MBF partition lock")
+            })?;
+            let key = (tenant_id.to_string(), quota_id.to_string());
+            let current = guard.quota_counters.get(&key).copied().unwrap_or(seed);
+            if current >= max_limit {
+                (false, current)
+            } else {
+                let next = current + amount;
+                guard.quota_counters.insert(key, next);
+                (true, next)
+            }
+        };
+        if allowed {
+            self.flush_to_s3(table, Vec::new()).await?;
         }
-        let next = current + amount;
-        guard.quota_counters.insert(key, next);
-        Ok((true, next))
+        Ok((allowed, val))
     }
 
     pub async fn quota_settle(
@@ -1021,14 +1486,19 @@ impl MbfStorageClient {
         quota_id: &str,
         delta: i64,
     ) -> Result<i64, DomainError> {
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Infra001, "Poisoned MBF partition lock"))?;
-        let key = (tenant_id.to_string(), quota_id.to_string());
-        let current = guard.quota_counters.get(&key).copied().unwrap_or(0);
-        let next = (current + delta).max(0);
-        guard.quota_counters.insert(key, next);
+        self.sync_from_s3(table, true).await?;
+        let next = {
+            let part = partition_for(table);
+            let mut guard = part.write().map_err(|_| {
+                DomainError::eav(ErrorCode::Infra001, "Poisoned MBF partition lock")
+            })?;
+            let key = (tenant_id.to_string(), quota_id.to_string());
+            let current = guard.quota_counters.get(&key).copied().unwrap_or(0);
+            let next = (current + delta).max(0);
+            guard.quota_counters.insert(key, next);
+            next
+        };
+        self.flush_to_s3(table, Vec::new()).await?;
         Ok(next)
     }
 
@@ -1040,19 +1510,88 @@ impl MbfStorageClient {
         delta: i64,
         idem_key: &str,
     ) -> Result<bool, DomainError> {
-        let part = partition_for(table);
-        let mut guard = part
-            .write()
-            .map_err(|_| DomainError::eav(ErrorCode::Infra001, "Poisoned MBF partition lock"))?;
-        let ikey = (tenant_id.to_string(), idem_key.to_string());
-        if guard.quota_idem.contains_key(&ikey) {
-            return Ok(false);
+        self.sync_from_s3(table, true).await?;
+        let settled = {
+            let part = partition_for(table);
+            let mut guard = part.write().map_err(|_| {
+                DomainError::eav(ErrorCode::Infra001, "Poisoned MBF partition lock")
+            })?;
+            let ikey = (tenant_id.to_string(), idem_key.to_string());
+            if guard.quota_idem.contains_key(&ikey) {
+                false
+            } else {
+                let qkey = (tenant_id.to_string(), quota_id.to_string());
+                let current = guard.quota_counters.get(&qkey).copied().unwrap_or(0);
+                let next = (current + delta).max(0);
+                guard.quota_counters.insert(qkey, next);
+                guard.quota_idem.insert(ikey, (quota_id.to_string(), delta));
+                true
+            }
+        };
+        if settled {
+            self.flush_to_s3(table, Vec::new()).await?;
         }
-        let qkey = (tenant_id.to_string(), quota_id.to_string());
-        let current = guard.quota_counters.get(&qkey).copied().unwrap_or(0);
-        let next = (current + delta).max(0);
-        guard.quota_counters.insert(qkey, next);
-        guard.quota_idem.insert(ikey, (quota_id.to_string(), delta));
-        Ok(true)
+        Ok(settled)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mbf_envelope_and_partition_snapshot_roundtrip() {
+        let mut store = MbfPartitionStore {
+            epoch_id: 7,
+            ..Default::default()
+        };
+        let mut item = HashMap::new();
+        item.insert(
+            "PK".to_string(),
+            AttributeValue::S("T#system#E#asset_01".to_string()),
+        );
+        item.insert(
+            "SK".to_string(),
+            AttributeValue::B(Blob::new(vec![0, 1, 2, 3])),
+        );
+        item.insert(
+            "v".to_string(),
+            AttributeValue::S("Chiller Principal".to_string()),
+        );
+        store
+            .items
+            .insert(("T#system#E#asset_01".to_string(), vec![0, 1, 2, 3]), item);
+        store
+            .quota_counters
+            .insert(("system".to_string(), "asset".to_string()), 1);
+
+        let snap = store.to_wire_snapshot();
+        let raw_json = serde_json::to_vec(&snap).unwrap();
+        let mbf_bytes =
+            encode_mbf_envelope(2, 1, 7, "system", "metri-mbf-local", &raw_json).unwrap();
+
+        assert_eq!(&mbf_bytes[0..8], b"MBFv0001");
+        assert_eq!(
+            &mbf_bytes[mbf_bytes.len() - 8..mbf_bytes.len() - 4],
+            b"MBFE"
+        );
+
+        let (header, decoded_payload) = decode_mbf_envelope(&mbf_bytes).unwrap();
+        assert_eq!(header.cell_id, 2);
+        assert_eq!(header.row_count, 1);
+        assert_eq!(header.epoch_id, 7);
+
+        let decoded_snap: MbfPartitionWireSnapshot =
+            serde_json::from_slice(decoded_payload).unwrap();
+        let mut restored = MbfPartitionStore::default();
+        restored.apply_wire_snapshot(decoded_snap, "etag-123".to_string(), 1000);
+        assert_eq!(restored.epoch_id, 7);
+        assert_eq!(restored.items.len(), 1);
+        assert_eq!(
+            restored
+                .quota_counters
+                .get(&("system".to_string(), "asset".to_string())),
+            Some(&1)
+        );
     }
 }
