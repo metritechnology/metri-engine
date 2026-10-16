@@ -62,7 +62,7 @@ pub fn to_datalog_clauses(
     })
 }
 
-/// Serializa DatalogClause a Vec<String> de cláusulas Datalog completas.
+/// Serializa DatalogClause a `Vec<String>` de cláusulas Datalog completas.
 pub fn datalog_clause_to_parts(clause: &DatalogClause) -> Vec<String> {
     let mut parts = vec![clause.binding.clone()];
     if let Some(l) = &clause.lower {

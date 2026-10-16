@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::mbf::storage::{AttributeValue, Blob};
+use crate::mbf::storage::{AttributeValue, Blob, MbfStorageClient};
 use tracing::debug;
 
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -19,7 +19,6 @@ use crate::eav::types::{
     datom::DatomValue,
     encoding::{decode_eavt_sk, eavt_sk_as_of},
 };
-use crate::infrastructure::dynamodb::DynamoClient;
 
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
@@ -31,8 +30,7 @@ pub struct CacheEntry {
     /// Nacimiento de la entrada: la caché es por-instancia y la invalidación
     /// por escritura sólo limpia la instancia que escribió — otra instancia
     /// caliente serviría el snapshot viejo INDEFINIDAMENTE. El TTL acota el
-    /// staleness entre instancias Lambda (hallazgo del molde del plan,
-    /// 2026-09-23: un detalle del plan leyó 1,5 h de retraso).
+    /// staleness entre instancias.
     pub cached_at: std::time::Instant,
 }
 
@@ -78,7 +76,6 @@ pub fn insert_eav_cache_entry(
 pub type EntityMap = HashMap<String, DatomValue>;
 
 /// Estructura interna súper compacta para warmup.
-/// Esto reduce el consumo de RAM en un 95% al descartar los HashMaps de la SDK de AWS de inmediato.
 #[derive(Debug)]
 pub struct WarmupItem {
     pub entity_id: String,
@@ -89,12 +86,12 @@ pub struct WarmupItem {
 
 #[derive(Clone)]
 pub struct EavReader {
-    pub ddb: Arc<DynamoClient>,
+    pub ddb: Arc<MbfStorageClient>,
     pub table: String,
 }
 
 impl EavReader {
-    pub fn new(ddb: Arc<DynamoClient>, table: impl Into<String>) -> Self {
+    pub fn new(ddb: Arc<MbfStorageClient>, table: impl Into<String>) -> Self {
         EavReader {
             ddb,
             table: table.into(),
@@ -102,9 +99,7 @@ impl EavReader {
     }
 
     /// Carga el estado actual de una entidad (todos los atributos vigentes).
-    /// Equivale a (d/pull db `'[*]` entity-id) pero sin deserializar el blob.
-    ///
-    /// Mejora: solo carga los atributos pedidos, no el blob completo.
+    /// Equivale a `(d/pull db '[*] entity-id)` sobre el índice primario EAVT de `.mbf`.
     pub async fn pull(
         &self,
         tenant_id: &str,
@@ -117,11 +112,8 @@ impl EavReader {
         if let Ok(cache) = EAV_CACHE.read() {
             if let Some(entry) = cache.get(&pk) {
                 let fresh = entry.cached_at.elapsed() <= EAV_CACHE_TTL;
-                // Las entidades transaccionales críticas de cuota no deben servirse de la caché local para evitar inconsistencias en clúster/Lambda
-                let is_quota = entry.map.contains_key("resource_domain")
-                    || entry.map.contains_key("domain_quota/resource_domain");
 
-                let is_sufficient = if !fresh || is_quota {
+                let is_sufficient = if !fresh {
                     false
                 } else if entry.is_complete {
                     true
@@ -156,8 +148,8 @@ impl EavReader {
             }
         }
 
-        // Query en tabla EAVT — todos los datoms de la entidad, ordenados por SK
-        // SK binario: [attr_id:2B][tx_id:8B][op:1B] — orden natural de DynamoDB
+        // Query en índice primario EAVT de .mbf — todos los datoms de la entidad, ordenados por SK
+        // SK binario: [attr_id:2B][tx_id:8B][op:1B]
         let key_condition = "#pk = :pk".to_string();
         let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();
@@ -168,11 +160,11 @@ impl EavReader {
             .ddb
             .query(
                 &self.table,
-                None, // tabla principal, no GSI
+                None,
                 &key_condition,
                 attr_names.clone(),
                 attr_values.clone(),
-                true, // ScanIndexForward=true → orden cronológico
+                true,
                 None,
             )
             .await
@@ -186,22 +178,16 @@ impl EavReader {
         // [BLUEPRINT: §V.1 — "el estado actual es el datom assert más reciente por atributo"]
         let full_entity_map = assemble_current_state(raw_items, None);
 
-        // Insertar en la cache marcada como completa (excepto para domain_quota)
-        let is_quota = full_entity_map.contains_key("resource_domain")
-            || full_entity_map.contains_key("domain_quota/resource_domain");
-
-        if !is_quota {
-            if let Ok(mut cache) = EAV_CACHE.write() {
-                insert_eav_cache_entry(
-                    &mut cache,
-                    pk.clone(),
-                    CacheEntry {
-                        is_complete: true,
-                        map: full_entity_map.clone(),
-                        cached_at: std::time::Instant::now(),
-                    },
-                );
-            }
+        if let Ok(mut cache) = EAV_CACHE.write() {
+            insert_eav_cache_entry(
+                &mut cache,
+                pk.clone(),
+                CacheEntry {
+                    is_complete: true,
+                    map: full_entity_map.clone(),
+                    cached_at: std::time::Instant::now(),
+                },
+            );
         }
 
         // Retornar filtrado si es necesario
@@ -221,67 +207,6 @@ impl EavReader {
 
         debug!(
             "[EAV] pull (CACHE MISS/FALLBACK) tenant={tenant_id} entity_id={entity_id} attrs={}",
-            result_map.len()
-        );
-
-        Ok(result_map)
-    }
-
-    /// Carga el estado actual de una entidad directamente desde la base de datos (DynamoDB)
-    /// omitiendo y evitando escribir en la caché en memoria EAV_CACHE.
-    /// Útil para entidades transaccionales de lectura-escritura concurrente como `domain_quota`.
-    pub async fn pull_nocache(
-        &self,
-        tenant_id: &str,
-        entity_id: &str,
-        attrs: Option<&[&str]>,
-    ) -> Result<EntityMap, DomainError> {
-        let pk = format!("T#{}#E#{}", tenant_id, entity_id);
-
-        let key_condition = "#pk = :pk".to_string();
-        let mut attr_names = HashMap::new();
-        let mut attr_values = HashMap::new();
-        attr_names.insert("#pk".to_string(), "PK".to_string());
-        attr_values.insert(":pk".to_string(), AttributeValue::S(pk.clone()));
-
-        let raw_items = self
-            .ddb
-            .query(
-                &self.table,
-                None,
-                &key_condition,
-                attr_names.clone(),
-                attr_values.clone(),
-                true,
-                None,
-            )
-            .await
-            .map_err(|e| {
-                DomainError::eav(ErrorCode::Eav002, format!("pull_nocache falló: {e:?}"))
-            })?;
-
-        if raw_items.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let full_entity_map = assemble_current_state(raw_items, None);
-
-        let result_map = if let Some(filter) = attrs {
-            let filtered: EntityMap = full_entity_map
-                .iter()
-                .filter(|(k, _)| {
-                    let bare = k.split('/').next_back().unwrap_or(k);
-                    filter.contains(&k.as_str()) || filter.contains(&bare)
-                })
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            filtered
-        } else {
-            full_entity_map
-        };
-
-        debug!(
-            "[EAV] pull_nocache (BYPASS CACHE) tenant={tenant_id} entity_id={entity_id} attrs={}",
             result_map.len()
         );
 
@@ -582,12 +507,6 @@ impl EavReader {
                 let final_map: EntityMap =
                     attrs_map.into_iter().map(|(k, (_, v))| (k, v)).collect();
 
-                let is_quota = final_map.contains_key("resource_domain")
-                    || final_map.contains_key("domain_quota/resource_domain");
-                if is_quota {
-                    continue;
-                }
-
                 if cache.len() >= MAX_EAV_CACHE_SIZE && !cache.contains_key(&pk) {
                     let to_remove: Vec<String> =
                         cache.keys().take(MAX_EAV_CACHE_SIZE / 5).cloned().collect();
@@ -625,7 +544,7 @@ pub struct HistoryEntry {
     pub op: bool, // true=assert, false=retract
 }
 
-/// Ensambla el estado actual de una entidad desde los datoms raw de DynamoDB.
+/// Ensambla el estado actual de una entidad desde los datoms raw de la partición `.mbf`.
 /// Toma el último datom con op=true por atributo.
 fn assemble_current_state(
     items: Vec<HashMap<String, AttributeValue>>,
@@ -688,20 +607,25 @@ fn assemble_current_state(
     latest.into_iter().map(|(k, (_, v))| (k, v)).collect()
 }
 
-/// Extrae el DatomValue del campo `v` de un item DynamoDB.
-fn extract_datom_value(item: &HashMap<String, AttributeValue>) -> Option<DatomValue> {
+/// Extrae el `DatomValue` del campo `v` de un registro `.mbf` (compartido por reader y writer).
+pub(crate) fn extract_datom_value(item: &HashMap<String, AttributeValue>) -> Option<DatomValue> {
     match item.get("v")? {
         AttributeValue::S(s) => Some(DatomValue::Str(s.clone())),
         AttributeValue::N(n) => {
-            // Intentar i64 primero, luego f64
             if let Ok(i) = n.parse::<i64>() {
                 Some(DatomValue::Long(i))
+            } else if !n.contains('.') && !n.contains('e') && !n.contains('E') {
+                if let Ok(big) = n.parse::<i128>() {
+                    Some(DatomValue::BigInt(big))
+                } else {
+                    n.parse::<f64>().ok().map(DatomValue::Double)
+                }
             } else {
                 n.parse::<f64>().ok().map(DatomValue::Double)
             }
         }
         AttributeValue::Bool(b) => Some(DatomValue::Bool(*b)),
-        AttributeValue::B(_) => Some(DatomValue::Bytes(vec![])), // placeholder
+        AttributeValue::B(blob) => Some(DatomValue::Bytes(blob.as_ref().to_vec())),
         AttributeValue::Null(_) => Some(DatomValue::Null),
     }
 }

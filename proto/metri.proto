@@ -39,9 +39,11 @@ service MetriService {
   rpc BulkIngest(BulkRequest) returns (BulkResponse);
 
   // --- EDA (Event-Driven Architecture) Domain ---
-  // High-Performance Batch Router for O(1) Network Hopping
-  // Exclusive bridge for the SAM Event Router to evaluate AST logic inversely for arrays of SQS records.
-  rpc MatchRoutingRulesBatch(MatchRoutingRulesBatchRequest) returns (MatchRoutingRulesBatchResponse);
+  // DEPRECATED: Use MoiraRoutingService.MatchRoutingRulesBatch (eda.proto) instead.
+  // Retained for backward compatibility with existing gRPC clients.
+  rpc MatchRoutingRulesBatch(MatchRoutingRulesBatchRequest) returns (MatchRoutingRulesBatchResponse) {
+    option deprecated = true;
+  }
 
   // --- Sequence Config Domain (numeración de registros) ---
   // Administración de la política de numeración por tenant sobre la tabla

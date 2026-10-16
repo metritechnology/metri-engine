@@ -103,8 +103,8 @@ pub struct IopOrchestrator {
     audit_interceptor: Option<Arc<dyn IAuditInterceptor>>,
     /// Notifier de fallos de Sherlog
     fault_notifier: Arc<dyn crate::iop::sherlog::IFaultNotifier>,
-    /// Canal OLAP para persistir domain_fault
-    olap_channel: Arc<dyn crate::janus_router::router::IWriteChannel>,
+    /// Canal de telemetría (.mbf) para persistir domain_fault
+    telemetry_channel: Arc<dyn crate::janus_router::router::IWriteChannel>,
 }
 
 impl IopOrchestrator {
@@ -113,7 +113,7 @@ impl IopOrchestrator {
         moira_emitter: Option<Arc<dyn MoiraEmitter>>,
         audit_interceptor: Option<Arc<dyn IAuditInterceptor>>,
         fault_notifier: Arc<dyn crate::iop::sherlog::IFaultNotifier>,
-        olap_channel: Arc<dyn crate::janus_router::router::IWriteChannel>,
+        telemetry_channel: Arc<dyn crate::janus_router::router::IWriteChannel>,
     ) -> Self {
         info!(
             "[IOP] Orchestrator activo | {} pasos síncronos",
@@ -124,7 +124,7 @@ impl IopOrchestrator {
             moira_emitter,
             audit_interceptor,
             fault_notifier,
-            olap_channel,
+            telemetry_channel,
         }
     }
 }
@@ -254,7 +254,7 @@ impl IopOrchestrator {
 
         // Disparo de Sherlog (process_fault) fire-and-forget
         let notifier = Arc::clone(&self.fault_notifier);
-        let olap = Arc::clone(&self.olap_channel);
+        let telemetry = Arc::clone(&self.telemetry_channel);
         let error_clone = e.clone();
         let error_dto_clone = error_dto.clone();
         let entity_type_clone = entity_type.to_string();
@@ -262,7 +262,7 @@ impl IopOrchestrator {
         tokio::spawn(async move {
             crate::iop::sherlog::process_fault(
                 notifier.as_ref(),
-                olap.as_ref(),
+                telemetry.as_ref(),
                 &error_clone,
                 &error_dto_clone,
                 Some(entity_type_clone),

@@ -138,7 +138,7 @@ impl ConstraintPlanner for UniqueClaimPlanner {
             // ValidationError "Type mismatch for key SK expected: B actual: S",
             // lo que cancelaba el transact COMPLETO: ninguna entidad con una
             // constraint unique cuyos atributos estuvieran presentes podía
-            // escribirse jamás (work_order_procedure, incidente 2026-09-18).
+            // escribirse jamás (incidente 2026-09-18).
             // Nadie lee el valor del SK del claim — las condiciones usan
             // PK/eid — así que el cambio de tipo es seguro.
             item.insert(
@@ -213,6 +213,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints,
+            ..Default::default()
         }
     }
 

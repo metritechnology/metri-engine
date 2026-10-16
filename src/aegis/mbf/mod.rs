@@ -1,4 +1,4 @@
-//! Aegis MBF vectorized BI execution engine, 6 OutputCastType formatters, and realistic Mayor Plaza Bogotá dataset.
+//! Aegis MBF vectorized BI execution engine, 6 `BiOutputCast` formatters, and domain-agnostic `MbfAnalyticalWorkspace`.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,10 +13,11 @@ use crate::mbf::zones::csr_graph::CsrGraphZone;
 use crate::mbf::zones::financial_ledger::{
     FenwickPrefixSum128, FinancialLedgerZone, FixedDecimal128,
 };
+use crate::mbf::zones::fuzzy_math_catalog::AffineTransform;
 use crate::mbf::zones::hybrid_search::{
     HybridSearchHit, IndexedEntityDocument, MbfHybridSearchIndex,
 };
-use crate::mbf::zones::iot_timeseries::{Chimp128SeriesBlock, UncefactUnit};
+use crate::mbf::zones::iot_timeseries::Chimp128SeriesBlock;
 use crate::mbf::zones::pax_mvcc::PaxMvccZone;
 
 /// Hardware & block pruning telemetry attached to every BI query execution (`MbfExecutionFlightRecorder`).
@@ -47,43 +48,51 @@ pub struct MbfBiQueryResponse {
     pub flight_recorder: MbfExecutionFlightRecorder,
 }
 
-/// Complete in-memory Digital Twin of **Centro Comercial Mayor Plaza Bogotá** ($255,000\text{ m}^2$)
-/// across all specialized `.mbf` zones with mathematically verifiable Ground Truths.
+/// Domain-agnostic multi-zone `.mbf` analytical workspace assembling all 7 specialized `.mbf` binary zones:
+/// - Zone 1 (`PaxMvccZone`): Columnar PAX + MVCC + Elias-Fano + FSST
+/// - Zone 2 (`CsrGraphZone`): Forward/Backward CSR + Euler Tour hierarchy
+/// - Zone 3 (`Chimp128SeriesBlock`): Gorilla/Chimp128 + Delta-of-Delta time-series with affine canonicalization
+/// - Zone 4 (`FinancialLedgerZone` + `FenwickPrefixSum128`): 128-bit Fixed-Point ledger + Fenwick prefix trees
+/// - Zone 5 (`MbfHyperSynopsis512`): 512-byte AVX-512 aligned univariate, Weibull MLE, and spectral synopses
+/// - Zone 5B (`MbfHybridSearchIndex`): 6-layer multimodal hybrid search index
+/// - Zone 6B (`MbfCrossCovarianceMatrix`): Incremental Pébay co-moment matrix for $O(1)$ OLS/Ridge/PCA
 #[derive(Debug, Clone)]
-pub struct MayorPlazaBogotaDataset {
+pub struct MbfAnalyticalWorkspace {
     pub tenant_id: String,
+    pub entity_name: String,
     pub header: MbfHeader,
     pub tenant_seal: MbfTenantCryptoSeal,
-    pub work_orders_pax: PaxMvccZone,
-    pub isa95_graph: CsrGraphZone,
-    pub chiller_temp_iot: Chimp128SeriesBlock,
-    pub chiller_vibration_iot: Chimp128SeriesBlock,
+    pub primary_pax: PaxMvccZone,
+    pub hierarchy_graph: CsrGraphZone,
+    pub primary_timeseries_iot: Chimp128SeriesBlock,
+    pub spectral_timeseries_iot: Chimp128SeriesBlock,
     pub financial_ledger: FinancialLedgerZone,
-    pub work_order_costs_fenwick: FenwickPrefixSum128,
-    pub work_order_cost_synopsis: MbfHyperSynopsis512,
-    pub bearing_failure_weibull_synopsis: MbfHyperSynopsis512,
-    pub vibration_spectral_synopsis: MbfHyperSynopsis512,
-    pub work_order_multivariate_cov: MbfCrossCovarianceMatrix,
+    pub prefix_sums_fenwick: FenwickPrefixSum128,
+    pub primary_metric_synopsis: MbfHyperSynopsis512,
+    pub survival_weibull_synopsis: MbfHyperSynopsis512,
+    pub spectral_synopsis: MbfHyperSynopsis512,
+    pub multivariate_cov: MbfCrossCovarianceMatrix,
     pub hybrid_search_index: MbfHybridSearchIndex,
 }
 
-impl MayorPlazaBogotaDataset {
-    pub const MASTER_SECRET: &'static [u8] = b"METRI_BOGOTA_MALL_KMS_MASTER_KEY_2026";
+impl MbfAnalyticalWorkspace {
+    pub const MASTER_SECRET: &'static [u8] = b"METRI_VORTEX_ENGINE_KMS_MASTER_KEY_2026";
 
-    /// Generates the deterministic realistic dataset with known Ground Truths across all 7 `.mbf` zones.
-    pub fn generate_deterministic() -> DomainResult<Self> {
-        let tenant_id = "tenant_centro_mayor_bogota".to_string();
+    /// Generates a deterministic, mathematically verifiable multi-zone `.mbf` workspace with known ground truths.
+    pub fn generate_synthetic_reference() -> DomainResult<Self> {
+        let tenant_id = "tenant_alpha".to_string();
+        let entity_name = "entity_record".to_string();
 
-        // 1. Zone 2: ISA-95 Hierarchy (5 levels: Mall Root -> Towers -> Technical Rooms -> Systems -> Critical Assets)
-        // Node 1: Centro Comercial Mayor Plaza (Root, Cost Center 1000)
-        // Node 10: Torre Norte Climatización (Cost Center inherited 1000)
-        // Node 20: Torre Sur Escaleras y Ascensores (Cost Center override 2000)
-        // Node 101: Cuarto de Chillers Sótano 2 (under 10)
-        // Node 1001: Chiller Centrífugo Trane CVHE-500 #1 (under 101)
-        // Node 1002: Bomba Agua Helada Grundfos CR-95 (under 101)
-        // Node 2001: Escalera Eléctrica Otis NCE-12 (under 20)
-        let mut isa95_graph = CsrGraphZone::new();
-        isa95_graph.build_isa95_euler_tree(&[
+        // 1. Zone 2: Hierarchical Euler Tree (Root -> Group -> Subgroup -> Leaf Nodes)
+        // Node 1: Root (inherited attribute 1000)
+        // Node 10: Branch A (inherits 1000)
+        // Node 20: Branch B (overrides with 2000)
+        // Node 101: Sub-branch A1 (under 10)
+        // Node 1001: Leaf A1-1 (under 101)
+        // Node 1002: Leaf A1-2 (under 101)
+        // Node 2001: Leaf B1-1 (under 20)
+        let mut hierarchy_graph = CsrGraphZone::new();
+        hierarchy_graph.build_hierarchical_euler_tree(&[
             (1, None, Some(1000)),
             (10, Some(1), None),
             (20, Some(1), Some(2000)),
@@ -93,89 +102,93 @@ impl MayorPlazaBogotaDataset {
             (2001, Some(20), None),
         ]);
 
-        // 2. Zone 1 & Zone 6B: Work Orders PAX + Multivariate Co-Moments
-        // Exact formula: total_cost = 50_000 + 80_000 * duration_hours + 1.20 * parts_cost
-        let mut work_orders_pax = PaxMvccZone::new("work_order");
-        let mut wo_cost_obs = Vec::new();
-        let mut wo_cost_decimals = Vec::new();
-        let mut wo_multivariate = MbfCrossCovarianceMatrix::new(3); // [duration_hours, parts_cost, total_cost]
+        // 2. Zone 1 & Zone 6B: Columnar PAX + Multivariate Co-Moments
+        // Exact linear law: y = 50_000 + 80_000 * x1 + 1.20 * x2
+        let mut primary_pax = PaxMvccZone::new(&entity_name);
+        let mut metric_obs = Vec::new();
+        let mut metric_decimals = Vec::new();
+        let mut multivariate_cov = MbfCrossCovarianceMatrix::new(3); // [x1, x2, y]
 
         for i in 1..=100 {
-            let wo_id = format!("WO-BOG-{i:04}");
-            let asset_id: u32 = if i % 3 == 0 {
+            let rec_id = format!("REC-{i:04}");
+            let parent_node_id: u32 = if i % 3 == 0 {
                 2001
             } else if i % 2 == 0 {
                 1002
             } else {
                 1001
             };
-            let duration_h = (2 + (i % 12)) as f64;
-            let parts_cost = (100_000 + (i * 15_000) % 450_000) as f64;
-            let total_cost = 50_000.0 + 80_000.0 * duration_h + 1.20 * parts_cost;
+            let x1 = (2 + (i % 12)) as f64;
+            let x2 = (100_000 + (i * 15_000) % 450_000) as f64;
+            let y_val = 50_000.0 + 80_000.0 * x1 + 1.20 * x2;
             let ts_ms = 1_700_000_000_000 + (i as i64) * 3_600_000;
 
             let mut attrs = HashMap::new();
-            attrs.insert("code".into(), MbfCellValue::Text(wo_id.clone()));
+            attrs.insert("code".into(), MbfCellValue::Text(rec_id.clone()));
             attrs.insert(
-                "asset_row_id".into(),
-                MbfCellValue::Int64(i64::from(asset_id)),
+                "subject_row_id".into(),
+                MbfCellValue::Int64(i64::from(parent_node_id)),
             );
-            attrs.insert("duration_hours".into(), MbfCellValue::Float64(duration_h));
-            attrs.insert("parts_cost".into(), MbfCellValue::Float64(parts_cost));
+            attrs.insert("feature_x1".into(), MbfCellValue::Float64(x1));
+            attrs.insert("feature_x2".into(), MbfCellValue::Float64(x2));
             attrs.insert(
-                "total_cost".into(),
-                MbfCellValue::Decimal128((total_cost * 10_000.0).round() as i128),
+                "target_y".into(),
+                MbfCellValue::Decimal128((y_val * 10_000.0).round() as i128),
             );
-            let row_id = work_orders_pax.upsert_entity(&wo_id, i as u64, attrs);
-            isa95_graph.add_reference_edge(row_id, 1, asset_id);
+            let row_id = primary_pax.upsert_entity(&rec_id, i as u64, attrs);
+            hierarchy_graph.add_reference_edge(row_id, 1, parent_node_id);
 
-            wo_cost_obs.push((ts_ms, total_cost));
-            wo_cost_decimals.push(FixedDecimal128::from_scaled(
-                (total_cost * 10_000.0).round() as i128,
+            metric_obs.push((ts_ms, y_val));
+            metric_decimals.push(FixedDecimal128::from_scaled(
+                (y_val * 10_000.0).round() as i128
             ));
-            wo_multivariate.push_row(&[duration_h, parts_cost, total_cost]);
+            multivariate_cov.push_row(&[x1, x2, y_val]);
         }
 
-        let work_order_costs_fenwick = FenwickPrefixSum128::from_slice(&wo_cost_decimals);
-        let work_order_cost_synopsis =
-            MbfHyperSynopsis512::from_observations(&wo_cost_obs, 0, &[], 0.0);
+        let prefix_sums_fenwick = FenwickPrefixSum128::from_slice(&metric_decimals);
+        let primary_metric_synopsis =
+            MbfHyperSynopsis512::from_observations(&metric_obs, 0, &[], 0.0);
 
-        // 3. Zone 5 Reliability: SKF-6205-2RS Bearing Failures with known Weibull beta = 2.85, eta = 4200.0 hours
-        let bearing_failures: Vec<(i64, f64)> = (1..=60)
+        // 3. Zone 5 Survival Analysis: Weibull MLE with shape beta = 2.85, scale eta = 4200.0
+        let survival_events: Vec<(i64, f64)> = (1..=60)
             .map(|i| {
                 let u = (i as f64) / 61.0;
-                let hours = 4200.0 * (-((1.0 - u).ln())).powf(1.0 / 2.85);
-                (1_700_000_000_000 + i * 86_400_000, hours)
+                let lifetime = 4200.0 * (-((1.0 - u).ln())).powf(1.0 / 2.85);
+                (1_700_000_000_000 + i * 86_400_000, lifetime)
             })
             .collect();
-        let censored_bearings = vec![4300.0, 4450.0, 4600.0, 4800.0];
-        let bearing_failure_weibull_synopsis =
-            MbfHyperSynopsis512::from_observations(&bearing_failures, 0, &censored_bearings, 0.0);
+        let right_censored = vec![4300.0, 4450.0, 4600.0, 4800.0];
+        let survival_weibull_synopsis =
+            MbfHyperSynopsis512::from_observations(&survival_events, 0, &right_censored, 0.0);
 
-        // 4. Zone 3 & Zone 5 Spectral IoT: Chiller Temperature (mixed CEL & FAH) + 60 Hz Vibration Signal
-        let mut chiller_temp_iot = Chimp128SeriesBlock::new(1001, "CHILLER_SUPPLY_TEMP");
-        chiller_temp_iot.push_reading(1_700_000_000_000, 7.0, UncefactUnit::Celsius);
-        chiller_temp_iot.push_reading(1_700_000_060_000, 46.4, UncefactUnit::Fahrenheit); // 8.0 C
-        chiller_temp_iot.push_reading(1_700_000_120_000, 9.0, UncefactUnit::Celsius);
+        // 4. Zone 3 & Zone 5 Spectral Time-Series: Affine canonicalization + 60 Hz harmonic signal
+        let mut primary_timeseries_iot = Chimp128SeriesBlock::new(1001, "SERIES_CANONICAL_A");
+        let identity_tf = AffineTransform::identity();
+        let fahrenheit_to_celsius_tf = AffineTransform::new(5.0 / 9.0, -32.0 * 5.0 / 9.0);
+        primary_timeseries_iot.push_reading(1_700_000_000_000, 7.0, identity_tf);
+        primary_timeseries_iot.push_reading(1_700_000_060_000, 46.4, fahrenheit_to_celsius_tf); // 8.0 canonical
+        primary_timeseries_iot.push_reading(1_700_000_120_000, 9.0, identity_tf);
 
         let sample_rate_hz = 240.0;
-        let mut chiller_vibration_iot = Chimp128SeriesBlock::new(1001, "VIBRATION_VELOCITY_MMS");
-        let mut vib_obs = Vec::new();
+        let mut spectral_timeseries_iot = Chimp128SeriesBlock::new(1001, "SERIES_HARMONIC_60HZ");
+        let mut harmonic_obs = Vec::new();
         for i in 0..128 {
             let t_sec = (i as f64) / sample_rate_hz;
-            // Dominant 60 Hz compressor rotational frequency + 0.02 linear thermal drift
             let val = 4.0 + 0.02 * (i as f64) + 3.5 * (2.0 * PI * 60.0 * t_sec).sin();
             let ts_ms = 1_700_000_000_000 + i * 4;
-            chiller_vibration_iot.push_reading(ts_ms, val, UncefactUnit::MillimeterPerSec);
-            vib_obs.push((ts_ms, val));
+            spectral_timeseries_iot.push_reading(ts_ms, val, identity_tf);
+            harmonic_obs.push((ts_ms, val));
         }
-        let vibration_spectral_synopsis =
-            MbfHyperSynopsis512::from_observations(&vib_obs, 0, &[], sample_rate_hz);
+        let spectral_synopsis =
+            MbfHyperSynopsis512::from_observations(&harmonic_obs, 0, &[], sample_rate_hz);
 
-        // 5. Zone 4 Financial & Inventory Ledger (COP/USD/EUR + FIFO/LIFO/WAC/FEFO + Merkle Chain)
+        // 5. Zone 4 Financial & Quantitative Ledger (Multi-currency FX + FIFO/LIFO/WAC/FEFO + Merkle Chain)
         let mut financial_ledger = FinancialLedgerZone::new(1_690_000_000_000);
-        // Receive 2 batches of SKF-6205-2RS bearings:
-        // Batch 101: 20 units @ 150,000 COP
+        financial_ledger.set_exchange_rate("BASE", FixedDecimal128::from_whole(1));
+        financial_ledger.set_exchange_rate("ALT_A", FixedDecimal128::from_whole(4_200));
+        financial_ledger.set_exchange_rate("ALT_B", FixedDecimal128::from_whole(4_550));
+
+        // Batch 101: 20 units @ 150,000 BASE
         financial_ledger.receive_batch(
             101,
             500,
@@ -184,16 +197,16 @@ impl MayorPlazaBogotaDataset {
             FixedDecimal128::from_whole(20),
             FixedDecimal128::from_whole(150_000),
         )?;
-        // Batch 102: 20 units @ 210,000 COP (imported at 50 USD * 4,200 TRM)
-        let imported_cost_cop =
-            financial_ledger.convert_to_cop(FixedDecimal128::from_whole(50), "USD")?;
+        // Batch 102: 20 units @ 210,000 BASE (50 ALT_A * 4,200 FX rate)
+        let converted_cost =
+            financial_ledger.convert_to_base_currency(FixedDecimal128::from_whole(50), "ALT_A")?;
         financial_ledger.receive_batch(
             102,
             500,
             1_700_020_000_000,
             1_730_000_000_000,
             FixedDecimal128::from_whole(20),
-            imported_cost_cop,
+            converted_cost,
         )?;
         financial_ledger.record_journal_entry(
             1_700_025_000_000,
@@ -204,70 +217,369 @@ impl MayorPlazaBogotaDataset {
             ],
         )?;
 
-        // 6. Zone 5B Hybrid Search Index (Spanish/English field typos, vectors, and Bogotá GPS coordinates)
+        // 6. Zone 5B Hybrid Search Index (Multimodal lexical, phonetic, vector, and spatial documents)
         let mut hybrid_search_index = MbfHybridSearchIndex::new();
         hybrid_search_index.index_document(IndexedEntityDocument {
-            entity_id: "ASSET-CHILLER-TRANE-01".into(),
+            entity_id: "DOC-NODE-1001".into(),
             row_id: 1001,
-            code: "CH-TRANE-CVHE500".into(),
-            title: "Válvula solenoide de expansión Chiller Trane Sótano 2".into(),
-            description:
-                "Unidad enfriadora de agua helada con rodamiento SKF-6205-2RS y switch de flujo"
-                    .into(),
+            code: "ALPHA-UNIT-500".into(),
+            title: " Válvula solenoide de regulación primaria nodo norte".into(),
+            description: "Módulo térmico primario con código SKF-6205-2RS y sensor diferencial"
+                .into(),
             embedding: Some(vec![0.92, 0.75, -0.10, 0.05]),
-            coordinates_wgs84: Some((4.5981, -74.1253)), // Centro Mayor Bogotá
+            coordinates_wgs84: Some((4.5981, -74.1253)),
         });
         hybrid_search_index.index_document(IndexedEntityDocument {
-            entity_id: "ASSET-PUMP-GRUNDFOS-02".into(),
+            entity_id: "DOC-NODE-1002".into(),
             row_id: 1002,
-            code: "PMP-GRUND-CR95".into(),
-            title: "Bomba centrífuga hidroneumática Grundfos".into(),
-            description: "Empaque y sello mecánico de eje principal por goteo de lubricante".into(),
+            code: "BETA-UNIT-095".into(),
+            title: "Módulo de impulsión secundaria sincronizada".into(),
+            description: "Sello axial y retenedor principal con monitoreo de caudal".into(),
             embedding: Some(vec![-0.15, 0.20, 0.95, 0.80]),
-            coordinates_wgs84: Some((4.5985, -74.1250)), // 55m away inside geofence
+            coordinates_wgs84: Some((4.5985, -74.1250)),
         });
         hybrid_search_index.index_document(IndexedEntityDocument {
-            entity_id: "ASSET-ESCALATOR-OTIS-03".into(),
+            entity_id: "DOC-NODE-2001".into(),
             row_id: 2001,
-            code: "ESC-OTIS-NCE12".into(),
-            title: "Escalera eléctrica Otis Plazoleta Sur".into(),
-            description: "Cadena de peldaños, pasamanos y sensor óptico de seguridad".into(),
+            code: "GAMMA-UNIT-012".into(),
+            title: "Sistema de tracción vectorial sector sur".into(),
+            description: "Sensor óptico de alineación y control de velocidad".into(),
             embedding: Some(vec![0.10, -0.85, 0.15, -0.60]),
-            coordinates_wgs84: Some((4.7110, -74.0721)), // 13.8 km north (outside mall geofence!)
+            coordinates_wgs84: Some((4.7110, -74.0721)),
         });
 
         let header = MbfHeader::new(
             0,
             100,
             100,
+            1_700_000_000_000,
             0x2026_1015_BEEF,
             1_690_000_000_000,
-            1_700_000_000_000,
         );
         let tenant_seal = MbfTenantCryptoSeal::seal_block(
             Self::MASTER_SECRET,
             &tenant_id,
-            "work_order",
+            &entity_name,
             100,
             &header.to_bytes(),
         )?;
 
         Ok(Self {
             tenant_id,
+            entity_name,
             header,
             tenant_seal,
-            work_orders_pax,
-            isa95_graph,
-            chiller_temp_iot,
-            chiller_vibration_iot,
+            primary_pax,
+            hierarchy_graph,
+            primary_timeseries_iot,
+            spectral_timeseries_iot,
             financial_ledger,
-            work_order_costs_fenwick,
-            work_order_cost_synopsis,
-            bearing_failure_weibull_synopsis,
-            vibration_spectral_synopsis,
-            work_order_multivariate_cov: wo_multivariate,
+            prefix_sums_fenwick,
+            primary_metric_synopsis,
+            survival_weibull_synopsis,
+            spectral_synopsis,
+            multivariate_cov,
             hybrid_search_index,
         })
+    }
+
+    /// Assembles all 7 zones of `MbfAnalyticalWorkspace` into a single spec-compliant 64-byte aligned `.mbf` binary file
+    /// (`"METRIBIN"` header -> `MbfTenantCryptoSeal` -> Zones 1, 2, 3, 4, 5, 5B, 6B -> `MbfDirectoryIndex` -> `"MBFFOOTR"` trailer).
+    pub fn to_mbf_bytes(&self) -> DomainResult<Vec<u8>> {
+        use crate::mbf::format::{
+            compute_crc32c, pad_to_64, write_len_prefixed_str, MbfDirectoryIndex, MbfFooterTrailer,
+            ZoneOffsetsTable, MBF_FLAG_CRYPTO_SEALED, MBF_FLAG_HAS_COVARIANCE, MBF_FLAG_HAS_CSR,
+            MBF_FLAG_HAS_IOT, MBF_FLAG_HAS_LEDGER, MBF_FLAG_HAS_PAX, MBF_FLAG_HAS_SEARCH,
+            MBF_FLAG_HAS_SYNOPSES,
+        };
+
+        let header = self.header.with_flags(
+            MBF_FLAG_HAS_PAX
+                | MBF_FLAG_HAS_CSR
+                | MBF_FLAG_HAS_IOT
+                | MBF_FLAG_HAS_LEDGER
+                | MBF_FLAG_HAS_SYNOPSES
+                | MBF_FLAG_HAS_SEARCH
+                | MBF_FLAG_HAS_COVARIANCE
+                | MBF_FLAG_CRYPTO_SEALED,
+        );
+        let seal = MbfTenantCryptoSeal::seal_block(
+            Self::MASTER_SECRET,
+            &self.tenant_id,
+            &self.entity_name,
+            header.epoch_id(),
+            &header.to_bytes(),
+        )?;
+
+        let mut buf = Vec::with_capacity(16_384);
+        buf.extend_from_slice(&header.to_bytes());
+        buf.extend_from_slice(&seal.to_bytes());
+
+        // Zone 1: PAX + MVCC + Elias-Fano + FSST
+        let z1_offset = buf.len() as u64;
+        let mut z1_bin = Vec::new();
+        write_len_prefixed_str(&mut z1_bin, &self.tenant_id);
+        write_len_prefixed_str(&mut z1_bin, &self.entity_name);
+        let pax_bin = self.primary_pax.encode_zone_binary();
+        z1_bin.extend_from_slice(&(pax_bin.len() as u32).to_le_bytes());
+        z1_bin.extend_from_slice(&pax_bin);
+        pad_to_64(&mut z1_bin);
+        buf.extend_from_slice(&z1_bin);
+        let z1_len = z1_bin.len() as u64;
+
+        // Zone 2: CSR Graph + Euler Tour Hierarchy
+        let z2_offset = buf.len() as u64;
+        let z2_bin = self.hierarchy_graph.encode_zone_binary();
+        buf.extend_from_slice(&z2_bin);
+        let z2_len = z2_bin.len() as u64;
+
+        // Zone 3: Time-Series (Chimp128 + Delta-of-Delta)
+        let z3_offset = buf.len() as u64;
+        let ts1_bin = self.primary_timeseries_iot.encode_zone_binary();
+        let ts2_bin = self.spectral_timeseries_iot.encode_zone_binary();
+        let mut z3_bin = Vec::with_capacity(8 + ts1_bin.len() + ts2_bin.len());
+        z3_bin.extend_from_slice(&(ts1_bin.len() as u32).to_le_bytes());
+        z3_bin.extend_from_slice(&(ts2_bin.len() as u32).to_le_bytes());
+        z3_bin.extend_from_slice(&ts1_bin);
+        z3_bin.extend_from_slice(&ts2_bin);
+        pad_to_64(&mut z3_bin);
+        buf.extend_from_slice(&z3_bin);
+        let z3_len = z3_bin.len() as u64;
+
+        // Zone 4: Financial Ledger + Fenwick Prefix Sums
+        let z4_offset = buf.len() as u64;
+        let ledger_bin = self.financial_ledger.encode_zone_binary();
+        let mut z4_bin =
+            Vec::with_capacity(8 + ledger_bin.len() + self.prefix_sums_fenwick.tree.len() * 16);
+        z4_bin.extend_from_slice(&(ledger_bin.len() as u32).to_le_bytes());
+        z4_bin.extend_from_slice(&(self.prefix_sums_fenwick.tree.len() as u32).to_le_bytes());
+        z4_bin.extend_from_slice(&ledger_bin);
+        for &d in &self.prefix_sums_fenwick.tree {
+            z4_bin.extend_from_slice(&d.to_le_bytes());
+        }
+        pad_to_64(&mut z4_bin);
+        buf.extend_from_slice(&z4_bin);
+        let z4_len = z4_bin.len() as u64;
+
+        // Zone 5: 512-Byte Mathematical Synopses
+        let z5_offset = buf.len() as u64;
+        let z5_bin = MbfHyperSynopsis512::encode_zone_binary_slice(&[
+            self.primary_metric_synopsis,
+            self.survival_weibull_synopsis,
+            self.spectral_synopsis,
+        ]);
+        buf.extend_from_slice(&z5_bin);
+        let z5_len = z5_bin.len() as u64;
+
+        // Zone 5B: 6-Layer Multimodal Hybrid Search Index
+        let z5b_offset = buf.len() as u64;
+        let z5b_bin = self.hybrid_search_index.encode_zone_binary();
+        buf.extend_from_slice(&z5b_bin);
+        let z5b_len = z5b_bin.len() as u64;
+
+        // Zone 6B: Cross-Covariance Co-Moment Matrix
+        let z6b_offset = buf.len() as u64;
+        let z6b_bin = self.multivariate_cov.encode_zone_binary();
+        buf.extend_from_slice(&z6b_bin);
+        let z6b_len = z6b_bin.len() as u64;
+
+        // Directory Index (ZoneOffsetsTable 128B + ColumnChunkDescriptors)
+        let dir = MbfDirectoryIndex {
+            zones: ZoneOffsetsTable {
+                zone1_pax_offset: z1_offset,
+                zone1_pax_len: z1_len,
+                zone2_csr_offset: z2_offset,
+                zone2_csr_len: z2_len,
+                zone3_iot_offset: z3_offset,
+                zone3_iot_len: z3_len,
+                zone4_ledger_offset: z4_offset,
+                zone4_ledger_len: z4_len,
+                zone5_synopsis_offset: z5_offset,
+                zone5_synopsis_len: z5_len,
+                zone5b_search_offset: z5b_offset,
+                zone5b_search_len: z5b_len,
+                zone6b_cov_offset: z6b_offset,
+                zone6b_cov_len: z6b_len,
+                state_overlay_offset: 0,
+                state_overlay_len: 0,
+            },
+            columns: Vec::new(),
+        };
+        let dir_bytes = dir.to_bytes();
+        let dir_offset = buf.len() as u64;
+        let dir_len = dir_bytes.len() as u32;
+        buf.extend_from_slice(&dir_bytes);
+
+        let hdr_crc = compute_crc32c(&buf[0..64]);
+        let dir_crc = compute_crc32c(&dir_bytes);
+        let mut hmac_24 = [0u8; 24];
+        hmac_24.copy_from_slice(&seal.keyed_mac[0..24]);
+
+        let footer = MbfFooterTrailer::new(
+            dir_offset,
+            dir_len,
+            hdr_crc,
+            dir_crc,
+            0x2026_1015,
+            self.financial_ledger.fiscal_lock_epoch_ms,
+            hmac_24,
+        );
+        buf.extend_from_slice(&footer.to_bytes());
+        Ok(buf)
+    }
+
+    /// Reconstructs `MbfAnalyticalWorkspace` from a spec-compliant 64-byte aligned `.mbf` binary file.
+    pub fn from_mbf_bytes(bytes: &[u8]) -> DomainResult<Self> {
+        use crate::mbf::format::{
+            compute_crc32c, read_len_prefixed_str, MbfDirectoryIndex, MbfFooterTrailer, MbfHeader,
+            MbfTenantCryptoSeal,
+        };
+
+        if bytes.len() < 256 || bytes.len() % 64 != 0 {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                format!("Invalid 7-zone MBF file size: {} bytes", bytes.len()),
+            ));
+        }
+        let header = MbfHeader::from_bytes(&bytes[0..64]).map_err(|e| {
+            DomainError::mbf(ErrorCode::MbfCorrupt001, format!("Header error: {e}"))
+        })?;
+        let tenant_seal = MbfTenantCryptoSeal::from_bytes(&bytes[64..128])
+            .map_err(|e| DomainError::mbf(ErrorCode::MbfCorrupt001, format!("Seal error: {e}")))?;
+        let footer = MbfFooterTrailer::from_bytes(&bytes[bytes.len() - 64..]).map_err(|e| {
+            DomainError::mbf(ErrorCode::MbfCorrupt001, format!("Footer error: {e}"))
+        })?;
+
+        if compute_crc32c(&bytes[0..64]) != footer.header_crc32c {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Header CRC32C mismatch",
+            ));
+        }
+        let dir_start = footer.directory_offset as usize;
+        let dir_end = dir_start.saturating_add(footer.directory_len as usize);
+        if dir_start < 128 || dir_end > bytes.len() - 64 {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid directory offset in MBF footer",
+            ));
+        }
+        let dir_slice = &bytes[dir_start..dir_end];
+        if compute_crc32c(dir_slice) != footer.directory_crc32c {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Directory CRC32C mismatch",
+            ));
+        }
+        let dir = MbfDirectoryIndex::from_bytes(dir_slice).map_err(|e| {
+            DomainError::mbf(ErrorCode::MbfCorrupt001, format!("Directory error: {e}"))
+        })?;
+        let zo = &dir.zones;
+
+        // Zone 1
+        let z1_slice =
+            &bytes[zo.zone1_pax_offset as usize..(zo.zone1_pax_offset + zo.zone1_pax_len) as usize];
+        let mut z1_off = 0usize;
+        let tenant_id = read_len_prefixed_str(z1_slice, &mut z1_off)?;
+        let entity_name = read_len_prefixed_str(z1_slice, &mut z1_off)?;
+        let mut u32_buf = [0u8; 4];
+        u32_buf.copy_from_slice(&z1_slice[z1_off..z1_off + 4]);
+        z1_off += 4;
+        let pax_len = u32::from_le_bytes(u32_buf) as usize;
+        let primary_pax = PaxMvccZone::decode_zone_binary(&z1_slice[z1_off..z1_off + pax_len])?;
+
+        // Zone 2
+        let z2_slice =
+            &bytes[zo.zone2_csr_offset as usize..(zo.zone2_csr_offset + zo.zone2_csr_len) as usize];
+        let hierarchy_graph = CsrGraphZone::decode_zone_binary(z2_slice)?;
+
+        // Zone 3
+        let z3_slice =
+            &bytes[zo.zone3_iot_offset as usize..(zo.zone3_iot_offset + zo.zone3_iot_len) as usize];
+        u32_buf.copy_from_slice(&z3_slice[0..4]);
+        let ts1_len = u32::from_le_bytes(u32_buf) as usize;
+        u32_buf.copy_from_slice(&z3_slice[4..8]);
+        let ts2_len = u32::from_le_bytes(u32_buf) as usize;
+        let primary_timeseries_iot =
+            Chimp128SeriesBlock::decode_zone_binary(&z3_slice[8..8 + ts1_len])?;
+        let spectral_timeseries_iot =
+            Chimp128SeriesBlock::decode_zone_binary(&z3_slice[8 + ts1_len..8 + ts1_len + ts2_len])?;
+
+        // Zone 4
+        let z4_slice = &bytes[zo.zone4_ledger_offset as usize
+            ..(zo.zone4_ledger_offset + zo.zone4_ledger_len) as usize];
+        u32_buf.copy_from_slice(&z4_slice[0..4]);
+        let ledger_len = u32::from_le_bytes(u32_buf) as usize;
+        u32_buf.copy_from_slice(&z4_slice[4..8]);
+        let fenwick_len = u32::from_le_bytes(u32_buf) as usize;
+        let financial_ledger =
+            FinancialLedgerZone::decode_zone_binary(&z4_slice[8..8 + ledger_len])?;
+        let mut tree = Vec::with_capacity(fenwick_len);
+        let mut f_off = 8 + ledger_len;
+        for _ in 0..fenwick_len {
+            let mut i128_buf = [0u8; 16];
+            i128_buf.copy_from_slice(&z4_slice[f_off..f_off + 16]);
+            f_off += 16;
+            tree.push(i128::from_le_bytes(i128_buf));
+        }
+        let prefix_sums_fenwick = FenwickPrefixSum128 { tree };
+
+        // Zone 5
+        let z5_slice = &bytes[zo.zone5_synopsis_offset as usize
+            ..(zo.zone5_synopsis_offset + zo.zone5_synopsis_len) as usize];
+        let synopses = MbfHyperSynopsis512::decode_zone_binary_slice(z5_slice)?;
+        if synopses.len() < 3 {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Expected 3 MbfHyperSynopsis512 blocks in Zone 5",
+            ));
+        }
+
+        // Zone 5B
+        let z5b_slice = &bytes[zo.zone5b_search_offset as usize
+            ..(zo.zone5b_search_offset + zo.zone5b_search_len) as usize];
+        let hybrid_search_index = MbfHybridSearchIndex::decode_zone_binary(z5b_slice)?;
+
+        // Zone 6B
+        let z6b_slice = &bytes
+            [zo.zone6b_cov_offset as usize..(zo.zone6b_cov_offset + zo.zone6b_cov_len) as usize];
+        let multivariate_cov = MbfCrossCovarianceMatrix::decode_zone_binary(z6b_slice)?;
+
+        Ok(Self {
+            tenant_id,
+            entity_name,
+            header,
+            tenant_seal,
+            primary_pax,
+            hierarchy_graph,
+            primary_timeseries_iot,
+            spectral_timeseries_iot,
+            financial_ledger,
+            prefix_sums_fenwick,
+            primary_metric_synopsis: synopses[0],
+            survival_weibull_synopsis: synopses[1],
+            spectral_synopsis: synopses[2],
+            multivariate_cov,
+            hybrid_search_index,
+        })
+    }
+
+    /// Generates the companion `.mbf.idx` index mirror file (`"MBFINDEX"` header + Zone 5 + Zone 5B + `"MBFFOOTR"` trailer).
+    pub fn to_idx_bytes(&self) -> Vec<u8> {
+        let z5_bin = MbfHyperSynopsis512::encode_zone_binary_slice(&[
+            self.primary_metric_synopsis,
+            self.survival_weibull_synopsis,
+            self.spectral_synopsis,
+        ]);
+        let z5b_bin = self.hybrid_search_index.encode_zone_binary();
+        crate::mbf::storage::encode_mbf_idx_mirror(
+            self.header.cell_id() as u8,
+            self.header.epoch_id(),
+            self.header.row_count,
+            &self.tenant_id,
+            &z5b_bin,
+            &z5_bin,
+        )
     }
 }
 
@@ -278,19 +590,19 @@ impl MbfBiEngine {
     /// Executes an analytical BI query casting the result into any of the 6 `BiOutputCast` formats,
     /// enforcing cryptographic tenant isolation first.
     pub fn execute_bi_query(
-        dataset: &MayorPlazaBogotaDataset,
+        workspace: &MbfAnalyticalWorkspace,
         requesting_tenant_id: &str,
         cast: BiOutputCast,
     ) -> DomainResult<MbfBiQueryResponse> {
         // Zero-Trust Cryptographic Tenant Verification
-        dataset.tenant_seal.verify_block(
-            MayorPlazaBogotaDataset::MASTER_SECRET,
+        workspace.tenant_seal.verify_block(
+            MbfAnalyticalWorkspace::MASTER_SECRET,
             requesting_tenant_id,
-            "work_order",
-            &dataset.header.to_bytes(),
+            &workspace.entity_name,
+            &workspace.header.to_bytes(),
         )?;
 
-        let syn = &dataset.work_order_cost_synopsis;
+        let syn = &workspace.primary_metric_synopsis;
         let flight = MbfExecutionFlightRecorder {
             blocks_inspected_total: 4,
             blocks_pruned_by_zonemap: 3,
@@ -300,51 +612,51 @@ impl MbfBiEngine {
 
         let payload = match cast {
             BiOutputCast::Kpi => {
-                let latest_cp = dataset
+                let latest_cp = workspace
                     .financial_ledger
                     .last_value_as_of(i64::MAX)
                     .unwrap_or_default();
                 serde_json::json!({
-                    "total_work_orders": syn.valid_count,
-                    "total_maintenance_cost_cop": (syn.sum_exact_i128 as f64) / 10_000.0,
-                    "mean_cost_cop": syn.pebay_mean_m1,
-                    "std_dev_cost_cop": syn.std_dev(),
+                    "total_records": syn.valid_count,
+                    "total_metric_sum": (syn.sum_exact_i128 as f64) / 10_000.0,
+                    "mean_metric": syn.pebay_mean_m1,
+                    "std_dev_metric": syn.std_dev(),
                     "skewness": syn.skewness(),
                     "excess_kurtosis": syn.excess_kurtosis(),
                     "jarque_bera": syn.jarque_bera_stat(),
-                    "inventory_closing_book_value_cop": latest_cp.closing_book_value.to_f64(),
-                    "inventory_wac_unit_cost_cop": latest_cp.running_wac_unit_cost.to_f64(),
+                    "closing_book_value": latest_cp.closing_book_value.to_f64(),
+                    "running_wac_unit_cost": latest_cp.running_wac_unit_cost.to_f64(),
                 })
             }
             BiOutputCast::Timeseries => {
-                let series: Vec<serde_json::Value> = dataset
-                    .chiller_temp_iot
+                let series: Vec<serde_json::Value> = workspace
+                    .primary_timeseries_iot
                     .decompress_all()
                     .into_iter()
-                    .map(|(ts, val_c)| serde_json::json!({ "timestamp_ms": ts, "temp_celsius": val_c }))
+                    .map(|(ts, val)| serde_json::json!({ "timestamp_ms": ts, "canonical_value": val }))
                     .collect();
                 serde_json::json!({
-                    "metric": "CHILLER_SUPPLY_TEMP_SI_CELSIUS",
+                    "metric": workspace.primary_timeseries_iot.metric_code,
                     "points": series,
-                    "dominant_vibration_freq_hz": dataset.vibration_spectral_synopsis.dominant_freq_hz,
-                    "vibration_rms": dataset.vibration_spectral_synopsis.signal_rms,
-                    "vibration_crest_factor": dataset.vibration_spectral_synopsis.crest_factor,
+                    "dominant_freq_hz": workspace.spectral_synopsis.dominant_freq_hz,
+                    "signal_rms": workspace.spectral_synopsis.signal_rms,
+                    "crest_factor": workspace.spectral_synopsis.crest_factor,
                 })
             }
             BiOutputCast::Table => {
-                let (b0, betas, r2) = dataset
-                    .work_order_multivariate_cov
+                let (b0, betas, r2) = workspace
+                    .multivariate_cov
                     .solve_multiple_ols(&[0, 1], 2)
                     .unwrap_or((0.0, vec![0.0, 0.0], 0.0));
                 serde_json::json!({
                     "columns": ["metric", "value"],
                     "rows": [
-                        ["ols_intercept_cop", b0],
-                        ["ols_slope_duration_hours", betas[0]],
-                        ["ols_slope_parts_cost", betas[1]],
+                        ["ols_intercept", b0],
+                        ["ols_slope_x1", betas[0]],
+                        ["ols_slope_x2", betas[1]],
                         ["ols_r_squared", r2],
-                        ["weibull_beta_shape", dataset.bearing_failure_weibull_synopsis.weibull_beta_mle],
-                        ["weibull_eta_scale_hours", dataset.bearing_failure_weibull_synopsis.weibull_eta_mle],
+                        ["weibull_beta_shape", workspace.survival_weibull_synopsis.weibull_beta_mle],
+                        ["weibull_eta_scale", workspace.survival_weibull_synopsis.weibull_eta_mle],
                     ]
                 })
             }
@@ -356,35 +668,36 @@ impl MbfBiEngine {
                 )?;
                 serde_json::json!({
                     "slices": [
-                        { "category": "Torre Norte HVAC", "pct": shares[0].to_f64() },
-                        { "category": "Torre Sur Transporte Vertical", "pct": shares[1].to_f64() },
-                        { "category": "Planta Eléctrica Respaldo", "pct": shares[2].to_f64() },
+                        { "category": "partition_a", "pct": shares[0].to_f64() },
+                        { "category": "partition_b", "pct": shares[1].to_f64() },
+                        { "category": "partition_c", "pct": shares[2].to_f64() },
                     ],
                     "total_pct_exact": (shares[0].0 + shares[1].0 + shares[2].0) as f64 / 10_000.0
                 })
             }
             BiOutputCast::Bubble => {
-                let (r_t, h_t) = dataset
-                    .bearing_failure_weibull_synopsis
+                let (r_t, h_t) = workspace
+                    .survival_weibull_synopsis
                     .weibull_survival_and_hazard(3000.0);
                 serde_json::json!({
                     "bubbles": [
                         {
-                            "asset": "Chiller Trane CVHE-500 #1",
-                            "x_mtbf_hours": dataset.bearing_failure_weibull_synopsis.pebay_mean_m1,
-                            "y_survival_prob_3000h": r_t,
-                            "r_hazard_rate_3000h": h_t
+                            "subject": "node_1001",
+                            "x_mean_lifetime": workspace.survival_weibull_synopsis.pebay_mean_m1,
+                            "y_survival_prob_3000": r_t,
+                            "r_hazard_rate_3000": h_t
                         }
                     ]
                 })
             }
             BiOutputCast::CsvExport => {
                 let csv_text = format!(
-                    "entity,valid_count,mean_cost,weibull_beta,dominant_freq_hz\nwork_order,{},{:.2},{:.2},{:.1}\n",
+                    "entity,valid_count,mean_metric,weibull_beta,dominant_freq_hz\n{},{},{:.2},{:.2},{:.1}\n",
+                    workspace.entity_name,
                     syn.valid_count,
                     syn.pebay_mean_m1,
-                    dataset.bearing_failure_weibull_synopsis.weibull_beta_mle,
-                    dataset.vibration_spectral_synopsis.dominant_freq_hz
+                    workspace.survival_weibull_synopsis.weibull_beta_mle,
+                    workspace.spectral_synopsis.dominant_freq_hz
                 );
                 serde_json::json!({ "csv_payload": csv_text })
             }
@@ -415,14 +728,14 @@ impl MbfBiEngine {
         Ok(Some((numerator / denominator) * multiplier))
     }
 
-    /// Delegates hybrid multimodal search (`Zone 5B`) over the dataset.
+    /// Delegates hybrid multimodal search (`Zone 5B`) over the workspace.
     pub fn execute_hybrid_search(
-        dataset: &MayorPlazaBogotaDataset,
+        workspace: &MbfAnalyticalWorkspace,
         query: &str,
         vector: Option<&[f32]>,
         top_k: usize,
     ) -> Vec<HybridSearchHit> {
-        dataset
+        workspace
             .hybrid_search_index
             .search_hybrid(query, vector, top_k)
     }
@@ -453,9 +766,7 @@ impl MbfBiEngine {
 
         match response.cast_type {
             BiOutputCast::Kpi => {
-                let val = response.payload["mean_duration_min"]
-                    .as_f64()
-                    .unwrap_or(0.0);
+                let val = response.payload["mean_metric"].as_f64().unwrap_or(0.0);
                 let prev = val * 0.9;
                 let delta = val - prev;
                 let pct = if prev.abs() > 1e-12 {
@@ -468,9 +779,9 @@ impl MbfBiEngine {
                     payload: Some(Payload::Signal(AnalyticalSignal {
                         value: val,
                         previous_value: Some(prev),
-                        unit: "min".to_string(),
+                        unit: "scalar".to_string(),
                         status_label: "OPTIMAL".to_string(),
-                        entity_ref: "work_order".to_string(),
+                        entity_ref: "entity_record".to_string(),
                         intelligence: Some(IntelligenceSignal {
                             direction: if delta > 0.0 {
                                 "up".to_string()
@@ -497,14 +808,17 @@ impl MbfBiEngine {
                         .to_string(),
                     payload: Some(Payload::Chart(ChartDecoration {
                         x_dimension: if is_ts {
-                            "hour_bucket_ms".to_string()
+                            "timestamp_ms".to_string()
                         } else {
-                            "duration_minutes".to_string()
+                            "x_mean_lifetime".to_string()
                         },
                         y_dimensions: if is_ts {
                             vec!["avg".to_string(), "min".to_string(), "max".to_string()]
                         } else {
-                            vec!["cost_cop".to_string(), "vibration_mm_s".to_string()]
+                            vec![
+                                "y_survival_prob_3000".to_string(),
+                                "r_hazard_rate_3000".to_string(),
+                            ]
                         },
                         color_scheme: "metri_vortex".to_string(),
                         show_legend: true,
@@ -525,12 +839,12 @@ impl MbfBiEngine {
                 if let Some(arr) = response.payload["slices"].as_array() {
                     for s in arr {
                         let cat = s["category"].as_str().unwrap_or("slice").to_string();
-                        let v = s["cost_cop"].as_f64().unwrap_or(0.0);
+                        let v = s["pct"].as_f64().unwrap_or(0.0);
                         signals.insert(
                             cat,
                             AnalyticalSignal {
                                 value: v,
-                                unit: "COP".to_string(),
+                                unit: "pct".to_string(),
                                 ..Default::default()
                             },
                         );
@@ -546,15 +860,15 @@ impl MbfBiEngine {
                 payload: Some(Payload::Table(TableMeta {
                     columns: vec![
                         TableColumn {
-                            key: "code".to_string(),
-                            label: "Code".to_string(),
+                            key: "metric".to_string(),
+                            label: "Metric".to_string(),
                             r#type: "string".to_string(),
                             sortable: true,
                             ..Default::default()
                         },
                         TableColumn {
-                            key: "cost_cop".to_string(),
-                            label: "Cost COP".to_string(),
+                            key: "value".to_string(),
+                            label: "Value".to_string(),
                             r#type: "number".to_string(),
                             sortable: true,
                             ..Default::default()
@@ -574,8 +888,8 @@ mod tests {
     use crate::grpc::pb::viz_meta::Payload as PbPayload;
 
     #[test]
-    fn mayor_plaza_bogota_dataset_all_6_output_casts_and_protobuf_viz_meta_succeed() {
-        let ds = MayorPlazaBogotaDataset::generate_deterministic().unwrap();
+    fn analytical_workspace_all_6_output_casts_and_protobuf_viz_meta_succeed() {
+        let ws = MbfAnalyticalWorkspace::generate_synthetic_reference().unwrap();
         for cast in [
             BiOutputCast::Kpi,
             BiOutputCast::Timeseries,
@@ -584,8 +898,7 @@ mod tests {
             BiOutputCast::Bubble,
             BiOutputCast::CsvExport,
         ] {
-            let res =
-                MbfBiEngine::execute_bi_query(&ds, "tenant_centro_mayor_bogota", cast).unwrap();
+            let res = MbfBiEngine::execute_bi_query(&ws, "tenant_alpha", cast).unwrap();
             assert_eq!(res.cast_type, cast);
             assert!(res.flight_recorder.blocks_resolved_o1_by_synopsis >= 1);
 
@@ -596,14 +909,13 @@ mod tests {
 
         // Verify Tree override on VizMeta
         let tbl_res =
-            MbfBiEngine::execute_bi_query(&ds, "tenant_centro_mayor_bogota", BiOutputCast::Table)
-                .unwrap();
+            MbfBiEngine::execute_bi_query(&ws, "tenant_alpha", BiOutputCast::Table).unwrap();
         let tree_viz = MbfBiEngine::to_protobuf_viz_meta(&tbl_res, Some("tree"));
         assert_eq!(tree_viz.r#type, "tree");
         assert!(matches!(tree_viz.payload, Some(PbPayload::Tree(_))));
 
         // Verify tenant seal rejection
-        assert!(MbfBiEngine::execute_bi_query(&ds, "intruder_tenant", BiOutputCast::Kpi).is_err());
+        assert!(MbfBiEngine::execute_bi_query(&ws, "intruder_tenant", BiOutputCast::Kpi).is_err());
 
         // Verify safe ratio formula normal, zero-denominator, and non-finite Fml006 error
         assert_eq!(
@@ -617,7 +929,7 @@ mod tests {
         assert!(MbfBiEngine::evaluate_safe_ratio_formula(f64::NAN, 10.0, 1.0).is_err());
 
         // Verify hybrid search delegation
-        let hits = MbfBiEngine::execute_hybrid_search(&ds, "chiler", None, 3);
+        let hits = MbfBiEngine::execute_hybrid_search(&ws, "valvula", None, 3);
         assert!(!hits.is_empty());
     }
 }

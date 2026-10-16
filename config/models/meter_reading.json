@@ -27,7 +27,7 @@
       "cardinality": "one",
       "required": false,
       "is_dimension": true,
-      "description": "La ubicación física o área donde se encuentra el activo. Esencial para la Estrategia 1 de enrutamiento in-RAM en Kinesis y para el particionamiento analítico del Data Lake."
+      "description": "La ubicación física o área donde se encuentra el activo. Dimensión clave para agregaciones y filtrado analítico por planta o zona."
     },
     {
       "name": "iot_subscription_id",
@@ -67,7 +67,25 @@
       "name": "reading_value",
       "type": "decimal",
       "is_measure": true,
+      "default_rollup": "avg",
       "required": false,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true,
+        "unit_field_ref": "unit_of_measure",
+        "spectral_profile": {
+          "enable_fft": true,
+          "psd_bands": 8,
+          "goertzel_target_hz": [50.0, 60.0, 100.0, 120.0]
+        }
+      },
       "description": "Valor numérico normalizado y escalado de la lectura. Opcional si la lectura es de texto/categoría."
     },
     {

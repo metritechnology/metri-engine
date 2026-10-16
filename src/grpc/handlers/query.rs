@@ -110,11 +110,10 @@ impl MetriGrpcService {
         let (tx, rx) = mpsc::channel(16);
 
         let exec_clone = self.oltp_executor.clone();
-        let athena_clone = self.athena_engine.clone();
         let query_cache_clone = self.query_cache.clone();
         let authenticated_ctx_clone = authenticated_ctx.clone();
         let fault_notifier_clone = self.fault_notifier.clone();
-        let olap_channel_clone = self.olap_channel.clone();
+        let telemetry_channel_clone = self.telemetry_channel.clone();
         let export_storage_clone = self.export_storage.clone();
 
         tokio::spawn(async move {
@@ -125,7 +124,7 @@ impl MetriGrpcService {
                 Err(e) => {
                     Self::emit_read_error_static(
                         fault_notifier_clone.clone(),
-                        olap_channel_clone.clone(),
+                        telemetry_channel_clone.clone(),
                         &tenant_id,
                         &user_id_str,
                         e.clone(),
@@ -157,7 +156,7 @@ impl MetriGrpcService {
                 error!("[Janus] Zero-Trust gate rechazó | tenant: {tenant_id}");
                 Self::emit_read_error_static(
                     fault_notifier_clone.clone(),
-                    olap_channel_clone.clone(),
+                    telemetry_channel_clone.clone(),
                     &tenant_id,
                     &user_id_str,
                     e.clone(),
@@ -197,11 +196,10 @@ impl MetriGrpcService {
                 let qm = query_map.clone();
                 let cedar = cedar_ctx.clone();
                 let exec = exec_clone.clone();
-                let athena = athena_clone.clone();
                 let tx_clone = tx.clone();
                 let explain_plan = req.explain_plan;
                 let fault_notifier_qk = fault_notifier_clone.clone();
-                let olap_channel_qk = olap_channel_clone.clone();
+                let telemetry_channel_qk = telemetry_channel_clone.clone();
                 let export_storage_qk = export_storage_clone.clone();
                 let cache_qk = query_cache_clone.clone();
                 let user_id_qk = user_id_str.clone();
@@ -213,7 +211,7 @@ impl MetriGrpcService {
                         error!("[Janus] Validación FBS falló en query_key '{}': {}", qk, e);
                         Self::emit_read_error_static(
                             fault_notifier_qk.clone(),
-                            olap_channel_qk.clone(),
+                            telemetry_channel_qk.clone(),
                             &cedar.tenant_id,
                             &user_id_qk,
                             e.clone(),
@@ -252,7 +250,6 @@ impl MetriGrpcService {
                         &qm,
                         &cedar,
                         &exec,
-                        athena.as_ref(),
                         crate::janus::router::QueryExecCtx {
                             explain_plan,
                             cache: &cache_qk,
@@ -279,14 +276,14 @@ impl MetriGrpcService {
                                 )
                             } else {
                                 crate::domain::errors::DomainError::new(
-                                    crate::domain::errors::ErrorCode::InfraAthena005,
+                                    crate::domain::errors::ErrorCode::Janus500,
                                     reason.to_string(),
                                 )
                             };
 
                             Self::emit_read_error_static(
                                 fault_notifier_qk.clone(),
-                                olap_channel_qk.clone(),
+                                telemetry_channel_qk.clone(),
                                 &cedar.tenant_id,
                                 &user_id_qk,
                                 domain_err,

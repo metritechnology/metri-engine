@@ -33,18 +33,20 @@ A continuación se muestra cómo se enriquece un modelo en `config/models/` (tot
 {
   "entity": "work_order",
   "engine": "unified_mbf",
-  "reliability_profile": {
+  "survival_profile": {
     "enabled": true,
-    "asset_ref_attr": "asset_id",
-    "failure_Filter": { "category": ["CORRECTIVE"], "status": ["COMPLETED"] },
-    "duration_attr": "actual_duration_hours",
-    "timestamp_attr": "created_at",
-    "completed_at_attr": "completed_at",
-    "distributions": ["WEIBULL_2P", "WEIBULL_3P", "LOGNORMAL", "EXPONENTIAL"]
+    "subject_ref_field": "asset_id",
+    "terminal_event_values": ["CORRECTIVE"],
+    "censored_event_values": ["PREVENTIVE"],
+    "event_epoch_field": "created_at",
+    "recovery_epoch_field": "completed_at",
+    "restoration_duration_field": "estimated_duration_hours",
+    "fit_weibull_3p": true,
+    "enable_kaplan_meier_censoring": true
   },
   "cross_covariance_matrix": {
     "enabled": true,
-    "measure_attributes": [
+    "measure_fields": [
       "estimated_duration_hours",
       "actual_duration_hours",
       "total_cost",
@@ -55,10 +57,10 @@ A continuación se muestra cómo se enriquece un modelo en `config/models/` (tot
   },
   "spatial_profile": {
     "enabled": true,
-    "latitude_attr": "latitude",
-    "longitude_attr": "longitude",
+    "lat_field": "latitude",
+    "lon_field": "longitude",
     "h3_resolutions": [7, 9, 11, 13],
-    "rtree_bounding_box": true
+    "morton_z_order": true
   },
   "attributes": [
     {
@@ -66,13 +68,15 @@ A continuación se muestra cómo se enriquece un modelo en `config/models/` (tot
       "type": "string",
       "fts": true,
       "fuzzy_profile": {
-        "trigram_bitmap": true,
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
         "bigram_bitmap": true,
-        "symspell_max_edit_distance": 2,
         "fst_lexicon": true,
-        "phonetic_algorithms": ["SPANISH_METAPHONE", "DOUBLE_METAPHONE"],
-        "bm25f_weight": 3.5,
-        "synonym_terminology_uri": "urn:api:system:cmms_synonyms"
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
       }
     },
     {
@@ -95,89 +99,46 @@ A continuación se muestra cómo se enriquece un modelo en `config/models/` (tot
 }
 ```
 
-### 2.2 Evolución de `AttributeDescriptor` y `EntityModel` en `src/codice/registry.rs`
+### 2.2 Evolución Agnóstica de `AttributeDescriptor`, `EntityModel` y Perfiles en `src/codice/`
 
-En [`src/codice/registry.rs`](file:///Users/macuser/projects/metri/metri-engine/src/codice/registry.rs), expandimos las estructuras sin romper ninguna firma existente:
+En [`src/codice/profiles.rs`](file:///Users/macuser/projects/metri/metri-engine/src/codice/profiles.rs) y [`src/codice/registry.rs`](file:///Users/macuser/projects/metri/metri-engine/src/codice/registry.rs), todas las estructuras del motor son **100% agnósticas de dominio** (sin acoplamiento a activos, unidades físicas específicas ni vocabularios verticales):
 
 ```rust
-/// Perfil matemático y estadístico avanzado por atributo (compilado en .rodata).
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct MathProfile {
-    /// Orden máximo de momentos centrales de Pébay a precalcular en cada bloque .mbf (1..=4).
-    /// 4 = Media (M1), Varianza (M2), Asimetría/Skewness (M3) y Curtosis/Kurtosis (M4).
-    #[serde(default = "default_moments_order")]
-    pub central_moments_order: u8,
-    /// Si es true, construye el árbol de Fenwick de sumas prefijas para rangos en O(log B).
-    #[serde(default)]
-    pub fenwick_prefix_sum: bool,
-    /// Retardos (lags) k para precalcular autocorrelación serial ACF(k) y Durbin-Watson.
-    #[serde(default)]
-    pub timeseries_lag_autocorrelation: Vec<u16>,
-    /// Coeficientes alpha (0 < alpha < 1) para medias móviles exponenciales (EMA / Holt-Winters).
-    #[serde(default)]
-    pub ema_alphas: Vec<f64>,
-    /// Habilita estadísticos suficientes de distribución (Weibull, LogNormal, Poisson, Gamma).
-    #[serde(default)]
-    pub distribution_fits: Vec<DistributionFamily>,
-    /// Si el atributo es telemetría de alta frecuencia, precalcula FFT / Bandas PSD por bloque.
-    #[serde(default)]
-    pub spectral_fft_bands: Option<SpectralProfile>,
+/// Transformación afín declarativa 1D: y_canonical = scale_a * x_raw + offset_b.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
+pub struct AffineTransformSpec {
+    pub scale_a: f64,
+    pub offset_b: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum DistributionFamily {
-    NormalGaussian,
-    Weibull2P,
-    Weibull3P,
-    LogNormal,
-    Exponential,
-    Poisson,
-    Gamma,
+/// Perfil de análisis de supervivencia, procesos de renovación y riesgo estocástico a nivel de entidad.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+pub struct SurvivalAnalysisProfile {
+    pub enabled: bool,
+    pub subject_ref_field: String,
+    pub terminal_event_values: Vec<String>,
+    pub censored_event_values: Vec<String>,
+    pub event_epoch_field: String,
+    pub recovery_epoch_field: Option<String>,
+    pub restoration_duration_field: String,
+    pub fit_weibull_3p: bool,
+    pub enable_kaplan_meier_censoring: bool,
+    pub event_filter: HashMap<String, Vec<String>>,
+    pub distributions: Vec<DistributionFamily>,
 }
 
-/// Perfil de análisis espectral en frecuencia para telemetría IoT (`meter_reading`).
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SpectralProfile {
-    pub sample_rate_hz: f64,
-    pub num_psd_bands: u8, // 8 bandas de densidad espectral de potencia por defecto
-    pub compute_rms_and_crest_factor: bool,
-    pub compute_spectral_entropy: bool,
-}
-
-/// Perfil de búsqueda difusa (Fuzzy), fonética, léxica (BM25F) y semántica por atributo.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct FuzzySearchProfile {
-    #[serde(default = "default_true")]
-    pub trigram_bitmap: bool,
-    #[serde(default = "default_true")]
-    pub bigram_bitmap: bool,
-    /// Distancia máxima de edición Damerau-Levenshtein precalculada en SymSpell (default: 2).
-    #[serde(default = "default_symspell_distance")]
-    pub symspell_max_edit_distance: u8,
-    /// Construye un Finite State Transducer (FST) en la Zona 5B del .mbf.
-    #[serde(default = "default_true")]
-    pub fst_lexicon: bool,
-    /// Algoritmos fonéticos para tolerar errores auditivos/ortográficos severos.
-    #[serde(default)]
-    pub phonetic_algorithms: Vec<PhoneticAlgorithm>,
-    /// Peso de relevancia del campo en el ranking multifactorial BM25F (ej. code=5.0, title=3.0, desc=1.0).
-    #[serde(default = "default_bm25_weight")]
-    pub bm25f_weight: f32,
-    /// URI del catálogo de sinónimos de dominio en `terminology` / `concept`.
-    #[serde(default)]
-    pub synonym_terminology_uri: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+/// Algoritmos fonéticos y de normalización léxica agnósticos de dominio en Zona 5B.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub enum PhoneticAlgorithm {
-    /// Metaphone adaptado al español e ingeniería industrial (b==v, c/s/z, ll/y, h muda, ch, ñ).
-    SpanishIndustrialMetaphone,
-    /// Double Metaphone (Lawrence Philips) para términos técnicos en inglés ("chiller", "switch", "gauge").
+    /// Codificador fonético romance (b==v, c/s/z, ll/y, h muda, ch, ñ).
+    #[default]
+    RomancePhonetic,
+    /// Double Metaphone (Lawrence Philips) para términos anglosajones/germánicos.
     DoubleMetaphone,
-    /// Normalización de códigos alfanuméricos de repuestos/SKUs ("SKF-6205-2RS" == "skf 6205 2rs").
-    PartNumberCanonicalizer,
+    /// Normalización de códigos alfanuméricos con resolución de homóglifos ópticos (O<->0, I/l<->1).
+    AlphanumericCodeNormalizer,
+    /// Sin expansión fonética (para códigos estrictos).
+    None,
 }
 ```
 
@@ -347,15 +308,15 @@ flowchart LR
 - En lugar de un score ingenuo `matched / total`, almacenamos en los metadatos por fila la longitud normalizada del campo (`dl / avgdl` codificada en 1 byte `u8` logarítmico) y la frecuencia del término (`tf`), aplicando la fórmula de ranking **Okapi BM25F** ponderada por los pesos declarados en el Códice (`code: 5.0`, `title: 3.5`, `description: 1.0`):
   $$\text{Score}_{\text{BM25F}}(D, Q) = \sum_{t \in Q} \text{IDF}(t) \cdot \frac{\widetilde{tf}(t, D)}{\widetilde{tf}(t, D) + k_1}$$, donde $\widetilde{tf}(t, D) = \sum_{f \in \text{fields}} w_f \cdot \frac{tf(t, D_f)}{1 - b_f + b_f \cdot \frac{|D_f|}{\text{avgdl}_f}}$.
 
-#### Capa 4: Índice Fonético Industrial Bilingüe (`SpanishIndustrialMetaphone` + `DoubleMetaphone`)
-- Los técnicos de mantenimiento en planta suelen escribir términos extranjeros según suenan en español o confundir grafemas equivalentes en español latinoamericano (`b`/`v`, `c`/`s`/`z`, `ll`/`y`, `g`/`j`, `h` muda, consonantes dobles).
-- Al escribir en `.mbf`, cada token textual genera un hash fonético dual de 32 bits (`u32`) que apunta a un Roaring Bitmap de `row_id`s:
-  - `"balbula"` / `"valvula"` / `"valbula"` $\rightarrow$ Código Fonético Español `BLBL` (Match 100% instantáneo aún con distancia Levenshtein $\ge 2$).
-  - `"chiler"` / `"shiller"` / `"chiller"` $\rightarrow$ Código Fonético Técnico `XLR` (Match 100% instantáneo).
-  - `"suiche"` / `"swich"` / `"switch"` $\rightarrow$ Código Fonético Técnico `SX` (Match 100% instantáneo).
+#### Capa 4: Índice Fonético Bilingüe (`RomancePhonetic` + `DoubleMetaphone`) y Tesauro Inyectable (`SynonymThesaurus`)
+- El motor fonético es completamente agnóstico de dominio: codifica reglas fonológicas de lenguas romances (`RomancePhonetic`: `b`/`v`, `c`/`s`/`z`, `ll`/`y`, `g`/`j`, `h` muda, consonantes dobles) y anglosajonas (`DoubleMetaphone`), mientras que la expansión de sinónimos se realiza mediante un `SynonymThesaurus` inyectable desde la configuración o tablas `terminology` / `concept` (cero palabras de dominio quemadas en el binario).
+- Al escribir en `.mbf`, cada token textual genera un código fonético que apunta a un conjunto de `row_id`s:
+  - `"balbula"` / `"valvula"` / `"valbula"` $\rightarrow$ Código Fonético Romance `BLBL` (Match 100% instantáneo aún con distancia Levenshtein $\ge 2$).
+  - `"chiler"` / `"shiller"` / `"chiller"` $\rightarrow$ Código Fonético `XLR` (Match 100% instantáneo).
+  - `"suiche"` / `"swich"` / `"switch"` $\rightarrow$ Código Fonético `SX` (Match 100% instantáneo).
 
 #### Capa 5: Búsqueda Semántica Vectorial Nativa (HNSW + Cuantización Binaria RaBitQ)
-- En [`config/models/document_chunk.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/document_chunk.json), el atributo `semantic_embedding` define vectores de `1024` dimensiones (`amazon.titan-embed-text-v2`). Extendemos este soporte a cualquier entidad del Códice (`work_order`, `asset`, `part`, `downtime_log`).
+- En [`config/models/document_chunk.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/document_chunk.json), el atributo `semantic_embedding` define vectores de `1024` dimensiones (`amazon.titan-embed-text-v2`). Extendemos este soporte a cualquier entidad del Códice.
 - En la Zona 5B del `.mbf`, almacenamos:
   1. **Vectores Cuantizados con RaBitQ (Gao & Long, SIGMOD 2024 — 1-bit / 4-bit Asymmetric Quantization con corrección de error angular)**: Comprime un vector de `1024` `f32` ($4,096\text{ bytes}$) a solo **$128\text{ bytes}$ (1-bit + factor de escala `f32`)**, permitiendo evaluar la distancia coseno mediante la instrucción de hardware `VPOPCNTQ` (AVX-512) / `CNT` (ARM64 NEON) sobre **1 millón de vectores en $< 1.2\text{ ms}$**.
   2. **Grafo HNSW (Hierarchical Navigable Small World) Aplanado**: Grafo de vecindad con offsets fijos `u32` directamente navegable vía `mmap` sin deserialización, más re-ranking exacto sobre el Top-50 usando los vectores `f16`/`f32`.
@@ -364,35 +325,33 @@ flowchart LR
   $$\text{RRF\_Score}(d) = \frac{w_{\text{lex}}}{60 + r_{\text{lexical}}(d)} + \frac{w_{\text{vec}}}{60 + r_{\text{vector}}(d)}$$
 
 #### Capa 6: Índice Espaciotemporal Jerárquico (`Uber H3` + Curva Z-Order de Morton + R-Tree)
-- Modelos como [`work_order.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/work_order.json), [`preventive_maintenance.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/preventive_maintenance.json), [`labor_log.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/labor_log.json) y [`location.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/location.json) incluyen `latitude` y `longitude`.
-- Al escribir un registro con coordenadas WGS-84, `.mbf` precalcula automáticamente:
-  1. **Celda Hexagonal Uber H3 (`u64`)** en resoluciones 7 ($\sim 5\text{ km}^2$), 9 ($\sim 0.1\text{ km}^2$) y 11 ($\sim 2,000\text{ m}^2$), indexada como diccionario Roaring Bitmap.
+- Cualquier modelo que declare `spatial_profile` con sus campos de latitud y longitud indexa sus coordenadas WGS-84 automáticamente:
+  1. **Celda Hexagonal Uber H3 (`u64`)** en resoluciones configurables (ej. `7, 9, 11, 13`).
   2. **Código Espacial de Morton (Z-Order Curve `u64`)** intercalando los bits de latitud y longitud para preservar localidad 2D en memoria 1D.
   3. **Minimum Bounding Rectangle (MBR `[min_lat, min_lon, max_lat, max_lon]`)** en el header de cada bloque para podar el 99% de los bloques en consultas de radio/polígono antes de ejecutar la fórmula de **Haversine Vectorizada SIMD**.
 
 ---
 
-## 6. Normalización Física Dimensional Automática (UN/CEFACT & OmniClass en `.mbf`)
+## 6. Normalización Dimensional Afín Agnóstica (`AffineTransform` & `DimensionalUnitRegistry`)
 
-Al analizar [`meter_reading.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/meter_reading.json), [`iot_alert_rule.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/iot_alert_rule.json), [`part.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/part.json) y [`asset.json`](file:///Users/macuser/projects/metri/metri-engine/config/models/asset.json), notamos que usan `subtype: "terminology"` con `terminologyUri: "urn:api:system:uncefact"` (`CEL`, `FAH`, `KEL`, `BAR`, `PSI`, `KPA`, `KWH`, `MWH`, `LTR`, `GLI`).
-
-En el diseño mejorado de `.mbf`:
-- Cada valor numérico con unidad física almacena en un stream paralelo de 2 bytes (`u16`) el `unit_concept_id` del diccionario UN/CEFACT, y **la sinopsis matemática (`MbfHyperSynopsis512`) acumula todos los momentos estadísticos normalizados a la Unidad Base del Sistema Internacional (SI)** (ej. Kelvin/Celsius para temperatura, Pascal/Bar para presión, Segundos/Horas para tiempo), guardando además una tabla afín de conversión $y_{\text{SI}} = a \cdot x_{\text{raw}} + b$ en el Códice.
-- Así, si una planta tiene sensores antiguos reportando en `FAH` (`°F`) y sensores nuevos en `CEL` (`°C`), el motor BI calcula la media, desviación estándar, correlación y umbrales de alerta en caliente **sin errores de mezcla de unidades y en $O(1)$**.
+El motor `.mbf` desacopla por completo la física o el sistema de unidades mediante el operador algebraico afín puro **`AffineTransform { scale_a: f64, offset_b: f64 }`** ($y_{\text{canonical}} = a \cdot x_{\text{raw}} + b$) y el registro inyectable **`DimensionalUnitRegistry`**:
+- El núcleo del motor no contiene ningún enum de unidades físicas ni constantes de dominio quemadas en código.
+- Cada serie temporal (`Chimp128SeriesBlock`) o sinopsis estadística (`MbfHyperSynopsis512::from_observations_with_registry`) recibe las transformaciones afines configuradas en el Códice o en el catálogo `terminology` / `concept` del tenant, normalizando cualquier lectura cruda a la dimensión canónica en $O(1)$ mediante una sola instrucción FMA (`scale_a.mul_add(x_raw, offset_b)`).
 
 ---
 
-## 7. Catálogo Maestro de Funciones Matemáticas, Estadísticas y de Búsqueda en Metri Vortex (`.mbf`)
+## 7. Catálogo Maestro de Funciones Matemáticas, Estadísticas y de Búsqueda Agnósticas en Metri Vortex (`.mbf`)
 
-| Categoría | Función / Algoritmo | Complejidad en `.mbf` | Metadato en `MbfHyperSynopsis512` / Zona 5B-6B | Caso de Uso Real en `config/models/` |
-| :--- | :--- | :--- | :--- | :--- |
-| **Estadística Descriptiva de Orden Superior** | Media ($\mu$), Varianza ($\sigma^2$), StdDev ($\sigma$), Coeficiente de Variación ($CV$), Media Geométrica, Media Armónica | **$O(1)$ por bloque** | `pebay_mean_m1`, `pebay_m2`, `sum_ln_x`, `sum_reciprocal_x` | Análisis de dispersión de costos en `work_order` y tasas de eficiencia en `asset_counter`. |
-| **Forma de Distribución y Normalidad** | Asimetría (**Skewness $\gamma_1$**), Curtosis Excesiva (**Kurtosis $\gamma_2$**), **Test de Jarque-Bera ($JB$)** | **$O(1)$ por bloque** | `pebay_m3`, `pebay_m4`, `valid_count` | Detectar si los tiempos de falla en `downtime_log` tienen colas extremas antes de fijar SLAs. |
-| **Estadística Robusta y Outliers** | Mediana ($P_{50}$), **MAD (Median Absolute Deviation)**, **Modified Z-Score**, **Tukey IQR Fences**, Cuantiles $P_{0.1}..P_{99.99}$, Media Recortada (`TrimmedMean5%`) | **$O(1)$ por bloque** | `mad_median_approx`, `mad_abs_deviation`, `iqr_hinge_spread`, `quantile_sketch_16` | Filtrar picos espurios de sensores IoT defectuosos en `meter_reading` o errores de digitación en `labor_log`. |
-| **Ingeniería de Confiabilidad y Supervivencia** | **Ajuste Weibull 2P/3P ($\beta, \eta$)**, **Kaplan-Meier con Censura**, **MTBF**, **MTTR**, **Disponibilidad Inherente $A_i$**, **Hazard Rate $h(t)$**, **Intervalo Óptimo PM ($T_{\text{opt}}$)** | **$O(1)$ por bloque** | `weibull_beta_mle`, `weibull_eta_mle`, `censored_count`, `censored_exposure_sum`, `sum_ln_x` | Predecir probabilidad de falla en los próximos 30 días por activo (`asset`) y optimizar frecuencias de `preventive_maintenance`. |
-| **Econometría y Series Temporales** | **Autocorrelación Serial ACF ($\rho_1, \rho_2, \rho_k$)**, **Estadístico Durbin-Watson ($DW$)**, **Tendencia OLS ($\beta_1$)**, **EMA / MACD**, **CUSUM Regime Change**, **Mann-Kendall Drift** | **$O(1)$ por bloque** | `sum_lag1_cross_prod`, `sum_diff1_sq`, `sum_time_centered_prod`, `ema_fast_state`, `cusum_pos_neg_max` | Detectar recalentamiento progresivo o pérdida de presión gradual en `meter_reading` mucho antes de que cruce el umbral estático de `iot_alert_rule`. |
-| **Frecuencia y Diagnóstico Vibracional IoT** | **FFT / Goertzel**, **8 Bandas PSD (Power Spectral Density)**, **Valor Eficaz RMS**, **Factor de Cresta (Crest Factor)**, **Entropía Espectral**, **Frecuencia Pico Dominante** | **$O(1)$ por bloque** | `signal_rms`, `crest_factor`, `spectral_entropy`, `dominant_freq_hz`, `psd_bands_energy` | Diagnóstico predictivo de fallas en rodamientos, desbalanceo mecánico y armónicos eléctricos en `meter_reading`. |
-| **Estadística Multivariada y Machine Learning** | **Matriz de Correlación de Pearson/Spearman ($M \times M$)**, **Regresión Lineal Múltiple (OLS Cholesky)**, **PCA (Componentes Principales)**, **Distancia de Mahalanobis ($D_M$)** | **$O(1)$ por bloque** | `Zone 6B: MbfCrossCovarianceMatrix` ($C_{i,j}$) | Explicar qué factores impulsan el sobrecosto de mantenimiento en `work_order` y detectar anomalías multiparamétricas. |
-| **Optimización Estocástica de Inventarios** | **Lote Económico de Pedido (EOQ de Wilson)**, **Stock de Seguridad bajo Demanda de Poisson/Normal Compuesta**, **Punto de Reorden Dinámico ($ROP$)**, **Fill Rate / Probabilidad de Stockout** | **$O(1)$ por bloque** | `pebay_mean_m1`, `pebay_m2` de demanda + `lead_time_days` en `part_vendor` / `part_Stock` | Cálculo automático de niveles óptimos de repuestos críticos en `part_Stock` y sugerencia de compras en `purchase_requisition`. |
-| **Búsqueda Difusa, Fonética y Semántica Híbrida** | **Levenshtein DFA ($k \le 2$)**, **SymSpell $O(1)$**, **2/3-Gram Roaring SIMD**, **Spanish/Double Metaphone**, **BM25F**, **HNSW + RaBitQ Vector Search**, **Reciprocal Rank Fusion (RRF)** | **$< 1.5\text{ ms}$** | `Zone 5B: MbfHybridSearchIndex` (FST + SymSpell + Bitmaps + Metaphone + RaBitQ HNSW) | Búsqueda instantánea tolerante a errores severos y búsqueda semántica RAG en `work_order`, `asset`, `part` y `document_chunk`. |
-| **Inteligencia Geoespacial** | **Indexación Hexagonal Uber H3**, **Filtro de Geocerca Haversine SIMD**, **R-Tree Bounding Box Pruning**, **Clustering Espacial DBSCAN** | **$< 1.0\text{ ms}$** | `Zone 5B: Spatial H3 + Morton Z-Order + Block MBR` | Auditoría antifraude de ubicación de técnicos en `labor_log` y mapas de calor de fallas en `work_order` / `location`. |
+| Categoría | Función / Algoritmo Agnóstico | Complejidad en `.mbf` | Primitiva en Motor (`src/mbf/zones/`) |
+| :--- | :--- | :--- | :--- |
+| **Estadística Descriptiva de Orden Superior** | Media ($\mu$), Varianza ($\sigma^2$), StdDev ($\sigma$), Coeficiente de Variación ($CV$), Media Geométrica, Media Armónica | **$O(1)$ por bloque** | `pebay_mean_m1`, `pebay_m2`, `geometric_mean()`, `harmonic_mean()`, `coeff_of_variation()` |
+| **Forma de Distribución y Normalidad** | Asimetría (**Skewness $\gamma_1$**), Curtosis Excesiva (**Kurtosis $\gamma_2$**), **Test de Jarque-Bera ($JB$)** | **$O(1)$ por bloque** | `skewness()`, `excess_kurtosis()`, `jarque_bera_stat()` |
+| **Estadística Robusta y Outliers** | Mediana ($P_{50}$), **MAD**, **Modified Z-Score**, **Tukey IQR Fences**, Cuantiles $P_{0.1}..P_{99.99}$, Media Recortada (`TrimmedMean5%`) | **$O(1)$ por bloque** | `modified_z_score()`, `is_robust_outlier()`, `tukey_iqr_fences()`, `trimmed_mean_5pct()`, `quantile()` |
+| **Análisis de Supervivencia, Procesos de Renovación y Markov** | **Ajuste Weibull 2P/3P ($\beta, \eta, \gamma$)**, **Kaplan-Meier con Censura**, **Tiempo Medio entre Eventos (`mean_interarrival_time`)**, **Disponibilidad Estacionaria (`steady_state_availability`)**, **Hazard Rate $h(t)$**, **Intervalo Óptimo de Renovación (`optimal_renewal_interval`)**, **Cadenas de Markov Discretas (`DiscreteMarkovChain<N>`)** | **$O(1)$ por bloque** | `weibull_3p_params()`, `kaplan_meier_survival()`, `mean_interarrival_time()`, `steady_state_availability()`, `optimal_renewal_interval()`, `DiscreteMarkovChain<N>` |
+| **Econometría y Series Temporales** | **Autocorrelación Serial ACF ($\rho_1, \rho_2$)**, **Estadístico Durbin-Watson ($DW$)**, **Tendencia OLS ($\beta_1$)**, **EMA / MACD**, **CUSUM Regime Change**, **Mann-Kendall Drift** | **$O(1)$ por bloque** | `acf_lag1()`, `acf_lag2()`, `durbin_watson()`, `temporal_drift_slope()`, `macd_state()`, `cusum_regime_change_detected()`, `mann_kendall_drift_z()` |
+| **Análisis Espectral en Frecuencia** | **FFT / Goertzel**, **8 Bandas PSD (Power Spectral Density)**, **Valor Eficaz RMS**, **Factor de Cresta (Crest Factor)**, **Entropía Espectral**, **Frecuencia Pico Dominante** | **$O(1)$ por bloque** | `signal_rms`, `crest_factor`, `spectral_entropy`, `dominant_freq_hz`, `psd_bands_energy`, `goertzel_harmonic_power()` |
+| **Estadística Multivariada y Machine Learning** | **Matriz de Correlación de Pearson/Spearman ($M \times M$)**, **Regresión Lineal Múltiple (OLS Cholesky / Ridge)**, **PCA (Componentes Principales)**, **Distancia de Mahalanobis ($D_M$)** | **$O(1)$ por bloque** | `MbfCrossCovarianceMatrix`: `pearson_correlation_matrix()`, `spearman_correlation_matrix()`, `solve_multiple_ols()`, `dominant_pca_eigenpair()`, `mahalanobis_distance_sq()` |
+| **Investigación de Operaciones y Optimización de Lotes/Buffers** | **Óptimo Convexo de Lote (`convex_lot_size_optimum`)**, **Buffer de Seguridad Gaussiano (`gaussian_safety_buffer`)**, **Punto de Umbral Estocástico (`stochastic_threshold_point`)**, **Tasa de Servicio y Riesgo de Cola (`service_fill_rate_and_tail_risk`)** | **$O(1)$ por bloque** | `convex_lot_size_optimum()`, `gaussian_safety_buffer()`, `stochastic_threshold_point()`, `service_fill_rate_and_tail_risk()` |
+| **Búsqueda Difusa, Fonética y Semántica Híbrida** | **Levenshtein DFA ($k \le 2$)**, **SymSpell $O(1)$**, **2/3-Gram Roaring SIMD**, **`RomancePhonetic` / `DoubleMetaphone`**, **`SynonymThesaurus`**, **BM25F**, **HNSW + RaBitQ Vector Search**, **Reciprocal Rank Fusion (RRF)** | **$< 1.5\text{ ms}$** | `MbfHybridSearchIndex`, `LevenshteinAutomatonDfa`, `HnswFlatGraph`, `SynonymThesaurus`, `canonicalize_alphanumeric_code()` |
+| **Inteligencia Geoespacial** | **Indexación Hexagonal Uber H3**, **Filtro de Geocerca Haversine SIMD**, **R-Tree Bounding Box Pruning**, **Clustering Espacial DBSCAN** | **$< 1.0\text{ ms}$** | `encode_h3_cell()`, `search_within_geofence_meters()`, `cluster_spatial_dbscan()` |
+

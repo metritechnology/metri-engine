@@ -12,21 +12,21 @@ Versión del catálogo: **3.0.0**
 | `AEG_001` | aegis | 400 | INVALID_ARGUMENT | no | Aegis received AST IR with unknown engine type — must be oltp or olap *(reservado)* |
 | `AEG_002` | aegis | 500 | INTERNAL | sí | Aegis OLTP: EAV query execution failed |
 | `AEG_003` | aegis | 404 | NOT_FOUND | no | Aegis OLTP pull: entity_id not found or belongs to a different tenant ⚠ **deprecado** |
-| `AEG_004` | aegis | 500 | INTERNAL | sí | Aegis OLAP: IQueryEngine.start_query failed — Athena could not initiate execution ⚠ **deprecado** |
-| `AEG_005` | aegis | 500 | INTERNAL | no | Aegis OLAP: IQueryEngine.get_query_results failed — Athena execution error or timeout ⚠ **deprecado** |
-| `AEG_006` | aegis | 504 | DEADLINE_EXCEEDED | no | Aegis OLAP: Athena polling timeout — execution_id preserved for reconciliation |
-| `AEG_007` | aegis | 500 | INTERNAL | no | Aegis: Athena output parse error — unexpected result shape |
+| `AEG_004` | aegis | 500 | INTERNAL | sí | Aegis: query start failed — analytical engine could not initiate execution ⚠ **deprecado** |
+| `AEG_005` | aegis | 500 | INTERNAL | no | Aegis: query result retrieval failed — analytical execution error or timeout ⚠ **deprecado** |
+| `AEG_006` | aegis | 504 | DEADLINE_EXCEEDED | no | Aegis: query execution timeout — execution_id preserved for reconciliation |
+| `AEG_007` | aegis | 500 | INTERNAL | no | Aegis: query output parse error — unexpected result shape |
 | `AEG_008` | aegis | 400 | INVALID_ARGUMENT | no | Aegis: aggregation function not supported |
 | `AEG_COMPILE_001` | aegis | 400 | INVALID_ARGUMENT | no | Aegis OLTP: failed to compile AST IR to EAV QueryPlan — unsupported operator or malformed node |
-| `AEG_COMPILE_002` | aegis | 400 | INVALID_ARGUMENT | no | Aegis OLAP: failed to compile AST IR to SQL — unsupported operator or malformed node |
-| `AEG_COMPILE_003` | aegis | 400 | INVALID_ARGUMENT | no | Aegis SQL compilation failed — query could not be compiled |
+| `AEG_COMPILE_002` | aegis | 400 | INVALID_ARGUMENT | no | Aegis: failed to compile filter AST IR — unsupported operator or malformed node |
+| `AEG_COMPILE_003` | aegis | 400 | INVALID_ARGUMENT | no | Aegis query compilation failed — query could not be compiled |
 | `AEG_TENANT_MISSING` | aegis | 500 | INTERNAL | no | Aegis received an AST IR without tenant isolation in :where — data exfiltration risk blocked |
 
 ## Familia `aud` (2 códigos)
 
 | Código | Etapa | HTTP | gRPC | Reintentable | Descripción |
 |---|---|---|---|---|---|
-| `AUD_001` | audit-interceptor | 500 | INTERNAL | no | AuditInterceptor.audit failed to write to OLAPChannel — audit record lost |
+| `AUD_001` | audit-interceptor | 500 | INTERNAL | no | AuditInterceptor.audit failed to write to telemetry_channel — audit record lost |
 | `AUD_002` | audit-interceptor | 500 | INTERNAL | no | audit/derive_action_type returned unknown — fallback to WRITE applied |
 
 ## Familia `cdx` (5 códigos)
@@ -84,26 +84,20 @@ Versión del catálogo: **3.0.0**
 | `GRPC_AUTH_004` | grpc-interceptor | 403 | PERMISSION_DENIED | no | Tenant mismatch — authenticated principal denied access to the requested tenant |
 | `GRPC_TENANT_001` | grpc-interceptor | 400 | INVALID_ARGUMENT | no | tenant_id missing or empty in request metadata — request rejected before processing |
 
-## Familia `infra` (18 códigos)
+## Familia `infra` (12 códigos)
 
 | Código | Etapa | HTTP | gRPC | Reintentable | Descripción |
 |---|---|---|---|---|---|
-| `INFRA_ATHENA_001` | athena | 500 | INTERNAL | sí | Athena StartQueryExecution failed — SDK error or quota exceeded *(reservado)* |
-| `INFRA_ATHENA_002` | athena | 500 | INTERNAL | no | Athena query FAILED state — query execution error returned by Athena engine *(reservado)* |
-| `INFRA_ATHENA_003` | athena | 500 | INTERNAL | no | Athena GetQueryResults failed — cannot retrieve results after successful execution *(reservado)* |
-| `INFRA_ATHENA_004` | athena | 504 | DEADLINE_EXCEEDED | no | Athena query exceeded polling timeout — execution_id preserved for async reconciliation *(reservado)* |
-| `INFRA_ATHENA_005` | athena | 403 | PERMISSION_DENIED | no | Athena AccessDeniedException — Lambda IAM role lacks athena:StartQueryExecution or s3:PutObject on output bucket |
 | `INFRA_CATALOG_001` | error-catalog | 500 | INTERNAL | no | Error catalog failed to load or validate at bootstrap — engine halted |
 | `INFRA_CEDAR_001` | cedar | 503 | UNAVAILABLE | no | Cedar Policy Engine unavailable or policy parsing error — authorization cannot be evaluated *(reservado)* |
-| `INFRA_CEDAR_002` | cedar | 503 | UNAVAILABLE | no | Cedar policy store could not be loaded from DynamoDB during bootstrap — ABAC is non-functional |
+| `INFRA_CEDAR_002` | cedar | 503 | UNAVAILABLE | no | Cedar policy store could not be loaded during bootstrap — ABAC is non-functional |
 | `INFRA_CONFIG_001` | config | 500 | INTERNAL | no | Engine configuration failed to resolve or validate at bootstrap — engine halted |
-| `INFRA_DDB_001` | dynamodb | 500 | INTERNAL | sí | DynamoDB SDK error — unexpected failure on GetItem/PutItem/Query/TransactWriteItems |
-| `INFRA_DDB_002` | dynamodb | 429 | RESOURCE_EXHAUSTED | sí | DynamoDB ProvisionedThroughputExceededException — read/write capacity exhausted on partition *(reservado)* |
-| `INFRA_DDB_003` | dynamodb | 404 | NOT_FOUND | no | DynamoDB item not found — entity may not exist or tenant isolation filtered it out *(reservado)* |
+| `INFRA_DDB_001` | dynamodb | 500 | INTERNAL | sí | Storage client error — unexpected failure on GetItem/PutItem/Query/TransactWriteItems |
+| `INFRA_DDB_002` | dynamodb | 429 | RESOURCE_EXHAUSTED | sí | Storage ProvisionedThroughputExceededException — read/write capacity exhausted on partition *(reservado)* |
+| `INFRA_DDB_003` | dynamodb | 404 | NOT_FOUND | no | Storage item not found — entity may not exist or tenant isolation filtered it out *(reservado)* |
 | `INFRA_EB_001` | eventbridge | 500 | INTERNAL | no | EventBridge SDK error — event put failed |
 | `INFRA_FIREHOSE_001` | firehose | 500 | INTERNAL | sí | Firehose SDK error — delivery stream operation failed |
 | `INFRA_GLUE_001` | glue | 500 | INTERNAL | sí | Glue SDK error — Iceberg table sync failed |
-| `INFRA_KIN_001` | kinesis | 500 | INTERNAL | no | Kinesis SDK error — record put failed |
 | `INFRA_S3_001` | s3 | 500 | INTERNAL | sí | S3 SDK error — unexpected failure on S3 operation |
 | `INFRA_SQS_001` | sqs | 500 | INTERNAL | sí | SQS SDK error — unexpected failure on SQS operation |
 
@@ -127,14 +121,13 @@ Versión del catálogo: **3.0.0**
 | `JANUS_422` | janus-cerebro | 422 | INVALID_ARGUMENT | no | Janus request semantically invalid — payload or reference failed validation |
 | `JANUS_VAL_001` | janus-validator | 400 | INVALID_ARGUMENT | no | Janus Validator rejected request — schema validation failed against AST IR contract |
 
-## Familia `jns` (9 códigos)
+## Familia `jns` (8 códigos)
 
 | Código | Etapa | HTTP | gRPC | Reintentable | Descripción |
 |---|---|---|---|---|---|
 | `JNS_001` | janus | 500 | INTERNAL | no | No channel registered for the given engine type |
 | `JNS_CONFLICT_001` | janus | 409 | ABORTED | no | unique:value constraint violated — value already exists in EAV AVET index |
 | `JNS_LOCK_001` | janus | 423 | PERMISSION_DENIED | no | write_path_locked: the entity is read-only — mutations are blocked |
-| `JNS_OLAP_003` | janus | 403 | PERMISSION_DENIED | no | BulkIngest attempted on entity without engine:olap or write_path_locked:true |
 | `JNS_REF_001` | janus | 422 | INVALID_ARGUMENT | no | Referenced entity UUID does not exist in the EAV store *(reservado)* |
 | `JNS_REF_002` | janus | 422 | INVALID_ARGUMENT | no | Referenced entity UUID exists but has wrong entity type (type confusion attack blocked) |
 | `JNS_SCOPE_001` | janus | 500 | INTERNAL | sí | scope_resolution found no valid sequence registry entry for the given scope_tag |

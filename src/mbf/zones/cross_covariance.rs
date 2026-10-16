@@ -3,6 +3,13 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::domain::errors::{DomainError, ErrorCode};
+use crate::domain::protocols::DomainResult;
+use crate::mbf::format::pad_to_64;
+
+/// Zone 6B binary magic (`"MBFZ6BCV"`).
+pub const MBF_ZONE6B_MAGIC: [u8; 8] = *b"MBFZ6BCV";
+
 /// Parallel-mergeable multivariate co-moment matrix ($M \times M$) stored in Zone 6B of `.mbf`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MbfCrossCovarianceMatrix {
@@ -21,6 +28,85 @@ impl MbfCrossCovarianceMatrix {
             means: vec![0.0; dimension],
             co_moments: vec![0.0; dimension * dimension],
         }
+    }
+
+    /// Encodes Zone 6B into a 64-byte aligned binary buffer storing `dimension`, `count`, `means`, and upper-triangular co-moments.
+    pub fn encode_zone_binary(&self) -> Vec<u8> {
+        let m = self.dimension;
+        let upper_len = m * (m + 1) / 2;
+        let mut buf = Vec::with_capacity(64 + (m + upper_len) * 8);
+        buf.extend_from_slice(&MBF_ZONE6B_MAGIC);
+        buf.extend_from_slice(&(m as u32).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&self.count.to_le_bytes());
+        for &mu in &self.means {
+            buf.extend_from_slice(&mu.to_bits().to_le_bytes());
+        }
+        for i in 0..m {
+            for j in i..m {
+                let c_ij = self.co_moments.get(i * m + j).copied().unwrap_or(0.0);
+                buf.extend_from_slice(&c_ij.to_bits().to_le_bytes());
+            }
+        }
+        pad_to_64(&mut buf);
+        buf
+    }
+
+    /// Decodes a 64-byte aligned Zone 6B binary buffer back into `MbfCrossCovarianceMatrix`.
+    pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
+        if bytes.len() < 24 {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                format!("Zone 6B buffer too small: {} bytes", bytes.len()),
+            ));
+        }
+        if bytes[0..8] != MBF_ZONE6B_MAGIC {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid Zone 6B magic (expected MBFZ6BCV)",
+            ));
+        }
+        let mut u32_buf = [0u8; 4];
+        u32_buf.copy_from_slice(&bytes[8..12]);
+        let m = u32::from_le_bytes(u32_buf) as usize;
+        let mut u64_buf = [0u8; 8];
+        u64_buf.copy_from_slice(&bytes[16..24]);
+        let count = u64::from_le_bytes(u64_buf);
+
+        let upper_len = m * (m + 1) / 2;
+        let needed = 24 + (m + upper_len) * 8;
+        if bytes.len() < needed {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Truncated Zone 6B co-moments payload",
+            ));
+        }
+
+        let mut offset = 24usize;
+        let mut means = Vec::with_capacity(m);
+        for _ in 0..m {
+            u64_buf.copy_from_slice(&bytes[offset..offset + 8]);
+            offset += 8;
+            means.push(f64::from_bits(u64::from_le_bytes(u64_buf)));
+        }
+
+        let mut co_moments = vec![0.0_f64; m * m];
+        for i in 0..m {
+            for j in i..m {
+                u64_buf.copy_from_slice(&bytes[offset..offset + 8]);
+                offset += 8;
+                let val = f64::from_bits(u64::from_le_bytes(u64_buf));
+                co_moments[i * m + j] = val;
+                co_moments[j * m + i] = val;
+            }
+        }
+
+        Ok(Self {
+            dimension: m,
+            count,
+            means,
+            co_moments,
+        })
     }
 
     /// Updates the $M \times M$ co-moment matrix with a single multivariate observation row in $O(M^2)$.
@@ -103,8 +189,54 @@ impl MbfCrossCovarianceMatrix {
         r
     }
 
+    /// Returns the $M \times M$ Spearman Rank Correlation Matrix $\rho_S \in [-1, 1]$ in $O(1)$ using Kruskal's analytical identity
+    /// $\rho_S = \frac{6}{\pi} \arcsin(R_{i,j} / 2)$ from the pre-aggregated co-moment matrix (§7).
+    pub fn spearman_correlation_matrix(&self) -> Vec<Vec<f64>> {
+        let pearson = self.pearson_correlation_matrix();
+        let m = self.dimension;
+        let mut s = vec![vec![0.0; m]; m];
+        for i in 0..m {
+            for j in 0..m {
+                if i == j {
+                    s[i][j] = 1.0;
+                } else {
+                    let r_ij = pearson[i][j].clamp(-1.0, 1.0);
+                    s[i][j] = ((6.0 / std::f64::consts::PI) * (0.5 * r_ij).asin()).clamp(-1.0, 1.0);
+                }
+            }
+        }
+        s
+    }
+
+    /// Computes the exact empirical Spearman Rank Correlation Matrix from a slice of multivariate observations by rank-transforming each column into a `MbfCrossCovarianceMatrix`.
+    pub fn spearman_from_rows(rows: &[Vec<f64>]) -> Vec<Vec<f64>> {
+        if rows.is_empty() {
+            return Vec::new();
+        }
+        let m = rows[0].len();
+        let n = rows.len();
+        let mut ranked_rows = vec![vec![0.0; m]; n];
+        for col in 0..m {
+            let mut indexed: Vec<(usize, f64)> = rows
+                .iter()
+                .enumerate()
+                .map(|(r_idx, r)| (r_idx, r.get(col).copied().unwrap_or(0.0)))
+                .collect();
+            indexed.sort_by(|a, b| a.1.total_cmp(&b.1));
+            for (rank, (orig_idx, _)) in indexed.into_iter().enumerate() {
+                ranked_rows[orig_idx][col] = (rank + 1) as f64;
+            }
+        }
+        let mut mat = Self::new(m);
+        for r in &ranked_rows {
+            mat.push_row(r);
+        }
+        mat.pearson_correlation_matrix()
+    }
+
     /// Solves Multiple Linear Regression (OLS) directly from the pre-aggregated co-moment matrix in $O(M^3)$
-    /// without reading a single data row! Predicts target column `target_idx` from `predictor_indices`.
+    /// via Cholesky $L L^T$ decomposition (§4.3 #2) without reading a single data row!
+    /// Predicts target column `target_idx` from `predictor_indices`.
     /// Returns `(intercept_beta0, slopes_beta, r_squared)`.
     pub fn solve_multiple_ols(
         &self,
@@ -127,13 +259,13 @@ impl MbfCrossCovarianceMatrix {
             for (col_j, &pj) in predictor_indices.iter().enumerate() {
                 a[row_i][col_j] = self.co_moments[pi * m + pj];
                 if row_i == col_j {
-                    // Ridge regularization epsilon for numerical stability
+                    // Ridge regularization epsilon for positive-definiteness
                     a[row_i][col_j] += 1e-9;
                 }
             }
         }
 
-        let betas = Self::solve_linear_system(a, b)?;
+        let betas = Self::solve_cholesky(&a, &b).or_else(|| Self::solve_linear_system(a, b))?;
         let mut beta0 = self.means[target_idx];
         let mut explained_ss = 0.0;
         for (i, &pi) in predictor_indices.iter().enumerate() {
@@ -147,6 +279,51 @@ impl MbfCrossCovarianceMatrix {
             1.0
         };
         Some((beta0, betas, r2))
+    }
+
+    /// Solves a symmetric positive-definite linear system $A \beta = b$ using Cholesky $L L^T$ decomposition (§4.3 #2 & §7).
+    pub fn solve_cholesky(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+        let n = b.len();
+        if n == 0 || a.len() != n {
+            return None;
+        }
+        let mut l = vec![vec![0.0; n]; n];
+        for i in 0..n {
+            for j in 0..=i {
+                let mut sum = 0.0;
+                for p in 0..j {
+                    sum += l[i][p] * l[j][p];
+                }
+                if i == j {
+                    let diag = a[i][i] - sum;
+                    if diag <= 1e-15 {
+                        return None;
+                    }
+                    l[i][j] = diag.sqrt();
+                } else {
+                    l[i][j] = (a[i][j] - sum) / l[j][j];
+                }
+            }
+        }
+        // Forward substitution: L y = b
+        let mut y = vec![0.0; n];
+        for i in 0..n {
+            let mut sum = b[i];
+            for j in 0..i {
+                sum -= l[i][j] * y[j];
+            }
+            y[i] = sum / l[i][i];
+        }
+        // Backward substitution: L^T x = y
+        let mut x = vec![0.0; n];
+        for i in (0..n).rev() {
+            let mut sum = y[i];
+            for j in (i + 1)..n {
+                sum -= l[j][i] * x[j];
+            }
+            x[i] = sum / l[i][i];
+        }
+        Some(x)
     }
 
     /// Extracts the First Principal Component (`PC1` eigenvector and explained variance ratio) via Power Iteration.
@@ -209,7 +386,8 @@ impl MbfCrossCovarianceMatrix {
                 }
             }
         }
-        let inv_diff = Self::solve_linear_system(cov, diff.clone())?;
+        let inv_diff = Self::solve_cholesky(&cov, &diff)
+            .or_else(|| Self::solve_linear_system(cov, diff.clone()))?;
         let d2: f64 = diff
             .iter()
             .zip(inv_diff.iter())
@@ -296,5 +474,10 @@ mod tests {
             .mahalanobis_distance(&[500.0, 500.0, -1000.0])
             .unwrap();
         assert!(anomaly_dist > 10.0);
+
+        let bin = merged.encode_zone_binary();
+        assert_eq!(bin.len() % 64, 0);
+        let decoded = MbfCrossCovarianceMatrix::decode_zone_binary(&bin).unwrap();
+        assert_eq!(decoded, merged);
     }
 }

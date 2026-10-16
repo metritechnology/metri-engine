@@ -3,8 +3,8 @@
 //! AuditInterceptorImpl
 //!
 //! Se invoca SIEMPRE al final de cada request (Ok o Err).
-//! Captura el request completo, calcula ActionType y envía un registro al
-//! stream de Kinesis (OLAP) audit_log.
+//! Captura el request completo, calcula ActionType y persiste un registro
+//! `audit_log` en el canal de almacenamiento MBF.
 //!
 //! Es fire-and-forget, nunca falla el request original.
 
@@ -19,14 +19,14 @@ use crate::janus_router::router::IWriteChannel;
 
 /// Implementación del AuditInterceptor.
 pub struct AuditInterceptorImpl {
-    olap_channel: Arc<dyn IWriteChannel>,
+    telemetry_channel: Arc<dyn IWriteChannel>,
     // FASE 10: fault_notifier para emitir AUD_001 si falla la base transaccional
 }
 
 impl AuditInterceptorImpl {
-    pub fn new(olap_channel: Arc<dyn IWriteChannel>) -> Self {
-        info!("[AuditInterceptor] Activado (Fire-and-Forget, OLAP-Mode)");
-        Self { olap_channel }
+    pub fn new(telemetry_channel: Arc<dyn IWriteChannel>) -> Self {
+        info!("[AuditInterceptor] Activado (Fire-and-Forget, MBF-Mode)");
+        Self { telemetry_channel }
     }
 
     /// Construye el snapshot de seguridad (domain_boundaries, etc).
@@ -71,10 +71,10 @@ impl IAuditInterceptor for AuditInterceptorImpl {
             action = %action_type.as_str(),
             tenant = %tenant_id,
             domain = %entity_type,
-            "[AuditInterceptor] Registrando evento en canal OLAP (Kinesis)"
+            "[AuditInterceptor] Registrando evento en canal de persistencia MBF"
         );
 
-        // Disparar escritura asíncrona hacia OLAP
+        // Disparar escritura asíncrona hacia el almacenamiento MBF
         // Creamos un IopContext artificial apuntando a la entidad 'audit_log'
         let mut req_map = serde_json::Map::new();
         req_map.insert("data".to_string(), Value::Array(vec![audit_payload]));
@@ -87,11 +87,11 @@ impl IAuditInterceptor for AuditInterceptorImpl {
             req_map,
         );
 
-        let olap = Arc::clone(&self.olap_channel);
+        let channel = Arc::clone(&self.telemetry_channel);
         tokio::spawn(async move {
-            if let Err(e) = olap.route(ctx).await {
+            if let Err(e) = channel.route(ctx).await {
                 error!(
-                    "[AuditInterceptor] Falla al escribir en canal OLAP (Kinesis): {:?}",
+                    "[AuditInterceptor] Falla al escribir en canal de persistencia MBF: {:?}",
                     e
                 );
                 // FASE 10: sherlog.emit_fault(AUD_001)

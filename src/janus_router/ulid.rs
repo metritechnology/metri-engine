@@ -1,7 +1,7 @@
 //! Monotonic ULID generator (Crockford Base32).
 //!
 //! Generador ULID monotónico.
-//! Spec: https://github.com/ulid/spec
+//! Spec: <https://github.com/ulid/spec>
 //!
 //! Formato: ttttttttttrrrrrrrrrrrrrrrrr (26 chars Crockford Base32)
 //! ├─ 48 bits timestamp (ms epoch) — lexicográficamente ordenable

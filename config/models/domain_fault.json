@@ -55,7 +55,7 @@
       "index": true,
       "is_dimension": true,
       "required": true,
-      "description": "Etapa interna del pipeline donde ocurrió el error. Ej: janus, codice, auth, abac, kinesis."
+      "description": "Etapa interna del pipeline donde ocurrió el error. Ej: janus, codice, auth, abac, mbf."
     },
     {
       "name": "component",

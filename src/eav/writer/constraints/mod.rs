@@ -333,7 +333,7 @@ mod state_tests {
 
     fn modelo(constraints: Vec<Constraint>) -> EntityModel {
         EntityModel {
-            entity: "work_order_procedure".to_string(),
+            entity: "composite_link".to_string(),
             label: None,
             icon: None,
             primary_key: None,
@@ -347,6 +347,7 @@ mod state_tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints,
+            ..Default::default()
         }
     }
 
@@ -491,12 +492,12 @@ mod state_tests {
     #[test]
     fn ref_state_evalua_las_condiciones_del_referenciado() {
         let publicado = pares(&[
-            ("entity/type", DatomValue::Str("procedure_template".into())),
+            ("entity/type", DatomValue::Str("template_record".into())),
             ("lifecycle_state", DatomValue::Str("PUBLISHED".into())),
         ]);
         check_ref_conditions(
-            "procedure_template",
-            "01PROC",
+            "template_record",
+            "01TMPL",
             &publicado,
             &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
         )
@@ -504,8 +505,8 @@ mod state_tests {
 
         let borrador = pares(&[("lifecycle_state", DatomValue::Str("DRAFT".into()))]);
         assert!(check_ref_conditions(
-            "procedure_template",
-            "01PROC",
+            "template_record",
+            "01TMPL",
             &borrador,
             &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
         )
@@ -513,7 +514,7 @@ mod state_tests {
 
         // Entidad inexistente: vista vacía, no cumple nada.
         assert!(check_ref_conditions(
-            "procedure_template",
+            "template_record",
             "01FANTASMA",
             &HashMap::new(),
             &[("lifecycle_state".to_string(), "PUBLISHED".to_string())],
@@ -530,7 +531,7 @@ mod claims_tests {
 
     fn modelo_unico() -> EntityModel {
         EntityModel {
-            entity: "work_order_procedure".to_string(),
+            entity: "composite_link".to_string(),
             label: None,
             icon: None,
             primary_key: None,
@@ -546,24 +547,25 @@ mod claims_tests {
             constraints: vec![Constraint {
                 kind: ConstraintKind::Unique,
                 scope: ConstraintScope::Tenant,
-                attributes: vec!["work_order_id".into(), "procedure_id".into()],
+                attributes: vec!["parent_id".into(), "child_id".into()],
                 when: None,
             }],
+            ..Default::default()
         }
     }
 
     fn entidad<'a>(
         eid: &'a str,
-        wo: &'a str,
-        proc: &'a str,
+        parent: &'a str,
+        child: &'a str,
         m: &'a EntityModel,
     ) -> EntidadEnTx<'a> {
         let attrs = HashMap::from([
-            ("work_order_id".to_string(), DatomValue::Str(wo.into())),
-            ("procedure_id".to_string(), DatomValue::Str(proc.into())),
+            ("parent_id".to_string(), DatomValue::Str(parent.into())),
+            ("child_id".to_string(), DatomValue::Str(child.into())),
         ]);
         EntidadEnTx {
-            entity_type: "work_order_procedure",
+            entity_type: "composite_link",
             entity_id: eid,
             attrs: Box::leak(Box::new(attrs)),
             op: TransactOp::Create,
@@ -578,8 +580,8 @@ mod claims_tests {
     #[test]
     fn composite_conflicto_intra_tx_sale_como_error_de_dominio() {
         let m = modelo_unico();
-        let a = entidad("01A", "01WO", "01PROC", &m);
-        let b = entidad("01B", "01WO", "01PROC", &m);
+        let a = entidad("01A", "01P", "01C", &m);
+        let b = entidad("01B", "01P", "01C", &m);
         let err = plan_claims_para(&planners(), "tnt_1", "tbl", &[a, b])
             .expect_err("misma clave, entidades distintas: conflicto");
         assert!(err.detail.contains("conflicto"), "{err:?}");
@@ -588,8 +590,8 @@ mod claims_tests {
     #[test]
     fn composite_deduplica_el_reintento_de_la_misma_entidad() {
         let m = modelo_unico();
-        let a = entidad("01A", "01WO", "01PROC", &m);
-        let a2 = entidad("01A", "01WO", "01PROC", &m);
+        let a = entidad("01A", "01P", "01C", &m);
+        let a2 = entidad("01A", "01P", "01C", &m);
         let items = plan_claims_para(&planners(), "tnt_1", "tbl", &[a, a2])
             .expect("misma entidad: reintento idempotente");
         assert_eq!(items.len(), 1, "una sola reclamación");
@@ -598,8 +600,8 @@ mod claims_tests {
     #[test]
     fn composite_planifica_un_claim_por_entidad_distinta() {
         let m = modelo_unico();
-        let a = entidad("01A", "01WO", "01PROC", &m);
-        let b = entidad("01B", "01WO", "01PROC2", &m);
+        let a = entidad("01A", "01P", "01C", &m);
+        let b = entidad("01B", "01P", "01C2", &m);
         let items = plan_claims_para(&planners(), "tnt_1", "tbl", &[a, b])
             .expect("claves distintas: ambas reclaman");
         assert_eq!(items.len(), 2);
@@ -613,7 +615,7 @@ mod at_least_any_tests {
 
     fn modelo(constraints: Vec<Constraint>) -> EntityModel {
         EntityModel {
-            entity: "technician_shift".to_string(),
+            entity: "schedule_window".to_string(),
             label: None,
             icon: None,
             primary_key: None,
@@ -627,6 +629,7 @@ mod at_least_any_tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints,
+            ..Default::default()
         }
     }
 

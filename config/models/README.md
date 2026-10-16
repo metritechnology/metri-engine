@@ -1,6 +1,6 @@
 # Códice de Metri: Guía de Referencia y Modelado de Datos
 
-Este directorio contiene las definiciones de esquema JSON que estructuran el ecosistema de datos de **Metri**. Este sistema, conocido internamente como **Códice**, actúa como la **única fuente de verdad (Single Source of Truth)** para la validación Estructural OLTP, la persistencia en el modelo EAV, y la proyección analítica en el Data Lake OLAP.
+Este directorio contiene las definiciones de esquema JSON que estructuran el ecosistema de datos de **Metri**. Este sistema, conocido internamente como **Códice**, actúa como la **única fuente de verdad (Single Source of Truth)** para la validación estructural, la persistencia transaccional de datoms inmutables y la ejecución analítica columnar sobre el motor unificado **Metri Vortex (`.mbf`)**.
 
 Esta guía está redactada con especificaciones técnicas detalladas para servir como referencia a desarrolladores, agentes autónomos y LLMs que necesiten consultar, mantener o ampliar los modelos de datos de Metri.
 
@@ -8,7 +8,7 @@ Esta guía está redactada con especificaciones técnicas detalladas para servir
 
 ## I. Arquitectura y Bootstrap (Fail-Fast)
 
-El motor analítico en Rust (`metri-engine`) escanea y procesa determinísticamente todos los archivos JSON de este directorio durante su fase de inicio (_cold start_).
+El motor en Rust (`metri-engine`) escanea y procesa determinísticamente todos los archivos JSON de este directorio durante su fase de inicio (_cold start_).
 
 - **Inicialización inmutable**: Compila todos los JSON en una estructura in-memory indexada en un `OnceLock<CodeRegistry>` de forma estática y de consulta $O(1)$.
 - **Validación de Identidad**: Si detecta esquemas con nombres duplicados o colisiones SHA-256 de campos, el servidor ejecuta un pánico inmediato e interrumpe el arranque para evitar la corrupción de base de datos.
@@ -19,15 +19,14 @@ El motor analítico en Rust (`metri-engine`) escanea y procesa determinísticame
 
 Cada archivo JSON define un modelo estructural con las siguientes propiedades raíz:
 
-| Campo                        | Tipo      | Requerido | Descripción                                                                                                                         |
-| :--------------------------- | :-------- | :-------- | :---------------------------------------------------------------------------------------------------------------------------------- |
-| `entity`                     | `string`  | **Sí**    | Identificador único de la entidad (ej: `asset`, `location`, `work_order`).                                                          |
-| `engine`                     | `enum`    | No        | Canal del motor. `"oltp"` (por defecto, base de datos relacional EAV en DynamoDB) o `"olap"` (para telemetría y flujos Kinesis/S3). |
-| `is_system`                  | `boolean` | No        | Indica si la entidad es reservada del sistema (ej: `audit_log`, `outbox_event`).                                                    |
-| `is_sequence_scope_provider` | `boolean` | No        | Indica si esta entidad puede actuar como scope/contexto para contadores secuenciales (ej. `location`).                              |
-| `track_history`              | `boolean` | No        | Activa la auditoría automática de historial de cambios en el almacén de transacciones.                                              |
-| `attributes`                 | `array`   | **Sí**    | Lista de atributos estructurados que definen las columnas y propiedades de la entidad.                                              |
-| `event_rules`                | `array`   | No        | Reglas de eventos y alertas automáticas disparadas por mutaciones de estado de esta entidad.                                        |
+| Campo                        | Tipo      | Requerido | Descripción                                                                                                                    |
+| :--------------------------- | :-------- | :-------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| `entity`                     | `string`  | **Sí**    | Identificador único de la entidad (ej: `asset`, `location`, `work_order`).                                                     |
+| `is_system`                  | `boolean` | No        | Indica si la entidad es reservada del sistema (ej: `audit_log`, `outbox_event`).                                               |
+| `is_sequence_scope_provider` | `boolean` | No        | Indica si esta entidad puede actuar como scope/contexto para contadores secuenciales (ej. `location`).                         |
+| `track_history`              | `boolean` | No        | Activa la auditoría automática de historial de cambios en el almacén de transacciones `.mbf`.                                  |
+| `attributes`                 | `array`   | **Sí**    | Lista de atributos estructurados que definen las columnas y propiedades de la entidad.                                         |
+| `event_rules`                | `array`   | No        | Reglas de eventos y alertas automáticas disparadas por mutaciones de estado de esta entidad.                                   |
 
 ---
 
@@ -85,14 +84,14 @@ Para evitar la imprecisión acumulada e inherente de los números flotantes en a
    - El atributo de divisa debe definirse como:
      - Nombre: `"currency"`
      - Tipo: `"string"`
-     - Banderas: `"is_dimension": true` para optimizar consultas analíticas en el Data Lake.
+     - Banderas: `"is_dimension": true` para optimizar consultas analíticas sobre `.mbf`.
      - Validación: `"pattern": "^[A-Z]{3}$"` para obligar al formato ISO 4217 de tres letras mayúsculas.
 
 ---
 
 ### 2. Banderas Estructurales y Analíticas (Flags)
 
-Cada atributo puede configurar banderas que modifican cómo se comporta en tiempo de ejecución, en las búsquedas OLTP y en las consultas del Data Lake:
+Cada atributo puede configurar banderas que modifican cómo se comporta en tiempo de ejecución y en las consultas transaccionales y analíticas sobre `.mbf`:
 
 ```json
 {
@@ -115,8 +114,8 @@ Cada atributo puede configurar banderas que modifican cómo se comporta en tiemp
 - **`index`** (`boolean`): Genera automáticamente un registro índice (AVET) en la base de datos para habilitar búsquedas de igualdad de alto rendimiento.
 - **`fts`** (`boolean`): Incluye el campo dentro del motor de búsqueda de texto completo (_Full-Text Search_).
 - **`sensitive`** (`boolean`): Marca campos con información sensible (PII) para ser censurados de forma automática en los registros de errores del backend.
-- **`is_dimension`** (`boolean`): Identifica el atributo como una dimensión de categorización/filtrado para agregaciones en el Janus Router del Data Lake.
-- **`is_measure`** / **`is_metric`** (`boolean`): Identifica atributos numéricos acumulables en análisis OLAP.
+- **`is_dimension`** (`boolean`): Identifica el atributo como una dimensión de categorización/filtrado para agregaciones analíticas en Janus / Aegis.
+- **`is_measure`** / **`is_metric`** (`boolean`): Identifica atributos numéricos acumulables en agregaciones analíticas.
 - **`default_rollup`** (`string`): Función agregadora analítica por defecto (`"sum"`, `"avg"`, `"min"`, `"max"`).
 
 ---
@@ -191,7 +190,7 @@ el camino de escritura. El catálogo falla el arranque si una está malformada
 
 | Tipo | Sintaxis | Qué garantiza | Dónde se enforcea |
 |---|---|---|---|
-| `unique` | `{type, scope: tenant\|global, attributes[]}` | La clave no se repite en el ámbito: un item de reclamación con `attribute_not_exists` en la MISMA transacción DynamoDB — invariante sin ventanas de carrera. | Escritura (planner) |
+| `unique` | `{type, scope: tenant\|global, attributes[]}` | La clave no se repite en el ámbito: un item de reclamación con `attribute_not_exists` en la MISMA transacción ACID `.mbf` — invariante sin ventanas de carrera. | Escritura (planner) |
 | `requires_when` | `{type, when: {campo: valor}, required: [campos]}` | Si la vista fusionada (estado previo + payload) cumple todos los pares `when`, los campos `required` son obligatorios (presentes y no nulos). | Escritura (chequeo de estado) |
 | `at_most` | `{type, field, of}` | `field` no puede exceder `of` numéricamente (enteros, decimales y epochs comparables entre sí). | Escritura (chequeo de estado) |
 | `at_least` | `{type, field, of}` | `field` no puede ser menor/ anterior a `of` numéricamente (ej. `end_time ≥ start_time`, turnos que cruzan medianoche incluidos). | Escritura (chequeo de estado) |
@@ -234,7 +233,7 @@ Reglas:
    Las instancias sin plantilla (ad-hoc, sin `procedure_template_id`) no
    reclaman nada.
 4. Provenance hacia atrás en cada nivel (instancia → definición): editar o
-   retirar la definición no corrompe ejecutadas, y el OLAP agrupa por id de
+   retirar la definición no corrompe ejecutadas, y el motor analítico agrupa por id de
    definición aunque cambien los textos.
 5. Los ítems son self-contained (pregunta/paso + tipo + respuesta copiados al
    instanciar). Los órdenes son `integer` en toda la familia:

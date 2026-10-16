@@ -3,12 +3,25 @@
   "is_system": false,
   "is_sequence_scope_provider": true,
   "track_history": true,
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": ["purchase_cost_cents", "salvage_value_cents"]
+  },
   "attributes": [
     {
       "name": "name",
       "type": "string",
       "fts": true,
       "required": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms",
+        "bm25_field_boost": 3.5
+      },
       "description": "Nombre descriptivo del activo (ej: 'Bomba Centrífuga de Alta Presión #02')."
     },
     {
@@ -22,6 +35,14 @@
         "prefix": "A-",
         "length": 7
       },
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      },
       "description": "Tag único de activo autogenerado por inquilino."
     },
     {
@@ -29,6 +50,14 @@
       "type": "string",
       "unique": "tenant",
       "fts": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 4.5
+      },
       "description": "Número de serie asignado por el fabricante del equipo (único por tenant)."
     },
     {
@@ -101,6 +130,14 @@
       "name": "model_number",
       "type": "string",
       "fts": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "double_metaphone",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 4.0
+      },
       "description": "Modelo del equipo según catálogo del fabricante."
     },
     {
@@ -142,12 +179,32 @@
       "name": "purchase_cost_cents",
       "type": "number",
       "is_measure": true,
+      "default_rollup": "sum",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "pareto",
+        "outlier_sigma_threshold": 4.0,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": false,
+        "enable_benford_audit": true,
+        "enable_weibull_mle": false
+      },
       "description": "Costo original de compra expresado en la unidad menor de la divisa (céntimos)."
     },
     {
       "name": "salvage_value_cents",
       "type": "number",
       "is_measure": true,
+      "default_rollup": "sum",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "pareto",
+        "outlier_sigma_threshold": 4.0,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": false,
+        "enable_benford_audit": true,
+        "enable_weibull_mle": false
+      },
       "description": "Valor residual / de rescate estimado al final de su vida útil."
     },
     {

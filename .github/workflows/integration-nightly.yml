@@ -1,7 +1,6 @@
 name: Integration (nightly)
 
-# Fase 0 — los tests #[ignore] corren contra DynamoDB Local + MinIO + ElasticMQ.
-# No bloquean PRs (necesitan contenedores); corren a diario y a demanda.
+# Ejecuta las suites completas de integración y E2E sobre el motor unificado .mbf.
 
 on:
   schedule:
@@ -30,30 +29,10 @@ jobs:
 
       - name: protoc (gRPC/tonic)
         run: |
-          # Repo apt de Chrome del runner: índices intermitentes con hash sum
-          # distinto. Se elimina en cualquier formato (.list/.sources) y se
-          # tolera el fallo de update: los índices de Ubuntu bastan para protoc.
           sudo rm -f /etc/apt/sources.list.d/google*chrome*
           sudo apt-get update -qq || true
           sudo apt-get install -y -qq protobuf-compiler
 
-      - name: Infra local (DynamoDB · MinIO · ElasticMQ)
-        run: make infra
-
-      # Los tests de integración dan por sentado las tablas locales
-      # (metri-eav/schemas/quota-local): en una DynamoDB Local fresca hay que
-      # crearlas. reset_local.py usa boto3 (no viene en el runner) y creds
-      # dummy (en CI no hay perfil AWS).
-      - name: Seed de tablas locales
-        run: |
-          python3 -m pip install --user boto3 \
-            || python3 -m pip install --user --break-system-packages boto3
-          AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
-            AWS_DEFAULT_REGION=us-east-1 make seed
-
-      - name: Tests de integración (#[ignore])
+      - name: Tests de integración y E2E (tests/*)
         run: make test-integration
 
-      - name: Logs de infra si algo falló
-        if: failure()
-        run: docker compose logs --tail 100

@@ -17,7 +17,7 @@ use ulid::Ulid;
 ///   - meta/updated_at: epoch ms de la última modificación
 ///   - meta/created_by: actor (user_id del token) que creó la entidad
 ///   - meta/updated_by: actor de la última modificación
-///   - entity/type: tipo de la entidad (ej. "asset")
+///   - entity/type: tipo de la entidad (ej. "generic_entity")
 ///   - tenant/id: tenant_id (inyectado siempre, no puede venir del cliente)
 pub fn enrich_datoms(
     datoms: &mut Vec<Datom>,

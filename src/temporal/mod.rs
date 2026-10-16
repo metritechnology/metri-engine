@@ -6,10 +6,10 @@
 //!
 //! Módulos:
 //! core       → constantes, conversiones ms↔s, shift_by_calendar, truncate_to_unit,
-//! parse_athena_ts, shift_period, duration_seconds
+//! shift_period, duration_seconds
 //! time_frame → resolve_time_frame (29 tipos del contrato TimeFrameContext)
 //! comparison → resolve_comparison_period, resolve_shortcut, smart_history_window
-//! adapters   → to_datalog_clauses (Datahike), to_honey_clause (Athena),
+//! adapters   → to_datalog_clauses (Datahike), to_honey_clause,
 //! to_bucket_fn (TIMESERIES in-memory)
 
 pub mod adapters;

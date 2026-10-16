@@ -224,45 +224,6 @@ pub fn truncate_to_unit(epoch_secs: i64, unit: CalUnit, tz: &str) -> i64 {
     }
 }
 
-// ── parse_athena_ts ───────────────────────────────────────────────────────────
-
-/// Parsea un valor de timestamp proveniente de Athena → epoch-segundos (i64).
-///
-/// Soporta:
-///   - Número i64/f64 → conversión directa (to_unixtime retorna f64)
-///   - '2026-03-04 00:00:00.000'     → LocalDateTime UTC → epoch-s
-///   - '2026-03-04 00:00:00.000 UTC' → strip timezone suffix
-///   - '2026-03-04'                  → LocalDate UTC start-of-day
-///   - epoch como string '1772582400' → i64::parse
-///
-/// Retorna None si no puede parsear.
-pub fn parse_athena_ts(s: &str) -> Option<i64> {
-    let s = s.trim().trim_end_matches(" UTC").trim();
-
-    // Intento 1: epoch numérico como string
-    if let Ok(n) = s.parse::<i64>() {
-        return Some(n);
-    }
-    if let Ok(f) = s.parse::<f64>() {
-        return Some(f as i64);
-    }
-
-    // Intento 2: LocalDateTime con diferentes precisiones de subsegundo
-    let datetime_fmts = ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%d %H:%M:%S"];
-    for fmt in &datetime_fmts {
-        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
-            return Some(ndt.and_utc().timestamp());
-        }
-    }
-
-    // Intento 3: LocalDate → inicio del día UTC
-    if let Ok(nd) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Some(nd.and_hms_opt(0, 0, 0)?.and_utc().timestamp());
-    }
-
-    None
-}
-
 // ── Helpers de período de comparación ────────────────────────────────────────
 
 /// Par de timestamps para un rango temporal.
@@ -349,14 +310,5 @@ mod tests {
         let result = chrono::DateTime::from_timestamp(trunc, 0).unwrap();
         assert_eq!(result.hour(), 0);
         assert_eq!(result.minute(), 0);
-    }
-
-    #[test]
-    fn parse_athena_ts_handles_all_formats() {
-        assert!(parse_athena_ts("1735689600").is_some());
-        assert!(parse_athena_ts("2026-01-01 00:00:00.000").is_some());
-        assert!(parse_athena_ts("2026-01-01 00:00:00.000 UTC").is_some());
-        assert!(parse_athena_ts("2026-01-01").is_some());
-        assert!(parse_athena_ts("not-a-date").is_none());
     }
 }

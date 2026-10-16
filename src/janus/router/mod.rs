@@ -5,7 +5,6 @@ pub mod translator;
 
 use crate::aegis::oltp::executor::OltpExecutor;
 use crate::codice::global as codice_global;
-use crate::domain::protocols::IQueryEngine;
 use crate::iop::core::IopContext;
 use crate::janus::cache::QueryCacheFrontend;
 use crate::janus::fbs::AnalyticsRequestT;
@@ -55,13 +54,12 @@ pub struct QueryChunk {
 // ── run_query_pipeline ────────────────────────────────────────────────────────
 
 /// Ejecuta el pipeline Read Path completo (8 pasos) en paralelo sobre cada sub-query.
-/// Retorna Vec<QueryChunk> — nunca lanza, los errores se encapsulan en chunks.
+/// Retorna `Vec<QueryChunk>` — nunca lanza, los errores se encapsulan en chunks.
 pub async fn run_query_pipeline(
     tenant_id: &str,
     queries: &HashMap<String, AnalyticsRequestT>,
     cedar_ctx: &CedarCtx,
     executor: &OltpExecutor,
-    athena_engine: Option<&Arc<dyn IQueryEngine>>,
     explain_plan: bool,
     cache: &Arc<QueryCacheFrontend>,
 ) -> Vec<QueryChunk> {
@@ -83,7 +81,6 @@ pub async fn run_query_pipeline(
         let qm = query_map.clone();
         let cedar = cedar_ctx.clone();
         let exec_clone = executor.clone();
-        let athena_clone = athena_engine.cloned();
         let cache_clone = Arc::clone(cache);
 
         handles.push(tokio::spawn(async move {
@@ -102,7 +99,6 @@ pub async fn run_query_pipeline(
                 &qm,
                 &cedar,
                 &exec_clone,
-                athena_clone.as_ref(),
                 QueryExecCtx {
                     explain_plan,
                     cache: &cache_clone,
@@ -145,13 +141,11 @@ pub async fn process_single_query(
     query_map: &AnalyticsRequestT,
     cedar_ctx: &CedarCtx,
     executor: &OltpExecutor,
-    athena_engine: Option<&Arc<dyn IQueryEngine>>,
     ctx: QueryExecCtx<'_>,
 ) -> Vec<QueryChunk> {
     let start_time = std::time::Instant::now();
     let entity_type = query_map.entity.as_deref().unwrap_or("unknown");
 
-    let _ = athena_engine;
     let registry = codice_global();
     let schema = registry
         .get_model(entity_type)

@@ -15,7 +15,7 @@
       "type": "array",
       "of": "object",
       "required": false,
-      "description": "Vector decodificador cuantitativo. Transmuta dimensiones MQTT crudas (numéricas) hacia medidas UN/CEFACT puras (ej. Celsius, Watts) sobre el Parquet.",
+      "description": "Vector decodificador cuantitativo. Transmuta dimensiones MQTT crudas (numéricas) hacia medidas UN/CEFACT puras (ej. Celsius, Watts) sobre el motor columnar MBF.",
       "schema": [
         {
           "name": "source_key",

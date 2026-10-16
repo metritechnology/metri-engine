@@ -511,17 +511,344 @@ impl IMbfObjectStore for S3MbfObjectStore {
 /// Composite key `(PK, SK_bytes)` inside a `.mbf` partition store.
 type PrimaryKey = (String, Vec<u8>);
 
-/// Wire-serializable snapshot of a `.mbf` partition (uses `Vec` of tuples so JSON/binary serialization never fails on tuple map keys).
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct MbfPartitionWireSnapshot {
+/// Native secondary index selector for `.mbf` partitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MbfSecondaryIndex {
+    PrimaryEavt,
+    Aevt,
+    Avet,
+    Vaet,
+}
+
+impl MbfSecondaryIndex {
+    pub fn from_index_name(name: Option<&str>) -> Self {
+        match name {
+            Some("GSI-AEVT") | Some("AEVT") => Self::Aevt,
+            Some("GSI-AVET") | Some("AVET") => Self::Avet,
+            Some("GSI-VAET") | Some("VAET") => Self::Vaet,
+            _ => Self::PrimaryEavt,
+        }
+    }
+}
+
+/// Typed write precondition replacing raw DynamoDB expression evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MbfWriteCondition {
+    Unconditional,
+    AppendOnlyLogUnique,
+    UniqueClaimKey,
+    UniqueEntitySelfOrUnclaimed,
+}
+
+impl MbfWriteCondition {
+    pub fn parse(expr: Option<&str>) -> Self {
+        match expr.map(str::trim) {
+            Some("attribute_not_exists(PK) AND attribute_not_exists(SK)") => {
+                Self::AppendOnlyLogUnique
+            }
+            Some("attribute_not_exists(PK)") => Self::UniqueClaimKey,
+            Some("attribute_not_exists(PK) OR eid = :self") => Self::UniqueEntitySelfOrUnclaimed,
+            _ => Self::Unconditional,
+        }
+    }
+}
+
+const MBF_PARTITION_SNAP_MAGIC: [u8; 8] = *b"MBFPART1";
+const MBF_ENTITY_SNAP_MAGIC: [u8; 8] = *b"MBFENTZ1";
+
+fn write_bytes_slice(buf: &mut Vec<u8>, bytes: &[u8]) {
+    buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    buf.extend_from_slice(bytes);
+}
+
+fn read_bytes_slice(bytes: &[u8], offset: &mut usize) -> DomainResult<Vec<u8>> {
+    if *offset + 4 > bytes.len() {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Truncated byte slice length in MBF binary payload",
+        ));
+    }
+    let mut len_buf = [0u8; 4];
+    len_buf.copy_from_slice(&bytes[*offset..*offset + 4]);
+    *offset += 4;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    if *offset + len > bytes.len() {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Truncated byte slice body in MBF binary payload",
+        ));
+    }
+    let out = bytes[*offset..*offset + len].to_vec();
+    *offset += len;
+    Ok(out)
+}
+
+fn write_str_binary(buf: &mut Vec<u8>, s: &str) {
+    write_bytes_slice(buf, s.as_bytes());
+}
+
+fn read_str_binary(bytes: &[u8], offset: &mut usize) -> DomainResult<String> {
+    let raw = read_bytes_slice(bytes, offset)?;
+    String::from_utf8(raw).map_err(|e| {
+        DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            format!("Invalid UTF-8 in MBF binary string: {e}"),
+        )
+    })
+}
+
+fn write_attribute_value_binary(buf: &mut Vec<u8>, val: &AttributeValue) {
+    match val {
+        AttributeValue::S(s) => {
+            buf.push(0x01);
+            write_str_binary(buf, s);
+        }
+        AttributeValue::N(n) => {
+            buf.push(0x02);
+            write_str_binary(buf, n);
+        }
+        AttributeValue::B(b) => {
+            buf.push(0x03);
+            write_bytes_slice(buf, b.as_ref());
+        }
+        AttributeValue::Bool(b) => {
+            buf.push(0x04);
+            buf.push(u8::from(*b));
+        }
+        AttributeValue::Null(n) => {
+            buf.push(0x05);
+            buf.push(u8::from(*n));
+        }
+    }
+}
+
+fn read_attribute_value_binary(bytes: &[u8], offset: &mut usize) -> DomainResult<AttributeValue> {
+    if *offset >= bytes.len() {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Unexpected EOF reading binary AttributeValue tag",
+        ));
+    }
+    let tag = bytes[*offset];
+    *offset += 1;
+    match tag {
+        0x01 => Ok(AttributeValue::S(read_str_binary(bytes, offset)?)),
+        0x02 => Ok(AttributeValue::N(read_str_binary(bytes, offset)?)),
+        0x03 => Ok(AttributeValue::B(Blob::new(read_bytes_slice(
+            bytes, offset,
+        )?))),
+        0x04 => {
+            if *offset >= bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Truncated Bool AttributeValue",
+                ));
+            }
+            let b = bytes[*offset] != 0;
+            *offset += 1;
+            Ok(AttributeValue::Bool(b))
+        }
+        0x05 => {
+            if *offset >= bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Truncated Null AttributeValue",
+                ));
+            }
+            let n = bytes[*offset] != 0;
+            *offset += 1;
+            Ok(AttributeValue::Null(n))
+        }
+        other => Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            format!("Unknown binary AttributeValue tag: 0x{other:02X}"),
+        )),
+    }
+}
+
+fn write_item_map_binary(buf: &mut Vec<u8>, item: &HashMap<String, AttributeValue>) {
+    let mut entries: Vec<(&String, &AttributeValue)> = item.iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    buf.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+    for (k, v) in entries {
+        write_str_binary(buf, k);
+        write_attribute_value_binary(buf, v);
+    }
+}
+
+fn read_item_map_binary(
+    bytes: &[u8],
+    offset: &mut usize,
+) -> DomainResult<HashMap<String, AttributeValue>> {
+    if *offset + 4 > bytes.len() {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Truncated binary item map length",
+        ));
+    }
+    let mut u32_buf = [0u8; 4];
+    u32_buf.copy_from_slice(&bytes[*offset..*offset + 4]);
+    *offset += 4;
+    let count = u32::from_le_bytes(u32_buf) as usize;
+    let mut item = HashMap::with_capacity(count);
+    for _ in 0..count {
+        let k = read_str_binary(bytes, offset)?;
+        let v = read_attribute_value_binary(bytes, offset)?;
+        item.insert(k, v);
+    }
+    Ok(item)
+}
+
+/// Pure binary wire snapshot of a `.mbf` partition (Zero-JSON).
+#[derive(Debug, Default, Clone)]
+pub struct MbfPartitionWireSnapshot {
     pub epoch_id: u64,
     pub items: Vec<(PrimaryKey, HashMap<String, AttributeValue>)>,
     pub quota_counters: Vec<((String, String), i64)>,
     pub quota_idem: Vec<((String, String), (String, i64))>,
 }
 
-/// Wire-serializable snapshot of a single entity (`metri-engine/tenants/<tenant>/entities/<type>/<id>.mbf`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl MbfPartitionWireSnapshot {
+    /// Encodes the partition snapshot into a 64-byte aligned binary payload (`"MBFPART1"` + LZ4 binary streams).
+    pub fn encode_binary(&self) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(128 + self.items.len() * 96);
+        raw.extend_from_slice(&self.epoch_id.to_le_bytes());
+        raw.extend_from_slice(&(self.items.len() as u32).to_le_bytes());
+        for ((pk, sk), item) in &self.items {
+            write_str_binary(&mut raw, pk);
+            write_bytes_slice(&mut raw, sk);
+            write_item_map_binary(&mut raw, item);
+        }
+        raw.extend_from_slice(&(self.quota_counters.len() as u32).to_le_bytes());
+        for ((t, q), val) in &self.quota_counters {
+            write_str_binary(&mut raw, t);
+            write_str_binary(&mut raw, q);
+            raw.extend_from_slice(&val.to_le_bytes());
+        }
+        raw.extend_from_slice(&(self.quota_idem.len() as u32).to_le_bytes());
+        for ((t, ik), (qid, delta)) in &self.quota_idem {
+            write_str_binary(&mut raw, t);
+            write_str_binary(&mut raw, ik);
+            write_str_binary(&mut raw, qid);
+            raw.extend_from_slice(&delta.to_le_bytes());
+        }
+
+        let compressed = lz4_flex::compress_prepend_size(&raw);
+        let mut out = Vec::with_capacity(16 + compressed.len() + 64);
+        out.extend_from_slice(&MBF_PARTITION_SNAP_MAGIC);
+        out.extend_from_slice(&(compressed.len() as u64).to_le_bytes());
+        out.extend_from_slice(&compressed);
+        crate::mbf::format::pad_to_64(&mut out);
+        out
+    }
+
+    /// Decodes a 64-byte aligned binary payload produced by [`Self::encode_binary`].
+    pub fn decode_binary(bytes: &[u8]) -> DomainResult<Self> {
+        if bytes.len() < 16 || bytes[0..8] != MBF_PARTITION_SNAP_MAGIC {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid MBFPartitionWireSnapshot magic (expected MBFPART1)",
+            ));
+        }
+        let mut len_buf = [0u8; 8];
+        len_buf.copy_from_slice(&bytes[8..16]);
+        let comp_len = u64::from_le_bytes(len_buf) as usize;
+        if 16 + comp_len > bytes.len() {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Truncated MBFPartitionWireSnapshot LZ4 stream",
+            ));
+        }
+        let raw = lz4_flex::decompress_size_prepended(&bytes[16..16 + comp_len]).map_err(|e| {
+            DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                format!("MBFPartitionWireSnapshot LZ4 error: {e}"),
+            )
+        })?;
+        if raw.len() < 12 {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Truncated MBFPartitionWireSnapshot header",
+            ));
+        }
+        let mut offset = 0usize;
+        let mut u64_buf = [0u8; 8];
+        let mut u32_buf = [0u8; 4];
+        u64_buf.copy_from_slice(&raw[offset..offset + 8]);
+        offset += 8;
+        let epoch_id = u64::from_le_bytes(u64_buf);
+
+        u32_buf.copy_from_slice(&raw[offset..offset + 4]);
+        offset += 4;
+        let item_count = u32::from_le_bytes(u32_buf) as usize;
+        let mut items = Vec::with_capacity(item_count);
+        for _ in 0..item_count {
+            let pk = read_str_binary(&raw, &mut offset)?;
+            let sk = read_bytes_slice(&raw, &mut offset)?;
+            let item = read_item_map_binary(&raw, &mut offset)?;
+            items.push(((pk, sk), item));
+        }
+
+        if offset + 4 > raw.len() {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Truncated quota_counters count",
+            ));
+        }
+        u32_buf.copy_from_slice(&raw[offset..offset + 4]);
+        offset += 4;
+        let qc_count = u32::from_le_bytes(u32_buf) as usize;
+        let mut quota_counters = Vec::with_capacity(qc_count);
+        for _ in 0..qc_count {
+            let t = read_str_binary(&raw, &mut offset)?;
+            let q = read_str_binary(&raw, &mut offset)?;
+            if offset + 8 > raw.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Truncated quota counter value",
+                ));
+            }
+            u64_buf.copy_from_slice(&raw[offset..offset + 8]);
+            offset += 8;
+            quota_counters.push(((t, q), i64::from_le_bytes(u64_buf)));
+        }
+
+        if offset + 4 > raw.len() {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Truncated quota_idem count",
+            ));
+        }
+        u32_buf.copy_from_slice(&raw[offset..offset + 4]);
+        offset += 4;
+        let qi_count = u32::from_le_bytes(u32_buf) as usize;
+        let mut quota_idem = Vec::with_capacity(qi_count);
+        for _ in 0..qi_count {
+            let t = read_str_binary(&raw, &mut offset)?;
+            let ik = read_str_binary(&raw, &mut offset)?;
+            let qid = read_str_binary(&raw, &mut offset)?;
+            if offset + 8 > raw.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Truncated quota idem delta",
+                ));
+            }
+            u64_buf.copy_from_slice(&raw[offset..offset + 8]);
+            offset += 8;
+            quota_idem.push(((t, ik), (qid, i64::from_le_bytes(u64_buf))));
+        }
+
+        Ok(Self {
+            epoch_id,
+            items,
+            quota_counters,
+            quota_idem,
+        })
+    }
+}
+
+/// Pure binary wire snapshot of a single entity (`metri-engine/tenants/<tenant>/entities/<type>/<id>.mbf`).
+#[derive(Debug, Clone)]
 pub struct MbfEntityWireSnapshot {
     pub tenant_id: String,
     pub entity_type: String,
@@ -530,8 +857,87 @@ pub struct MbfEntityWireSnapshot {
     pub datoms: Vec<(Vec<u8>, HashMap<String, AttributeValue>)>,
 }
 
-/// Encodes any payload slice into a genuine `.mbf` binary file:
-/// `[MbfHeader (64B, "MBFv0001") | MbfTenantCryptoSeal (64B) | payload | MbfFooterTrailer (64B, "MBFE")]`.
+impl MbfEntityWireSnapshot {
+    /// Encodes a single entity's datoms into a 64-byte aligned binary payload (`"MBFENTZ1"` + LZ4 binary datoms).
+    pub fn encode_binary(&self) -> Vec<u8> {
+        let mut raw = Vec::with_capacity(64 + self.datoms.len() * 64);
+        write_str_binary(&mut raw, &self.tenant_id);
+        write_str_binary(&mut raw, &self.entity_type);
+        write_str_binary(&mut raw, &self.entity_id);
+        raw.extend_from_slice(&self.epoch_id.to_le_bytes());
+        raw.extend_from_slice(&(self.datoms.len() as u32).to_le_bytes());
+        for (sk, item) in &self.datoms {
+            write_bytes_slice(&mut raw, sk);
+            write_item_map_binary(&mut raw, item);
+        }
+        let compressed = lz4_flex::compress_prepend_size(&raw);
+        let mut out = Vec::with_capacity(16 + compressed.len() + 64);
+        out.extend_from_slice(&MBF_ENTITY_SNAP_MAGIC);
+        out.extend_from_slice(&(compressed.len() as u64).to_le_bytes());
+        out.extend_from_slice(&compressed);
+        crate::mbf::format::pad_to_64(&mut out);
+        out
+    }
+
+    /// Decodes a binary entity snapshot produced by [`Self::encode_binary`].
+    pub fn decode_binary(bytes: &[u8]) -> DomainResult<Self> {
+        if bytes.len() < 16 || bytes[0..8] != MBF_ENTITY_SNAP_MAGIC {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid MbfEntityWireSnapshot magic (expected MBFENTZ1)",
+            ));
+        }
+        let mut len_buf = [0u8; 8];
+        len_buf.copy_from_slice(&bytes[8..16]);
+        let comp_len = u64::from_le_bytes(len_buf) as usize;
+        if 16 + comp_len > bytes.len() {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Truncated MbfEntityWireSnapshot LZ4 stream",
+            ));
+        }
+        let raw = lz4_flex::decompress_size_prepended(&bytes[16..16 + comp_len]).map_err(|e| {
+            DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                format!("MbfEntityWireSnapshot LZ4 error: {e}"),
+            )
+        })?;
+        let mut offset = 0usize;
+        let tenant_id = read_str_binary(&raw, &mut offset)?;
+        let entity_type = read_str_binary(&raw, &mut offset)?;
+        let entity_id = read_str_binary(&raw, &mut offset)?;
+        if offset + 12 > raw.len() {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Truncated MbfEntityWireSnapshot counts",
+            ));
+        }
+        let mut u64_buf = [0u8; 8];
+        u64_buf.copy_from_slice(&raw[offset..offset + 8]);
+        offset += 8;
+        let epoch_id = u64::from_le_bytes(u64_buf);
+        let mut u32_buf = [0u8; 4];
+        u32_buf.copy_from_slice(&raw[offset..offset + 4]);
+        offset += 4;
+        let count = u32::from_le_bytes(u32_buf) as usize;
+        let mut datoms = Vec::with_capacity(count);
+        for _ in 0..count {
+            let sk = read_bytes_slice(&raw, &mut offset)?;
+            let item = read_item_map_binary(&raw, &mut offset)?;
+            datoms.push((sk, item));
+        }
+        Ok(Self {
+            tenant_id,
+            entity_type,
+            entity_id,
+            epoch_id,
+            datoms,
+        })
+    }
+}
+
+/// Encodes any binary payload slice into a spec-compliant 64-byte aligned `.mbf` file (§3 & §4 of `03_MBF_BINARY_FORMAT_SPEC.md`):
+/// `[MbfHeader (64B, "METRIBIN") | MbfTenantCryptoSeal (64B) | 64B-aligned Payload | MbfDirectoryIndex (64B-aligned) | MbfFooterTrailer (64B, "MBFFOOTR")]`.
 pub fn encode_mbf_envelope(
     cell_id: u32,
     row_count: u64,
@@ -540,10 +946,26 @@ pub fn encode_mbf_envelope(
     entity_type: &str,
     payload: &[u8],
 ) -> DomainResult<Vec<u8>> {
-    use crate::mbf::format::{MbfFooterTrailer, MbfHeader, MbfTenantCryptoSeal};
+    use crate::mbf::format::{
+        compute_crc32c, pad_to_64, ColumnChunkDescriptor, MbfDirectoryIndex, MbfFooterTrailer,
+        MbfHeader, MbfTenantCryptoSeal, ZoneOffsetsTable, MBF_FLAG_CRYPTO_SEALED, MBF_FLAG_HAS_PAX,
+    };
 
     let now_ms = chrono::Utc::now().timestamp_millis();
-    let header = MbfHeader::new(cell_id, row_count, epoch_id, 0x4D42_4656_0001, 0, now_ms);
+    let tenant_hash = xxhash_rust::xxh64::xxh64(tenant_id.as_bytes(), 0x4D45_5452_4932_3032);
+    let schema_fp_lo = xxhash_rust::xxh64::xxh64(entity_type.as_bytes(), 0x01);
+    let schema_fp_hi = xxhash_rust::xxh64::xxh64(entity_type.as_bytes(), 0x02);
+
+    let header = MbfHeader::new(
+        cell_id,
+        row_count,
+        epoch_id,
+        tenant_hash,
+        schema_fp_lo as i64,
+        now_ms,
+    )
+    .with_flags(MBF_FLAG_HAS_PAX | MBF_FLAG_CRYPTO_SEALED);
+
     let seal = MbfTenantCryptoSeal::seal_block(
         b"METRI_VORTEX_MBF_SEAL_KEY_2026",
         tenant_id,
@@ -552,34 +974,52 @@ pub fn encode_mbf_envelope(
         payload,
     )?;
 
-    let mut seal_bytes = [0u8; 64];
-    seal_bytes[0..16].copy_from_slice(&seal.tenant_context_hash);
-    seal_bytes[16..28].copy_from_slice(&seal.nonce);
-    seal_bytes[28..32].copy_from_slice(&seal.crypto_flags.to_le_bytes());
-    seal_bytes[32..64].copy_from_slice(&seal.keyed_mac);
+    let mut padded_payload = payload.to_vec();
+    pad_to_64(&mut padded_payload);
 
-    let mut buf = Vec::with_capacity(128 + payload.len() + 64);
-    buf.extend_from_slice(&header.to_bytes());
-    buf.extend_from_slice(&seal_bytes);
-    buf.extend_from_slice(payload);
-
-    let mut hasher = Sha256::new();
-    hasher.update(&buf);
-    let digest = hasher.finalize();
-    let full_crc = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
-
-    let payload_end = (128 + payload.len()) as u64;
-    let footer = MbfFooterTrailer {
-        zone1_pax_offset: 128,
-        zone2_csr_offset: payload_end,
-        zone3_iot_offset: payload_end,
-        zone4_ledger_offset: payload_end,
-        zone5_synopsis_offset: payload_end,
-        zone5b_search_offset: payload_end,
-        zone6b_cov_offset: payload_end,
-        footer_magic: MbfFooterTrailer::FOOTER_MAGIC,
-        full_file_crc32: full_crc,
+    let zone1_offset = 128u64;
+    let zone1_len = padded_payload.len() as u64;
+    let directory = MbfDirectoryIndex {
+        zones: ZoneOffsetsTable {
+            zone1_pax_offset: zone1_offset,
+            zone1_pax_len: zone1_len,
+            ..ZoneOffsetsTable::default()
+        },
+        columns: vec![ColumnChunkDescriptor {
+            attr_id: (schema_fp_lo & 0xFFFF) as u16,
+            zone_id: 1,
+            value_tag: 2, // LZ4_RAW / PAX
+            row_count: row_count.min(u64::from(u32::MAX)) as u32,
+            byte_offset: zone1_offset,
+            byte_len: payload.len() as u64,
+            synopsis_offset: 0,
+        }],
     };
+    let dir_bytes = directory.to_bytes();
+
+    let mut buf = Vec::with_capacity(128 + padded_payload.len() + dir_bytes.len() + 64);
+    buf.extend_from_slice(&header.to_bytes());
+    buf.extend_from_slice(&seal.to_bytes());
+    buf.extend_from_slice(&padded_payload);
+
+    let directory_offset = buf.len() as u64;
+    let directory_len = dir_bytes.len() as u32;
+    buf.extend_from_slice(&dir_bytes);
+
+    let header_crc = compute_crc32c(&buf[0..64]);
+    let directory_crc = compute_crc32c(&dir_bytes);
+    let mut hmac_24 = [0u8; 24];
+    hmac_24.copy_from_slice(&seal.keyed_mac[0..24]);
+
+    let footer = MbfFooterTrailer::new(
+        directory_offset,
+        directory_len,
+        header_crc,
+        directory_crc,
+        schema_fp_hi as u32,
+        0,
+        hmac_24,
+    );
     buf.extend_from_slice(&footer.to_bytes());
     Ok(buf)
 }
@@ -588,29 +1028,129 @@ pub fn encode_mbf_envelope(
 pub fn decode_mbf_envelope(
     file_bytes: &[u8],
 ) -> DomainResult<(crate::mbf::format::MbfHeader, &[u8])> {
-    use crate::mbf::format::{MbfFooterTrailer, MbfHeader};
+    use crate::mbf::format::{compute_crc32c, MbfDirectoryIndex, MbfFooterTrailer, MbfHeader};
 
-    if file_bytes.len() < 192 {
+    if file_bytes.len() < 256 || file_bytes.len() % 64 != 0 {
         return Err(DomainError::mbf(
             ErrorCode::MbfCorrupt001,
-            format!("MBF file too small: {} bytes", file_bytes.len()),
+            format!(
+                "MBF file size invalid or not 64B-aligned: {} bytes",
+                file_bytes.len()
+            ),
         ));
     }
-    let header = MbfHeader::from_bytes(&file_bytes[0..64])?;
-    let footer = MbfFooterTrailer::from_bytes(&file_bytes[file_bytes.len() - 64..])?;
+    let header = MbfHeader::from_bytes(&file_bytes[0..64]).map_err(|e| {
+        DomainError::mbf(ErrorCode::MbfCorrupt001, format!("Header parse error: {e}"))
+    })?;
+    let footer =
+        MbfFooterTrailer::from_bytes(&file_bytes[file_bytes.len() - 64..]).map_err(|e| {
+            DomainError::mbf(ErrorCode::MbfCorrupt001, format!("Footer parse error: {e}"))
+        })?;
 
-    let mut hasher = Sha256::new();
-    hasher.update(&file_bytes[0..file_bytes.len() - 64]);
-    let digest = hasher.finalize();
-    let expected_crc = u32::from_le_bytes([digest[0], digest[1], digest[2], digest[3]]);
-    if footer.full_file_crc32 != expected_crc {
+    let expected_hdr_crc = compute_crc32c(&file_bytes[0..64]);
+    if footer.header_crc32c != expected_hdr_crc {
         return Err(DomainError::mbf(
             ErrorCode::MbfCorrupt001,
-            "Full file CRC32 mismatch in MBF footer",
+            "Header CRC32C mismatch in MBF footer",
         ));
     }
 
-    Ok((header, &file_bytes[128..file_bytes.len() - 64]))
+    let dir_start = footer.directory_offset as usize;
+    let dir_end = dir_start.saturating_add(footer.directory_len as usize);
+    if dir_start < 128 || dir_end > file_bytes.len() - 64 {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Invalid directory offset/len in MBF footer",
+        ));
+    }
+    let dir_slice = &file_bytes[dir_start..dir_end];
+    if compute_crc32c(dir_slice) != footer.directory_crc32c {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Directory CRC32C mismatch in MBF footer",
+        ));
+    }
+    let directory = MbfDirectoryIndex::from_bytes(dir_slice).map_err(|e| {
+        DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            format!("Directory index error: {e}"),
+        )
+    })?;
+    let payload_len = directory
+        .columns
+        .first()
+        .map_or(dir_start - 128, |c| c.byte_len as usize);
+    let payload_end = (128 + payload_len).min(dir_start);
+
+    Ok((header, &file_bytes[128..payload_end]))
+}
+
+/// Encodes a spec-compliant `.mbf.idx` index mirror file (§9.2 of `03_MBF_BINARY_FORMAT_SPEC.md`, magic `"MBFINDEX"`).
+pub fn encode_mbf_idx_mirror(
+    cell_id: u8,
+    epoch_id: u64,
+    row_count: u32,
+    tenant_id: &str,
+    search_zone_bytes: &[u8],
+    synopsis_zone_bytes: &[u8],
+) -> Vec<u8> {
+    use crate::mbf::format::{
+        compute_crc32c, pad_to_64, MbfDirectoryIndex, MbfFooterTrailer, MbfHeader,
+        ZoneOffsetsTable, MBF_FLAG_HAS_SEARCH, MBF_FLAG_HAS_SYNOPSES,
+    };
+
+    let tenant_hash = xxhash_rust::xxh64::xxh64(tenant_id.as_bytes(), 0x4D45_5452_4932_3032);
+    let header = MbfHeader::new_idx_mirror(
+        u32::from(cell_id),
+        u64::from(row_count),
+        epoch_id,
+        tenant_hash,
+        0x01,
+        1_700_000_000_000,
+    )
+    .with_flags(MBF_FLAG_HAS_SYNOPSES | MBF_FLAG_HAS_SEARCH);
+
+    let mut buf = Vec::with_capacity(192 + search_zone_bytes.len() + synopsis_zone_bytes.len());
+    buf.extend_from_slice(&header.to_bytes());
+
+    let z5_offset = buf.len() as u64;
+    buf.extend_from_slice(synopsis_zone_bytes);
+    pad_to_64(&mut buf);
+    let z5_len = (buf.len() as u64) - z5_offset;
+
+    let z5b_offset = buf.len() as u64;
+    buf.extend_from_slice(search_zone_bytes);
+    pad_to_64(&mut buf);
+    let z5b_len = (buf.len() as u64) - z5b_offset;
+
+    let dir = MbfDirectoryIndex {
+        zones: ZoneOffsetsTable {
+            zone5_synopsis_offset: z5_offset,
+            zone5_synopsis_len: z5_len,
+            zone5b_search_offset: z5b_offset,
+            zone5b_search_len: z5b_len,
+            ..ZoneOffsetsTable::default()
+        },
+        columns: Vec::new(),
+    };
+    let dir_bytes = dir.to_bytes();
+    let dir_offset = buf.len() as u64;
+    let dir_len = dir_bytes.len() as u32;
+    buf.extend_from_slice(&dir_bytes);
+
+    let hdr_crc = compute_crc32c(&buf[0..64]);
+    let dir_crc = compute_crc32c(&dir_bytes);
+    let footer = MbfFooterTrailer::new(
+        dir_offset,
+        dir_len,
+        hdr_crc,
+        dir_crc,
+        tenant_hash as u32,
+        0,
+        [0x49; 24],
+    );
+    buf.extend_from_slice(&footer.to_bytes());
+    buf
 }
 
 #[derive(Debug, Default, Clone)]
@@ -618,8 +1158,14 @@ struct MbfPartitionStore {
     epoch_id: u64,
     last_s3_etag: Option<String>,
     last_sync_ms: i64,
-    /// Primary index `(PK, SK_bytes) -> Item`.
+    /// Primary index `(PK, SK_bytes) -> Item` (EAVT).
     items: BTreeMap<PrimaryKey, HashMap<String, AttributeValue>>,
+    /// Native secondary BTree index for `AEVT` (`(ap, as_bytes, PrimaryKey)`).
+    aevt_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
+    /// Native secondary BTree index for `AVET` (`(vp, vs_bytes, PrimaryKey)`).
+    avet_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
+    /// Native secondary BTree index for `VAET` (`(rp, rs_bytes, PrimaryKey)`).
+    vaet_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
     /// Quota counters `(tenant_id, quota_id) -> current_usage`.
     quota_counters: HashMap<(String, String), i64>,
     /// Quota idempotency marks `(tenant_id, idem_key) -> (quota_id, delta)`.
@@ -627,6 +1173,58 @@ struct MbfPartitionStore {
 }
 
 impl MbfPartitionStore {
+    fn insert_indexed(&mut self, key: PrimaryKey, item: HashMap<String, AttributeValue>) {
+        if let Some(old_item) = self.items.remove(&key) {
+            self.unindex_item(&key, &old_item);
+        }
+        self.index_item(&key, &item);
+        self.items.insert(key, item);
+    }
+
+    fn remove_indexed(&mut self, key: &PrimaryKey) {
+        if let Some(old_item) = self.items.remove(key) {
+            self.unindex_item(key, &old_item);
+        }
+    }
+
+    fn index_item(&mut self, key: &PrimaryKey, item: &HashMap<String, AttributeValue>) {
+        if let Some((ap, as_bytes)) = extract_index_key(item, "ap", "as") {
+            self.aevt_index.insert((ap, as_bytes, key.clone()), ());
+        }
+        if let Some((vp, vs_bytes)) = extract_index_key(item, "vp", "vs") {
+            self.avet_index.insert((vp, vs_bytes, key.clone()), ());
+        }
+        if let Some((rp, rs_bytes)) = extract_index_key(item, "rp", "rs") {
+            self.vaet_index.insert((rp, rs_bytes, key.clone()), ());
+        }
+    }
+
+    fn unindex_item(&mut self, key: &PrimaryKey, item: &HashMap<String, AttributeValue>) {
+        if let Some((ap, as_bytes)) = extract_index_key(item, "ap", "as") {
+            self.aevt_index.remove(&(ap, as_bytes, key.clone()));
+        }
+        if let Some((vp, vs_bytes)) = extract_index_key(item, "vp", "vs") {
+            self.avet_index.remove(&(vp, vs_bytes, key.clone()));
+        }
+        if let Some((rp, rs_bytes)) = extract_index_key(item, "rp", "rs") {
+            self.vaet_index.remove(&(rp, rs_bytes, key.clone()));
+        }
+    }
+
+    fn rebuild_secondary_indexes(&mut self) {
+        self.aevt_index.clear();
+        self.avet_index.clear();
+        self.vaet_index.clear();
+        let keys_and_items: Vec<(PrimaryKey, HashMap<String, AttributeValue>)> = self
+            .items
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (k, item) in &keys_and_items {
+            self.index_item(k, item);
+        }
+    }
+
     fn to_wire_snapshot(&self) -> MbfPartitionWireSnapshot {
         MbfPartitionWireSnapshot {
             epoch_id: self.epoch_id,
@@ -653,6 +1251,7 @@ impl MbfPartitionStore {
         self.items = snap.items.into_iter().collect();
         self.quota_counters = snap.quota_counters.into_iter().collect();
         self.quota_idem = snap.quota_idem.into_iter().collect();
+        self.rebuild_secondary_indexes();
         self.last_s3_etag = Some(etag);
         self.last_sync_ms = now_ms;
     }
@@ -799,8 +1398,8 @@ impl MbfStorageClient {
                 }
             }
             MbfConditionalGet::Modified(payload) => {
-                if let Ok((_, raw_json)) = decode_mbf_envelope(&payload.bytes) {
-                    if let Ok(snap) = serde_json::from_slice::<MbfPartitionWireSnapshot>(raw_json) {
+                if let Ok((_, raw_bin)) = decode_mbf_envelope(&payload.bytes) {
+                    if let Ok(snap) = MbfPartitionWireSnapshot::decode_binary(raw_bin) {
                         if let Ok(mut guard) = part.write() {
                             guard.apply_wire_snapshot(snap, payload.etag, now_ms);
                         }
@@ -811,7 +1410,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
-    /// Flushes the updated `.mbf` binary partition and per-entity `.mbf` files to S3 (`s3://<bucket>/<prefix>/...`).
+    /// Flushes the updated `.mbf` binary partition and per-entity `.mbf` / `.mbf.idx` files to S3 (`s3://<bucket>/<prefix>/...`).
     async fn flush_to_s3(
         &self,
         table: &str,
@@ -831,13 +1430,8 @@ impl MbfStorageClient {
             let epoch = guard.epoch_id;
             let row_count = guard.items.len() as u64;
             let snap = guard.to_wire_snapshot();
-            let raw_json = serde_json::to_vec(&snap).map_err(|e| {
-                DomainError::mbf(
-                    ErrorCode::MbfCorrupt001,
-                    format!("Failed serializing MBF partition: {e}"),
-                )
-            })?;
-            let vortex_bin = encode_mbf_envelope(0, row_count, epoch, "system", table, &raw_json)?;
+            let raw_bin = snap.encode_binary();
+            let vortex_bin = encode_mbf_envelope(0, row_count, epoch, "system", table, &raw_bin)?;
 
             let mut extra_files: Vec<(String, Vec<u8>)> = Vec::new();
             for (tenant_id, entity_type, entity_id) in touched_entities {
@@ -857,25 +1451,38 @@ impl MbfStorageClient {
                     epoch_id: epoch,
                     datoms,
                 };
-                if let Ok(ent_json) = serde_json::to_vec(&ent_snap) {
-                    let cell_id =
-                        crate::mbf::tx::DomainCellRouter::resolve_cell_id(&entity_type, &entity_id);
-                    if let Ok(ent_bin) = encode_mbf_envelope(
-                        u32::from(cell_id),
-                        ent_snap.datoms.len() as u64,
+                let ent_payload_bin = ent_snap.encode_binary();
+                let cell_id =
+                    crate::mbf::tx::DomainCellRouter::resolve_cell_id(&entity_type, &entity_id);
+                if let Ok(ent_bin) = encode_mbf_envelope(
+                    u32::from(cell_id),
+                    ent_snap.datoms.len() as u64,
+                    epoch,
+                    &tenant_id,
+                    &entity_type,
+                    &ent_payload_bin,
+                ) {
+                    let entity_key = format!(
+                        "{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf"
+                    );
+                    let idx_key = format!(
+                        "{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf.idx"
+                    );
+                    let cell_key =
+                        format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf");
+                    let search_zone =
+                        crate::eav::fts::searcher::export_tenant_zone5b_bytes(&tenant_id);
+                    let idx_bin = encode_mbf_idx_mirror(
+                        cell_id,
                         epoch,
+                        ent_snap.datoms.len() as u32,
                         &tenant_id,
-                        &entity_type,
-                        &ent_json,
-                    ) {
-                        let entity_key = format!(
-                            "{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf"
-                        );
-                        let cell_key =
-                            format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf");
-                        extra_files.push((entity_key, ent_bin.clone()));
-                        extra_files.push((cell_key, ent_bin));
-                    }
+                        &search_zone,
+                        &[],
+                    );
+                    extra_files.push((entity_key, ent_bin.clone()));
+                    extra_files.push((idx_key, idx_bin));
+                    extra_files.push((cell_key, ent_bin));
                 }
             }
             (vortex_bin, extra_files)
@@ -911,7 +1518,7 @@ impl MbfStorageClient {
             let mut guard = part
                 .write()
                 .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
-            guard.items.insert(key, item);
+            guard.insert_indexed(key, item);
         }
         self.flush_to_s3(table, Vec::new()).await?;
         Ok(())
@@ -952,7 +1559,7 @@ impl MbfStorageClient {
                 .write()
                 .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
             let sk_vec = sk.map(|b| b.to_vec()).unwrap_or_default();
-            guard.items.remove(&(pk.to_string(), sk_vec));
+            guard.remove_indexed(&(pk.to_string(), sk_vec));
         }
         self.flush_to_s3(table, Vec::new()).await?;
         Ok(())
@@ -982,7 +1589,7 @@ impl MbfStorageClient {
                 .write()
                 .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
 
-            // 1. Validate intra-transaction duplicate keys and conditions before mutating
+            // 1. Validate intra-transaction duplicate keys and typed preconditions before mutating
             let mut staged: Vec<(PrimaryKey, HashMap<String, AttributeValue>)> =
                 Vec::with_capacity(items.len());
             let mut seen_keys = std::collections::HashSet::new();
@@ -1009,10 +1616,10 @@ impl MbfStorageClient {
                     ));
                 }
 
-                if let Some(cond) = &put.condition_expression {
-                    let existing = guard.items.get(&key);
-                    if cond == "attribute_not_exists(PK) AND attribute_not_exists(SK)" {
-                        if existing.is_some() {
+                match MbfWriteCondition::parse(put.condition_expression.as_deref()) {
+                    MbfWriteCondition::Unconditional => {}
+                    MbfWriteCondition::AppendOnlyLogUnique => {
+                        if guard.items.contains_key(&key) {
                             return Err(DomainError::eav(
                                 ErrorCode::EavTx004,
                                 format!(
@@ -1021,8 +1628,9 @@ impl MbfStorageClient {
                                 ),
                             ));
                         }
-                    } else if cond == "attribute_not_exists(PK)" {
-                        if existing.is_some() {
+                    }
+                    MbfWriteCondition::UniqueClaimKey => {
+                        if guard.items.contains_key(&key) {
                             return Err(DomainError::codice(
                                 ErrorCode::Cod001,
                                 format!(
@@ -1031,8 +1639,9 @@ impl MbfStorageClient {
                                 ),
                             ));
                         }
-                    } else if cond == "attribute_not_exists(PK) OR eid = :self" {
-                        if let Some(ex_item) = existing {
+                    }
+                    MbfWriteCondition::UniqueEntitySelfOrUnclaimed => {
+                        if let Some(ex_item) = guard.items.get(&key) {
                             let existing_eid = ex_item.get("eid").and_then(av_string);
                             let self_eid = put
                                 .expression_attribute_values
@@ -1051,7 +1660,7 @@ impl MbfStorageClient {
                     }
                 }
 
-                // Track touched entities from TX log items or entity_type datoms
+                // Track touched entities from TX log items or entity_type / entity/type datoms
                 if key.0.starts_with("T#") && key.0.ends_with("#TX") && key.0.len() > 5 {
                     let tid = key.0[2..key.0.len() - 3].to_string();
                     if let (Some(et), Some(eid)) = (
@@ -1061,7 +1670,11 @@ impl MbfStorageClient {
                         touched.push((tid, et.to_string(), eid.to_string()));
                     }
                 } else if let Some(ap) = put.item.get("ap").and_then(av_string) {
-                    if ap.ends_with(&entity_type_attr_suffix) {
+                    let is_entity_type_datom = ap.contains("#A#entity_type#")
+                        || ap.ends_with("#A#entity_type")
+                        || ap.ends_with("#A#entity/type")
+                        || ap.ends_with(&entity_type_attr_suffix);
+                    if is_entity_type_datom {
                         if let Some(et) = put.item.get("v").and_then(av_string) {
                             if let Some(rest) = key.0.strip_prefix("T#") {
                                 if let Some((tid, eid)) = rest.split_once("#E#") {
@@ -1079,9 +1692,9 @@ impl MbfStorageClient {
                 staged.push((key, put.item));
             }
 
-            // 2. Commit all items atomically
+            // 2. Commit all items atomically and update native secondary indexes
             for (key, item) in staged {
-                guard.items.insert(key, item);
+                guard.insert_indexed(key, item);
             }
             touched.sort();
             touched.dedup();
@@ -1110,7 +1723,7 @@ impl MbfStorageClient {
             for req in write_requests {
                 if let Some(put_req) = req.put_request {
                     if let Some(key) = extract_pk_sk(&put_req.item) {
-                        guard.items.insert(key, put_req.item);
+                        guard.insert_indexed(key, put_req.item);
                     }
                 }
             }
@@ -1142,67 +1755,80 @@ impl MbfStorageClient {
             .and_then(av_string)
             .unwrap_or_default();
 
+        let has_lte = key_condition.contains("<=");
+        let has_prefix = key_condition.contains("begins_with");
         let sk_max = expr_attr_values.get(":sk_max").and_then(av_bytes);
         let sk_prefix = expr_attr_values.get(":sk_prefix").and_then(av_bytes);
 
-        let (pk_attr, sk_attr) = match index_name {
-            None => ("PK", "SK"),
-            Some("GSI-AEVT") => ("ap", "as"),
-            Some("GSI-AVET") => ("vp", "vs"),
-            Some("GSI-VAET") => ("rp", "rs"),
-            Some(_) => ("PK", "SK"),
+        let initial_sk = if has_prefix {
+            sk_prefix.map_or_else(Vec::new, |p| p.to_vec())
+        } else {
+            Vec::new()
         };
 
         let mut matched: Vec<(Vec<u8>, HashMap<String, AttributeValue>)> = Vec::new();
 
-        if index_name.is_none() {
-            // Fast range scan over BTreeMap primary key (PK, SK)
-            let range_start = (target_pk.to_string(), Vec::new());
-            for ((item_pk, item_sk), item) in guard.items.range(range_start..) {
-                if item_pk != target_pk {
-                    break;
-                }
-                if key_condition.contains("<=") {
-                    if let Some(max_bytes) = sk_max {
-                        if item_sk.as_slice() > max_bytes {
-                            continue;
+        match MbfSecondaryIndex::from_index_name(index_name) {
+            MbfSecondaryIndex::PrimaryEavt => {
+                // O(log N) BTree range lookup on Primary EAVT index
+                let range_start = (target_pk.to_string(), initial_sk);
+                for ((item_pk, item_sk), item) in guard.items.range(range_start..) {
+                    if item_pk != target_pk {
+                        break;
+                    }
+                    if has_lte {
+                        if let Some(max_bytes) = sk_max {
+                            if item_sk.as_slice() > max_bytes {
+                                break;
+                            }
                         }
                     }
-                }
-                if key_condition.contains("begins_with") {
-                    if let Some(prefix_bytes) = sk_prefix {
-                        if !item_sk.starts_with(prefix_bytes) {
-                            continue;
+                    if has_prefix {
+                        if let Some(prefix_bytes) = sk_prefix {
+                            if !item_sk.starts_with(prefix_bytes) {
+                                break;
+                            }
                         }
                     }
+                    matched.push((item_sk.clone(), item.clone()));
                 }
-                matched.push((item_sk.clone(), item.clone()));
             }
-        } else {
-            for item in guard.items.values() {
-                let Some((idx_pk, idx_sk)) = extract_index_key(item, pk_attr, sk_attr) else {
-                    continue;
+            sec_idx => {
+                // O(log N) BTree range lookup on Secondary AEVT / AVET / VAET index (zero linear scan!)
+                let tree = match sec_idx {
+                    MbfSecondaryIndex::Aevt => &guard.aevt_index,
+                    MbfSecondaryIndex::Avet => &guard.avet_index,
+                    MbfSecondaryIndex::Vaet => &guard.vaet_index,
+                    MbfSecondaryIndex::PrimaryEavt => &guard.aevt_index,
                 };
-                if idx_pk != target_pk {
-                    continue;
-                }
-                if key_condition.contains("<=") {
-                    if let Some(max_bytes) = sk_max {
-                        if idx_sk.as_slice() > max_bytes {
-                            continue;
+                let range_start = (
+                    target_pk.to_string(),
+                    initial_sk,
+                    (String::new(), Vec::new()),
+                );
+                for ((idx_pk, idx_sk, primary_key), ()) in tree.range(range_start..) {
+                    if idx_pk != target_pk {
+                        break;
+                    }
+                    if has_lte {
+                        if let Some(max_bytes) = sk_max {
+                            if idx_sk.as_slice() > max_bytes {
+                                break;
+                            }
                         }
                     }
-                }
-                if key_condition.contains("begins_with") {
-                    if let Some(prefix_bytes) = sk_prefix {
-                        if !idx_sk.starts_with(prefix_bytes) {
-                            continue;
+                    if has_prefix {
+                        if let Some(prefix_bytes) = sk_prefix {
+                            if !idx_sk.starts_with(prefix_bytes) {
+                                break;
+                            }
                         }
                     }
+                    if let Some(item) = guard.items.get(primary_key) {
+                        matched.push((idx_sk.clone(), item.clone()));
+                    }
                 }
-                matched.push((idx_sk, item.clone()));
             }
-            matched.sort_by(|a, b| a.0.cmp(&b.0));
         }
 
         if !scan_forward {
@@ -1407,18 +2033,28 @@ impl MbfStorageClient {
         let pk_prefix = expr_attr_values.get(":pfx").and_then(av_string);
 
         let mut results = Vec::new();
-        for ((pk, _), item) in &guard.items {
-            if let Some(pfx) = pk_prefix {
+        if let Some(pfx) = pk_prefix {
+            let start = (pfx.to_string(), Vec::new());
+            for ((pk, _), item) in guard.items.range(start..) {
                 if !pk.starts_with(pfx) {
-                    continue;
+                    break;
                 }
-            }
-            if let Some(t) = target_tenant {
-                if item.get("tenant_id").and_then(av_string) != Some(t) {
-                    continue;
+                if let Some(t) = target_tenant {
+                    if item.get("tenant_id").and_then(av_string) != Some(t) {
+                        continue;
+                    }
                 }
+                results.push(item.clone());
             }
-            results.push(item.clone());
+        } else {
+            for item in guard.items.values() {
+                if let Some(t) = target_tenant {
+                    if item.get("tenant_id").and_then(av_string) != Some(t) {
+                        continue;
+                    }
+                }
+                results.push(item.clone());
+            }
         }
         Ok(results)
     }
@@ -1548,49 +2184,54 @@ mod tests {
         let mut item = HashMap::new();
         item.insert(
             "PK".to_string(),
-            AttributeValue::S("T#system#E#asset_01".to_string()),
+            AttributeValue::S("T#system#E#record_01".to_string()),
         );
         item.insert(
             "SK".to_string(),
             AttributeValue::B(Blob::new(vec![0, 1, 2, 3])),
         );
         item.insert(
-            "v".to_string(),
-            AttributeValue::S("Chiller Principal".to_string()),
+            "ap".to_string(),
+            AttributeValue::S("T#system#A#title".to_string()),
         );
-        store
-            .items
-            .insert(("T#system#E#asset_01".to_string(), vec![0, 1, 2, 3]), item);
+        item.insert("as".to_string(), AttributeValue::B(Blob::new(vec![10, 20])));
+        item.insert(
+            "v".to_string(),
+            AttributeValue::S("Record Principal".to_string()),
+        );
+        store.insert_indexed(("T#system#E#record_01".to_string(), vec![0, 1, 2, 3]), item);
         store
             .quota_counters
-            .insert(("system".to_string(), "asset".to_string()), 1);
+            .insert(("system".to_string(), "generic_record".to_string()), 1);
 
         let snap = store.to_wire_snapshot();
-        let raw_json = serde_json::to_vec(&snap).unwrap();
+        let raw_bin = snap.encode_binary();
         let mbf_bytes =
-            encode_mbf_envelope(2, 1, 7, "system", "metri-mbf-local", &raw_json).unwrap();
+            encode_mbf_envelope(2, 1, 7, "system", "metri-mbf-local", &raw_bin).unwrap();
 
-        assert_eq!(&mbf_bytes[0..8], b"MBFv0001");
-        assert_eq!(
-            &mbf_bytes[mbf_bytes.len() - 8..mbf_bytes.len() - 4],
-            b"MBFE"
-        );
+        assert_eq!(mbf_bytes.len() % 64, 0);
+        assert_eq!(&mbf_bytes[0..8], b"METRIBIN");
+        assert_eq!(&mbf_bytes[mbf_bytes.len() - 8..], b"MBFFOOTR");
+        // Verify zero JSON braces inside the binary envelope
+        assert!(!std::str::from_utf8(&mbf_bytes)
+            .unwrap_or("")
+            .contains("{\"epoch_id\""));
 
         let (header, decoded_payload) = decode_mbf_envelope(&mbf_bytes).unwrap();
-        assert_eq!(header.cell_id, 2);
+        assert_eq!(header.cell_id(), 2);
         assert_eq!(header.row_count, 1);
-        assert_eq!(header.epoch_id, 7);
+        assert_eq!(header.epoch_id(), 7);
 
-        let decoded_snap: MbfPartitionWireSnapshot =
-            serde_json::from_slice(decoded_payload).unwrap();
+        let decoded_snap = MbfPartitionWireSnapshot::decode_binary(decoded_payload).unwrap();
         let mut restored = MbfPartitionStore::default();
         restored.apply_wire_snapshot(decoded_snap, "etag-123".to_string(), 1000);
         assert_eq!(restored.epoch_id, 7);
         assert_eq!(restored.items.len(), 1);
+        assert_eq!(restored.aevt_index.len(), 1);
         assert_eq!(
             restored
                 .quota_counters
-                .get(&("system".to_string(), "asset".to_string())),
+                .get(&("system".to_string(), "generic_record".to_string())),
             Some(&1)
         );
     }

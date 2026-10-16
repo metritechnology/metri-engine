@@ -1,15 +1,16 @@
 //! metri-engine — the data engine of the metri CMMS/BI platform.
 //!
 //! Motor de datos 100 % Rust de la plataforma metri: una única Lambda ARM64
-//! (`provided.al2023`) que expone un servidor gRPC (Tonic) y combina en un
-//! solo proceso el canal transaccional y el analítico:
+//! (`provided.al2023`) que expone un servidor gRPC (Tonic) y unifica en un
+//! solo proceso el canal transaccional y el analítico sobre **Metri Vortex (`.mbf`)**:
 //!
-//! - **OLTP** — motor EAV inmutable sobre DynamoDB single-table (datoms
-//!   EAVT/AEVT/AVET/VAET, transacciones ACID, full-text search, jerarquías).
-//! - **OLAP** — data lake Parquet en S3 + Glue + Athena, `tenant_id` como
-//!   primera partición obligatoria.
+//! - **HTAP Unificado (`.mbf`)** — almacenamiento binario columnar y transaccional
+//!   sobre S3 con caché NVMe en `/tmp` y `MbfStorageClient` en memoria, con datoms
+//!   inmutables (EAVT/AEVT/AVET/VAET), transacciones ACID, full-text search y
+//!   ejecución analítica vectorizada sin compilación SQL ni motores externos.
 //! - **Seguridad** — autorización ABAC embebida (Cedar), aislamiento por
-//!   tenant fail-closed, censura zero-trust del tenant maestro.
+//!   tenant fail-closed, cifrado por tenant (AES-256-GCM + HKDF) y censura
+//!   zero-trust del tenant maestro.
 //! - **Cuotas** — ledger atómico por tenant con reservas para consumo de IA.
 //!
 //! # Architecture
@@ -17,9 +18,9 @@
 //! ```text
 //!   clientes gRPC (metri-app · system-bff · Metri Q Assistant)
 //!        │  interceptors: HMAC · sesión · Cedar (fail-closed)
-//!        ├─ janus ──────── read path ───▶ aegis (sql/oltp) ──▶ eav / Athena
-//!        ├─ janus_router ─ write path ──▶ eav (transact) ─▶ outbox ▶ eda
-//!        └─ iop ────────── ingesta ─────▶ cedar → quota → janus
+//!        ├─ janus ──────── read path ───▶ aegis (mbf/oltp) ──▶ eav / mbf (S3 + NVMe)
+//!        ├─ janus_router ─ write path ──▶ eav (transact) ───▶ mbf · outbox ▶ eda
+//!        └─ iop ────────── ingesta ─────▶ cedar → quota → janus_router
 //!              codice (esquemas SSOT) · quota (ledger) · infrastructure (AWS)
 //! ```
 //!
@@ -27,32 +28,32 @@
 //!
 //! | Módulo | Rol |
 //! |---|---|
+//! | [`mbf`] | Motor binario HTAP unificado Metri Vortex (`.mbf`): formato columnar, cifrado, S3 CAS y storage en memoria |
 //! | [`janus`] | Read path: queries → AST IR en FlatBuffers, agregaciones, multi-series, FTS |
-//! | [`janus_router`] | Write path: routing OLTP/OLAP, sagas, particionado, ULIDs |
-//! | [`aegis`] | Compilador SQL para Athena + executor OLTP + motor de fórmulas |
-//! | [`eav`] | Motor de almacenamiento EAV inmutable: datoms, transacciones, FTS |
+//! | [`janus_router`] | Write path: routing transaccional `.mbf`, sagas (`scheduled_job`), ULIDs monotónicos |
+//! | [`aegis`] | Ejecutores `.mbf`/OLTP sobre AST IR + motor de fórmulas sandboxeado |
+//! | [`eav`] | Motor de datoms inmutables sobre `.mbf`: `types`, `reader`, `writer` y `fts` |
 //! | [`codice`] | Registro SSOT de los modelos JSON (`config/models/`) |
-//! | [`cedar`] | Autorización ABAC (Cedar Policy 3), cache de principals |
+//! | [`cedar`] | Autorización ABAC (Cedar Policy), cache de principals |
 //! | [`quota`] | Cuotas atómicas por tenant: ledger, reservas IA, sweeper |
 //! | [`iop`] | Pipeline de ingesta por pasos: Cedar → Quota → Janus |
-//! | [`eda`] | Eventos: outbox, fault detection, routing EventBridge/SQS |
+//! | [`eda`] | Eventos: outbox, fault detection (`sherlog`), routing EventBridge/SQS |
+//! | [`grpc`] | Servidor gRPC/Tonic-Web (`MetriService`, `MoiraRoutingService`, `QuotaService`, `AgentConfigService`) |
 //! | [`temporal`] | Primitivas temporales timezone-aware |
-//! | [`infrastructure`] | Adaptadores AWS SDK + motor local de query S3 |
+//! | [`infrastructure`] | Adaptadores AWS SDK (S3, SQS, EventBridge), sesiones HMAC y auditoría |
 //! | [`application`] | Puertos de aplicación (DIP) |
 //! | [`domain`] | Errores canónicos, eventos de dominio, protocolos |
 //! | [`otel`] | Trazas OpenTelemetry (OTLP) |
 //!
 //! # Origin
 //!
-//! Port del stack Clojure anterior; cada módulo narra su mapeo pieza a pieza
-//! en su sección `# Origin`. Índice completo de la documentación en
-//! `docs/README.md`; decisiones de diseño en `docs/architecture/adr/`.
+//! Evolución nativa en Rust hacia el motor binario unificado `.mbf`.
+//! Índice de la documentación de referencia generada en `docs/reference/`.
 //!
 //! # Documentation
 //!
 //! `cargo doc --no-deps` genera la referencia completa y `cargo test --doc`
-//! ejecuta los ejemplos. Reglas de documentación:
-//! `docs/architecture/PLAN_DOCUMENTACION.md`.
+//! ejecuta los ejemplos.
 
 // Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
 // unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
@@ -71,19 +72,19 @@
 )]
 extern crate alloc;
 
-pub mod aegis; // FASE 3 — SQL/Datalog compiler
+pub mod aegis; // Ejecutores .mbf/OLTP y motor de fórmulas
 pub mod application; // Puertos de aplicación (DIP) — contratos metri-contracts
-pub mod cedar;
-pub mod codice;
-pub mod domain;
-pub mod eav;
-pub mod eda; // FASE 3 — Event-Driven Architecture
-pub mod grpc;
-pub mod infrastructure;
-pub mod iop; // FASE 2 ✓
-pub mod janus; // FASE 2 ✓ — Read Path (query pipeline)
-pub mod janus_router; // FASE 2 ✓ — Write Path (JanusRouter + channels)
+pub mod cedar; // Autorización ABAC Cedar Policy
+pub mod codice; // Registro SSOT de esquemas JSON
+pub mod domain; // Errores canónicos, eventos y puertos de dominio
+pub mod eav; // Datoms inmutables sobre MbfStorageClient (.mbf)
+pub mod eda; // Event-Driven Architecture (Moira + Outbox)
+pub mod grpc; // Servidor y servicios gRPC (Tonic)
+pub mod infrastructure; // Adaptadores AWS SDK y sesiones HMAC
+pub mod iop; // Pipeline de orquestación de escritura (Cedar → Quota → Janus)
+pub mod janus; // Read Path (query pipeline)
+pub mod janus_router; // Write Path (JanusRouter + OltpChannel)
 pub mod mbf; // Metri Vortex (.mbf) Unified HTAP Binary Engine
-pub mod otel;
+pub mod otel; // Trazas OpenTelemetry
 pub mod quota; // QuotaGuard — contador con autoridad + resolución de cuota vigente
-pub mod temporal; // FASE 3 ✓ — Primitivas temporales (port de metres.temporal.*) // FASE 3 — cedar-policy ABAC
+pub mod temporal; // Primitivas temporales timezone-aware

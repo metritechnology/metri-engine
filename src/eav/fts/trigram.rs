@@ -1,14 +1,14 @@
-//! Trigram index for full-text search.
+//! Trigram and romance phonetic index builder for `.mbf` full-text search (Zone 5B).
 //!
-//! Índice Trigram para Full-Text Search
-//! Blueprint: Metri EAV §V
+//! Índice Trigram y Fonético para Full-Text Search sobre `.mbf`.
+//! Blueprint: Metri EAV §V & `09_CODICE_METADATA_AND_FUZZY_MATH_ENGINE.md` §5
 
 use crate::codice::registry::AttributeDescriptor;
 use crate::eav::types::datom::Datom;
 use crate::mbf::storage::{AttributeValue, Blob, PutRequest, WriteRequest};
 
 /// Genera todos los trigrams únicos de un texto (lowercase, Unicode normalizado).
-/// "Bomba Hidráulica" → ["bom", "omb", "mba", "ba ", ...]
+/// `"Nodo Primario"` → `["  n", " no", "nod", "odo", ...]`
 pub fn generate_trigrams(text: &str) -> Vec<String> {
     // pg_trgm style padding: 2 spaces prefix, 1 space suffix
     let padded = format!("  {} ", text.to_lowercase());
@@ -19,9 +19,8 @@ pub fn generate_trigrams(text: &str) -> Vec<String> {
     trigrams
 }
 
-/// Construye los items del índice FTS-GSI para un datom con `fts: true`.
-/// PK = "T#<tenant>#FTS#<trigram>"  SK = entity_id
-/// Blueprint: §V.1 — "Al escribir un datom con fts: true, se generan trigrams"
+/// Construye los items del índice FTS para un datom con `fts: true` y sincroniza el documento en el índice híbrido MBF Zona 5B.
+/// Incluye tanto trigrams (`T#<tenant>#FTS#<trigram>`) como códigos fonéticos bilingües (`T#<tenant>#FTS#PHON#<code_fonetico>`).
 pub fn build_fts_items(datom: &Datom, attr: &AttributeDescriptor) -> Vec<WriteRequest> {
     if !attr.fts {
         return vec![];
@@ -32,10 +31,30 @@ pub fn build_fts_items(datom: &Datom, attr: &AttributeDescriptor) -> Vec<WriteRe
         _ => return vec![],
     };
 
-    generate_trigrams(&text)
+    // Sincronizar automáticamente con el índice híbrido MBF Zona 5B por tenant
+    crate::eav::fts::searcher::register_fts_document(&datom.tenant_id, &datom.entity_id, &text);
+
+    let mut keys: Vec<String> = generate_trigrams(&text)
         .into_iter()
-        .filter_map(|trigram| {
-            let pk = format!("T#{}#FTS#{}", datom.tenant_id, trigram);
+        .map(|trigram| format!("T#{}#FTS#{}", datom.tenant_id, trigram))
+        .collect();
+
+    for word in text.split(|c: char| !c.is_alphanumeric()) {
+        if word.len() >= 3 {
+            let phon =
+                crate::mbf::zones::hybrid_search::MbfHybridSearchIndex::encode_romance_phonetic(
+                    word,
+                );
+            if !phon.is_empty() {
+                keys.push(format!("T#{}#FTS#PHON#{}", datom.tenant_id, phon));
+            }
+        }
+    }
+    keys.sort();
+    keys.dedup();
+
+    keys.into_iter()
+        .filter_map(|pk| {
             let mut sk_bytes = Vec::new();
             sk_bytes.extend_from_slice(&datom.attr_id.to_be_bytes()); // 2 bytes attr_id
             sk_bytes.extend_from_slice(datom.entity_id.as_bytes());
@@ -57,10 +76,10 @@ mod tests {
 
     #[test]
     fn trigrams_basic() {
-        let t = generate_trigrams("bomba");
-        assert!(t.contains(&"bom".to_string()));
-        assert!(t.contains(&"omb".to_string()));
-        assert!(t.contains(&"mba".to_string()));
+        let t = generate_trigrams("motor");
+        assert!(t.contains(&"mot".to_string()));
+        assert!(t.contains(&"oto".to_string()));
+        assert!(t.contains(&"tor".to_string()));
     }
 
     #[test]

@@ -2,12 +2,10 @@
 //!
 //! [`transact`] orquesta; cada satélite es una decisión aislada y testeable:
 //!
-//! - [`datom_plan`] — planificador puro: payload → lista de datoms (retracts/asserts).
-//! - [`chunker`] — divide lotes sobre el límite de 100 items por transacción.
+//! - [`datom_plan`] — planificador puro: payload → lista de datoms (retracts/asserts) e items FTS.
 //! - [`enricher`] + [`system_attrs`] — atributos de sistema auto-generados.
-//! - [`constraints`] — unicidad por claim item DENTRO de la transacción.
+//! - [`constraints`] — unicidad y solapamiento temporal por claim item DENTRO de la transacción.
 //! - [`outbox`] — el evento nace en la misma transacción (patrón outbox).
-//! - [`fts_dispatch`] — el índice FTS se despacha DESPUÉS del commit.
 //! - [`cache_policy`] — invalidación de caches de lectura tras el commit.
 pub mod cache_policy;
 pub mod constraints;

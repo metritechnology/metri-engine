@@ -46,30 +46,6 @@ impl DatomValue {
         }
     }
 
-    /// Convierte el valor a su representación para almacenamiento en DynamoDB
-    /// como atributo de tipo String (columna `v`).
-    pub fn to_dynamo_string(&self) -> Option<String> {
-        match self {
-            DatomValue::Str(s) => Some(s.clone()),
-            DatomValue::Uuid(u) => Some(u.clone()),
-            DatomValue::Array(arr) => Some(serde_json::to_string(arr).unwrap_or_default()),
-            _ => None,
-        }
-    }
-
-    /// Convierte el valor a su representación para almacenamiento en DynamoDB
-    /// como atributo de tipo Number (columna `v`).
-    pub fn to_dynamo_number(&self) -> Option<String> {
-        match self {
-            DatomValue::Long(n) => Some(n.to_string()),
-            DatomValue::Double(d) => Some(d.to_string()),
-            DatomValue::BigInt(b) => Some(b.to_string()),
-            DatomValue::Instant(t) => Some(t.to_string()),
-            DatomValue::Ref(r) => Some(r.to_string()),
-            _ => None,
-        }
-    }
-
     /// Extrae como f64 para agregaciones numéricas.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
@@ -82,21 +58,20 @@ impl DatomValue {
     }
 }
 
-/// Datom — unidad atómica inmutable del sistema EAV.
-/// Mapea a una fila en la tabla principal (EAVT) de DynamoDB.
+/// Datom — unidad atómica inmutable del sistema EAV sobre `.mbf`.
+/// Mapea a una entrada indexada en el índice primario (EAVT) de la partición `.mbf`.
 ///
 /// Un Datom representa el hecho: "La entidad E tiene el atributo A con valor V
 /// a partir de la transacción T, y el hecho es op (true=assert, false=retract)."
 ///
-/// En el stack anterior/Datahike: `[E A V T op]`
-/// En DynamoDB: PK=T#<tenant>#E#<eid>, SK=`[attr_id_u16][tx_u64][op_u8]`
+/// En `.mbf`: `PK=T#<tenant>#E#<eid>`, SK=`[attr_id_u16][tx_u64][op_u8]`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Datom {
-    /// Tenant ID (aislamiento multitenant — parte del PK de DynamoDB)
+    /// Tenant ID (aislamiento multitenant — parte del PK de la partición `.mbf`)
     pub tenant_id: String,
     /// Entity ID (ULID string o UUID)
     pub entity_id: String,
-    /// Nombre del atributo (ej. "asset/name")
+    /// Nombre del atributo (ej. "entity/title")
     pub attr_name: String,
     /// ID numérico del atributo (u16) — índice en el AttributeRegistry
     pub attr_id: u16,
@@ -158,13 +133,13 @@ impl Datom {
         }
     }
 
-    /// Genera el Partition Key para la tabla principal (EAVT).
+    /// Genera el Partition Key para el índice primario (EAVT).
     /// Formato: "T#<tenant_id>#E#<entity_id>"
     pub fn eavt_pk(&self) -> String {
         format!("T#{}#E#{}", self.tenant_id, self.entity_id)
     }
 
-    /// Genera el Partition Key para el GSI-AEVT (por tipo de entidad/atributo).
+    /// Genera el Partition Key para el índice secundario AEVT (por tipo de entidad/atributo).
     /// Formato: "T#<tenant_id>#A#<attr_name>" (o segmentado por tipo si es entity_type)
     pub fn aevt_pk(&self) -> String {
         if self.attr_name == "entity_type" {
@@ -175,17 +150,13 @@ impl Datom {
         format!("T#{}#A#{}", self.tenant_id, self.attr_name)
     }
 
-    /// Genera el Partition Key para el GSI-AVET (por atributo + valor).
-    /// Formato: "T#<tenant_id>#AV#<attr_name>"
+    /// Genera el Partition Key para el índice secundario AVET (por atributo + valor).
+    /// Formato: "T#<tenant_id>#AV#<attr_name>" (100% aislado por tenant y agnóstico al dominio).
     pub fn avet_pk(&self) -> String {
-        let is_global = self.attr_name == "username"
-            || self.attr_name == "email"
-            || self.attr_name == "primary_phone";
-        let tenant = if is_global { "GLOBAL" } else { &self.tenant_id };
-        format!("T#{}#AV#{}", tenant, self.attr_name)
+        format!("T#{}#AV#{}", self.tenant_id, self.attr_name)
     }
 
-    /// Genera el Partition Key para el GSI-VAET (grafo inverso, solo para Ref).
+    /// Genera el Partition Key para el índice secundario VAET (grafo inverso, solo para Ref).
     /// Formato: "T#<tenant_id>#V#<ref_entity_id>"
     pub fn vaet_pk(&self) -> Option<String> {
         if let DatomValue::Ref(ref_eid) = &self.value {
@@ -201,32 +172,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_global_attributes_avet_pk() {
-        // Test standard local attribute
-        let local_datom = Datom::assert(
+    fn test_datom_index_partition_keys_are_tenant_isolated_and_domain_agnostic() {
+        let datom = Datom::assert(
             "tenant-1",
             "entity-123",
-            "first_name",
+            "custom_attr",
             100,
-            DatomValue::Str("John".to_string()),
+            DatomValue::Str("val".to_string()),
             1000,
         );
-        assert_eq!(local_datom.avet_pk(), "T#tenant-1#AV#first_name");
+        assert_eq!(datom.eavt_pk(), "T#tenant-1#E#entity-123");
+        assert_eq!(datom.aevt_pk(), "T#tenant-1#A#custom_attr");
+        assert_eq!(datom.avet_pk(), "T#tenant-1#AV#custom_attr");
+        assert_eq!(datom.vaet_pk(), None);
 
-        // Test global attributes
-        for global_attr in &["username", "email", "primary_phone"] {
-            let global_datom = Datom::assert(
-                "tenant-1",
-                "entity-123",
-                *global_attr,
-                200,
-                DatomValue::Str("value".to_string()),
-                1000,
-            );
-            assert_eq!(
-                global_datom.avet_pk(),
-                format!("T#GLOBAL#AV#{}", global_attr)
-            );
-        }
+        let ref_datom = Datom::assert(
+            "tenant-1",
+            "entity-123",
+            "parent_ref",
+            101,
+            DatomValue::Ref(42),
+            1000,
+        );
+        assert_eq!(ref_datom.vaet_pk(), Some("T#tenant-1#V#42".to_string()));
     }
 }

@@ -1094,6 +1094,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints: vec![],
+            ..Default::default()
         };
 
         let normal_model = EntityModel {
@@ -1111,6 +1112,7 @@ mod tests {
             disable_eda: false,
             shadow_sagas_mapping: None,
             constraints: vec![],
+            ..Default::default()
         };
 
         // Case 1: System model permits custom human-readable ID

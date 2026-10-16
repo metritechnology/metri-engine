@@ -1,22 +1,39 @@
-//! Zone 4 penny-exact financial accounting, FixedDecimal128, FIFO/LIFO/WAC/FEFO inventory, FX, NIC 16, and Merkle chain.
+//! Zone 4 penny-exact fixed-point accounting, FixedDecimal128, FIFO/LIFO/WAC/FEFO batch valuation, multi-currency FX table, straight-line amortization, and SHA-256 Merkle chain.
 
+use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::DomainResult;
+use crate::mbf::format::pad_to_64;
 
-/// Canonical fixed-point decimal (`i128` with scale $10^4$: `10_000` units = `1.0000` currency unit).
+const ZONE4_MAGIC: [u8; 8] = *b"MBFZ4FIN";
+
+/// Canonical fixed-point decimal (`i128`, `#[repr(transparent)]`, §4.5.1).
 /// Eliminates all IEEE 754 floating-point drift in financial and accounting ledgers.
 #[repr(transparent)]
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Pod,
+    Zeroable,
+    Serialize,
+    Deserialize,
 )]
 pub struct FixedDecimal128(pub i128);
 
 impl FixedDecimal128 {
     pub const SCALE: i128 = 10_000;
+    pub const MICRO_SCALE: i128 = 1_000_000;
     pub const ZERO: Self = Self(0);
 
     #[inline]
@@ -27,6 +44,18 @@ impl FixedDecimal128 {
     #[inline]
     pub const fn from_whole(units: i64) -> Self {
         Self((units as i128) * Self::SCALE)
+    }
+
+    /// Creates a `FixedDecimal128` from micro-units ($10^{-6}$, §4.5.1) using Banker's Rounding.
+    #[inline]
+    pub fn from_micro_units(micro_units: i128) -> Self {
+        Self::div_bankers_raw(micro_units, 100)
+    }
+
+    /// Converts this value into canonical micro-units ($10^{-6}$, §4.5.1).
+    #[inline]
+    pub const fn to_micro_units(self) -> i128 {
+        self.0 * 100
     }
 
     /// Creates a `FixedDecimal128` from integer units and basis points (`10^-4`).
@@ -136,10 +165,10 @@ impl FixedDecimal128 {
     }
 }
 
-/// Fenwick Tree / Prefix Sum array over `FixedDecimal128` for $O(\log N)$ updates and $O(1)$ range cash-flow queries.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Fenwick Tree / Prefix Sum array over `FixedDecimal128` for $O(\log N)$ updates and $O(1)$ range cash-flow queries (§4.5.2).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FenwickPrefixSum128 {
-    tree: Vec<i128>,
+    pub tree: Vec<i128>,
 }
 
 impl FenwickPrefixSum128 {
@@ -189,9 +218,13 @@ impl FenwickPrefixSum128 {
             FixedDecimal128(upper.0 - self.prefix_sum(start - 1).0)
         }
     }
+
+    pub fn as_raw_slice(&self) -> &[i128] {
+        &self.tree
+    }
 }
 
-/// Inventory cost valuation method (`FIFO`, `LIFO`, `WAC`/`PMP`, `FEFO`).
+/// Batch cost valuation method (`FIFO`, `LIFO`, `WAC`/`PMP`, `FEFO`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValuationMethod {
     Fifo,
@@ -200,20 +233,20 @@ pub enum ValuationMethod {
     Fefo,
 }
 
-/// 32-byte aligned active batch layer for inventory valuation (`#[repr(C, align(32))]`).
+/// 32-byte aligned active batch layer for resource/lot valuation (`#[repr(C, align(32))]`, §4.5.4).
 #[repr(C, align(32))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct ActiveBatchLayer {
     pub batch_id: u32,
-    pub part_row_id: u32,
+    pub resource_row_id: u32,
     pub received_ms: i64,
     pub expiry_ms: i64,
     pub remaining_qty_scaled: i64,
 }
 
-/// 64-byte aligned block checkpoint for `default_rollup: "last_value"` (`balance_after`, `running_average_cost`).
+/// 64-byte aligned block checkpoint for `default_rollup: "last_value"` (`balance_after`, `running_average_cost`, §4.5.3).
 #[repr(C, align(64))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Pod, Zeroable, Serialize, Deserialize)]
 pub struct FinancialBlockCheckpoint {
     pub closing_qty: FixedDecimal128,
     pub closing_book_value: FixedDecimal128,
@@ -222,29 +255,45 @@ pub struct FinancialBlockCheckpoint {
     pub reserved: i64,
 }
 
-/// Multi-method Inventory & Financial Ledger with SHA-256 Merkle Chain and Fiscal Lock.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// 64-byte aligned Cryptographic Double-Entry Audit Header (`#[repr(C, align(64))]`, §4.5.6).
+#[repr(C, align(64))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Pod, Zeroable, Serialize, Deserialize)]
+pub struct LedgerAuditHeader {
+    pub prev_block_sha256: [u8; 32],
+    pub block_merkle_root: [u8; 32],
+}
+
+/// Domain-agnostic Fixed-Point Double-Entry & Batch Valuation Ledger with SHA-256 Merkle Chain and Fiscal Lock (§4.5).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FinancialLedgerZone {
     pub fiscal_lock_epoch_ms: i64,
-    pub batches: Vec<(ActiveBatchLayer, FixedDecimal128)>, // (layer, unit_cost)
+    pub batches: Vec<(ActiveBatchLayer, FixedDecimal128)>, // (layer, unit_cost_base)
     pub checkpoints: Vec<FinancialBlockCheckpoint>,
+    pub audit_headers: Vec<LedgerAuditHeader>,
     pub merkle_chain_tip: [u8; 32],
-    pub fx_rates_to_cop: HashMap<String, FixedDecimal128>,
+    pub fx_rates_to_base: HashMap<String, FixedDecimal128>,
 }
 
 impl FinancialLedgerZone {
     pub fn new(fiscal_lock_epoch_ms: i64) -> Self {
-        let mut fx = HashMap::new();
-        fx.insert("COP".into(), FixedDecimal128::from_whole(1));
-        fx.insert("USD".into(), FixedDecimal128::from_whole(4200));
-        fx.insert("EUR".into(), FixedDecimal128::from_whole(4550));
         Self {
             fiscal_lock_epoch_ms,
             batches: Vec::new(),
             checkpoints: Vec::new(),
+            audit_headers: Vec::new(),
             merkle_chain_tip: [0u8; 32],
-            fx_rates_to_cop: fx,
+            fx_rates_to_base: HashMap::new(),
         }
+    }
+
+    /// Registers a conversion rate from `currency_code` into the ledger's functional base currency.
+    pub fn set_exchange_rate(
+        &mut self,
+        currency_code: impl Into<String>,
+        rate_to_base: FixedDecimal128,
+    ) {
+        self.fx_rates_to_base
+            .insert(currency_code.into(), rate_to_base);
     }
 
     /// Validates a double-entry accounting journal ($\sum \text{Debits} == \sum \text{Credits}$) and seals it into the SHA-256 Merkle chain.
@@ -272,55 +321,64 @@ impl FinancialLedgerZone {
             ));
         }
 
+        let prev_block_sha256 = self.merkle_chain_tip;
         let mut hasher = Sha256::new();
-        hasher.update(self.merkle_chain_tip);
+        hasher.update(prev_block_sha256);
         hasher.update(tx_epoch_ms.to_le_bytes());
         hasher.update(sum_d.to_le_bytes());
         let digest = hasher.finalize();
         self.merkle_chain_tip.copy_from_slice(&digest);
+        self.audit_headers.push(LedgerAuditHeader {
+            prev_block_sha256,
+            block_merkle_root: self.merkle_chain_tip,
+        });
         Ok(self.merkle_chain_tip)
     }
 
-    /// Converts an amount from `currency` into `COP` using the embedded ISO 4217 FX table.
-    pub fn convert_to_cop(
+    /// Converts an amount from `currency` into the ledger's functional base currency using the configured FX table.
+    pub fn convert_to_base_currency(
         &self,
         amount: FixedDecimal128,
         currency: &str,
     ) -> DomainResult<FixedDecimal128> {
-        let rate = self.fx_rates_to_cop.get(currency).copied().ok_or_else(|| {
-            DomainError::mbf(
-                ErrorCode::MbfLedgerUnbalanced001,
-                format!("Missing FX rate for currency '{currency}'"),
-            )
-        })?;
+        let rate = self
+            .fx_rates_to_base
+            .get(currency)
+            .copied()
+            .ok_or_else(|| {
+                DomainError::mbf(
+                    ErrorCode::MbfLedgerUnbalanced001,
+                    format!("Missing FX rate for currency '{currency}'"),
+                )
+            })?;
         Ok(amount.mul_bankers(rate))
     }
 
-    /// Receives an inventory batch and updates the `last_value` `FinancialBlockCheckpoint`.
+    /// Receives a batch layer and updates the `last_value` `FinancialBlockCheckpoint`.
     pub fn receive_batch(
         &mut self,
         batch_id: u32,
-        part_row_id: u32,
+        resource_row_id: u32,
         received_ms: i64,
         expiry_ms: i64,
         qty: FixedDecimal128,
-        unit_cost_cop: FixedDecimal128,
+        unit_cost_base: FixedDecimal128,
     ) -> DomainResult<FinancialBlockCheckpoint> {
         if received_ms <= self.fiscal_lock_epoch_ms {
             return Err(DomainError::mbf(
                 ErrorCode::MbfFiscalClosed001,
-                "Cannot receive inventory in a closed fiscal period",
+                "Cannot receive batch in a closed fiscal period",
             ));
         }
         self.batches.push((
             ActiveBatchLayer {
                 batch_id,
-                part_row_id,
+                resource_row_id,
                 received_ms,
                 expiry_ms,
                 remaining_qty_scaled: qty.0 as i64,
             },
-            unit_cost_cop,
+            unit_cost_base,
         ));
         let cp = self.compute_checkpoint(received_ms)?;
         self.checkpoints.push(cp);
@@ -328,7 +386,7 @@ impl FinancialLedgerZone {
     }
 
     /// Issues (consumes) `issue_qty` under the chosen `ValuationMethod` (`FIFO`, `LIFO`, `WAC`, `FEFO`),
-    /// returning `(cogs_cost_cop, updated_checkpoint)`.
+    /// returning `(cogs_cost_base, updated_checkpoint)`.
     pub fn issue_inventory(
         &mut self,
         tx_epoch_ms: i64,
@@ -338,7 +396,7 @@ impl FinancialLedgerZone {
         if tx_epoch_ms <= self.fiscal_lock_epoch_ms {
             return Err(DomainError::mbf(
                 ErrorCode::MbfFiscalClosed001,
-                "Cannot issue inventory in a closed fiscal period",
+                "Cannot issue batch in a closed fiscal period",
             ));
         }
         let current_cp = self.compute_checkpoint(tx_epoch_ms)?;
@@ -349,7 +407,6 @@ impl FinancialLedgerZone {
             ));
         }
 
-        // Order batch indices according to FIFO, LIFO, or FEFO
         let mut indices: Vec<usize> = (0..self.batches.len()).collect();
         match method {
             ValuationMethod::Fifo | ValuationMethod::Wac => {
@@ -404,24 +461,24 @@ impl FinancialLedgerZone {
         }
     }
 
-    /// Computes NIC 16 asset depreciation crossing calendar straight-line with IoT horometer usage.
-    pub fn compute_nic16_depreciation(
+    /// Computes proportional straight-line / usage-based amortization ($\frac{\text{Cost} - \text{Salvage}}{\text{TotalCapacity}} \times \text{ConsumedUnits}$) using Banker's Rounding.
+    pub fn compute_straight_line_amortization(
         acquisition_cost: FixedDecimal128,
         salvage_value: FixedDecimal128,
-        useful_hours_total: u64,
-        iot_hours_consumed: u64,
+        total_capacity_units: u64,
+        consumed_units: u64,
     ) -> DomainResult<FixedDecimal128> {
-        if useful_hours_total == 0 {
+        if total_capacity_units == 0 {
             return Err(DomainError::mbf(
                 ErrorCode::MbfLedgerUnbalanced001,
-                "Useful hours cannot be zero in NIC 16 depreciation",
+                "Total capacity units cannot be zero in straight-line amortization",
             ));
         }
-        let depreciable_base = acquisition_cost.checked_sub(salvage_value)?;
-        let capped_hours = iot_hours_consumed.min(useful_hours_total);
-        let ratio = FixedDecimal128::from_whole(capped_hours as i64)
-            .div_bankers(FixedDecimal128::from_whole(useful_hours_total as i64))?;
-        Ok(depreciable_base.mul_bankers(ratio))
+        let amortizable_base = acquisition_cost.checked_sub(salvage_value)?;
+        let capped_units = consumed_units.min(total_capacity_units);
+        let ratio = FixedDecimal128::from_whole(capped_units as i64)
+            .div_bankers(FixedDecimal128::from_whole(total_capacity_units as i64))?;
+        Ok(amortizable_base.mul_bankers(ratio))
     }
 
     fn compute_checkpoint(&self, epoch_ms: i64) -> DomainResult<FinancialBlockCheckpoint> {
@@ -447,6 +504,173 @@ impl FinancialLedgerZone {
             reserved: 0,
         })
     }
+
+    /// Encodes Zone 4 into a 64-byte aligned binary slab (§4.5):
+    /// `[Magic "MBFZ4FIN" (8B) | fiscal_lock_epoch_ms | merkle_chain_tip | ActiveBatchLayers (32B) | FinancialBlockCheckpoints (64B) | LedgerAuditHeaders (64B) | EmbeddedFxMatrix | Padding 64B]`.
+    pub fn encode_zone_binary(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&ZONE4_MAGIC);
+        buf.extend_from_slice(&self.fiscal_lock_epoch_ms.to_le_bytes());
+        buf.extend_from_slice(&self.merkle_chain_tip);
+
+        // 1. ActiveBatchLayers (32B each) + unit_cost (16B)
+        buf.extend_from_slice(&(self.batches.len() as u32).to_le_bytes());
+        for &(layer, cost) in &self.batches {
+            buf.extend_from_slice(bytemuck::bytes_of(&layer));
+            buf.extend_from_slice(&cost.0.to_le_bytes());
+        }
+
+        // 2. FinancialBlockCheckpoints (64B each)
+        buf.extend_from_slice(&(self.checkpoints.len() as u32).to_le_bytes());
+        for cp in &self.checkpoints {
+            buf.extend_from_slice(bytemuck::bytes_of(cp));
+        }
+
+        // 3. LedgerAuditHeaders (64B each)
+        buf.extend_from_slice(&(self.audit_headers.len() as u32).to_le_bytes());
+        for ah in &self.audit_headers {
+            buf.extend_from_slice(bytemuck::bytes_of(ah));
+        }
+
+        // 4. EmbeddedFxMatrix
+        let mut sorted_fx: Vec<(&String, &FixedDecimal128)> =
+            self.fx_rates_to_base.iter().collect();
+        sorted_fx.sort_by(|a, b| a.0.cmp(b.0));
+        buf.extend_from_slice(&(sorted_fx.len() as u32).to_le_bytes());
+        for (curr, rate) in sorted_fx {
+            let cb = curr.as_bytes();
+            buf.extend_from_slice(&(cb.len() as u16).to_le_bytes());
+            buf.extend_from_slice(cb);
+            buf.extend_from_slice(&rate.0.to_le_bytes());
+        }
+
+        pad_to_64(&mut buf);
+        buf
+    }
+
+    /// Decodes a Zone 4 `FinancialLedgerZone` from its 64-byte aligned binary slab.
+    pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
+        if bytes.len() < 48 || bytes[0..8] != ZONE4_MAGIC {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid Zone 4 Financial Ledger binary magic header",
+            ));
+        }
+        let mut cur = 8usize;
+        let fiscal_lock_epoch_ms = read_i64(bytes, &mut cur)?;
+        let mut merkle_chain_tip = [0u8; 32];
+        merkle_chain_tip.copy_from_slice(&bytes[cur..cur + 32]);
+        cur += 32;
+
+        let batch_count = read_u32(bytes, &mut cur)? as usize;
+        let mut batches = Vec::with_capacity(batch_count);
+        for _ in 0..batch_count {
+            if cur + 48 > bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Unexpected EOF reading ActiveBatchLayer in Zone 4",
+                ));
+            }
+            let layer: ActiveBatchLayer = bytemuck::pod_read_unaligned(&bytes[cur..cur + 32]);
+            cur += 32;
+            let mut cost_arr = [0u8; 16];
+            cost_arr.copy_from_slice(&bytes[cur..cur + 16]);
+            cur += 16;
+            batches.push((layer, FixedDecimal128(i128::from_le_bytes(cost_arr))));
+        }
+
+        let cp_count = read_u32(bytes, &mut cur)? as usize;
+        let mut checkpoints = Vec::with_capacity(cp_count);
+        for _ in 0..cp_count {
+            if cur + 64 > bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Unexpected EOF reading FinancialBlockCheckpoint in Zone 4",
+                ));
+            }
+            let cp: FinancialBlockCheckpoint = bytemuck::pod_read_unaligned(&bytes[cur..cur + 64]);
+            cur += 64;
+            checkpoints.push(cp);
+        }
+
+        let ah_count = read_u32(bytes, &mut cur)? as usize;
+        let mut audit_headers = Vec::with_capacity(ah_count);
+        for _ in 0..ah_count {
+            if cur + 64 > bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Unexpected EOF reading LedgerAuditHeader in Zone 4",
+                ));
+            }
+            let ah: LedgerAuditHeader = bytemuck::pod_read_unaligned(&bytes[cur..cur + 64]);
+            cur += 64;
+            audit_headers.push(ah);
+        }
+
+        let fx_count = read_u32(bytes, &mut cur)? as usize;
+        let mut fx_rates_to_base = HashMap::with_capacity(fx_count);
+        for _ in 0..fx_count {
+            if cur + 2 > bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Unexpected EOF reading FX currency length in Zone 4",
+                ));
+            }
+            let clen = u16::from_le_bytes([bytes[cur], bytes[cur + 1]]) as usize;
+            cur += 2;
+            if cur + clen + 16 > bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Unexpected EOF reading FX entry in Zone 4",
+                ));
+            }
+            let curr = String::from_utf8_lossy(&bytes[cur..cur + clen]).into_owned();
+            cur += clen;
+            let mut rate_arr = [0u8; 16];
+            rate_arr.copy_from_slice(&bytes[cur..cur + 16]);
+            cur += 16;
+            fx_rates_to_base.insert(curr, FixedDecimal128(i128::from_le_bytes(rate_arr)));
+        }
+
+        Ok(Self {
+            fiscal_lock_epoch_ms,
+            batches,
+            checkpoints,
+            audit_headers,
+            merkle_chain_tip,
+            fx_rates_to_base,
+        })
+    }
+}
+
+fn read_u32(bytes: &[u8], cur: &mut usize) -> DomainResult<u32> {
+    if *cur + 4 > bytes.len() {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Unexpected EOF reading u32 in Zone 4",
+        ));
+    }
+    let v = u32::from_le_bytes([
+        bytes[*cur],
+        bytes[*cur + 1],
+        bytes[*cur + 2],
+        bytes[*cur + 3],
+    ]);
+    *cur += 4;
+    Ok(v)
+}
+
+fn read_i64(bytes: &[u8], cur: &mut usize) -> DomainResult<i64> {
+    if *cur + 8 > bytes.len() {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Unexpected EOF reading i64 in Zone 4",
+        ));
+    }
+    let mut arr = [0u8; 8];
+    arr.copy_from_slice(&bytes[*cur..*cur + 8]);
+    *cur += 8;
+    Ok(i64::from_le_bytes(arr))
 }
 
 #[cfg(test)]
@@ -459,8 +683,9 @@ mod tests {
         assert_eq!(std::mem::align_of::<ActiveBatchLayer>(), 32);
         assert_eq!(std::mem::size_of::<FinancialBlockCheckpoint>(), 64);
         assert_eq!(std::mem::align_of::<FinancialBlockCheckpoint>(), 64);
+        assert_eq!(std::mem::size_of::<LedgerAuditHeader>(), 64);
+        assert_eq!(std::mem::align_of::<LedgerAuditHeader>(), 64);
 
-        // Allocate 100.0000 COP across 3 equal weights [1, 1, 1]: sum must be 100.0000 bit-exactly!
         let total = FixedDecimal128::from_whole(100);
         let parts = FixedDecimal128::allocate_hamilton(total, &[1, 1, 1]).unwrap();
         let sum: i128 = parts.iter().map(|p| p.0).sum();
@@ -471,9 +696,9 @@ mod tests {
     }
 
     #[test]
-    fn fifo_lifo_fefo_wac_inventory_valuation_and_fiscal_lock() {
+    fn fifo_lifo_fefo_wac_batch_valuation_fiscal_lock_and_binary_roundtrip() {
         let mut ledger = FinancialLedgerZone::new(1_000);
-        // Batch 1: 10 units @ 100 COP, received t=2000, expires t=9000
+        ledger.set_exchange_rate("BASE", FixedDecimal128::from_whole(1));
         ledger
             .receive_batch(
                 1,
@@ -484,7 +709,6 @@ mod tests {
                 FixedDecimal128::from_whole(100),
             )
             .unwrap();
-        // Batch 2: 10 units @ 200 COP, received t=3000, expires t=5000 (expires sooner!)
         ledger
             .receive_batch(
                 2,
@@ -495,30 +719,44 @@ mod tests {
                 FixedDecimal128::from_whole(200),
             )
             .unwrap();
+        ledger
+            .record_journal_entry(
+                3_500,
+                &[FixedDecimal128::from_whole(3000)],
+                &[FixedDecimal128::from_whole(3000)],
+            )
+            .unwrap();
 
-        // Issue 5 units under FIFO -> must take from Batch 1 @ 100 = 500 COP
-        let mut fifo_ledger = ledger.clone();
+        // Binary roundtrip test
+        let bin = ledger.encode_zone_binary();
+        assert_eq!(bin.len() % 64, 0);
+        assert_eq!(&bin[0..8], b"MBFZ4FIN");
+        let restored = FinancialLedgerZone::decode_zone_binary(&bin).unwrap();
+        assert_eq!(restored, ledger);
+
+        // Issue 5 units under FIFO -> must take from Batch 1 @ 100 = 500
+        let mut fifo_ledger = restored.clone();
         let (fifo_cogs, _) = fifo_ledger
             .issue_inventory(4_000, FixedDecimal128::from_whole(5), ValuationMethod::Fifo)
             .unwrap();
         assert_eq!(fifo_cogs, FixedDecimal128::from_whole(500));
 
-        // Issue 5 units under LIFO -> must take from Batch 2 @ 200 = 1000 COP
-        let mut lifo_ledger = ledger.clone();
+        // Issue 5 units under LIFO -> must take from Batch 2 @ 200 = 1000
+        let mut lifo_ledger = restored.clone();
         let (lifo_cogs, _) = lifo_ledger
             .issue_inventory(4_000, FixedDecimal128::from_whole(5), ValuationMethod::Lifo)
             .unwrap();
         assert_eq!(lifo_cogs, FixedDecimal128::from_whole(1000));
 
-        // Issue 5 units under FEFO -> Batch 2 expires at 5000 < 9000, so takes Batch 2 @ 200 = 1000 COP
-        let mut fefo_ledger = ledger.clone();
+        // Issue 5 units under FEFO -> Batch 2 expires at 5000 < 9000, so takes Batch 2 @ 200 = 1000
+        let mut fefo_ledger = restored.clone();
         let (fefo_cogs, _) = fefo_ledger
             .issue_inventory(4_000, FixedDecimal128::from_whole(5), ValuationMethod::Fefo)
             .unwrap();
         assert_eq!(fefo_cogs, FixedDecimal128::from_whole(1000));
 
-        // Issue 5 units under WAC (PMP) -> Average unit cost is (1000 + 2000)/20 = 150 -> 5 * 150 = 750 COP
-        let mut wac_ledger = ledger.clone();
+        // Issue 5 units under WAC (PMP) -> Average unit cost is (1000 + 2000)/20 = 150 -> 5 * 150 = 750
+        let mut wac_ledger = restored.clone();
         let (wac_cogs, cp) = wac_ledger
             .issue_inventory(4_000, FixedDecimal128::from_whole(5), ValuationMethod::Wac)
             .unwrap();

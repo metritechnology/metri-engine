@@ -3,11 +3,10 @@
 //! janus_router/ — Write Path del Metri Engine.
 //!
 //! Componentes:
-//! router        — JanusRouter + IWriteChannel (core.clj)
-//! ulid          — Generador ULID monotónico (ulid.clj)
-//! partition     — Estrategias S3/Hive (partition.clj)
-//! oltp_channel  — Canal ACID EAV/DynamoDB (channels/oltp.clj)
-//! olap_channel  — Canal Columnar Firehose (channels/olap.clj)
+//! - [`router`]       — `JanusRouter` + `IWriteChannel`
+//! - [`oltp_channel`] — Canal transaccional ACID sobre `.mbf` (`EavWriter`)
+//! - [`saga`]         — Orquestación de `scheduled_job` en la misma TX
+//! - [`ulid`]         — Generador ULID monotónico
 
 pub mod oltp_channel; // — .mbf ACID
 pub mod router;

@@ -196,7 +196,7 @@ mod tests {
         let mut attrs = HashMap::new();
         attrs.insert(
             "title".to_string(),
-            DatomValue::Str("Bomba hidraulica".to_string()),
+            DatomValue::Str("Recordatorio Mensual".to_string()),
         );
         attrs
     }
@@ -206,7 +206,7 @@ mod tests {
         registry();
         let datoms = generate_outbox_datoms(
             "t1",
-            "asset",
+            "reminder",
             "ent_1",
             TransactOp::Create,
             &attrs_de_ejemplo(),
@@ -215,13 +215,13 @@ mod tests {
             "usr_test",
         )
         .expect("sin errores de registry")
-        .expect("asset genera outbox");
+        .expect("reminder genera outbox");
 
         let detalle = datoms
             .iter()
             .find(|d| d.attr_name == "detail_type")
             .expect("la fila trae detail_type");
-        assert_eq!(detalle.value, DatomValue::Str("asset.create".into()));
+        assert_eq!(detalle.value, DatomValue::Str("reminder.create".into()));
 
         let payload = datoms
             .iter()
@@ -231,7 +231,7 @@ mod tests {
             DatomValue::Str(json) => {
                 let v: serde_json::Value = serde_json::from_str(json).expect("payload es JSON");
                 assert_eq!(v["id"], "ent_1", "el payload aplanado porta el id");
-                assert_eq!(v["title"], "Bomba hidraulica");
+                assert_eq!(v["title"], "Recordatorio Mensual");
             }
             otro => panic!("payload debería ser Str, fue {otro:?}"),
         }
@@ -256,7 +256,7 @@ mod tests {
         let detalle = |op| {
             let datoms = generate_outbox_datoms(
                 "t1",
-                "asset",
+                "reminder",
                 "ent_1",
                 op,
                 &attrs_de_ejemplo(),
@@ -276,8 +276,8 @@ mod tests {
                 otro => panic!("detail_type debería ser Str, fue {otro:?}"),
             }
         };
-        assert_eq!(detalle(TransactOp::Update), "asset.update");
-        assert_eq!(detalle(TransactOp::Delete), "asset.delete");
+        assert_eq!(detalle(TransactOp::Update), "reminder.update");
+        assert_eq!(detalle(TransactOp::Delete), "reminder.delete");
     }
 
     #[test]

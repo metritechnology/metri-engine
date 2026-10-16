@@ -55,23 +55,6 @@ pub fn oltp_key(
     )
 }
 
-/// Clave para el canal OLAP: SQL compilado (ya contiene tenant + ABAC por el
-/// gate `ast_contains_tenant`) + base Glue + ventana resuelta + tenant.
-pub fn olap_key(sql: &str, glue_database: &str, window: &TimeRange, tenant_id: &str) -> String {
-    let canonical = serde_json::json!({
-        "ns":     CACHE_KEY_VERSION,
-        "ch":     "olap",
-        "tenant": tenant_id,
-        "sql":    sql,
-        "db":     glue_database,
-        "win":    window_json(window),
-    });
-    format!(
-        "{ENTRY_KEY_PREFIX}#{CACHE_KEY_VERSION}#{}",
-        digest(&canonical)
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,18 +99,6 @@ mod tests {
         assert_ne!(
             oltp_key(&ast, &window(1, 2), "fp1", "t1"),
             oltp_key(&ast, &window(1, 2), "fp2", "t1")
-        );
-    }
-
-    #[test]
-    fn olap_key_changes_with_sql() {
-        assert_ne!(
-            olap_key("SELECT 1", "db", &window(1, 2), "t1"),
-            olap_key("SELECT 2", "db", &window(1, 2), "t1")
-        );
-        assert_eq!(
-            olap_key("SELECT 1", "db", &window(1, 2), "t1"),
-            olap_key("SELECT 1", "db", &window(1, 2), "t1")
         );
     }
 }

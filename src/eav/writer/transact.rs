@@ -15,7 +15,7 @@ use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::mbf::storage::{AttributeValue, Blob, Put, TransactWriteItem};
+use crate::mbf::storage::{AttributeValue, Blob, MbfStorageClient, Put, TransactWriteItem};
 use ulid::Ulid;
 
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -24,7 +24,6 @@ use crate::eav::types::{
     encoding::{build_aevt_sk, build_avet_sk, build_eavt_sk, build_vaet_sk},
 };
 use crate::eav::writer::cache_policy::CachePolicy;
-use crate::infrastructure::dynamodb::DynamoClient;
 
 /// Opciones internas de una transacción. Las variantes públicas (`transact`,
 /// `transact_with_projections`, `transact_bulk_deferred`, `transact_with_tx`)
@@ -108,11 +107,6 @@ pub struct TransactResult {
 
 /// Deduplica datoms por clave de almacenamiento (entity, attr_id, tx, op),
 /// conservando la ÚLTIMA ocurrencia — el intento final de la transacción.
-///
-/// Hoy el enriquecimiento meta puede re-emitir datoms que el payload ya trajo;
-/// sin dedup, `TransactWriteItems` rechazaría la transacción entera por claves
-/// duplicadas (AWS real lo hace; DynamoDB Local las colapsa en silencio, que es
-/// peor: el despliegue descubre el bug en producción).
 fn dedup_datoms_por_sk(datoms: Vec<Datom>) -> Vec<Datom> {
     let mut index: HashMap<(String, u16, u64, bool), usize> = HashMap::new();
     let mut unique: Vec<Datom> = Vec::with_capacity(datoms.len());
@@ -134,28 +128,21 @@ fn dedup_datoms_por_sk(datoms: Vec<Datom>) -> Vec<Datom> {
     unique
 }
 
-/// EavWriter — motor de escritura ACID.
-/// Reemplaza d/transact de Datahike con TransactWriteItems de DynamoDB.
+/// EavWriter — motor de escritura ACID sobre MBF Storage.
 #[derive(Clone)]
 pub struct EavWriter {
-    ddb: Arc<DynamoClient>,
+    ddb: Arc<MbfStorageClient>,
     table: String,
     /// Planificadores de restricciones, inyectados.
-    ///
-    /// El escritor compone items; los planificadores saben de invariantes.
-    /// Ninguno de los dos conoce al otro, así que una restricción nueva no
-    /// obliga a tocar el camino de escritura, y un test puede inyectar los
-    /// suyos sin DynamoDB.
     planners: Arc<Vec<Box<dyn crate::eav::writer::constraints::ConstraintPlanner>>>,
     /// Invalidador de la caché de consultas (puerto de dominio, DIP). `None`
-    /// cuando la caché está apagada. Un bump por commit — D4 de
-    /// PLAN_CACHE_JANUS_DYNAMODB.md — best-effort: el TTL es la cota dura.
+    /// cuando la caché está apagada.
     query_cache_invalidator:
         Option<std::sync::Arc<dyn crate::domain::protocols::QueryCacheInvalidator>>,
 }
 
 impl EavWriter {
-    pub fn new(ddb: Arc<DynamoClient>, table: impl Into<String>) -> Self {
+    pub fn new(ddb: Arc<MbfStorageClient>, table: impl Into<String>) -> Self {
         Self::with_planners(
             ddb,
             table,
@@ -165,7 +152,7 @@ impl EavWriter {
 
     /// Compone el escritor con planificadores explícitos.
     pub fn with_planners(
-        ddb: Arc<DynamoClient>,
+        ddb: Arc<MbfStorageClient>,
         table: impl Into<String>,
         planners: Arc<Vec<Box<dyn crate::eav::writer::constraints::ConstraintPlanner>>>,
     ) -> Self {
@@ -195,12 +182,12 @@ impl EavWriter {
         }
     }
 
-    /// Obtiene referencia al cliente DynamoDB (útil para inyección de dependencias)
-    pub fn client(&self) -> &Arc<DynamoClient> {
+    /// Obtiene referencia al cliente de almacenamiento MBF
+    pub fn client(&self) -> &Arc<MbfStorageClient> {
         &self.ddb
     }
 
-    /// Obtiene el nombre de la tabla de DynamoDB
+    /// Obtiene el nombre lógico de la tabla
     pub fn table(&self) -> &str {
         &self.table
     }
@@ -553,29 +540,12 @@ impl EavWriter {
             }
         }
 
-        // DynamoDB limita TransactWriteItems a 100. Por encima, transact_write()
-        // fragmenta y la atomicidad se pierde EN SILENCIO: si el segundo chunk
-        // falla, el primero ya está confirmado. Con proyecciones ese umbral se
-        // cruza con facilidad, así que fallamos de forma explícita en vez de
-        // escribir a medias.
-        if !opts.projections.is_empty() && write_items.len() > 100 {
-            return Err(DomainError::eav(
-                ErrorCode::Eav001,
-                format!(
-                    "TX compuesta excede el límite atómico de DynamoDB: {} items ({} raíz + {} proyecciones). Divida el composite o reduzca atributos.",
-                    write_items.len(),
-                    payload.entity_type,
-                    opts.projections.len()
-                ),
-            ));
-        }
-
         tracing::info!(
             "[EAV] transact entity_id={entity_id} tx_id={tx_id} datoms={} ACID_items={} FTS_items={}",
             datom_count, write_items.len(), fts_write_requests.len()
         );
 
-        // 6. Ejecutar capa ACID (síncrona)
+        // 6. Ejecutar capa ACID (síncrona y atómica en MBF storage)
         self.ddb.transact_write(write_items).await?;
 
         // 7. Invalidar caches de lectura de TODAS las entidades escritas — la
@@ -744,8 +714,6 @@ impl EavWriter {
         let mut map = HashMap::new();
         // Zero-redundancy: tid, eid, a, tx, y op están empaquetados en PK y SK.
 
-        // Valor según el tipo del DatomValue
-        // [BLUEPRINT: §II.3 — "v = tipo nativo DynamoDB según el tipo del attr"]
         match &datom.value {
             DatomValue::Str(s) | DatomValue::Uuid(s) => {
                 map.insert("v".to_string(), AttributeValue::S(s.clone()));
@@ -844,23 +812,8 @@ impl EavWriter {
 
             if should_update {
                 if op {
-                    let val = match item.get("v") {
-                        Some(AttributeValue::S(s)) => DatomValue::Str(s.clone()),
-                        Some(AttributeValue::N(n)) => {
-                            if let Ok(i) = n.parse::<i64>() {
-                                DatomValue::Long(i)
-                            } else {
-                                n.parse::<f64>()
-                                    .ok()
-                                    .map(DatomValue::Double)
-                                    .unwrap_or(DatomValue::Null)
-                            }
-                        }
-                        Some(AttributeValue::Bool(b)) => DatomValue::Bool(*b),
-                        Some(AttributeValue::B(_)) => DatomValue::Bytes(vec![]),
-                        Some(AttributeValue::Null(_)) => DatomValue::Null,
-                        _ => DatomValue::Null,
-                    };
+                    let val = crate::eav::reader::pull::extract_datom_value(&item)
+                        .unwrap_or(DatomValue::Null);
                     active.insert(attr_name, (attr_id, tx_id, val));
                 } else {
                     active.remove(&attr_name);

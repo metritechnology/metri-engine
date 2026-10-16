@@ -3,6 +3,10 @@
   "is_system": true,
   "track_history": false,
   "partition_strategy": "YYYY-MM-DD",
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": ["quantity_change", "running_balance", "running_financial_value"]
+  },
   "attributes": [
     {
       "name": "movement_id",
@@ -39,21 +43,52 @@
       "name": "quantity_change",
       "type": "decimal",
       "is_measure": true,
-      "default_rollup": "sum"
+      "default_rollup": "sum",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "poisson",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "running_balance",
       "type": "decimal",
       "description": "Calculated running total stock for this part/location at this explicit timestamp.",
       "is_measure": true,
-      "default_rollup": "last_value"
+      "default_rollup": "last_value",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "running_financial_value",
       "type": "decimal",
       "description": "Calculated value of stock for this part/location (average cost method).",
       "is_measure": true,
-      "default_rollup": "last_value"
+      "default_rollup": "last_value",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "pareto",
+        "outlier_sigma_threshold": 4.0,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": false,
+        "enable_benford_audit": true,
+        "enable_weibull_mle": false
+      }
     }
   ]
 }

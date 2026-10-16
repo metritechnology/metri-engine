@@ -206,12 +206,11 @@ async fn test_group_cycle_prevention() {
         janus_router,
         query_cache: Arc::new(crate::janus::cache::QueryCacheFrontend::disabled()),
         audit_interceptor,
-        athena_engine: None,
         moira_emitter: None,
         valkey_store,
         principal_cache,
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        olap_channel: Arc::clone(&oltp_channel),
+        telemetry_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
         invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
@@ -380,12 +379,11 @@ async fn test_batch_transaction_granular_security() {
         janus_router,
         query_cache: Arc::new(crate::janus::cache::QueryCacheFrontend::disabled()),
         audit_interceptor,
-        athena_engine: None,
         moira_emitter: None,
         valkey_store,
         principal_cache,
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        olap_channel: Arc::clone(&oltp_channel),
+        telemetry_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
         invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
@@ -481,12 +479,11 @@ async fn test_invalid_role_grant_format() {
         janus_router,
         query_cache: Arc::new(crate::janus::cache::QueryCacheFrontend::disabled()),
         audit_interceptor,
-        athena_engine: None,
         moira_emitter: None,
         valkey_store,
         principal_cache,
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        olap_channel: Arc::clone(&oltp_channel),
+        telemetry_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
         invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
@@ -670,12 +667,11 @@ async fn test_tenant_and_quota_master_crud_gates() {
         janus_router,
         query_cache: Arc::new(crate::janus::cache::QueryCacheFrontend::disabled()),
         audit_interceptor,
-        athena_engine: None,
         moira_emitter: None,
         valkey_store,
         principal_cache,
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        olap_channel: Arc::clone(&oltp_channel),
+        telemetry_channel: Arc::clone(&oltp_channel),
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
         invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
@@ -1325,19 +1321,18 @@ async fn servicio_composite() -> MetriGrpcService {
     let principal_cache = Arc::new(crate::cedar::InMemoryPrincipalCache::new(
         std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
     ));
-    let olap_channel = Arc::clone(&oltp_channel);
+    let telemetry_channel = Arc::clone(&oltp_channel);
     MetriGrpcService::new(crate::grpc::service::ServiceDeps {
         oltp_executor: oltp_exec,
         eav_writer,
         janus_router,
         query_cache: Arc::new(crate::janus::cache::QueryCacheFrontend::disabled()),
         audit_interceptor,
-        athena_engine: None,
         moira_emitter: None,
         valkey_store,
         principal_cache,
         fault_notifier: Arc::new(crate::iop::sherlog::NoopFaultNotifier),
-        olap_channel,
+        telemetry_channel,
         export_storage: None,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::DevBypass,
         invalidation_bus: std::sync::Arc::new(crate::cedar::BroadcastBus::new(100)),
@@ -1465,13 +1460,10 @@ async fn composite_valida_la_estructura_antes_de_escribir() {
 
 /// Puerta 9 (Fase 9): raíz + hijos en una sola transacción; el reintento del
 /// mismo composite lo rechaza la constraint unique y no duplica nada.
-/// Exige DynamoDB Local: `make test-integration`.
 #[tokio::test]
-#[ignore]
 async fn composite_instancia_procedure_y_campos_atomicamente() {
     static CODICE: std::sync::Once = std::sync::Once::new();
     CODICE.call_once(|| {
-        std::env::set_var("DYNAMODB_ENDPOINT", "http://localhost:8000");
         std::env::set_var("AWS_ACCESS_KEY_ID", "test");
         std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
         std::env::set_var("AWS_REGION", "us-east-1");
@@ -1483,31 +1475,20 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
     });
 
     let service = servicio_composite().await;
-    let tenant = format!("tnt_ctest_{}", ulid::Ulid::new());
 
     // Semilla: procedure PUBLISHED (requisito del ref_state).
     let proc_id = format!("01PROC{}", &ulid::Ulid::new().to_string()[..8]);
-    let semilla = crate::grpc::pb::TransactionRequest {
-        tenant_id: tenant.clone(),
-        entity_type: "procedure_template".to_string(),
-        entity_id: proc_id.clone(),
-        action: 1,
-        payload: Some(translator::value_to_struct(&json!({
+    let wo_id = format!("01WO{}", &ulid::Ulid::new().to_string()[..8]);
+    let semilla = vec![entidad_create(
+        "procedure_template",
+        &proc_id,
+        json!({
             "name": "Inspección de planta",
-            "lifecycle_state": "PUBLISHED",
-            "max_score": 100
-        }))),
-        suppress_events: true,
-    };
-    let mut req_semilla = tonic::Request::new(semilla);
-    req_semilla
-        .metadata_mut()
-        .insert("test-tenant", tenant.clone().parse().unwrap());
-    req_semilla
-        .metadata_mut()
-        .insert("test-user", "usr_001".parse().unwrap());
+            "lifecycle_state": "PUBLISHED"
+        }),
+    )];
     service
-        .transact(req_semilla)
+        .composite_transact(peticion_compuesta(semilla))
         .await
         .expect("la semilla procedure debe crear");
 
@@ -1520,7 +1501,7 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
             "work_order_procedure",
             &wop_id,
             json!({
-                "work_order_id": "01WO",
+                "work_order_id": wo_id,
                 "procedure_template_id": proc_id,
                 "name": "Inspección de planta",
                 "procedure_order": 1,
@@ -1567,7 +1548,7 @@ async fn composite_instancia_procedure_y_campos_atomicamente() {
             "work_order_procedure",
             &wop_id,
             json!({
-                "work_order_id": "01WO",
+                "work_order_id": wo_id,
                 "procedure_template_id": proc_id,
                 "name": "Inspección de planta",
                 "procedure_order": 1,

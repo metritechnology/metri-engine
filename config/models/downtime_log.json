@@ -3,6 +3,15 @@
   "is_system": false,
   "track_history": true,
   "partition_strategy": "YYYY-MM-DD",
+  "survival_profile": {
+    "enabled": true,
+    "subject_ref_field": "asset_id",
+    "event_epoch_field": "start_time",
+    "recovery_epoch_field": "end_time",
+    "restoration_duration_field": "duration_minutes",
+    "fit_weibull_3p": true,
+    "enable_kaplan_meier_censoring": true
+  },
   "attributes": [
     {
       "name": "asset_id",
@@ -34,13 +43,33 @@
       "name": "duration_minutes",
       "type": "decimal",
       "is_measure": true,
-      "default_rollup": "sum"
+      "default_rollup": "sum",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "weibull",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true
+      }
     },
     {
       "name": "reason",
       "type": "string",
       "fts": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms",
+        "bm25_field_boost": 2.0
+      }
     }
   ]
 }

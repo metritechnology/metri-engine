@@ -7,7 +7,7 @@
 //! 1. load-schema  (Códice O(1))
 //! 2. validate-payload (validator Rust)
 //! 3. Pre-checks: write_path_locked, is_system_seeded
-//! 4. Resolve engine (oltp | olap)
+//! 4. Resolve engine (.mbf unificado)
 //! 5. Enriquecer ctx — tenant_id inyectado (NUNCA del cliente)
 //! 6. Despachar al canal del registry
 
@@ -24,7 +24,7 @@ use crate::janus::validator;
 
 // ── Trait del canal de escritura ─────────────────────────────────────────────
 
-/// Canal de escritura para una entidad (OLTP | OLAP).
+/// Canal de escritura para una entidad sobre el motor transaccional/columnar `.mbf`.
 #[async_trait::async_trait]
 pub trait IWriteChannel: Send + Sync {
     async fn route(&self, ctx: IopContext) -> Result<Value, DomainError>;

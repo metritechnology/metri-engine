@@ -61,39 +61,14 @@ pub fn insert_aevt_scan_cache_entry(
     );
 }
 
-use crate::mbf::storage::{AttributeValue, Blob};
-
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::fts::trigram::generate_trigrams;
 use crate::eav::types::datom::DatomValue;
-use crate::eav::types::encoding::build_avet_sk;
-use crate::infrastructure::dynamodb::{av_string, DynamoClient};
-
-/// Estrategia de índice legacy — mantenida para compatibilidad con aegis/oltp/compiler.rs.
-#[derive(Debug, Clone)]
-pub enum IndexStrategy {
-    /// Obtiene un entity_id directamente desde EAVT
-    PointLookup(String),
-    /// Escaneo por Atributo-Entidad usando GSI-AEVT
-    AevtScan { attr_id: u16 },
-    /// Búsqueda por valor exacto usando GSI-AVET
-    AvetLookup { attr_id: u16, value: DatomValue },
-    /// Múltiples filtros que requieren intersección paralela de AVET
-    ParallelAvetIntersection(Vec<(u16, DatomValue)>),
-}
-
-/// Plan físico de ejecución de consulta para EAV.
-#[derive(Debug, Clone)]
-pub struct QueryExecutionPlan {
-    pub tenant_id: String,
-    pub entity_type: String,
-    pub strategy: IndexStrategy,
-    pub pull_pattern: Vec<String>,
-    pub limit: u64,
-}
+use crate::eav::types::encoding::avet_sk_prefix;
+use crate::mbf::storage::{av_string, AttributeValue, Blob, MbfStorageClient};
 
 /// Plan nativo del PlanSelector (usa attr_name en lugar de attr_id numérico).
-/// Se genera desde `janus::plan_selector::EavQueryPlan` y ejecuta contra DynamoDB.
+/// Se genera desde `janus::plan_selector::EavQueryPlan` y ejecuta contra MBF storage.
 #[derive(Debug, Clone)]
 pub enum NativeQueryPlan {
     PointLookup {
@@ -120,55 +95,16 @@ pub enum NativeQueryPlan {
 
 #[derive(Clone)]
 pub struct EavQueryExecutor {
-    ddb: Arc<DynamoClient>,
+    ddb: Arc<MbfStorageClient>,
     table: String,
 }
 
 impl EavQueryExecutor {
-    pub fn new(ddb: Arc<DynamoClient>, table: impl Into<String>) -> Self {
+    pub fn new(ddb: Arc<MbfStorageClient>, table: impl Into<String>) -> Self {
         EavQueryExecutor {
             ddb,
             table: table.into(),
         }
-    }
-
-    // ── API principal: plan legacy (aegis/oltp/compiler) ────────────────────
-
-    /// Ejecuta el plan de consulta legacy y devuelve los IDs de entidades.
-    pub async fn execute_plan(
-        &self,
-        plan: &QueryExecutionPlan,
-    ) -> Result<Vec<String>, DomainError> {
-        debug!("[EAV] Executing legacy plan: {:?}", plan.strategy);
-
-        let entity_ids = match &plan.strategy {
-            IndexStrategy::PointLookup(ulid) => {
-                vec![ulid.clone()]
-            }
-            IndexStrategy::AevtScan { .. } => {
-                // Usar AevtScan nativo con entity_type del plan
-                self.execute_aevt_scan_by_type(&plan.tenant_id, &plan.entity_type, plan.limit)
-                    .await?
-            }
-            IndexStrategy::AvetLookup { attr_id: _, value } => {
-                // Usar el attr_name del pull_pattern como heurística
-                let attr_name = plan.pull_pattern.first().cloned().unwrap_or_default();
-                self.execute_avet_single(&plan.tenant_id, &attr_name, value)
-                    .await?
-            }
-            IndexStrategy::ParallelAvetIntersection(filters) => {
-                // Convertir attr_id numérico a attr_name (best-effort)
-                let named: Vec<(String, DatomValue)> = filters
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (_, v))| (format!("attr_{i}"), v.clone()))
-                    .collect();
-                self.execute_avet_intersection(&plan.tenant_id, &named)
-                    .await?
-            }
-        };
-
-        Ok(entity_ids.into_iter().take(plan.limit as usize).collect())
     }
 
     // ── API nativa (janus/router.rs a través de execute_native_plan) ─────────
@@ -200,7 +136,7 @@ impl EavQueryExecutor {
                 tenant_id,
                 entity_type,
             } => {
-                // Pasamos limit=None para que la paginación automática obtenga TODOS los ids.
+                // Pasamos limit=0 para que la paginación automática obtenga TODOS los ids.
                 // El limit real de paginación se aplica en el executor (offset/page_limit).
                 self.execute_aevt_scan_by_type(tenant_id, entity_type, 0)
                     .await
@@ -218,50 +154,24 @@ impl EavQueryExecutor {
         attr_name: &str,
         value: &DatomValue,
     ) -> Result<Vec<String>, DomainError> {
-        let is_global =
-            attr_name == "username" || attr_name == "email" || attr_name == "primary_phone";
-        let target_tenant = if is_global { "GLOBAL" } else { tenant };
-
         let mut ids = self
-            .execute_avet_single_for_tenant(target_tenant, attr_name, value)
+            .execute_avet_single_with_type_tolerance(tenant, attr_name, value)
             .await?;
 
-        // Tolerancia de tipo textual: el mismo valor escrito como Str (tag
-        // 0x04) o Uuid (0x05) comparte forma — el AVET prefix no. Los filtros
-        // del gRPC llegan como Str aunque el attr se almacene como Uuid
-        // (parent_entity_ref, referencias): sin este reintento, la query
-        // devuelve cero filas para un datom que existe (hallazgo del
-        // pm-orchestrator: inventario de trampas siempre vacío).
-        if ids.is_empty() {
-            let alt = match value {
-                DatomValue::Str(s) => Some(DatomValue::Uuid(s.clone())),
-                DatomValue::Uuid(s) => Some(DatomValue::Str(s.clone())),
-                _ => None,
-            };
-            if let Some(alt) = alt {
-                ids = self
-                    .execute_avet_single_for_tenant(target_tenant, attr_name, &alt)
-                    .await?;
-            }
-        }
-
-        if ids.is_empty()
-            && tenant == "system"
-            && !is_global
-            && (attr_name == "username" || attr_name == "email")
-        {
-            // Buscar en todos los otros tenants registrados
-            let tenants = match self.execute_aevt_scan_by_type("system", "tenant", 0).await {
-                Ok(t) => t,
-                Err(_) => vec![],
-            };
+        let master_tenant = &crate::domain::config::engine_config().master_tenant_id;
+        if ids.is_empty() && tenant == master_tenant {
+            // Si la consulta parte del tenant maestro, buscar de forma agnóstica en los tenants registrados
+            let tenants = self
+                .execute_aevt_scan_by_type(master_tenant, "tenant", 0)
+                .await
+                .unwrap_or_default();
 
             for t in tenants {
-                if t == "system" {
+                if t == *master_tenant {
                     continue;
                 }
                 if let Ok(tenant_ids) = self
-                    .execute_avet_single_for_tenant(&t, attr_name, value)
+                    .execute_avet_single_with_type_tolerance(&t, attr_name, value)
                     .await
                 {
                     if !tenant_ids.is_empty() {
@@ -275,6 +185,35 @@ impl EavQueryExecutor {
         Ok(ids)
     }
 
+    async fn execute_avet_single_with_type_tolerance(
+        &self,
+        tenant: &str,
+        attr_name: &str,
+        value: &DatomValue,
+    ) -> Result<Vec<String>, DomainError> {
+        let mut ids = self
+            .execute_avet_single_for_tenant(tenant, attr_name, value)
+            .await?;
+
+        // Tolerancia de tipo textual: el mismo valor escrito como Str (tag
+        // 0x04) o Uuid (0x05) comparte forma — el AVET prefix no. Los filtros
+        // del gRPC llegan como Str aunque el attr se almacene como Uuid.
+        if ids.is_empty() {
+            let alt = match value {
+                DatomValue::Str(s) => Some(DatomValue::Uuid(s.clone())),
+                DatomValue::Uuid(s) => Some(DatomValue::Str(s.clone())),
+                _ => None,
+            };
+            if let Some(alt) = alt {
+                ids = self
+                    .execute_avet_single_for_tenant(tenant, attr_name, &alt)
+                    .await?;
+            }
+        }
+
+        Ok(ids)
+    }
+
     async fn execute_avet_single_for_tenant(
         &self,
         tenant: &str,
@@ -282,26 +221,17 @@ impl EavQueryExecutor {
         value: &DatomValue,
     ) -> Result<Vec<String>, DomainError> {
         let pk = format!("T#{tenant}#AV#{attr_name}");
-
-        // Construir el SK prefix para el valor buscado
-        let sk_prefix = build_avet_sk(value, ""); // sin entity_id = solo value prefix
-                                                  // Truncar al prefix sin el entity_id (últimos bytes son entity_id)
-                                                  // Para begins_with necesitamos solo [type_tag][value_bytes]
-        let sk_prefix_truncated = if sk_prefix.len() > 1 {
-            sk_prefix[..sk_prefix.len().saturating_sub(0)].to_vec()
-        } else {
-            sk_prefix
-        };
+        let sk_prefix = avet_sk_prefix(value);
 
         let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();
         attr_names.insert("#pk".to_string(), "vp".to_string());
-        attr_names.insert("#sk".to_string(), "vs".to_string()); // Mapear Sort Key indexada
+        attr_names.insert("#sk".to_string(), "vs".to_string());
 
         attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
         attr_values.insert(
             ":sk_prefix".to_string(),
-            AttributeValue::B(Blob::new(sk_prefix_truncated)),
+            AttributeValue::B(Blob::new(sk_prefix)),
         );
 
         let raw = self
@@ -318,13 +248,6 @@ impl EavQueryExecutor {
             .await
             .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("AVET single err: {e:?}")))?;
 
-        // Post-filter en memoria por valor exacto (seguridad contra colisiones de truncamiento)
-        // y DEDUPLICACIÓN por entidad con el datom más reciente: GSI-AVET guarda
-        // UNA fila por datom (assert y retract incluidos), así que una entidad
-        // cuyo atributo fue re-escrito N veces aparece N veces en el índice —
-        // sin esto, la query devolvía la fila duplicada (bug «la OT lista el
-        // mismo procedimiento N veces»). Mismo convenio que el scan AEVT:
-        // sólo cuenta la versión de mayor tx, y sólo si es un assert.
         let expected_v = datom_value_to_string(value);
         Ok(dedup_latest_asserted_by_value(raw, &expected_v))
     }
@@ -342,7 +265,6 @@ impl EavQueryExecutor {
 
         let mut common_ids: Option<HashSet<String>> = None;
 
-        // FASE 1: secuencial — FASE 2 usa tokio::join! para paralelismo real
         for (attr_name, value) in filters {
             let ids = self.execute_avet_single(tenant, attr_name, value).await?;
             let id_set: HashSet<String> = ids.into_iter().collect();
@@ -364,9 +286,9 @@ impl EavQueryExecutor {
         Ok(common_ids.unwrap_or_default().into_iter().collect())
     }
 
-    /// GSI-FTS: Trigram intersection — Consulta cada trigram del término de búsqueda
-    /// y retorna los entity_ids que aparecen en K de los N trigrams (threshold ≥ 50%).
-    /// Blueprint: §I.2 Paso 5 — FtsSearch "trigram + post-filter DL"
+    /// GSI-FTS + MBF Zone 5B Hybrid Search:
+    /// Consulta cada trigram del término de búsqueda, el índice fonético bilingüe
+    /// Romance/Anglo y el índice híbrido Zone 5B en memoria (`fts_search_entity_ids`).
     async fn execute_fts_search(
         &self,
         tenant: &str,
@@ -393,13 +315,13 @@ impl EavQueryExecutor {
             let mut attr_names = HashMap::new();
             let mut attr_values = HashMap::new();
             attr_names.insert("#pk".to_string(), "PK".to_string());
-            attr_values.insert(":pk".to_string(), AttributeValue::S(pk.clone()));
+            attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
 
             let raw = self
                 .ddb
                 .query(
                     &self.table,
-                    None, // tabla principal — FTS usa la misma tabla
+                    None,
                     "#pk = :pk",
                     attr_names,
                     attr_values,
@@ -421,19 +343,11 @@ impl EavQueryExecutor {
                                 } else {
                                     tracing::warn!("[EAV-FTS] Error decodificando UTF-8 de SK");
                                 }
-                            } else {
-                                tracing::warn!("[EAV-FTS] SK demasiado corto para contener attr_id y entity_id");
                             }
-                        } else {
-                            tracing::warn!(
-                                "[EAV-FTS] SK no es de tipo Binary B para item en FTS: {:?}",
-                                item.get("SK")
-                            );
                         }
                     }
                 }
                 Err(e) => {
-                    // Log y continuar — un trigram fallido no aborta la búsqueda
                     tracing::error!("[EAV-FTS] Error en trigram '{}': {:?}", trigram, e);
                 }
             }
@@ -441,17 +355,62 @@ impl EavQueryExecutor {
 
         // Threshold: al menos 50% de los trigrams deben coincidir (fuzzy tolerance)
         let threshold = (trigrams.len() / 2).max(1);
-        tracing::debug!(
-            "[EAV-FTS] Trigrams generados: {}, Threshold: {}",
-            trigrams.len(),
-            threshold
-        );
+
+        // Integración MBF Zone 5B: Consulta fonética bilingüe Romance/Anglo
+        for word in clean_term.split(|c: char| !c.is_alphanumeric()) {
+            if word.len() >= 3 {
+                let phon =
+                    crate::mbf::zones::hybrid_search::MbfHybridSearchIndex::encode_romance_phonetic(
+                        word,
+                    );
+                if !phon.is_empty() {
+                    let phon_pk = format!("T#{tenant}#FTS#PHON#{phon}");
+                    let mut attr_names = HashMap::new();
+                    let mut attr_values = HashMap::new();
+                    attr_names.insert("#pk".to_string(), "PK".to_string());
+                    attr_values.insert(":pk".to_string(), AttributeValue::S(phon_pk));
+                    if let Ok(items) = self
+                        .ddb
+                        .query(
+                            &self.table,
+                            None,
+                            "#pk = :pk",
+                            attr_names,
+                            attr_values,
+                            true,
+                            None,
+                        )
+                        .await
+                    {
+                        for item in items {
+                            if let Some(AttributeValue::B(blob)) = item.get("SK") {
+                                let bytes = blob.as_ref();
+                                if bytes.len() > 2 {
+                                    if let Ok(eid) = String::from_utf8(bytes[2..].to_vec()) {
+                                        *score_map.entry(eid).or_insert(0) += threshold;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Integración con el buscador en memoria Zone 5B (BM25 + Fuzzy + Phonetic RRF)
+        let memory_hits = crate::eav::fts::searcher::fts_search_entity_ids(clean_term, tenant)
+            .await
+            .unwrap_or_default();
+        let mem_len = memory_hits.len();
+        for (rank, hit) in memory_hits.into_iter().enumerate() {
+            let boost = threshold + mem_len.saturating_sub(rank);
+            *score_map.entry(hit.entity_id).or_insert(0) += boost;
+        }
+
         let mut results: Vec<(String, usize)> = score_map
             .into_iter()
             .filter(|(_, score)| *score >= threshold)
             .collect();
-
-        tracing::debug!("[EAV-FTS] Results tras threshold: {}", results.len());
 
         // Ordenar por score descendente (mejor coincidencia primero)
         results.sort_by(|a, b| b.1.cmp(&a.1));

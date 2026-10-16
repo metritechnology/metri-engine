@@ -151,7 +151,7 @@ impl FormulaError {
     pub async fn emit_to_sherlog(
         &self,
         notifier: &dyn crate::iop::sherlog::IFaultNotifier,
-        olap_channel: &dyn crate::janus_router::router::IWriteChannel,
+        telemetry_channel: &dyn crate::janus_router::router::IWriteChannel,
         ctx: &crate::iop::core::IopContext,
     ) {
         let domain_error = self.to_domain_error();
@@ -168,7 +168,7 @@ impl FormulaError {
 
         crate::iop::sherlog::process_fault(
             notifier,
-            olap_channel,
+            telemetry_channel,
             &domain_error,
             &error_dto,
             Some("formula".to_string()),

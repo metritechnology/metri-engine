@@ -3,7 +3,7 @@
 //! # Origin
 //! Equivalencia: CodeRegistry — carga, valida, hashea y compila todos los modelos JSON.
 //! En el stack anterior: Integrant ig/init-key :codice/registry + atom global
-//! En Rust:    OnceLock<CodeRegistry> — inmutable post-bootstrap, lookup O(1)
+//! En Rust:    `OnceLock<CodeRegistry>` — inmutable post-bootstrap, lookup O(1)
 //!
 //! Zero-Drop Policy: todos los guard de error (COD_001, COD_002, COD_003, COD_SCOPE_001)
 //! están replicados con exactamente la misma semántica.
@@ -22,9 +22,10 @@ use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Mapea 1:1 con los tipos JSON del Códice:
 /// "string" | "number" | "epoch" | "decimal" | "boolean" | "array" | "reference"
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AttrType {
+    #[default]
     String,
     Number,
     Epoch,
@@ -34,7 +35,7 @@ pub enum AttrType {
     Reference,
     Uuid,
     Bytes,
-    Enum, // <--- added
+    Enum,
     Json,
     Unknown(String),
 }
@@ -53,7 +54,7 @@ impl From<&str> for AttrType {
             "array" => AttrType::Array,
             "reference" => AttrType::Reference,
             "uuid" => AttrType::Uuid,
-            "bytes" => AttrType::Bytes,
+            "bytes" | "vector" => AttrType::Bytes,
             "enum" => AttrType::Enum,
             "json" => AttrType::Json,
             "double" => AttrType::Decimal,
@@ -63,25 +64,29 @@ impl From<&str> for AttrType {
     }
 }
 
-/// Canal de ejecución del engine.
-/// Equivale a (keyword (get model :engine "oltp")) en el stack anterior.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Canal de ejecución unificado del engine (.mbf HTAP).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineChannel {
+    #[default]
     Oltp,
-    Olap,
 }
 
 impl From<&str> for EngineChannel {
     fn from(_s: &str) -> Self {
-        // Los modelos del Códice ya no discriminan "engine": "oltp" / "olap"
+        // Los modelos del Códice operan sobre el motor unificado .mbf
         EngineChannel::Oltp
     }
 }
 
+pub use super::profiles::{
+    AffineTransformSpec, CrossCovarianceProfile, DistributionFamily, FuzzySearchProfile,
+    MathProfile, PhoneticAlgorithm, SpatialProfile, SpectralProfile, SurvivalAnalysisProfile,
+};
+
 /// Descriptor de un atributo del modelo JSON.
 /// Equivale al mapa de atributos en el JSON del Códice.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AttributeDescriptor {
     pub name: String,
     pub attr_type: AttrType,
@@ -92,23 +97,47 @@ pub struct AttributeDescriptor {
     pub fts: bool,              // Full-text search index
     pub is_dimension: bool,     // dimension para OLAP
     pub is_metric: bool,        // métrica para OLAP
+    /// Indica si el atributo es una medida cuantitativa (`is_measure: true` en `config/models/*.json`).
+    #[serde(default)]
+    pub is_measure: bool,
     pub entity_ref: Option<String>, // referencia a otra entidad
-    pub options: Vec<String>,   // enum values
+    pub options: Vec<String>,       // enum values
     /// Enum abierto (regla X-01): `options` documenta los valores
     /// canónicos/sugeridos y se expone como `enum_values` en el RPC Explore,
-    /// pero el validador NO rechaza valores fuera de la lista — el atributo
-    /// acepta cualquier string. Uso: catálogos gobernados por tenant desde el
-    /// frontend (p. ej. `status`/`category` de work_order). Default false:
-    /// todo enum existente conserva la validación estricta contra `options`.
+    /// pero el validador NO rechaza valores fuera de la lista.
     #[serde(default)]
     pub enum_open: bool,
     pub is_sequence_scope: bool,
     pub is_sequence_scope_via: bool,
-    /// /// Marca PII — sanitizado en error_response (el stack anterior: :sensitive true).
+    /// Marca PII — sanitizado en error_response (el stack anterior: :sensitive true).
     pub sensitive: bool,
     pub auto_generate: Option<serde_json::Value>,
     pub validation_regex: Option<String>,
     pub default_value: Option<String>,
+    /// Función de agregación por defecto en rollups (`"sum"`, `"last_value"`, `"avg"`, §1.1 #4).
+    #[serde(default)]
+    pub default_rollup: Option<String>,
+    /// Subtipo semántico del atributo (`"currency"`, `"terminology"`, `"flat_map"`, §1.1 #4).
+    #[serde(default)]
+    pub subtype: Option<String>,
+    /// URI del sistema terminológico regulado (`"urn:api:system:uncefact"`, `"vcb_omniclass_t23"`, §1.1 & §6).
+    #[serde(default, alias = "terminologyUri")]
+    pub terminology_uri: Option<String>,
+    /// Dimensiones del vector de embeddings (ej. `1024` en `document_chunk.semantic_embedding`, §1.1 #5).
+    #[serde(default)]
+    pub dimensions: Option<u32>,
+    /// Modelo generador de embeddings (ej. `"amazon.titan-embed-text-v2"`, §1.1 #5).
+    #[serde(default, alias = "model")]
+    pub vector_model: Option<String>,
+    /// Atributos fuente para auto-generación de embeddings (ej. `["chunk_content"]`, §1.1 #5).
+    #[serde(default)]
+    pub auto_generate_from: Vec<String>,
+    /// Perfil matemático y estadístico avanzado para `MbfHyperSynopsis512` (§2.2).
+    #[serde(default)]
+    pub math_profile: Option<MathProfile>,
+    /// Perfil de búsqueda difusa, fonética, BM25F y semántica para Zona 5B (§2.2).
+    #[serde(default)]
+    pub fuzzy_profile: Option<FuzzySearchProfile>,
 }
 
 /// Ámbito de una restricción de unicidad.
@@ -130,42 +159,11 @@ impl From<&str> for ConstraintScope {
 }
 
 /// Restricción declarada a nivel de entidad.
-///
-/// Existe porque `unique` es por atributo y no puede expresar
-/// `(tenant_id, plugin_id)`. Esa carencia es la razón física de que dos
-/// entidades `tenant_plugin` pudieran coexistir para el mismo módulo, que fue
-/// el disparador del incidente de `cmms`.
-///
-/// Se declara así:
-///
-/// ```json
-/// "constraints": [
-///   { "type": "unique", "scope": "tenant", "attributes": ["tenant_id", "plugin_id"] }
-/// ]
-/// ```
-///
-/// Tipos adicionales (evaluados sobre la vista fusionada estado-previo +
-/// payload en el camino de escritura):
-///
-/// ```json
-/// "constraints": [
-///   { "type": "requires_when", "when": {"status": "COMPLETED"},
-///     "required": ["completed_by", "completed_at"] },
-///   { "type": "at_most", "field": "score", "of": "max_score" },
-///   { "type": "ref_state", "attr": "procedure_id",
-///     "conditions": {"lifecycle_state": "PUBLISHED"} }
-/// ]
-/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Constraint {
     pub kind: ConstraintKind,
     pub scope: ConstraintScope,
     /// Atributos de la restricción, EN EL ORDEN DECLARADO.
-    ///
-    /// `unique`: la clave física (reordenar cambia el hash y deja huérfanos
-    /// los items ya escritos). `requires_when`: los campos exigidos.
-    /// `at_most`: `[field, of]`. `ref_state`: `[attr]` — el atributo
-    /// referencia cuya entidad apuntada debe cumplir `when`.
     pub attributes: Vec<String>,
     /// Pares (campo, valor) que condicionan `RequiresWhen` y `RefState`.
     #[serde(default)]
@@ -181,18 +179,15 @@ pub enum ConstraintKind {
     /// `attributes[0]` no puede exceder a `attributes[1]` (numérico).
     AtMost,
     /// `attributes[0]` no puede ser menor a `attributes[1]` (numérico).
-    /// Espejo de `AtMost` — p. ej. end_time ≥ start_time.
     AtLeast,
     /// Al menos UNO de los campos en `attributes` debe estar presente.
     RequiresAny,
-    /// La entidad apuntada por `attributes[0]` debe cumplir todos los pares
-    /// `when`. Comprobación con lectura: tolera la carrera por diseño (ver
-    /// `constraints::check_ref_conditions`).
+    /// La entidad apuntada por `attributes[0]` debe cumplir todos los pares `when`.
     RefState,
 }
 
 /// Modelo completo de una entidad del Códice.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EntityModel {
     pub entity: String,
     pub label: Option<String>,
@@ -210,19 +205,20 @@ pub struct EntityModel {
     #[serde(default)]
     pub disable_eda: bool,
     /// Mapa de proyección declarativa hacia `scheduled_job`.
-    /// Clave: ruta destino en el scheduled_job (los puntos descienden al action_payload).
-    /// Valor: ruta origen — `[campo]` lee del payload padre;
-    ///        `[campo_ref, attr]` sigue la referencia y lee `attr` de la entidad referenciada.
     #[serde(default)]
     pub shadow_sagas_mapping: Option<serde_json::Value>,
     /// Restricciones a nivel de entidad, declaradas en el JSON del modelo.
-    ///
-    /// `work_order` declara la primera (unique tenant de `scheduled_job_id` +
-    /// `asset_id`, idempotencia del loop preventivo). Activar una restricción
-    /// con duplicados vivos en la base haría fallar la siguiente escritura de
-    /// esos tenants: cada nueva constraint exige conciliación previa del dato.
     #[serde(default)]
     pub constraints: Vec<Constraint>,
+    /// Perfil de análisis de supervivencia y procesos de renovación (§2.1).
+    #[serde(default, alias = "reliability_profile")]
+    pub survival_profile: Option<SurvivalAnalysisProfile>,
+    /// Perfil de matriz de co-momentos multivariados en Zona 6B (§2.1).
+    #[serde(default)]
+    pub cross_covariance_matrix: Option<CrossCovarianceProfile>,
+    /// Perfil geoespacial Uber H3 + Morton + R-Tree MBR en Zona 5B (§2.1).
+    #[serde(default)]
+    pub spatial_profile: Option<SpatialProfile>,
 }
 
 /// Entrada del registry para una entidad.
@@ -647,32 +643,107 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
         .cloned()
         .unwrap_or_default()
         .iter()
-        .map(|a| AttributeDescriptor {
-            name: a["name"].as_str().unwrap_or("").to_string(),
-            attr_type: AttrType::from(a["type"].as_str().unwrap_or("string")),
-            label: a["label"].as_str().map(str::to_string),
-            required: a["required"].as_bool().unwrap_or(false),
-            unique: a["unique"].as_str().map(str::to_string),
-            indexed: a["index"].as_bool().unwrap_or(false),
-            fts: a["fts"].as_bool().unwrap_or(false),
-            is_dimension: a["is_dimension"].as_bool().unwrap_or(false),
-            is_metric: a["is_metric"].as_bool().unwrap_or(false),
-            entity_ref: a["entityRef"].as_str().map(str::to_string),
-            options: a["options"]
+        .map(|a| {
+            let name = a["name"].as_str().unwrap_or("").to_string();
+            let fts = a["fts"].as_bool().unwrap_or(false);
+            let is_measure = a["is_measure"]
+                .as_bool()
+                .or_else(|| a["is_metric"].as_bool())
+                .unwrap_or(false);
+            let is_metric = a["is_metric"]
+                .as_bool()
+                .or_else(|| a["is_measure"].as_bool())
+                .unwrap_or(false);
+            let default_rollup = a["default_rollup"].as_str().map(str::to_string);
+            let subtype = a["subtype"].as_str().map(str::to_string);
+            let terminology_uri = a["terminologyUri"]
+                .as_str()
+                .or_else(|| a["terminology_uri"].as_str())
+                .map(str::to_string);
+            let dimensions = a["dimensions"].as_u64().map(|d| d as u32);
+            let vector_model = a["model"].as_str().map(str::to_string);
+            let auto_generate_from = a["auto_generate_from"]
                 .as_array()
-                .map(|o| {
-                    o.iter()
+                .map(|arr| {
+                    arr.iter()
                         .filter_map(|v| v.as_str().map(str::to_string))
                         .collect()
                 })
-                .unwrap_or_default(),
-            enum_open: a["enum_open"].as_bool().unwrap_or(false),
-            is_sequence_scope: a["is_sequence_scope"].as_bool().unwrap_or(false),
-            is_sequence_scope_via: a["is_sequence_scope_via"].as_bool().unwrap_or(false),
-            sensitive: a["sensitive"].as_bool().unwrap_or(false),
-            auto_generate: a.get("auto_generate").cloned(),
-            validation_regex: a["pattern"].as_str().map(str::to_string),
-            default_value: a["default_value"].as_str().map(str::to_string),
+                .unwrap_or_default();
+
+            let math_profile = a
+                .get("math_profile")
+                .and_then(|v| serde_json::from_value::<MathProfile>(v.clone()).ok())
+                .or_else(|| {
+                    if is_measure {
+                        Some(MathProfile {
+                            fenwick_prefix_sum: default_rollup.as_deref() == Some("sum")
+                                || subtype.as_deref() == Some("currency"),
+                            ..MathProfile::default()
+                        })
+                    } else {
+                        None
+                    }
+                });
+
+            let fuzzy_profile = a
+                .get("fuzzy_profile")
+                .and_then(|v| serde_json::from_value::<FuzzySearchProfile>(v.clone()).ok())
+                .or_else(|| {
+                    if fts {
+                        let weight = if a["unique"].is_string() {
+                            5.0
+                        } else if a["required"].as_bool().unwrap_or(false) {
+                            3.5
+                        } else {
+                            1.0
+                        };
+                        Some(FuzzySearchProfile {
+                            bm25_field_boost: weight,
+                            synonym_dictionary_uri: terminology_uri.clone(),
+                            ..FuzzySearchProfile::default()
+                        })
+                    } else {
+                        None
+                    }
+                });
+
+            AttributeDescriptor {
+                name,
+                attr_type: AttrType::from(a["type"].as_str().unwrap_or("string")),
+                label: a["label"].as_str().map(str::to_string),
+                required: a["required"].as_bool().unwrap_or(false),
+                unique: a["unique"].as_str().map(str::to_string),
+                indexed: a["index"].as_bool().unwrap_or(false),
+                fts,
+                is_dimension: a["is_dimension"].as_bool().unwrap_or(false),
+                is_metric,
+                is_measure,
+                entity_ref: a["entityRef"].as_str().map(str::to_string),
+                options: a["options"]
+                    .as_array()
+                    .map(|o| {
+                        o.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                enum_open: a["enum_open"].as_bool().unwrap_or(false),
+                is_sequence_scope: a["is_sequence_scope"].as_bool().unwrap_or(false),
+                is_sequence_scope_via: a["is_sequence_scope_via"].as_bool().unwrap_or(false),
+                sensitive: a["sensitive"].as_bool().unwrap_or(false),
+                auto_generate: a.get("auto_generate").cloned(),
+                validation_regex: a["pattern"].as_str().map(str::to_string),
+                default_value: a["default_value"].as_str().map(str::to_string),
+                default_rollup,
+                subtype,
+                terminology_uri,
+                dimensions,
+                vector_model,
+                auto_generate_from,
+                math_profile,
+                fuzzy_profile,
+            }
         })
         .collect();
 
@@ -694,11 +765,38 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
     }
 
     let event_rules = json["event_rules"].as_array().cloned().unwrap_or_default();
-
     let write_path_locked = json["routing"]["write_path_locked"]
         .as_bool()
         .unwrap_or(false);
     let is_system = json["is_system"].as_bool().unwrap_or(false);
+
+    let survival_profile = json
+        .get("survival_profile")
+        .or_else(|| json.get("reliability_profile"))
+        .and_then(|v| serde_json::from_value::<SurvivalAnalysisProfile>(v.clone()).ok());
+
+    let cross_covariance_matrix = json
+        .get("cross_covariance_matrix")
+        .and_then(|v| serde_json::from_value::<CrossCovarianceProfile>(v.clone()).ok())
+        .or_else(|| {
+            let measures: Vec<String> = attributes
+                .iter()
+                .filter(|a| a.is_measure)
+                .map(|a| a.name.clone())
+                .collect();
+            if measures.len() >= 2 {
+                Some(CrossCovarianceProfile {
+                    enabled: true,
+                    measure_fields: measures,
+                })
+            } else {
+                None
+            }
+        });
+
+    let spatial_profile = json
+        .get("spatial_profile")
+        .and_then(|v| serde_json::from_value::<SpatialProfile>(v.clone()).ok());
 
     Ok(EntityModel {
         entity,
@@ -720,6 +818,9 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
             .filter(|v| v.is_object())
             .cloned(),
         constraints: parse_constraints(json),
+        survival_profile,
+        cross_covariance_matrix,
+        spatial_profile,
     })
 }
 

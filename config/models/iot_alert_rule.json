@@ -103,7 +103,7 @@
       "cardinality": "one",
       "required": false,
       "is_dimension": true,
-      "description": "La ubicación física o área donde se encuentra el activo. Si se proporciona, permite al Rule Synchronizer enrutar el cambio de regla (RULE_CHANGE) al mismo shard de Kinesis que su telemetría."
+      "description": "La ubicación física o área donde se encuentra el activo. Permite acotar la evaluación y el filtrado analítico de la regla por ubicación."
     },
     {
       "name": "evaluate_on_bad_quality",

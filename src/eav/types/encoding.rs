@@ -162,13 +162,11 @@ pub fn build_avet_sk(value: &DatomValue, entity_id: &str) -> Vec<u8> {
 }
 
 /// Prefijo del SK para buscar un valor exacto en AVET.
-/// Usado en: Query SK begins_with `[type_tag][value_bytes]`
+/// Usado en: Query SK begins_with `[type_tag][value_bytes]`.
+/// `build_avet_sk(value, "")` omite el sufijo `entity_id` sin truncar bytes `0x00`
+/// legítimos dentro de codificaciones binarias (`Bool(false)`, `Long(0)`, `Double(0.0)`).
 pub fn avet_sk_prefix(value: &DatomValue) -> Vec<u8> {
-    // Mismo encoding que build_avet_sk pero sin el entity_id al final
     build_avet_sk(value, "")
-        .into_iter()
-        .take_while(|&b| b != 0) // trim trailing zeros del entity_id vacío
-        .collect()
 }
 
 // ─── VAET Sort Key ────────────────────────────────────────────────────────────
@@ -214,5 +212,19 @@ mod tests {
             n1 < n2 && n2 < n3,
             "orden numérico debe ser preservado en AVET SK"
         );
+    }
+
+    #[test]
+    fn avet_sk_prefix_preserves_zero_bytes_in_numeric_and_boolean_values() {
+        let p_bool = avet_sk_prefix(&DatomValue::Bool(false));
+        assert_eq!(p_bool, vec![0x01, 0x00]);
+
+        let p_long = avet_sk_prefix(&DatomValue::Long(0));
+        assert_eq!(p_long.len(), 9);
+        assert!(build_avet_sk(&DatomValue::Long(0), "ent-1").starts_with(&p_long));
+
+        let p_double = avet_sk_prefix(&DatomValue::Double(0.0));
+        assert_eq!(p_double.len(), 9);
+        assert!(build_avet_sk(&DatomValue::Double(0.0), "ent-1").starts_with(&p_double));
     }
 }

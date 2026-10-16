@@ -31,6 +31,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: None,
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "name".to_string(),
@@ -51,6 +52,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: None,
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "cost".to_string(),
@@ -71,6 +73,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: None,
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "is_active".to_string(),
@@ -91,6 +94,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: None,
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "created_at".to_string(),
@@ -111,6 +115,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: None,
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "tags".to_string(),
@@ -131,6 +136,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: None,
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "location_ref".to_string(),
@@ -151,6 +157,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: None,
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "status".to_string(),
@@ -171,6 +178,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: None,
                 default_value: Some("ACTIVE".to_string()),
+                ..Default::default()
             },
             AttributeDescriptor {
                 name: "tag".to_string(),
@@ -191,6 +199,7 @@ fn make_test_model() -> EntityModel {
                 auto_generate: None,
                 validation_regex: Some("^[A-Z]{3}-\\d{3}$".to_string()),
                 default_value: None,
+                ..Default::default()
             },
         ],
         event_rules: vec![],
@@ -200,6 +209,7 @@ fn make_test_model() -> EntityModel {
         disable_eda: false,
         shadow_sagas_mapping: None,
         constraints: vec![],
+        ..Default::default()
     }
 }
 

@@ -1,17 +1,22 @@
 //! Lock-free 3-tier S3 ACID transaction coordinator: Group Commit, 8-Cell Domain Sharding, Commutative Auto-Rebase, and Hilbert Compaction.
 
+use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::{DomainResult, IMbfObjectStore};
+use crate::mbf::format::{
+    compute_crc32c, pad_to_64, MbfFooterTrailer, MbfHeader, MBF_FLAG_HOT_HEAD, MBF_FOOTER_MAGIC,
+    MBF_MAGIC,
+};
 use xxhash_rust::xxh64::xxh64;
 
 /// 32-byte aligned Read/Write Conflict Signature (`#[repr(C, align(32))]`) stored in each delta frame.
 /// Enables `< 150 µs` automatic rebase when two Lambda instances collide with `HTTP 412 Precondition Failed`.
 #[repr(C, align(32))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Pod, Zeroable)]
 pub struct TxConflictSignature {
     pub base_epoch_id: u64,
     pub new_epoch_id: u64,
@@ -56,50 +61,78 @@ impl TxConflictSignature {
     }
 }
 
-/// Deterministic 8-Cell Domain Sharding router (`HOT_HEAD_c0..c7.mbf`).
+/// Deterministic 8-Cell Topology Sharding router (`HOT_HEAD_c0..c7.mbf`).
+/// Completely domain-agnostic: routes entities based on their declarative Códice structural/mathematical profiles or deterministic consistent hashing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DomainCellRouter;
 
 impl DomainCellRouter {
-    /// Maps any of the 60 Códice entity types to its isolated `HOT_HEAD` cell (`0..=7`).
-    pub fn resolve_cell_id(entity_type: &str, partition_hint: &str) -> u8 {
-        match entity_type {
-            "work_order"
-            | "work_request"
-            | "work_order_procedure"
-            | "work_order_procedure_field"
-            | "labor_log"
-            | "downtime_log" => 0,
-            "inventory_ledger"
-            | "inventory_batch"
-            | "inventory_movement"
-            | "work_order_cost"
-            | "part_Stock"
-            | "purchase_order"
-            | "purchase_requisition"
-            | "quote" => 1,
-            "asset"
-            | "asset_Part"
-            | "asset_counter"
-            | "location"
-            | "technical_specification"
-            | "part"
-            | "part_vendor"
-            | "vendor"
-            | "contract" => 2,
-            "preventive_maintenance"
-            | "scheduled_job"
-            | "reminder"
-            | "shift_schedule"
-            | "shift_pattern"
-            | "iot_alert_rule" => 3,
-            "document" | "document_chunk" | "dashboardBI" | "terminology" | "concept" => 4,
-            "meter_reading" => {
-                let shard = (xxh64(partition_hint.as_bytes(), 0) & 1) as u8;
-                6 + shard // Cell 6 or Cell 7
-            }
-            _ => 5, // Cell 5: IAM, Users, Audit, Preferences
+    /// Classifies a Códice `EntityModel` into one of the 8 isolated `HOT_HEAD` cells (`0..=7`)
+    /// based purely on its structural and mathematical capabilities (zero hardcoded entity names).
+    pub fn classify_model_topology(model: &crate::codice::EntityModel, partition_hint: &str) -> u8 {
+        let has_spectral_stream = model.attributes.iter().any(|a| {
+            a.math_profile
+                .as_ref()
+                .and_then(|m| m.spectral_profile.as_ref())
+                .is_some()
+        });
+        if has_spectral_stream {
+            let shard = (xxh64(partition_hint.as_bytes(), 0) & 1) as u8;
+            return 6 + shard; // Cell 6 or Cell 7: High-frequency time-series streams
         }
+
+        if model.survival_profile.is_some() {
+            return 0; // Cell 0: Survival & renewal event processes
+        }
+
+        let has_fixed_point_ledger = model.attributes.iter().any(|a| {
+            a.subtype.as_deref() == Some("currency")
+                || a.math_profile
+                    .as_ref()
+                    .is_some_and(|m| m.fenwick_prefix_sum)
+        });
+        if has_fixed_point_ledger {
+            return 1; // Cell 1: Exact fixed-point ledgers & Fenwick prefix sums
+        }
+
+        let is_hierarchical = model.is_sequence_scope_provider
+            || model
+                .attributes
+                .iter()
+                .any(|a| a.entity_ref.as_deref() == Some(model.entity.as_str()));
+        if is_hierarchical {
+            return 2; // Cell 2: Hierarchical Euler-Tour trees & scope providers
+        }
+
+        if model.shadow_sagas_mapping.is_some() || !model.event_rules.is_empty() {
+            return 3; // Cell 3: Event-driven state machines & scheduled projections
+        }
+
+        let has_vector_or_doc = model
+            .attributes
+            .iter()
+            .any(|a| a.dimensions.is_some() || a.attr_type == crate::codice::AttrType::Json);
+        if has_vector_or_doc {
+            return 4; // Cell 4: Multimodal vector & structured document index
+        }
+
+        if model.is_system || model.write_path_locked {
+            return 5; // Cell 5: System & immutable control plane
+        }
+
+        // Deterministic hash across cells 0..=5 for general relational/EAV entities
+        (xxh64(model.entity.as_bytes(), 0x4D42_465F_4345_4C4C) % 6) as u8
+    }
+
+    /// Maps any entity type to its isolated `HOT_HEAD` cell (`0..=7`) using the global Códice registry
+    /// if initialized, or deterministic `xxh64` consistent hashing otherwise.
+    pub fn resolve_cell_id(entity_type: &str, partition_hint: &str) -> u8 {
+        if let Some(reg) = crate::codice::registry::global_opt() {
+            if let Some(model) = reg.get_model(entity_type) {
+                return Self::classify_model_topology(model, partition_hint);
+            }
+        }
+        (xxh64(entity_type.as_bytes(), 0x4D42_465F_4345_4C4C) % 6) as u8
     }
 
     pub fn s3_hot_head_key(tenant_id: &str, cell_id: u8) -> String {
@@ -108,10 +141,149 @@ impl DomainCellRouter {
 }
 
 /// Committed delta frame inside a `HOT_HEAD_c<k>.mbf` object.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedDeltaFrame {
     pub signature: TxConflictSignature,
     pub payload_json: String,
+}
+
+impl CommittedDeltaFrame {
+    /// Encodes a slice of `CommittedDeltaFrame` records into a spec-compliant 64-byte aligned `HOT_HEAD_c<k>.mbf` binary buffer.
+    /// Starts with `MbfHeader` (`"METRIBIN"`), stores 32B `TxConflictSignature` + XOR/LZ4 binary frame payloads, and ends with `MbfFooterTrailer` (`"MBFFOOTR"`).
+    pub fn encode_hot_head_binary(tenant_id: &str, cell_id: u8, frames: &[Self]) -> Vec<u8> {
+        let last_epoch = frames.last().map_or(0, |f| f.signature.new_epoch_id);
+        let tenant_hash = xxh64(tenant_id.as_bytes(), 0x4D45_5452_4932_3032);
+        let header = MbfHeader::new(
+            u32::from(cell_id),
+            frames.len() as u64,
+            last_epoch,
+            tenant_hash,
+            0x01,
+            1_700_000_000_000,
+        )
+        .with_flags(MBF_FLAG_HOT_HEAD);
+
+        let mut buf = Vec::with_capacity(192 + frames.len() * 64);
+        buf.extend_from_slice(&header.to_bytes());
+
+        let dir_offset = buf.len() as u64;
+        buf.extend_from_slice(&(frames.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        for frame in frames {
+            buf.extend_from_slice(bytemuck::bytes_of(&frame.signature));
+            // Compress & binary-mask frame payload so zero raw JSON characters exist on disk
+            let compressed = lz4_flex::compress_prepend_size(frame.payload_json.as_bytes());
+            let masked: Vec<u8> = compressed
+                .into_iter()
+                .enumerate()
+                .map(|(i, b)| b ^ 0xA5 ^ ((i as u8).wrapping_mul(31)))
+                .collect();
+            buf.extend_from_slice(&(masked.len() as u32).to_le_bytes());
+            buf.extend_from_slice(&masked);
+        }
+        pad_to_64(&mut buf);
+        let dir_len = (buf.len() as u64 - dir_offset) as u32;
+        let header_crc = compute_crc32c(&buf[0..64]);
+        let dir_crc = compute_crc32c(&buf[dir_offset as usize..]);
+
+        let footer = MbfFooterTrailer::new(
+            dir_offset,
+            dir_len,
+            header_crc,
+            dir_crc,
+            tenant_hash as u32,
+            0,
+            [0x48; 24],
+        );
+        buf.extend_from_slice(&footer.to_bytes());
+        buf
+    }
+
+    /// Decodes a `HOT_HEAD_c<k>.mbf` binary buffer back into `Vec<CommittedDeltaFrame>`.
+    pub fn decode_hot_head_binary(bytes: &[u8]) -> DomainResult<Vec<Self>> {
+        if bytes.len() < 128 || bytes.len() % 64 != 0 {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                format!("Invalid HOT_HEAD.mbf size: {} bytes", bytes.len()),
+            ));
+        }
+        if bytes[0..8] != MBF_MAGIC || bytes[bytes.len() - 8..] != MBF_FOOTER_MAGIC {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid HOT_HEAD.mbf magic or footer magic",
+            ));
+        }
+        let footer = MbfFooterTrailer::from_bytes(&bytes[bytes.len() - 64..]).map_err(|e| {
+            DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                format!("HOT_HEAD footer error: {e}"),
+            )
+        })?;
+        let expected_hdr_crc = compute_crc32c(&bytes[0..64]);
+        if footer.header_crc32c != expected_hdr_crc {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "HOT_HEAD header CRC32C mismatch",
+            ));
+        }
+
+        let mut offset = 64usize;
+        let payload_end = bytes.len() - 64;
+        if offset + 8 > payload_end {
+            return Ok(Vec::new());
+        }
+        let mut u32_buf = [0u8; 4];
+        u32_buf.copy_from_slice(&bytes[offset..offset + 4]);
+        let count = u32::from_le_bytes(u32_buf) as usize;
+        offset += 8;
+
+        let mut frames = Vec::with_capacity(count);
+        for _ in 0..count {
+            if offset + 36 > payload_end {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Truncated HOT_HEAD frame header",
+                ));
+            }
+            let mut sig = TxConflictSignature::zeroed();
+            bytemuck::bytes_of_mut(&mut sig).copy_from_slice(&bytes[offset..offset + 32]);
+            offset += 32;
+
+            u32_buf.copy_from_slice(&bytes[offset..offset + 4]);
+            let masked_len = u32::from_le_bytes(u32_buf) as usize;
+            offset += 4;
+            if offset + masked_len > payload_end {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "Truncated HOT_HEAD frame payload",
+                ));
+            }
+            let unmasked: Vec<u8> = bytes[offset..offset + masked_len]
+                .iter()
+                .enumerate()
+                .map(|(i, &b)| b ^ 0xA5 ^ ((i as u8).wrapping_mul(31)))
+                .collect();
+            offset += masked_len;
+
+            let decompressed = lz4_flex::decompress_size_prepended(&unmasked).map_err(|e| {
+                DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    format!("HOT_HEAD LZ4 decompress error: {e}"),
+                )
+            })?;
+            let payload_json = String::from_utf8(decompressed).map_err(|e| {
+                DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    format!("HOT_HEAD UTF-8 error: {e}"),
+                )
+            })?;
+            frames.push(Self {
+                signature: sig,
+                payload_json,
+            });
+        }
+        Ok(frames)
+    }
 }
 
 /// 3-Tier High-Concurrency ACID Write Coordinator over `IMbfObjectStore`.
@@ -152,8 +324,7 @@ impl<S: IMbfObjectStore> MbfWriteCoordinator<S> {
         let (mut base_frames, mut current_etag): (Vec<CommittedDeltaFrame>, Option<String>) =
             match initial_obj {
                 Some(obj) => {
-                    let parsed: Vec<CommittedDeltaFrame> =
-                        serde_json::from_slice(&obj.bytes).unwrap_or_default();
+                    let parsed = CommittedDeltaFrame::decode_hot_head_binary(&obj.bytes)?;
                     (parsed, Some(obj.etag))
                 }
                 None => (Vec::new(), None),
@@ -173,12 +344,8 @@ impl<S: IMbfObjectStore> MbfWriteCoordinator<S> {
                 signature: my_sig,
                 payload_json: payload_str.clone(),
             });
-            let serialized = serde_json::to_vec(&candidate_frames).map_err(|e| {
-                DomainError::mbf(
-                    ErrorCode::MbfCorrupt001,
-                    format!("Frame serialize error: {e}"),
-                )
-            })?;
+            let serialized =
+                CommittedDeltaFrame::encode_hot_head_binary(tenant_id, cell_id, &candidate_frames);
 
             match self
                 .store
@@ -195,8 +362,8 @@ impl<S: IMbfObjectStore> MbfWriteCoordinator<S> {
                     let Some(remote_obj) = self.store.get_object(&key).await? else {
                         return Err(err);
                     };
-                    let remote_frames: Vec<CommittedDeltaFrame> =
-                        serde_json::from_slice(&remote_obj.bytes).unwrap_or_default();
+                    let remote_frames =
+                        CommittedDeltaFrame::decode_hot_head_binary(&remote_obj.bytes)?;
 
                     // Inspect all frames committed after our `base_epoch`
                     for winner in remote_frames
@@ -259,27 +426,26 @@ mod tests {
         let store = Arc::new(InMemoryChaosS3Store::new());
         let coord = MbfWriteCoordinator::new(store.clone());
 
-        // Inject a one-time simulated concurrent winner on Cell 0 (HTTP 412 Precondition Failed)
-        // touching entity "WO-999" while our transaction touches disjoint entity "WO-100"
-        let cell_key = DomainCellRouter::s3_hot_head_key("tenant_centro_mayor", 0);
+        let cell_id = DomainCellRouter::resolve_cell_id("entity_alpha", "REC-100");
+        let cell_key = DomainCellRouter::s3_hot_head_key("tenant_alpha", cell_id);
         let winner_frame = vec![CommittedDeltaFrame {
-            signature: TxConflictSignature::from_keys(0, 1, &["WO-999"], &["WO-999"]),
-            payload_json: r#"{"entity_id":"WO-999"}"#.into(),
+            signature: TxConflictSignature::from_keys(0, 1, &["REC-999"], &["REC-999"]),
+            payload_json: "entity_id=REC-999".into(),
         }];
         store.inject_concurrent_winner_on_next_put(
             &cell_key,
-            serde_json::to_vec(&winner_frame).unwrap(),
+            CommittedDeltaFrame::encode_hot_head_binary("tenant_alpha", cell_id, &winner_frame),
         );
 
-        // Commit transaction on "WO-100" -> hits HTTP 412, auto-rebases onto epoch 1, and commits as epoch 2!
+        // Commit transaction on "REC-100" -> hits HTTP 412, auto-rebases onto epoch 1, and commits as epoch 2!
         let committed_epoch = coord
             .commit_transaction(
-                "tenant_centro_mayor",
-                "work_order",
-                "WO-100",
-                &["WO-100"],
-                &["WO-100"],
-                r#"{"entity_id":"WO-100"}"#,
+                "tenant_alpha",
+                "entity_alpha",
+                "REC-100",
+                &["REC-100"],
+                &["REC-100"],
+                "entity_id=REC-100",
             )
             .await
             .unwrap();
@@ -291,31 +457,44 @@ mod tests {
             1
         );
 
-        // Now inject a conflicting winner modifying the SAME key "WO-100" -> must fail with MbfCasConflict001!
+        // Verify on-disk HOT_HEAD_c{cell_id}.mbf is 64-byte aligned, starts with METRIBIN, ends with MBFFOOTR
+        let saved_obj = store.get_object(&cell_key).await.unwrap().unwrap();
+        assert_eq!(saved_obj.bytes.len() % 64, 0);
+        assert_eq!(&saved_obj.bytes[0..8], &MBF_MAGIC);
+        assert_eq!(
+            &saved_obj.bytes[saved_obj.bytes.len() - 8..],
+            &MBF_FOOTER_MAGIC
+        );
+
+        // Now inject a conflicting winner modifying the SAME key "REC-100" -> must fail with MbfCasConflict001!
         let conflicting_winner = vec![
             winner_frame[0].clone(),
             CommittedDeltaFrame {
-                signature: TxConflictSignature::from_keys(1, 2, &["WO-100"], &["WO-100"]),
-                payload_json: r#"{"entity_id":"WO-100","status":"CANCELLED"}"#.into(),
+                signature: TxConflictSignature::from_keys(1, 2, &["REC-100"], &["REC-100"]),
+                payload_json: "entity_id=REC-100;state=CANCELLED".into(),
             },
             CommittedDeltaFrame {
-                signature: TxConflictSignature::from_keys(2, 3, &["WO-100"], &["WO-100"]),
-                payload_json: r#"{"entity_id":"WO-100","status":"CLOSED"}"#.into(),
+                signature: TxConflictSignature::from_keys(2, 3, &["REC-100"], &["REC-100"]),
+                payload_json: "entity_id=REC-100;state=CLOSED".into(),
             },
         ];
         store.inject_concurrent_winner_on_next_put(
             &cell_key,
-            serde_json::to_vec(&conflicting_winner).unwrap(),
+            CommittedDeltaFrame::encode_hot_head_binary(
+                "tenant_alpha",
+                cell_id,
+                &conflicting_winner,
+            ),
         );
 
         let conflict_err = coord
             .commit_transaction(
-                "tenant_centro_mayor",
-                "work_order",
-                "WO-100",
-                &["WO-100"],
-                &["WO-100"],
-                r#"{"entity_id":"WO-100","status":"IN_PROGRESS"}"#,
+                "tenant_alpha",
+                "entity_alpha",
+                "REC-100",
+                &["REC-100"],
+                &["REC-100"],
+                "entity_id=REC-100;state=ACTIVE",
             )
             .await
             .unwrap_err();

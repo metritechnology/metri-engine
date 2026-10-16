@@ -107,7 +107,7 @@ impl MetriGrpcService {
     ) {
         Self::emit_read_error_static(
             self.fault_notifier.clone(),
-            self.olap_channel.clone(),
+            self.telemetry_channel.clone(),
             tenant_id,
             user_id,
             error,
@@ -117,7 +117,7 @@ impl MetriGrpcService {
 
     pub(crate) fn emit_read_error_static(
         fault_notifier: std::sync::Arc<dyn crate::iop::sherlog::IFaultNotifier>,
-        olap_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
+        telemetry_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
         tenant_id: &str,
         user_id: &str,
         error: crate::domain::errors::DomainError,
@@ -132,14 +132,14 @@ impl MetriGrpcService {
         );
 
         let notifier = fault_notifier.clone();
-        let olap = olap_channel.clone();
+        let telemetry = telemetry_channel.clone();
         let error_clone = error.clone();
         let entity_type_clone = entity_type.clone();
 
         tokio::spawn(async move {
             crate::iop::sherlog::process_fault(
                 notifier.as_ref(),
-                olap.as_ref(),
+                telemetry.as_ref(),
                 &error_clone,
                 &error_dto,
                 entity_type_clone,

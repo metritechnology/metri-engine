@@ -1,8 +1,8 @@
 //! Domain ports — defprotocol equivalents as static Rust traits.
 //!
 //! # Origin
-//! Equivalencia: ISessionStore, ISQSBus, IQueryEngine, IStreamWriter,
-//! IEventBus, ICedarContext, IASTCompiler, IAegisEngine
+//! Equivalencia: ISessionStore, ISQSBus, IEventBus, ICedarContext,
+//! IASTCompiler, IAegisEngine, IMbfObjectStore
 //!
 //! En el stack anterior: defprotocol → interfaz dinámica (duck typing)
 //! En Rust:    trait → interfaz estática tipada
@@ -68,49 +68,6 @@ pub trait ISqsBus: Send + Sync {
     async fn delete_message(&self, receipt_handle: &str) -> DomainResult<()>;
 }
 
-// ── Query Engine (Athena) ─────────────────────────────────────────────────────
-
-/// Resultado de una consulta analítica Athena.
-#[derive(Debug, Clone)]
-pub struct QueryResults {
-    pub columns: Vec<String>,
-    pub rows: Vec<HashMap<String, Value>>,
-}
-
-/// IQueryEngine — motor analítico (Athena / stub).
-#[async_trait]
-pub trait IQueryEngine: Send + Sync {
-    /// Inicia query asíncrona. Retorna execution_id.
-    async fn start_query(&self, sql: &str, database: &str) -> DomainResult<String>;
-
-    /// Espera y retorna resultados.
-    async fn get_query_results(&self, execution_id: &str) -> DomainResult<QueryResults>;
-}
-
-// ── Stream Writer (Kinesis) ───────────────────────────────────────────────────
-
-/// IStreamWriter — escritura a Kinesis Firehose.
-#[async_trait]
-pub trait IStreamWriter: Send + Sync {
-    /// Escribe un record al stream. Retorna sequence_number.
-    async fn put_record(
-        &self,
-        stream_name: &str,
-        partition_key: &str,
-        data: Vec<u8>,
-    ) -> DomainResult<String>;
-
-    /// Escribe un lote de records en una sola llamada PutRecordBatch.
-    /// Fase 1 PLAN_COSTO_OLAP: el canal OLAP emite ⌈N/50⌉ llamadas en vez de
-    /// N. Cada payload sigue siendo UN JSON válido por record — el destino
-    /// Iceberg no admite varios objetos por record (MEDICION_COSTO_OLAP.md §4).
-    async fn put_records(
-        &self,
-        stream_name: &str,
-        batch: Vec<(String, Vec<u8>)>,
-    ) -> DomainResult<Vec<String>>;
-}
-
 // ── Event Bus (EventBridge) ───────────────────────────────────────────────────
 
 /// IEventBus — bus de eventos de dominio.
@@ -164,11 +121,11 @@ pub struct ResultChunk {
     pub is_last: bool,
 }
 
-/// IAegisEngine — motor analítico: AST IR → Datalog (OLTP) o SQL (OLAP).
+/// IAegisEngine — motor analítico unificado sobre AST IR (.mbf HTAP).
 #[async_trait]
 pub trait IAegisEngine: Send + Sync {
     /// Ejecuta el AST IR contra el motor correcto.
-    /// /// Retorna stream de chunks (equivalente a lazy-seq el stack anterior).
+    /// Retorna stream de chunks (equivalente a lazy-seq el stack anterior).
     async fn transmute(&self, ast_ir: Value) -> DomainResult<Vec<ResultChunk>>;
 }
 
@@ -191,7 +148,7 @@ pub trait IExportStorage: Send + Sync {
 
 /// Entrada cacheada del read path. `expires_at` es epoch-segs LÓGICO —
 /// verificado por la app en cada lectura; la expiración física la hace
-/// DynamoDB TTL sobre su atributo y jamás participa en la decisión de servir.
+/// el almacenamiento subyacente sobre su atributo y jamás participa en la decisión de servir.
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
     pub payload: serde_json::Value,
@@ -215,8 +172,8 @@ pub struct CachePut {
 }
 
 /// IQueryCache — caché KV de resultados de consulta del read path.
-/// Implementaciones: adaptador DynamoDB en `infrastructure`, Null Object y
-/// fakes en `janus::cache` / tests. Precedente de granularidad: IQueryEngine.
+/// Implementaciones: adaptador MBF en `infrastructure`, Null Object y
+/// fakes en `janus::cache` / tests.
 #[async_trait]
 pub trait IQueryCache: Send + Sync {
     /// `Ok(None)` = miss (ausente, vencido, tenant distinto o generación

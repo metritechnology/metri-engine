@@ -2,6 +2,27 @@
   "entity": "work_order",
   "is_system": false,
   "track_history": true,
+  "survival_profile": {
+    "enabled": true,
+    "subject_ref_field": "asset_id",
+    "terminal_event_values": ["CORRECTIVE"],
+    "censored_event_values": ["PREVENTIVE"],
+    "event_epoch_field": "created_at",
+    "restoration_duration_field": "estimated_duration_hours",
+    "fit_weibull_3p": true,
+    "enable_kaplan_meier_censoring": true
+  },
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": ["estimated_duration_hours"]
+  },
+  "spatial_profile": {
+    "enabled": true,
+    "lat_field": "latitude",
+    "lon_field": "longitude",
+    "h3_resolutions": [7, 9, 11, 13],
+    "morton_z_order": true
+  },
   "attributes": [
     {
       "name": "work_order_number",
@@ -15,18 +36,44 @@
         "prefix": "WO-",
         "padding": 4,
         "scope_resolution": "nearest_registered"
+      },
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
       }
     },
     {
       "name": "title",
       "type": "string",
       "required": true,
-      "fts": true
+      "fts": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms",
+        "bm25_field_boost": 3.5
+      }
     },
     {
       "name": "description",
       "type": "string",
-      "fts": true
+      "fts": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms",
+        "bm25_field_boost": 1.0
+      }
     },
     {
       "name": "request_id",
@@ -142,6 +189,19 @@
       "name": "estimated_duration_hours",
       "type": "decimal",
       "is_measure": true,
+      "default_rollup": "avg",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "lognormal",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [0.05, 0.20, 0.50],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true,
+        "unit_field_ref": null
+      },
       "description": "Duración o tiempo estimado para la ejecución de la orden de trabajo en horas."
     },
     {

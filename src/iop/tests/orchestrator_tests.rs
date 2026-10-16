@@ -65,7 +65,7 @@ fn orquestador(steps: Vec<Arc<dyn IopStep>>) -> IopOrchestrator {
         moira_emitter: None,
         audit_interceptor: None,
         fault_notifier: Arc::new(NotifierMudo),
-        olap_channel: Arc::new(CanalMudo),
+        telemetry_channel: Arc::new(CanalMudo),
     }
 }
 

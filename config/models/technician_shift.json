@@ -17,7 +17,7 @@
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
       "required": true,
       "is_dimension": true,
-      "description": "Día calendario OPERATIVO del turno: la fecha de inicio start_time expresada en la zona del patrón (o del técnico). Es dimensión OLAP a propósito — agrupar capacidad por día del negocio es la consulta natural, y derivar la fecha por zona en cada query es caro. La coherencia shift_date↔start_time la garantiza la app (el motor no compara string contra epoch)."
+      "description": "Día calendario OPERATIVO del turno: la fecha de inicio start_time expresada en la zona del patrón (o del técnico). Es dimensión analítica a propósito — agrupar capacidad por día del negocio es la consulta natural, y derivar la fecha por zona en cada query es caro. La coherencia shift_date↔start_time la garantiza la app (el motor no compara string contra epoch)."
     },
     {
       "name": "start_time",

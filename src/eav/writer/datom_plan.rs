@@ -288,7 +288,10 @@ mod tests {
 
     fn payload(op: TransactOp) -> TransactPayload {
         let mut attrs = HashMap::new();
-        attrs.insert("title".to_string(), DatomValue::Str("Bomba 3".to_string()));
+        attrs.insert(
+            "title".to_string(),
+            DatomValue::Str("Recordatorio 3".to_string()),
+        );
         TransactPayload {
             tenant_id: "t1".to_string(),
             entity_id: Some("ent_1".to_string()),
@@ -333,7 +336,7 @@ mod tests {
         assert!(plan.delta.is_none(), "create no genera delta");
         assert!(plan.deleted_attrs.is_none());
         assert!(plan.datoms.iter().all(|d| d.op), "create no retracta nada");
-        assert!(assert_de(&plan.datoms, "title", "Bomba 3"));
+        assert!(assert_de(&plan.datoms, "title", "Recordatorio 3"));
         assert!(assert_de(&plan.datoms, "entity/ulid", "ent_1"));
         assert!(assert_de(&plan.datoms, "entity/type", "reminder"));
         assert!(assert_de(&plan.datoms, "tenant/id", "t1"));
@@ -360,7 +363,7 @@ mod tests {
         .expect("update planifica");
 
         assert!(retract_de(&plan.datoms, "title", "vieja"));
-        assert!(assert_de(&plan.datoms, "title", "Bomba 3"));
+        assert!(assert_de(&plan.datoms, "title", "Recordatorio 3"));
         // `status` no viene en el payload: ni retract ni assert
         assert!(!plan.datoms.iter().any(|d| d.attr_name == "status"));
         // meta/updated_at retracta el instant previo — aquí se verifica la forma
@@ -531,7 +534,10 @@ mod tests {
         ]);
         let mut attrs = HashMap::new();
         // title cambia; status llega idéntico; message es nuevo
-        attrs.insert("title".to_string(), DatomValue::Str("Bomba 3".into()));
+        attrs.insert(
+            "title".to_string(),
+            DatomValue::Str("Recordatorio 3".into()),
+        );
         attrs.insert("status".to_string(), DatomValue::Str("open".into()));
         attrs.insert("message".to_string(), DatomValue::Str("nota".into()));
         let mut p = payload(TransactOp::Update);
@@ -543,7 +549,10 @@ mod tests {
         assert_eq!(delta.len(), 2, "status idéntico no entra al delta");
         let title = delta.get("title").expect("title cambió");
         assert_eq!(title.before.as_ref(), Some(&serde_json::json!("vieja")));
-        assert_eq!(title.after.as_ref(), Some(&serde_json::json!("Bomba 3")));
+        assert_eq!(
+            title.after.as_ref(),
+            Some(&serde_json::json!("Recordatorio 3"))
+        );
         let message = delta.get("message").expect("message es nuevo");
         assert!(message.before.is_none());
         assert_eq!(message.after.as_ref(), Some(&serde_json::json!("nota")));
@@ -568,22 +577,22 @@ mod tests {
     #[test]
     fn los_atributos_fts_generan_requests_y_los_demas_no() {
         registry();
-        // `asset.name` declara fts: true en config/models
+        // `reminder.title` declara fts: true en config/models
         let mut attrs = HashMap::new();
         attrs.insert(
-            "name".to_string(),
-            DatomValue::Str("Bomba Centrifuga".into()),
+            "title".to_string(),
+            DatomValue::Str("Revision Trimestral".into()),
         );
-        attrs.insert("status".to_string(), DatomValue::Str("active".into()));
+        attrs.insert("status".to_string(), DatomValue::Str("open".into()));
         let mut p = payload(TransactOp::Create);
-        p.entity_type = "asset".to_string();
+        p.entity_type = "reminder".to_string();
         p.attrs = attrs;
 
         let plan =
             plan_payload_datoms(&p, "ent_1", 1000, &HashMap::new(), ACTOR_TEST).expect("planifica");
         assert!(
             !plan.fts_requests.is_empty(),
-            "asset.name es fts y genera requests"
+            "reminder.title es fts y genera requests"
         );
     }
 
@@ -643,7 +652,7 @@ mod tests {
     #[test]
     fn update_sin_updated_by_previo_no_retracta_nada() {
         registry();
-        let previos = activos(&[("title", 99, DatomValue::Str("Bomba 3".to_string()))]);
+        let previos = activos(&[("title", 99, DatomValue::Str("Recordatorio 3".to_string()))]);
         let plan = plan_payload_datoms(
             &payload(TransactOp::Update),
             "ent_1",

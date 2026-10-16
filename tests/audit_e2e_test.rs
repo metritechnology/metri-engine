@@ -88,9 +88,6 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
     if std::env::var("AWS_DEFAULT_REGION").is_err() {
         std::env::set_var("AWS_DEFAULT_REGION", "us-east-1");
     }
-    if std::env::var("DYNAMODB_ENDPOINT").is_err() {
-        std::env::set_var("DYNAMODB_ENDPOINT", "http://127.0.0.1:8000");
-    }
 
     INIT.call_once(|| {
         // Initialize global registry if not already done
@@ -110,7 +107,8 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
         }
     });
 
-    let table_name = std::env::var("EAV_TABLE").unwrap_or_else(|_| "metri-eav-local".to_string());
+    let table_name =
+        std::env::var("EAV_TABLE_NAME").unwrap_or_else(|_| "metri-eav-local".to_string());
     let ddb_client = Arc::new(DynamoClient::new(&table_name).await);
     let query_exec = EavQueryExecutor::new(Arc::clone(&ddb_client), &table_name);
     let pull_read = EavReader::new(Arc::clone(&ddb_client), &table_name);
@@ -119,14 +117,13 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
     let oltp_channel: Arc<dyn IWriteChannel> = Arc::new(OltpChannel::new(eav_writer.clone()));
 
     let spy_writer = Arc::new(SpyStreamWriter::new());
-    let olap_channel: Arc<dyn IWriteChannel> = spy_writer.clone();
+    let telemetry_channel: Arc<dyn IWriteChannel> = spy_writer.clone();
 
     let mut channel_registry = std::collections::HashMap::new();
     channel_registry.insert(EngineChannel::Oltp, Arc::clone(&oltp_channel));
-    channel_registry.insert(EngineChannel::Olap, Arc::clone(&olap_channel));
     let janus_router = Arc::new(JanusRouter::new(channel_registry));
 
-    let audit_interceptor = Arc::new(AuditInterceptorImpl::new(Arc::clone(&olap_channel)));
+    let audit_interceptor = Arc::new(AuditInterceptorImpl::new(Arc::clone(&telemetry_channel)));
     let valkey_store = Arc::new(HmacTokenStore::new(
         HMAC_SECRET.to_vec(),
         Arc::clone(&ddb_client),
@@ -142,12 +139,11 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
         janus_router,
         query_cache: std::sync::Arc::new(metri_engine::janus::cache::QueryCacheFrontend::disabled()),
         audit_interceptor,
-        athena_engine: None,
         moira_emitter: None,
         valkey_store,
         principal_cache,
         fault_notifier: Arc::new(metri_engine::iop::sherlog::NoopFaultNotifier),
-        olap_channel: Arc::clone(&olap_channel),
+        telemetry_channel: Arc::clone(&telemetry_channel),
         export_storage: None,
         // El e2e construye el servicio por inyección: el bypass de desarrollo
         // se pide aquí de forma explícita, no con variables de entorno.
@@ -162,7 +158,6 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
 }
 
 #[tokio::test]
-#[ignore] // Requiere DynamoDB local o producción
 async fn test_audit_interceptor_crud_e2e() {
     let (service, spy_writer, token) = setup_service().await;
 
@@ -381,7 +376,6 @@ async fn test_audit_interceptor_crud_e2e() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_audit_time_travel_history() {
     let (service, _, token) = setup_service().await;
 
@@ -667,7 +661,6 @@ impl Utc {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_create_negocio_con_id_de_cliente_se_rechaza() {
     let (service, _spy, token) = setup_service().await;
 

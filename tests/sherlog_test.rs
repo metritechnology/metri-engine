@@ -76,7 +76,7 @@ async fn test_process_fault_double_action() {
     setup_catalog();
 
     let notifier = MockFaultNotifier::new();
-    let olap_channel = MockWriteChannel::new();
+    let telemetry_channel = MockWriteChannel::new();
 
     // Create a DomainError with a code that exists in catalog (e.g. Jns001 -> severity: "error" in catalog)
     let error = DomainError::janus(ErrorCode::Jns001, "Test error detail");
@@ -126,7 +126,7 @@ async fn test_process_fault_double_action() {
     // Execute process_fault
     process_fault(
         &notifier,
-        &olap_channel,
+        &telemetry_channel,
         &error,
         &error_dto,
         Some("asset".to_string()),
@@ -140,10 +140,10 @@ async fn test_process_fault_double_action() {
     assert_eq!(*notified_severity, FaultSeverity::Error);
     assert_eq!(notified_dto["error"]["code"], "JNS_001");
 
-    // 2. Verify OLAP route calls
-    let olap_calls = olap_channel.calls.lock().unwrap();
-    assert_eq!(olap_calls.len(), 1);
-    let fault_ctx = &olap_calls[0];
+    // 2. Verify MBF telemetry route calls
+    let telemetry_calls = telemetry_channel.calls.lock().unwrap();
+    assert_eq!(telemetry_calls.len(), 1);
+    let fault_ctx = &telemetry_calls[0];
     assert_eq!(fault_ctx.entity_type, "domain_fault");
     assert_eq!(fault_ctx.operation, "BULK_CREATE");
     assert_eq!(fault_ctx.tenant_id, "tnt_test");

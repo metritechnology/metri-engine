@@ -2,13 +2,12 @@
 
 > **English**: [README.en.md](README.en.md) · **Índice de documentación**: [docs/README.md](docs/README.md)
 
-Motor de datos de la plataforma **metri** — CMMS/BI SaaS multitenant para gestión de activos, ordenes de trabajos, etc... .**100% Rust**, desplegado como una única AWS Lambda ARM64 (`provided.al2023`) que expone un servidor **gRPC** (Tonic) detrás de Function URL + CloudFront + WAF.
+Motor de datos de la plataforma **metri** — CMMS/BI SaaS multitenant para gestión de activos, órdenes de trabajo y telemetría IoT. **100 % Rust**, desplegado como una única AWS Lambda ARM64 (`provided.al2023`) que expone un servidor **gRPC** (Tonic) detrás de Function URL + CloudFront + WAF.
 
-Combina en un solo proceso:
+Unifica en un solo proceso:
 
-- **OLTP** — motor EAV inmutable propio sobre DynamoDB (single-table, datoms EAVT/AEVT/AVET/VAET) con transacciones ACID, full-text search y jerarquías.
-- **OLAP** — data lake Parquet en S3 + Glue Data Catalog + Athena, con `tenant_id` como primera partición obligatoria.
-- **Seguridad** — autorización ABAC embebida (Cedar Policy), aislamiento por tenant fail-closed y censura Zero-Trust del tenant maestro.
+- **HTAP Unificado (`.mbf` — Metri Vortex)** — motor binario propio que combina almacenamiento transaccional de datoms inmutables (EAVT/AEVT/AVET/VAET, transacciones ACID, full-text search, jerarquías) y ejecución analítica columnar vectorizada sobre S3 (con caché NVMe en `/tmp` y `MbfStorageClient` en memoria), sin compilación SQL ni motores externos.
+- **Seguridad** — autorización ABAC embebida (Cedar Policy), aislamiento por tenant fail-closed, cifrado de bloques por tenant (AES-256-GCM + HKDF) y censura Zero-Trust del tenant maestro.
 - **Cuotas** — ledger atómico por tenant con reservas para consumo de IA (Bedrock).
 
 ## Arquitectura en un vistazo
@@ -23,8 +22,8 @@ Combina en un solo proceso:
 │  Interceptors: HMAC · sesión · Cedar (fail-closed)           │
 │        │                                                     │
 │  ┌─────▼──────┐  ┌──────────┐  ┌──────────────────────────┐  │
-│  │  janus     │  │  aegis   │  │  eav                     │  │
-│  │  read path │─▶│ compiler │─▶│  DynamoDB single-table   │  │
+│  │  janus     │  │  aegis   │  │  eav + mbf               │  │
+│  │  read path │─▶│ executor │─▶│  Metri Vortex (.mbf)     │  │
 │  └────────────┘  └──────────┘  └──────────────────────────┘  │
 │  ┌────────────┐  ┌──────────┐  ┌──────────────────────────┐  │
 │  │  iop       │  │  codice  │  │  quota                   │  │
@@ -33,41 +32,45 @@ Combina en un solo proceso:
 │        │  eda — outbox · faults (EventBridge / SQS)          │
 └────────┼─────────────────────────────────────────────────────┘
          ▼
-   S3 (Parquet) → Glue → Athena · Kinesis Firehose · EventBridge
+   S3 (.mbf storage + CSV exports) · SQS FIFO (outbox + DLQ) · EventBridge
 ```
 
 | Módulo | Rol |
 |---|---|
+| `mbf` | Motor binario HTAP unificado **Metri Vortex (`.mbf`)**: layout columnar, cifrado por tenant, S3 CAS (`ETag`) + caché NVMe en `/tmp` y `MbfStorageClient` |
 | `janus` | Read path: compila queries a un AST IR en FlatBuffers (zero-copy), agregaciones, multi-series, FTS |
-| `janus_router` | Write path: routing OLTP/OLAP, sagas, particionado, generación de ULIDs |
-| `aegis` | Compilador SQL para Athena (via `sea-query`, inyección imposible por construcción) + executor OLTP + motor de fórmulas |
-| `eav` | Motor de almacenamiento EAV inmutable: datoms, transacciones, FTS, cursors, jerarquías |
-| `codice` | Registro SSOT de los ~60 modelos JSON (`config/models/`) — coerción y validación |
-| `cedar` | Autorización ABAC (Cedar Policy 3), cache de principals, reglas de seguridad del sistema |
+| `janus_router` | Write path: routing transaccional hacia `.mbf`, sagas (`scheduled_job`), generación de ULIDs monotónicos |
+| `aegis` | Ejecutores `.mbf`/OLTP sobre AST IR + motor de fórmulas sandboxeado |
+| `eav` | Motor de datoms inmutables sobre `.mbf`: `types`, `reader`, `writer` y `fts` |
+| `codice` | Registro SSOT de los 60 modelos JSON (`config/models/`) — coerción, validación y secuencias |
+| `cedar` | Autorización ABAC (Cedar Policy), cache de principals, reglas de seguridad del sistema |
 | `quota` | Cuotas atómicas por tenant: ledger con autoridad, reservas IA, sweeper |
 | `iop` | Pipeline de ingesta por pasos: Cedar → Quota → Janus |
-| `eda` | Arquitectura orientada a eventos: outbox, fault detection, routing |
+| `eda` | Arquitectura orientada a eventos: outbox (`moira`), fault detection (`sherlog`), routing |
+| `grpc` | Servidor gRPC/Tonic-Web (`MetriService`, `MoiraRoutingService`, `QuotaService`, `AgentConfigService`) |
 | `temporal` | Primitivas temporales timezone-aware (ventanas, shifts de calendario) |
 | `domain` | Errores canónicos, catálogo TOML 1:1, eventos de dominio, protocolos |
 | `application` | Puertos de aplicación (DIP) — traits delimitados por la necesidad del consumidor |
-| `infrastructure` | Adaptadores AWS SDK (DynamoDB, S3, Athena, Kinesis, SQS, EventBridge, Glue) |
+| `infrastructure` | Adaptadores AWS SDK (S3, SQS, EventBridge), sesiones HMAC y auditoría |
 | `otel` | Trazas OpenTelemetry (OTLP) |
 
 ## API gRPC
 
-El contrato vive en [`proto/metri.proto`](proto/metri.proto) — la única fuente de verdad del API. Servicio principal `metri.MetriService` (además de `QuotaService` y `AgentConfigService`):
+El contrato vive en [`proto/metri.proto`](proto/metri.proto) y [`proto/eda.proto`](proto/eda.proto). Servicio principal `metri.MetriService` (además de `MoiraRoutingService`, `QuotaService` y `AgentConfigService`):
 
 | RPC | Descripción |
 |---|---|
 | `Discovery` | Esquemas y metadata para UIs y agentes IA |
 | `Explore` | Autocompletados y dominios de valores |
-| `Query` | Consulta OLTP/OLAP con streaming server-side |
+| `Query` | Consulta transaccional y analítica sobre `.mbf` con streaming server-side |
 | `ListEntities` | Censo de ids por tipo, con tope duro y `truncated` explícito |
-| `Transact` | Escritura transaccional en el motor EAV |
+| `Transact` | Escritura transaccional ACID en el motor `.mbf` |
+| `CompositeTransact` | Escritura atómica compuesta (entidad raíz + entidades hijas en una sola TX) |
 | `BulkIngest` | Ingesta masiva y telemetría IoT |
-| `MatchRoutingRulesBatch` | Evaluación de reglas de routing EDA |
+| `ListSequenceConfigs` / `UpsertSequenceConfig` | Gestión de secuencias autonuméricas por tenant |
+| `MatchRoutingRulesBatch` | Evaluación de reglas de routing EDA (canónico en `MoiraRoutingService`) |
 
-`tonic-reflection` está habilitado, así que el server es explorable con grpcurl sin importar los protos:
+`tonic-reflection` está habilitado, así que el servidor es explorable con `grpcurl` sin importar los protos:
 
 ```bash
 grpcurl -plaintext localhost:9090 list
@@ -77,66 +80,60 @@ grpcurl -plaintext localhost:9090 describe metri.MetriService
 ## Requisitos
 
 - Rust stable + [`cargo-lambda`](https://www.cargo-lambda.info/) (para el build de Lambda)
-- Docker + Docker Compose
+- `flatc` `25.12.19` y `protoc` (compilación de esquemas FlatBuffers y gRPC)
 - AWS SAM CLI (para desplegar)
-- `grpcurl` (smoke tests)
+- `grpcurl` (smoke tests opcionales)
 
 ## Quickstart local
 
+El motor ejecuta de forma autónoma en local usando almacenamiento `.mbf` en memoria / filesystem sin requerir contenedores externos:
+
 ```bash
-make infra    # DynamoDB Local (docker compose)
-make dev      # engine con hot-reload (cargo-watch) — gRPC en localhost:9090
-make seed     # recrea las tablas locales — datos demo: scripts/dev/seed_base.py con el engine arriba
+make run      # levanta el servidor gRPC en localhost:9090 (modo stub sin AWS)
 make smoke    # smoke test gRPC con grpcurl
 ```
 
-Alternativa sin hot-reload:
+## Tests y Verificación CI
 
 ```bash
-make engine   # infra + servidor compilado corriendo en background
+make test               # suite completa (unitarios + integración E2E en memoria)
+make test-integration   # ejecuta los binarios de integración en tests/
+make ci                 # espejo local de CI: fmt, referencia, check_docs, patrón Result, cargo doc, clippy y tests
 ```
-
-## Tests
-
-```bash
-make test               # suite unitaria (cargo test)
-make test-integration   # tests #[ignore] de integración contra DynamoDB Local
-```
-
-Los tests de integración se ejecutan con variables apuntando a la infra local (`DYNAMODB_ENDPOINT=http://localhost:8000`, tablas `metri-*-local`); el Makefile ya las define.
 
 ## Estructura del repositorio
 
 ```
 src/
-  grpc/           servidor gRPC, interceptors, implementación del servicio
+  mbf/            motor binario HTAP unificado Metri Vortex (.mbf)
+  grpc/           servidor gRPC, interceptors, implementación de servicios
   domain/         protocolos (traits) y errores — cero dependencia de infraestructura
   janus/          compilador de queries → AST IR (FlatBuffers)
-  janus_router/   routing de escritura, sagas, proyecciones
-  aegis/          compilador SQL Athena + executor OLTP + motor de fórmulas
-  eav/            motor de almacenamiento EAV (writer, reader, FTS, cursors)
-  codice/         registro de modelos y coerción
+  janus_router/   routing de escritura (.mbf), sagas y ULIDs
+  aegis/          ejecutores .mbf/OLTP + motor de fórmulas
+  eav/            motor de datoms inmutables (writer, reader, FTS, types)
+  codice/         registro de modelos, coerción y secuencias
   cedar/          autorización ABAC
   quota/          cuotas, ledger, reservas
   iop/            pipeline de ingesta
   eda/            eventos de dominio (Moira, Sherlog)
   temporal/       primitivas de tiempo
-  infrastructure/ adaptadores AWS SDK
+  infrastructure/ adaptadores AWS SDK (S3, SQS, EventBridge) y sesiones
   otel/           trazas
 config/
-  models/         ~60 modelos JSON — fuente de verdad de los esquemas
+  models/         60 modelos JSON — fuente de verdad de los esquemas
   errors/         catálogo canónico de errores (TOML) — validado fail-fast en el arranque
   prompts/        prompts LLM de Metri Q Assistant
   locales/        i18n (es / en)
 proto/            contratos gRPC — fuente única del API
-scripts/          seed, debugging y operación
-tests/            e2e, reliability y unit (Rust + Python)
-template.yaml     stack SAM completo (Lambda, CloudFront, WAF, KMS, S3, Glue, DynamoDB, SQS)
+scripts/          generación de referencia, guards de CI y utilidades operativas
+tests/            suites e2e y de integración en Rust
+template.yaml     stack SAM completo (Lambda, CloudFront, Route53, WAFv2, KMS, S3, SecretsManager, SQS)
 ```
 
 ## Configuración
 
-Variables de entorno principales (el arranque falla rápido si falta algo crítico en producción):
+Variables de entorno principales leídas por el binario (ver [`.env.example`](.env.example); el arranque falla rápido si falta algo crítico en producción):
 
 | Variable | Default | Descripción |
 |---|---|---|
@@ -144,18 +141,21 @@ Variables de entorno principales (el arranque falla rápido si falta algo críti
 | `ENVIRONMENT` | `development` | `production`/`prod`/`staging` activa el fail-fast de seguridad |
 | `HMAC_SECRET` | — | Secreto de firma HMAC; obligatorio y fuerte en producción |
 | `MASTER_TENANT_ID` | `system` | Identificador del tenant maestro |
-| `DYNAMODB_ENDPOINT` | AWS | Endpoint DynamoDB (local: `http://localhost:8000`) |
-| `EAV_TABLE_NAME` | — | Tabla del motor EAV |
-| `QUOTA_TABLE` | — | Tabla del ledger de cuotas |
-| `CODICE_MODELS_DIR` | `config/models` | Directorio de modelos JSON |
-| `ERROR_CATALOG_PATH` | `config/errors/…` | Catálogo canónico de errores |
-| `ATHENA_MODE` · `KINESIS_MODE` · `EVENTBRIDGE_MODE` · `S3_MODE` · `SQS_MODE` | `stub` | Interruptores stub/real por servicio AWS — el engine levanta completo sin AWS |
-| `AWS_S3_LAKE_BUCKET` / `AWS_S3_EXPORT_BUCKET` | — | Buckets del data lake y de exports CSV |
-| `GLUE_DATABASE_NAME` · `ATHENA_WORKGROUP` | — | Recursos del canal OLAP |
+| `EAV_TABLE_NAME` | `metri-mbf-local` | Identificador lógico del espacio de almacenamiento `.mbf` |
+| `MBF_S3_BUCKET` | — | Bucket S3 de persistencia de archivos `.mbf` (si se omite o `S3_MODE=stub`, opera en memoria) |
+| `MBF_S3_PREFIX` | `metri-engine` | Prefijo de objetos `.mbf` dentro del bucket S3 |
+| `MBF_CACHE_DIR` | `/tmp/metri-mbf-cache` | Directorio local NVMe para caché de bloques `.mbf` revalidados por `ETag` |
+| `AWS_S3_EXPORT_BUCKET` | `metri-engine` | Bucket S3 para exportación asíncrona de resultados |
+| `CODICE_MODELS_DIR` | `config/models` | Directorio de modelos JSON del Códice |
+| `ERROR_CATALOG_PATH` | `config/errors/error_catalog.toml` | Ruta al catálogo canónico de errores |
+| `PROMPTS_DIR` | `config/prompts` | Directorio de plantillas de prompts de IA |
+| `EVENTBRIDGE_MODE` · `S3_MODE` · `SQS_MODE` | — (`stub` en local) | Interruptores `stub`/real por servicio AWS — permite correr sin AWS |
+| `OUTBOX_QUEUE_URL` | — | URL de la cola SQS FIFO del transactional outbox (`moira`) |
+| `EVENTBRIDGE_BUS_NAME` / `FAULT_BUS_NAME` | `metri-events` / `metri-faults` | Buses EventBridge de eventos de dominio y fallos (`sherlog`) |
 
 ## Despliegue
 
-El deploy a producción corre por **GitHub Actions** (`.github/workflows/deploy-production.yml`): cada push a `main` compila, prueba y despliega vía SAM tras la aprobación del environment `production`. Credenciales por OIDC — sin access keys en secretos. Detalles, puesta en marcha y rollback en [`docs/guides/deployment.md`](docs/guides/deployment.md) (en inglés).
+El deploy a producción corre por **GitHub Actions** (`.github/workflows/deploy-production.yml`): cada push a `main` compila, prueba y despliega vía SAM tras la aprobación del environment `production`. Credenciales por OIDC — sin access keys en secretos. Detalles, puesta en marcha y rollback en [`docs/guides/deployment.md`](docs/guides/deployment.md).
 
 Deploy manual de emergencia:
 
@@ -163,8 +163,8 @@ Deploy manual de emergencia:
 make deploy   # cargo build --release + sam build + sam deploy (perfil metri-dev, us-east-1)
 ```
 
-El stack SAM crea: función Lambda ARM64 con Function URL, distribución CloudFront con dominio propio y WAFv2, clave KMS, secreto HMAC en Secrets Manager, bucket S3 del data lake, base de datos Glue, dos tablas DynamoDB (EAV y esquemas) y dos colas SQS (outbox + DLQ). Los parámetros están fijados en `samconfig.toml`.
+El stack SAM ([`template.yaml`](template.yaml)) crea: función Lambda ARM64 con Function URL (`RESPONSE_STREAM`), distribución CloudFront con dominio propio, Route53 y WAFv2, clave KMS para cifrado por tenant, secreto HMAC en Secrets Manager, bucket S3 unificado (`.mbf` + exports) y dos colas SQS FIFO (outbox + DLQ). Los parámetros están fijados en `samconfig.toml`.
 
 ## Estado y documentación
 
-El motor está en producción. El índice navegable de toda la documentación está en [`docs/README.md`](docs/README.md); las reglas de documentación (idioma, títulos, cobertura por archivo) en [`docs/architecture/PLAN_DOCUMENTACION.md`](docs/architecture/PLAN_DOCUMENTACION.md); el plan vivo de rediseño de la arquitectura, con el estado verificado del código y el roadmap, en [`docs/architecture/PLAN_REFACTORIZACION.md`](docs/architecture/PLAN_REFACTORIZACION.md).
+El motor está en producción. El índice navegable de toda la documentación está en [`docs/README.md`](docs/README.md); la referencia autogenerada de modelos, códigos de error y API gRPC vive en [`docs/reference/`](docs/reference/).

@@ -153,10 +153,6 @@ fn test_invalid_scope_provider() {
 
 #[test]
 fn test_stub_injection_activation() {
-    std::env::set_var("ATHENA_MODE", "stub");
-    let mode = std::env::var("ATHENA_MODE").unwrap_or_default();
-    assert_eq!(mode, "stub");
-
     std::env::set_var("SQS_MODE", "stub");
     let sqs_mode = std::env::var("SQS_MODE").unwrap_or_default();
     assert_eq!(sqs_mode, "stub");

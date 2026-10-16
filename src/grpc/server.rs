@@ -53,7 +53,7 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
     let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
         crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
     );
-    let olap_channel = Arc::clone(&oltp_channel);
+    let telemetry_channel = Arc::clone(&oltp_channel);
 
     let mut channel_registry: std::collections::HashMap<
         crate::codice::registry::EngineChannel,
@@ -63,10 +63,6 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         crate::codice::registry::EngineChannel::Oltp,
         Arc::clone(&oltp_channel),
     );
-    channel_registry.insert(
-        crate::codice::registry::EngineChannel::Olap,
-        Arc::clone(&olap_channel),
-    );
 
     let janus_router = Arc::new(crate::janus_router::router::JanusRouter::new(
         channel_registry,
@@ -75,11 +71,9 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
     // ── Interceptors y Pipeline ──────────────────────────────────────────────
     let audit_interceptor = Arc::new(
         crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
-            &oltp_channel,
+            &telemetry_channel,
         )),
     );
-
-    let athena_engine: Option<Arc<dyn crate::domain::protocols::IQueryEngine>> = None;
 
     // ── SQS FIFO y Moira Emitter ─────────────────────────────────────────────
     let sqs_mode = std::env::var("SQS_MODE").unwrap_or_default();
@@ -191,12 +185,11 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         janus_router,
         query_cache,
         audit_interceptor,
-        athena_engine,
         moira_emitter: Some(Arc::clone(&moira_emitter) as Arc<dyn crate::iop::core::MoiraEmitter>),
         valkey_store,
         principal_cache,
         fault_notifier,
-        olap_channel: Arc::clone(&olap_channel),
+        telemetry_channel: Arc::clone(&telemetry_channel),
         export_storage,
         dev_auth_bypass: crate::cedar::AuthenticationPolicy::from_bool(dev_auth_bypass),
         invalidation_bus,

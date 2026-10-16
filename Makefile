@@ -1,42 +1,24 @@
-.PHONY: help infra infra-down engine dev watch build build-release test check \
-        seed smoke deploy clean fmt lint result-check result-strict
+.PHONY: help run build build-release test test-integration check doc ci \
+        hooks smoke deploy clean fmt lint result-check result-strict
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  Metri Engine — Makefile (Rust Native)
+#  Metri Engine — Makefile (Rust Native · Unified .mbf HTAP Engine)
 # ══════════════════════════════════════════════════════════════════════════════
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-# ── Infraestructura local (sin engine) ───────────────────────────────────────
+# ── Servidor gRPC Rust local (autónomo en memoria / .mbf) ────────────────────
 
-infra: ## Levanta DynamoDB Local
-	@echo "▶ Levantando DynamoDB Local..."
-	docker compose up -d dynamodb-local
-	@ok=0; for i in $$(seq 1 30); do curl -s -o /dev/null http://localhost:8000 && ok=1 && break; sleep 1; done; \
-	if [ "$$ok" != "1" ]; then echo "✗ DynamoDB Local no respondió en :8000"; exit 1; fi
-	@echo "✅ DynamoDB Local listo en :8000 — tablas: make seed"
+run: ## Levanta el servidor gRPC localmente en localhost:9090 (modo stub sin AWS)
+	@echo "▶ Levantando Metri Engine en localhost:9090 (modo stub .mbf)..."
+	ENVIRONMENT=development \
+	S3_MODE=stub \
+	SQS_MODE=stub \
+	EVENTBRIDGE_MODE=stub \
+	cargo run
 
-infra-down: ## Detiene y limpia la infraestructura
-	docker compose down -v
-	@echo "✅ Stack detenido."
-
-# ── Servidor gRPC Rust ───────────────────────────────────────────────────────
-
-engine: infra ## Levanta infra + servidor gRPC Rust compilado
-	@echo "▶ Levantando Metri Engine Rust (profile=engine)..."
-	docker compose --profile engine up -d
-	@echo "✅ gRPC escuchando en localhost:9090"
-	@echo "   grpcurl -plaintext localhost:9090 list"
-
-dev: infra ## Levanta infra + hot-reload (cargo-watch, profile=dev)
-	@echo "▶ Modo dev con cargo-watch (hot-reload en src/)..."
-	docker compose --profile dev up
-
-watch: ## Solo hot-reload (sin levantar infra de nuevo)
-	docker compose --profile dev up engine-watch
-
-# ── Compilación Rust local ───────────────────────────────────────────────────
+# ── Compilación y Verificación Rust local ────────────────────────────────────
 
 build: ## Compila el binario en modo debug
 	cargo build
@@ -50,6 +32,9 @@ fmt: ## Formatea el código con rustfmt
 lint: ## Ejecuta clippy
 	cargo clippy -- -D warnings
 
+doc: ## Genera rustdoc verificando que no existan enlaces intra-doc rotos
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --lib
+
 result-check: ## Auditoría del patrón Result en modo ratchet (no-regresión)
 	python3 scripts/dev/check_result_pattern.py
 
@@ -59,11 +44,12 @@ result-strict: ## Auditoría del patrón Result estricta (lo que corre CI)
 check: ## cargo check rápido
 	cargo check
 
-ci: ## Espejo local del CI (rust.yml): fmt, audits, gate clippy y tests
+ci: ## Espejo local del CI (rust.yml): fmt, audits, cargo doc, gate clippy y tests
 	cargo fmt --check
 	python3 scripts/docs/gen_reference.py --check
 	python3 scripts/dev/check_docs.py
 	python3 scripts/dev/check_result_pattern.py --strict
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --lib
 	cargo clippy --all-targets > clippy_local.txt 2>&1 || true
 	@bash -c 'if grep -q "^error" clippy_local.txt; then \
 		echo "✗ clippy: errores (no negociables):"; grep "^error" clippy_local.txt; exit 1; fi; \
@@ -80,49 +66,15 @@ hooks: ## Instala el pre-commit hook (fmt + referencia + guard de fuentes)
 
 # ── Tests ────────────────────────────────────────────────────────────────────
 
-test: ## Ejecuta todos los tests unitarios
+test: ## Ejecuta todos los tests (unitarios + integración)
 	cargo test
 
-test-integration: infra ## Tests de integración contra DynamoDB Local
-	DYNAMODB_ENDPOINT=http://localhost:8000 \
-	EAV_TABLE=metri-eav-local \
-	SCHEMAS_TABLE=metri-schemas-local \
-	AWS_ACCESS_KEY_ID=test \
-	AWS_SECRET_ACCESS_KEY=test \
-	AWS_DEFAULT_REGION=us-east-1 \
-	cargo test --test '*' -- --ignored
-	@# Los tests `#[ignore]` que viven dentro de src/ (quota::*, eda::moira)
-	@# no los recoge `--test '*'`, que solo mira los targets de tests/.
-	DYNAMODB_ENDPOINT=http://localhost:8000 \
-	EAV_TABLE=metri-eav-local \
-	SCHEMAS_TABLE=metri-schemas-local \
-	AWS_ACCESS_KEY_ID=test \
-	AWS_SECRET_ACCESS_KEY=test \
-	AWS_DEFAULT_REGION=us-east-1 \
-	cargo test --lib quota:: -- --ignored
-	@# El writer EAV exige infra viva: sus invariantes (retract+assert,
-	@# append-only, update sin upsert) son los del histórico auditable.
-	DYNAMODB_ENDPOINT=http://localhost:8000 \
-	EAV_TABLE=metri-eav-local \
-	SCHEMAS_TABLE=metri-schemas-local \
-	AWS_ACCESS_KEY_ID=test \
-	AWS_SECRET_ACCESS_KEY=test \
-	AWS_DEFAULT_REGION=us-east-1 \
-	cargo test --lib eav::writer:: -- --ignored
+test-integration: ## Ejecuta todas las suites de integración y E2E en tests/
+	cargo test --test '*'
 
-# ── Seed ─────────────────────────────────────────────────────────────────────
-
-seed: ## Recrea las tablas locales (metri-eav/schemas/quota-local)
-	python3 scripts/dev/reset_local.py --recreate
-
-smoke: ## Smoke test gRPC contra el engine local (requiere make engine)
+smoke: ## Smoke test gRPC contra el engine local (requiere make run)
 	grpcurl -plaintext localhost:9090 list
 	grpcurl -plaintext localhost:9090 describe metri.MetriService
-
-# ── Docker image ──────────────────────────────────────────────────────────────
-
-docker-build: ## Compila la imagen Docker del engine (release)
-	docker compose build engine
 
 # ── Deploy AWS ───────────────────────────────────────────────────────────────
 
@@ -148,6 +100,3 @@ build-MetriEngineFunction: build-lambda
 clean: ## Limpia binarios compilados
 	cargo clean
 	@echo "✅ target/ limpiado."
-
-clean-all: clean infra-down ## Limpia binarios + Docker volumes
-

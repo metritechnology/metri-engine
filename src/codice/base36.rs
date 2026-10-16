@@ -18,7 +18,7 @@ const ALPHABET: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 ///
 /// Garantías:
 ///   ✔ Función pura (excepto CSPRNG — efectuado localmente, sin I/O externo)
-///   ✔ Thread-safe — thread_rng() usa un RNG por thread (más rápido que Mutex<SecureRandom>)
+///   ✔ Thread-safe — thread_rng() usa un RNG por thread (más rápido que `Mutex<SecureRandom>`)
 ///   ✔ Unicidad probabilística: P(colisión length=7) < 1/36^7
 ///   ✔ No predecible — ChaCha20 CSPRNG
 ///

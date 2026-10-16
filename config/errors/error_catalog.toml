@@ -83,17 +83,6 @@ context_required = ["sequence_code", "scope_tag"]
 retryable        = true
 
 [[errors]]
-code             = "JNS_OLAP_003"
-family           = "jns"
-stage            = "janus"
-severity         = "warning"
-http_status      = 403
-grpc_status      = "PERMISSION_DENIED"
-description      = "BulkIngest attempted on entity without engine:olap or write_path_locked:true"
-context_required = ["entity_type"]
-retryable        = false
-
-[[errors]]
 code             = "JNS_LOCK_001"
 family           = "jns"
 stage            = "janus"
@@ -298,10 +287,10 @@ stage            = "aegis"
 severity         = "error"
 http_status      = 500
 grpc_status      = "INTERNAL"
-description      = "Aegis OLAP: IQueryEngine.start_query failed — Athena could not initiate execution"
+description      = "Aegis: query start failed — analytical engine could not initiate execution"
 context_required = ["detail", "tenant_id"]
 retryable        = true
-# v3.0.0: deprecado — describía start_query fallido (ahora INFRA_ATHENA_001)
+# v3.0.0: deprecado — entrada histórica del motor analítico previo
 deprecated       = true
 
 [[errors]]
@@ -311,10 +300,10 @@ stage            = "aegis"
 severity         = "error"
 http_status      = 500
 grpc_status      = "INTERNAL"
-description      = "Aegis OLAP: IQueryEngine.get_query_results failed — Athena execution error or timeout"
+description      = "Aegis: query result retrieval failed — analytical execution error or timeout"
 context_required = ["execution_id", "tenant_id"]
 retryable        = false
-# v3.0.0: deprecado — describía get_results fallido (ahora INFRA_ATHENA_003)
+# v3.0.0: deprecado — entrada histórica del motor analítico previo
 deprecated       = true
 
 [[errors]]
@@ -335,7 +324,7 @@ stage            = "aegis"
 severity         = "error"
 http_status      = 400
 grpc_status      = "INVALID_ARGUMENT"
-description      = "Aegis OLAP: failed to compile AST IR to SQL — unsupported operator or malformed node"
+description      = "Aegis: failed to compile filter AST IR — unsupported operator or malformed node"
 context_required = ["detail", "tenant_id"]
 retryable        = false
 
@@ -401,7 +390,7 @@ context_required = ["method", "trace_id"]
 retryable        = false
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FAMILIA INFRA — Infrastructure (DynamoDB, Athena, S3, SQS, Kinesis)
+# FAMILIA INFRA — Infrastructure (Storage, S3, SQS, EventBridge, Cedar)
 # ══════════════════════════════════════════════════════════════════════════════
 
 [[errors]]
@@ -411,7 +400,7 @@ stage            = "dynamodb"
 severity         = "error"
 http_status      = 500
 grpc_status      = "INTERNAL"
-description      = "DynamoDB SDK error — unexpected failure on GetItem/PutItem/Query/TransactWriteItems"
+description      = "Storage client error — unexpected failure on GetItem/PutItem/Query/TransactWriteItems"
 context_required = ["operation", "table", "cause"]
 retryable        = true
 
@@ -422,7 +411,7 @@ stage            = "dynamodb"
 severity         = "error"
 http_status      = 429
 grpc_status      = "RESOURCE_EXHAUSTED"
-description      = "DynamoDB ProvisionedThroughputExceededException — read/write capacity exhausted on partition"
+description      = "Storage ProvisionedThroughputExceededException — read/write capacity exhausted on partition"
 context_required = ["table", "index", "tenant_id"]
 retryable        = true
 # v3.0.0: reservado — throughput excedido lo reportará infrastructure en su fase de cierre
@@ -435,74 +424,11 @@ stage            = "dynamodb"
 severity         = "warning"
 http_status      = 404
 grpc_status      = "NOT_FOUND"
-description      = "DynamoDB item not found — entity may not exist or tenant isolation filtered it out"
+description      = "Storage item not found — entity may not exist or tenant isolation filtered it out"
 context_required = ["pk", "sk", "table"]
 retryable        = false
-# v3.0.0: reservado — item inexistente en DDB lo reportará infrastructure en su fase de cierre
+# v3.0.0: reservado — item inexistente lo reportará infrastructure en su fase de cierre
 reserved         = true
-
-[[errors]]
-code             = "INFRA_ATHENA_001"
-family           = "infra"
-stage            = "athena"
-severity         = "error"
-http_status      = 500
-grpc_status      = "INTERNAL"
-description      = "Athena StartQueryExecution failed — SDK error or quota exceeded"
-context_required = ["workgroup", "query_prefix", "cause"]
-retryable        = true
-# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
-reserved         = true
-
-[[errors]]
-code             = "INFRA_ATHENA_002"
-family           = "infra"
-stage            = "athena"
-severity         = "error"
-http_status      = 500
-grpc_status      = "INTERNAL"
-description      = "Athena query FAILED state — query execution error returned by Athena engine"
-context_required = ["execution_id", "state_change_reason"]
-retryable        = false
-# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
-reserved         = true
-
-[[errors]]
-code             = "INFRA_ATHENA_003"
-family           = "infra"
-stage            = "athena"
-severity         = "error"
-http_status      = 500
-grpc_status      = "INTERNAL"
-description      = "Athena GetQueryResults failed — cannot retrieve results after successful execution"
-context_required = ["execution_id", "cause"]
-retryable        = false
-# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
-reserved         = true
-
-[[errors]]
-code             = "INFRA_ATHENA_004"
-family           = "infra"
-stage            = "athena"
-severity         = "warning"
-http_status      = 504
-grpc_status      = "DEADLINE_EXCEEDED"
-description      = "Athena query exceeded polling timeout — execution_id preserved for async reconciliation"
-context_required = ["execution_id", "timeout_ms"]
-retryable        = false
-# v3.0.0: reservado — el adaptador Athena reportará sus propios fallos en su fase de cierre
-reserved         = true
-
-[[errors]]
-code             = "INFRA_ATHENA_005"
-family           = "infra"
-stage            = "athena"
-severity         = "warning"
-http_status      = 403
-grpc_status      = "PERMISSION_DENIED"
-description      = "Athena AccessDeniedException — Lambda IAM role lacks athena:StartQueryExecution or s3:PutObject on output bucket"
-context_required = ["workgroup", "iam_arn"]
-retryable        = false
 
 [[errors]]
 code             = "INFRA_CEDAR_001"
@@ -524,7 +450,7 @@ stage            = "cedar"
 severity         = "fatal"
 http_status      = 503
 grpc_status      = "UNAVAILABLE"
-description      = "Cedar policy store could not be loaded from DynamoDB during bootstrap — ABAC is non-functional"
+description      = "Cedar policy store could not be loaded during bootstrap — ABAC is non-functional"
 context_required = ["table", "cause"]
 retryable        = false
 
@@ -591,7 +517,7 @@ stage            = "audit-interceptor"
 severity         = "warning"
 http_status      = 500
 grpc_status      = "INTERNAL"
-description      = "AuditInterceptor.audit failed to write to OLAPChannel — audit record lost"
+description      = "AuditInterceptor.audit failed to write to telemetry_channel — audit record lost"
 context_required = ["tenant_id", "user_id", "action_type", "cause"]
 retryable        = false
 
@@ -833,7 +759,7 @@ stage            = "aegis"
 severity         = "error"
 http_status      = 400
 grpc_status      = "INVALID_ARGUMENT"
-description      = "Aegis SQL compilation failed — query could not be compiled"
+description      = "Aegis query compilation failed — query could not be compiled"
 context_required = ["detail", "tenant_id"]
 retryable        = false
 
@@ -844,7 +770,7 @@ stage            = "aegis"
 severity         = "warning"
 http_status      = 504
 grpc_status      = "DEADLINE_EXCEEDED"
-description      = "Aegis OLAP: Athena polling timeout — execution_id preserved for reconciliation"
+description      = "Aegis: query execution timeout — execution_id preserved for reconciliation"
 context_required = ["execution_id", "timeout_ms"]
 retryable        = false
 
@@ -855,7 +781,7 @@ stage            = "aegis"
 severity         = "error"
 http_status      = 500
 grpc_status      = "INTERNAL"
-description      = "Aegis: Athena output parse error — unexpected result shape"
+description      = "Aegis: query output parse error — unexpected result shape"
 context_required = ["execution_id", "detail"]
 retryable        = false
 
@@ -1000,17 +926,6 @@ http_status      = 500
 grpc_status      = "INTERNAL"
 description      = "EventBridge SDK error — event put failed"
 context_required = ["operation", "bus", "cause"]
-retryable        = false
-
-[[errors]]
-code             = "INFRA_KIN_001"
-family           = "infra"
-stage            = "kinesis"
-severity         = "error"
-http_status      = 500
-grpc_status      = "INTERNAL"
-description      = "Kinesis SDK error — record put failed"
-context_required = ["operation", "stream", "cause"]
 retryable        = false
 
 [[errors]]

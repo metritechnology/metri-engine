@@ -24,9 +24,14 @@
 pub mod base36;
 pub mod coercion;
 pub mod generator;
+pub mod profiles;
 pub mod registry;
 pub mod sequence;
 
 pub use registry::{global, init_global};
-pub use registry::{AttrType, AttributeDescriptor, CodeRegistry, EngineChannel, EntityModel};
+pub use registry::{
+    AffineTransformSpec, AttrType, AttributeDescriptor, CodeRegistry, CrossCovarianceProfile,
+    DistributionFamily, EngineChannel, EntityModel, FuzzySearchProfile, MathProfile,
+    PhoneticAlgorithm, SpatialProfile, SpectralProfile, SurvivalAnalysisProfile,
+};
 pub mod validator;

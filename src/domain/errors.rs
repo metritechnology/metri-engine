@@ -31,14 +31,13 @@ pub enum ErrorCode {
     Jns001,      // Sin canal de escritura para engine
     JnsLock001,  // write_path_locked = true
     JnsSeed001,  // is_system_seeded = true
-    JnsOlap001,  // rpc Transact prohibido en engine:olap (solo BulkIngest)
     JnsTx001,    // TX ACID falló en el canal OLTP
 
-    // ── Aegis SQL Compiler ───────────────────────────────────────────────────
-    Aeg001, // SQL compilation failed
-    Aeg002, // Athena execution failed
-    Aeg003, // Athena timeout
-    Aeg004, // Athena output parse error
+    // ── Aegis Analytical Engine ──────────────────────────────────────────────
+    Aeg001, // Query compilation failed
+    Aeg002, // Query execution failed
+    Aeg003, // Query execution timeout
+    Aeg004, // Query output parse error
     Aeg005, // Unsupported aggregation function
 
     // ── EAV Engine ──────────────────────────────────────────────────────────
@@ -71,11 +70,10 @@ pub enum ErrorCode {
     Quota001, // Tenant quota exhausted
 
     // ── Infraestructura ──────────────────────────────────────────────────────
-    Infra001,         // DynamoDB client error
+    Infra001,         // Storage client error
     Infra002,         // S3 client error
     Infra003,         // SQS client error
     Infra004,         // EventBridge client error
-    Infra005,         // Kinesis client error
     InfraCatalog001,  // Error catalog TOML failed to load/validate at bootstrap
     InfraConfig001,   // Engine configuration failed to resolve/validate at bootstrap
     InfraGlue001,     // Glue SDK error — Iceberg table sync failed
@@ -96,7 +94,6 @@ pub enum ErrorCode {
     EavTx001,
     EavTx004,
     GrpcTenant001,
-    InfraAthena005,
     InfraCedar002,
     Mcp503,
 
@@ -139,7 +136,6 @@ impl ErrorCode {
         ErrorCode::Jns001,
         ErrorCode::JnsLock001,
         ErrorCode::JnsSeed001,
-        ErrorCode::JnsOlap001,
         ErrorCode::JnsTx001,
         ErrorCode::Aeg001,
         ErrorCode::Aeg002,
@@ -166,7 +162,6 @@ impl ErrorCode {
         ErrorCode::Infra002,
         ErrorCode::Infra003,
         ErrorCode::Infra004,
-        ErrorCode::Infra005,
         ErrorCode::InfraCatalog001,
         ErrorCode::InfraConfig001,
         ErrorCode::InfraGlue001,
@@ -181,7 +176,6 @@ impl ErrorCode {
         ErrorCode::EavTx001,
         ErrorCode::EavTx004,
         ErrorCode::GrpcTenant001,
-        ErrorCode::InfraAthena005,
         ErrorCode::InfraCedar002,
         ErrorCode::Mcp503,
         ErrorCode::Fml001,
@@ -226,7 +220,6 @@ impl ErrorCode {
             ErrorCode::Jns001 => "JNS_001",
             ErrorCode::JnsLock001 => "JNS_LOCK_001",
             ErrorCode::JnsSeed001 => "JNS_SEED_001",
-            ErrorCode::JnsOlap001 => "JNS_OLAP_003",
             ErrorCode::JnsTx001 => "JNS_TX_001",
 
             ErrorCode::Aeg001 => "AEG_COMPILE_003",
@@ -261,7 +254,6 @@ impl ErrorCode {
             ErrorCode::Infra002 => "INFRA_S3_001",
             ErrorCode::Infra003 => "INFRA_SQS_001",
             ErrorCode::Infra004 => "INFRA_EB_001",
-            ErrorCode::Infra005 => "INFRA_KIN_001",
             ErrorCode::InfraCatalog001 => "INFRA_CATALOG_001",
             ErrorCode::InfraConfig001 => "INFRA_CONFIG_001",
             ErrorCode::InfraGlue001 => "INFRA_GLUE_001",
@@ -279,7 +271,6 @@ impl ErrorCode {
             ErrorCode::EavTx001 => "EAV_TX_001",
             ErrorCode::EavTx004 => "EAV_TX_004",
             ErrorCode::GrpcTenant001 => "GRPC_TENANT_001",
-            ErrorCode::InfraAthena005 => "INFRA_ATHENA_005",
             ErrorCode::InfraCedar002 => "INFRA_CEDAR_002",
             ErrorCode::Mcp503 => "MCP_503",
 
@@ -359,7 +350,6 @@ impl ErrorCode {
             | ErrorCode::Jns001
             | ErrorCode::JnsLock001
             | ErrorCode::JnsSeed001
-            | ErrorCode::JnsOlap001
             | ErrorCode::JnsTx001
             | ErrorCode::JnsRef002
             | ErrorCode::JnsConflict001 => "janus",
@@ -387,12 +377,10 @@ impl ErrorCode {
             | ErrorCode::Infra002
             | ErrorCode::Infra003
             | ErrorCode::Infra004
-            | ErrorCode::Infra005
             | ErrorCode::InfraCatalog001
             | ErrorCode::InfraConfig001
             | ErrorCode::InfraGlue001
             | ErrorCode::InfraFirehose001
-            | ErrorCode::InfraAthena005
             | ErrorCode::InfraCedar002 => "infrastructure",
             ErrorCode::Auth401 | ErrorCode::Auth403 | ErrorCode::AuthRevoked => "auth",
             ErrorCode::Aud001 | ErrorCode::Aud002 => "audit-interceptor",

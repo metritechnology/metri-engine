@@ -195,10 +195,10 @@ impl IFaultNotifier for NoopFaultNotifier {
 ///   1. Lookup del código en el ErrorCatalog
 ///   2. Parsear severidad (string → FaultSeverity)
 ///   3. Si :info → solo log
-///   4. Si :warning | :error | :fatal → log + notify al bus + persistencia OLAP
+///   4. Si :warning | :error | :fatal → log + notify al bus + persistencia MBF
 pub async fn process_fault(
     notifier: &dyn IFaultNotifier,
-    olap_channel: &dyn IWriteChannel,
+    telemetry_channel: &dyn IWriteChannel,
     error: &DomainError,
     error_dto: &Value,
     entity_type: Option<String>,
@@ -228,7 +228,7 @@ pub async fn process_fault(
     warn!(
         code     = %code_str,
         severity = ?severity,
-        "[Sherlog] Escalando fallo al Fault Bus y registrando en persistencia OLAP"
+        "[Sherlog] Escalando fallo al Fault Bus y registrando en persistencia MBF"
     );
 
     // Fire-and-forget: el error del notifier nunca interrumpe el flujo principal.
@@ -236,7 +236,7 @@ pub async fn process_fault(
         error!("[Sherlog] Notifier falló — ignorando para no interrumpir flujo: {e:?}");
     }
 
-    // Persistencia en canal OLAP (domain_fault)
+    // Persistencia en almacenamiento MBF (domain_fault)
     let severity_str = match severity {
         FaultSeverity::Warning => "WARNING",
         FaultSeverity::Error => "ERROR",
@@ -324,8 +324,8 @@ pub async fn process_fault(
         req_map,
     );
 
-    if let Err(e) = olap_channel.route(fault_ctx).await {
-        error!("[Sherlog] Fallo al encolar domain_fault en canal OLAP: {e:?}");
+    if let Err(e) = telemetry_channel.route(fault_ctx).await {
+        error!("[Sherlog] Fallo al encolar domain_fault en canal de persistencia MBF: {e:?}");
     }
 }
 
