@@ -52,13 +52,6 @@
     },
     {
       "check": "expect",
-      "path": "src/janus_router/partition.rs",
-      "max": 1,
-      "kind": "invariante",
-      "reason": "PATH_PLACEHOLDER_RE: regex de patrón literal en static — invariante de construcción."
-    },
-    {
-      "check": "expect",
       "path": "src/cedar/engine.rs",
       "max": 1,
       "kind": "invariante",

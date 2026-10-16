@@ -1,26 +1,10 @@
 //! Tests for `aegis::formula`.
-use crate::aegis::formula::compiler_olap::OlapFormulaCompiler;
 use crate::aegis::formula::evaluator::FormulaEvaluator;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::lexer::tokenize;
 use crate::aegis::formula::parser::to_rpn;
 use crate::aegis::formula::resolver::OltpVariableResolver;
 use serde_json::json;
-
-#[test]
-fn test_integration_olap_compilation() {
-    let reg = FunctionRegistry::standard();
-
-    // 1. Basic namespace resolution and space formatting
-    let formula1 = "((asset/revenue - invoice/total-cost) / NULLIF(asset/revenue, 0)) * 100";
-    let sql1 = OlapFormulaCompiler::compile(formula1, &reg).unwrap();
-    assert_eq!(sql1, "((revenue - total_cost) / NULLIF(revenue, 0)) * 100");
-
-    // 2. Unary minus spacing check
-    let formula2 = "-asset/cost + asset/revenue";
-    let sql2 = OlapFormulaCompiler::compile(formula2, &reg).unwrap();
-    assert_eq!(sql2, "-cost + revenue");
-}
 
 #[test]
 fn test_integration_oltp_evaluation() {

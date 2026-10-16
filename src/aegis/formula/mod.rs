@@ -9,7 +9,6 @@
 //! `[I]` FormulaEvaluator ≠ FormulaCompiler ≠ FormulaValidator — ISP
 //! `[D]` evaluator → VariableResolver trait, FormulaFunction trait — DIP
 
-pub mod compiler_olap;
 pub mod errors;
 pub mod evaluator;
 pub mod functions;

@@ -30,7 +30,7 @@ use crate::eav::writer::transact::{TransactOp, TransactPayload};
 #[derive(Debug)]
 pub struct EntityPlan {
     pub datoms: Vec<Datom>,
-    pub fts_requests: Vec<aws_sdk_dynamodb::types::WriteRequest>,
+    pub fts_requests: Vec<crate::mbf::storage::WriteRequest>,
 }
 
 /// Plan completo de la mutación del payload: datoms, FTS, delta del contrato
@@ -38,7 +38,7 @@ pub struct EntityPlan {
 #[derive(Debug)]
 pub struct DatomPlan {
     pub datoms: Vec<Datom>,
-    pub fts_requests: Vec<aws_sdk_dynamodb::types::WriteRequest>,
+    pub fts_requests: Vec<crate::mbf::storage::WriteRequest>,
     pub delta: Option<crate::domain::events::Delta>,
     pub deleted_attrs: Option<HashMap<String, DatomValue>>,
 }

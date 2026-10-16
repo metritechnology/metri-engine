@@ -25,13 +25,7 @@
 //!
 //! Port del motor Datahike/Datomic-style del stack Clojure anterior;
 //! los comentarios `Blueprint` citan las secciones del diseño original.
-pub mod cursor;
 pub mod fts;
-pub mod hierarchy;
-pub mod index;
 pub mod reader;
-pub mod registry;
-pub mod sharding;
-pub mod telemetry;
 pub mod types;
 pub mod writer;

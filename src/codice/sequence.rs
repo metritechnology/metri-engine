@@ -182,7 +182,7 @@ async fn read_counter_item(
     ddb: &DynamoClient,
     seq_code: &str,
 ) -> Result<
-    Option<std::collections::HashMap<String, aws_sdk_dynamodb::types::AttributeValue>>,
+    Option<std::collections::HashMap<String, crate::mbf::storage::AttributeValue>>,
     DomainError,
 > {
     ddb.get_item(&sequence_registry_table(), seq_code, None)
@@ -193,7 +193,7 @@ async fn read_counter_item(
 /// opcionales: las filas históricas del writer viejo los pineaban estáticos;
 /// las nuevas los escribe solo el RPC de configuración.
 fn policy_from_item(
-    item: &std::collections::HashMap<String, aws_sdk_dynamodb::types::AttributeValue>,
+    item: &std::collections::HashMap<String, crate::mbf::storage::AttributeValue>,
 ) -> SequencePolicy {
     SequencePolicy {
         prefix: item
@@ -230,7 +230,7 @@ pub async fn read_global_policy(
 /// (política, current_value), ambos opcionales — las filas históricas del
 /// writer viejo no siempre traen todo.
 pub(crate) fn parse_counter_item(
-    item: &std::collections::HashMap<String, aws_sdk_dynamodb::types::AttributeValue>,
+    item: &std::collections::HashMap<String, crate::mbf::storage::AttributeValue>,
 ) -> (SequencePolicy, Option<i64>) {
     let policy = policy_from_item(item);
     let current_value = item
@@ -323,7 +323,7 @@ pub async fn next(
 async fn read_sequence(ddb: &DynamoClient, seq_code: &str) -> Result<Option<u64>, DomainError> {
     Ok(read_counter_item(ddb, seq_code).await?.and_then(|item| {
         item.get("current_value").and_then(|v| {
-            if let aws_sdk_dynamodb::types::AttributeValue::N(n) = v {
+            if let crate::mbf::storage::AttributeValue::N(n) = v {
                 n.parse::<u64>().ok()
             } else {
                 None

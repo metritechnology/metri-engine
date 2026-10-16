@@ -23,7 +23,7 @@ use crate::grpc::pb::{
     Status as PbStatus, UpsertSequenceConfigRequest, UpsertSequenceConfigResponse,
 };
 use crate::grpc::service::MetriGrpcService;
-use aws_sdk_dynamodb::types::AttributeValue;
+use crate::mbf::storage::AttributeValue;
 
 const GRANT_VIEW: &str = "sequence_registry:VIEW";
 const GRANT_UPDATE: &str = "sequence_registry:UPDATE";

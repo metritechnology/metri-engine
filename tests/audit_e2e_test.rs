@@ -21,11 +21,57 @@ use metri_engine::grpc::service::MetriGrpcService;
 use metri_engine::grpc::translator;
 use metri_engine::infrastructure::audit::interceptor::AuditInterceptorImpl;
 use metri_engine::infrastructure::dynamodb::DynamoClient;
-use metri_engine::infrastructure::kinesis::SpyStreamWriter;
 use metri_engine::infrastructure::session_store::{issue_token, HmacTokenStore};
-use metri_engine::janus_router::olap_channel::OlapChannel;
 use metri_engine::janus_router::oltp_channel::OltpChannel;
 use metri_engine::janus_router::router::{IWriteChannel, JanusRouter};
+
+#[derive(Clone, Debug)]
+struct CapturedAuditRecord {
+    pub stream_name: String,
+    pub data: Vec<u8>,
+}
+
+#[derive(Default)]
+struct SpyStreamWriter {
+    records: std::sync::Mutex<Vec<CapturedAuditRecord>>,
+}
+
+impl SpyStreamWriter {
+    fn new() -> Self {
+        Self::default()
+    }
+    fn drain(&self) -> Vec<CapturedAuditRecord> {
+        std::mem::take(&mut *self.records.lock().unwrap())
+    }
+}
+
+#[async_trait::async_trait]
+impl IWriteChannel for SpyStreamWriter {
+    async fn route(
+        &self,
+        ctx: metri_engine::iop::core::IopContext,
+    ) -> Result<serde_json::Value, metri_engine::domain::errors::DomainError> {
+        let mut enriched = ctx
+            .request
+            .get("data")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .cloned()
+            .unwrap_or_else(|| serde_json::Value::Object(ctx.request.clone()));
+        if let Some(obj) = enriched.as_object_mut() {
+            obj.entry("id".to_string())
+                .or_insert_with(|| serde_json::json!(ulid::Ulid::new().to_string()));
+            obj.insert("_tenant".to_string(), serde_json::json!(ctx.tenant_id));
+            obj.entry("created_at".to_string())
+                .or_insert_with(|| serde_json::json!(chrono::Utc::now().timestamp_millis()));
+        }
+        self.records.lock().unwrap().push(CapturedAuditRecord {
+            stream_name: format!("metri-olap-stream-{}", ctx.entity_type.replace('_', "-")),
+            data: serde_json::to_vec(&enriched).unwrap_or_default(),
+        });
+        Ok(serde_json::json!({"status": "ok"}))
+    }
+}
 
 static INIT: std::sync::Once = std::sync::Once::new();
 const HMAC_SECRET: &[u8] = b"secret-key-development-metri-256-bits!!!";
@@ -73,8 +119,7 @@ async fn setup_service() -> (MetriGrpcService, Arc<SpyStreamWriter>, String) {
     let oltp_channel: Arc<dyn IWriteChannel> = Arc::new(OltpChannel::new(eav_writer.clone()));
 
     let spy_writer = Arc::new(SpyStreamWriter::new());
-    let olap_channel: Arc<dyn IWriteChannel> =
-        Arc::new(OlapChannel::new("metri-olap-stream", spy_writer.clone()));
+    let olap_channel: Arc<dyn IWriteChannel> = spy_writer.clone();
 
     let mut channel_registry = std::collections::HashMap::new();
     channel_registry.insert(EngineChannel::Oltp, Arc::clone(&oltp_channel));

@@ -61,7 +61,7 @@ pub fn insert_aevt_scan_cache_entry(
     );
 }
 
-use aws_sdk_dynamodb::types::AttributeValue;
+use crate::mbf::storage::{AttributeValue, Blob};
 
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::fts::trigram::generate_trigrams;
@@ -140,9 +140,6 @@ impl EavQueryExecutor {
         plan: &QueryExecutionPlan,
     ) -> Result<Vec<String>, DomainError> {
         debug!("[EAV] Executing legacy plan: {:?}", plan.strategy);
-        if crate::mbf::is_mbf_primary_cutover(&plan.entity_type) {
-            return Ok(Vec::new());
-        }
 
         let entity_ids = match &plan.strategy {
             IndexStrategy::PointLookup(ulid) => {
@@ -189,37 +186,13 @@ impl EavQueryExecutor {
                 tenant_id,
                 attr_name,
                 value,
-            } => {
-                if attr_name == "entity_type" {
-                    if let DatomValue::Str(et) = value {
-                        if crate::mbf::is_mbf_primary_cutover(et) {
-                            return Ok(Vec::new());
-                        }
-                    }
-                }
-                self.execute_avet_single(tenant_id, attr_name, value).await
-            }
+            } => self.execute_avet_single(tenant_id, attr_name, value).await,
 
             NativeQueryPlan::AvetIntersect { tenant_id, filters } => {
-                for (attr_name, value) in filters {
-                    if attr_name == "entity_type" {
-                        if let DatomValue::Str(et) = value {
-                            if crate::mbf::is_mbf_primary_cutover(et) {
-                                return Ok(Vec::new());
-                            }
-                        }
-                    }
-                }
                 self.execute_avet_intersection(tenant_id, filters).await
             }
 
             NativeQueryPlan::FtsSearch { tenant_id, term } => {
-                if std::env::var("MBF_ENGINE_MODE")
-                    .map(|v| v.eq_ignore_ascii_case("primary"))
-                    .unwrap_or(false)
-                {
-                    return Ok(Vec::new());
-                }
                 self.execute_fts_search(tenant_id, term).await
             }
 
@@ -227,9 +200,6 @@ impl EavQueryExecutor {
                 tenant_id,
                 entity_type,
             } => {
-                if crate::mbf::is_mbf_primary_cutover(entity_type) {
-                    return Ok(Vec::new());
-                }
                 // Pasamos limit=None para que la paginación automática obtenga TODOS los ids.
                 // El limit real de paginación se aplica en el executor (offset/page_limit).
                 self.execute_aevt_scan_by_type(tenant_id, entity_type, 0)
@@ -331,7 +301,7 @@ impl EavQueryExecutor {
         attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
         attr_values.insert(
             ":sk_prefix".to_string(),
-            AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(sk_prefix_truncated)),
+            AttributeValue::B(Blob::new(sk_prefix_truncated)),
         );
 
         let raw = self
@@ -442,9 +412,7 @@ impl EavQueryExecutor {
                 Ok(items) => {
                     tracing::debug!("[EAV-FTS] Trigram '{}' -> {} items", trigram, items.len());
                     for item in items {
-                        if let Some(aws_sdk_dynamodb::types::AttributeValue::B(blob)) =
-                            item.get("SK")
-                        {
+                        if let Some(AttributeValue::B(blob)) = item.get("SK") {
                             let bytes = blob.as_ref();
                             if bytes.len() > 2 {
                                 let eid_bytes = &bytes[2..]; // skip 2 bytes attr_id
@@ -733,10 +701,7 @@ mod avet_dedup_tests {
         sk.push(if op { 1 } else { 0 });
         let mut m = HashMap::new();
         m.insert("PK".to_string(), AttributeValue::S(format!("T#t#E#{eid}")));
-        m.insert(
-            "SK".to_string(),
-            AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(sk)),
-        );
+        m.insert("SK".to_string(), AttributeValue::B(Blob::new(sk)));
         m.insert("v".to_string(), AttributeValue::S(v.to_string()));
         m
     }

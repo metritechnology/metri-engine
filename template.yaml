@@ -27,17 +27,7 @@ Parameters:
     Default: primary
     AllowedValues:
       - primary
-      - shadow
-      - legacy
-    Description: "Modo del motor binario Metri Vortex (.mbf): primary (S3 + /tmp NVMe), shadow (verificación dual), legacy (EAV)."
-  EavTableName:
-    Type: String
-    Default: metri-prod
-    Description: "Nombre físico de la tabla EAV de estado y compatibilidad (PAY_PER_REQUEST, $0 en reposo)."
-  SequenceRegistryTableName:
-    Type: String
-    Default: metri-sequence-registry
-    Description: "Contadores ACID de códigos auto-generados (strategy=sequential, p. ej. work_order_number)."
+    Description: "Modo del motor binario Metri Vortex (.mbf): primary (S3 + /tmp NVMe)."
 
 Globals:
   Function:
@@ -380,111 +370,7 @@ Resources:
             Prefix: exports/
             ExpirationInDays: 7
 
-  # ── 4. Tablas de Control y Estado Transaccional (PAY_PER_REQUEST — $0 idle) ──
-  MetriEavTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      TableName: !Ref EavTableName
-      BillingMode: PAY_PER_REQUEST
-      SSESpecification:
-        SSEEnabled: true
-        SSEType: KMS
-        KMSMasterKeyId: !Ref MetriKmsMasterKey
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-        - AttributeName: SK
-          AttributeType: B
-        - AttributeName: ap
-          AttributeType: S
-        - AttributeName: as
-          AttributeType: B
-        - AttributeName: vp
-          AttributeType: S
-        - AttributeName: vs
-          AttributeType: B
-        - AttributeName: rp
-          AttributeType: S
-        - AttributeName: rs
-          AttributeType: B
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-        - AttributeName: SK
-          KeyType: RANGE
-      GlobalSecondaryIndexes:
-        - IndexName: GSI-AEVT
-          KeySchema:
-            - AttributeName: ap
-              KeyType: HASH
-            - AttributeName: as
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-        - IndexName: GSI-AVET
-          KeySchema:
-            - AttributeName: vp
-              KeyType: HASH
-            - AttributeName: vs
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-        - IndexName: GSI-VAET
-          KeySchema:
-            - AttributeName: rp
-              KeyType: HASH
-            - AttributeName: rs
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-
-  MetriSequenceRegistryTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      TableName: !Ref SequenceRegistryTableName
-      BillingMode: PAY_PER_REQUEST
-      SSESpecification:
-        SSEEnabled: true
-        SSEType: KMS
-        KMSMasterKeyId: !Ref MetriKmsMasterKey
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-
-  MetriSchemasTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      SSESpecification:
-        SSEEnabled: true
-        SSEType: KMS
-        KMSMasterKeyId: !Ref MetriKmsMasterKey
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
-      TimeToLiveSpecification:
-        AttributeName: ttl
-        Enabled: true
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-
-  # ── 5. Autenticación HMAC-SHA256 y Despacho EDA (SQS FIFO Outbox) ────────────
+  # ── 4. Autenticación HMAC-SHA256 y Despacho EDA (SQS FIFO Outbox) ────────────
   MetriHMACSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -518,7 +404,7 @@ Resources:
         deadLetterTargetArn: !GetAtt MetriOutboxDLQ.Arn
         maxReceiveCount: 3
 
-  # ── 6. Motor Nativo Rust + Metri Vortex .mbf (provided.al2023 / ARM64) ───────
+  # ── 5. Motor Nativo Rust + Metri Vortex .mbf (provided.al2023 / ARM64) ───────
   MetriEngineFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -547,54 +433,20 @@ Resources:
         LogGroup: !Ref MetriEngineLogGroup
         LogFormat: JSON
 
-      # Políticas IAM de Mínimo Privilegio (sin Glue, sin Athena, sin Firehose, sin QueryCache DDB)
+      # Políticas IAM de Mínimo Privilegio (100% .mbf sobre S3 + SQS + EventBridge + KMS)
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref MetriDataLakeBucket
-        - DynamoDBCrudPolicy:
-            TableName: !Ref MetriSchemasTable
         - SQSSendMessagePolicy:
             QueueName: !GetAtt MetriOutboxQueue.QueueName
         - Statement:
-            # KMS: operaciones criptográficas sobre S3 Bucket Key, DynamoDB y SQS
+            # KMS: operaciones criptográficas sobre S3 Bucket Key (.mbf) y SQS
             - Effect: Allow
               Action:
                 - kms:Decrypt
                 - kms:Encrypt
                 - kms:GenerateDataKey*
               Resource: !GetAtt MetriKmsMasterKey.Arn
-
-            # Tabla EAV (plano de datos inmutable append-only)
-            - Effect: Allow
-              Action:
-                - dynamodb:GetItem
-                - dynamodb:PutItem
-                - dynamodb:UpdateItem
-                - dynamodb:Query
-                - dynamodb:Scan
-                - dynamodb:BatchGetItem
-                - dynamodb:BatchWriteItem
-                - dynamodb:ConditionCheckItem
-                - dynamodb:TransactWriteItems
-                - dynamodb:TransactGetItems
-              Resource:
-                - !GetAtt MetriEavTable.Arn
-                - !Sub "${MetriEavTable.Arn}/index/*"
-
-            - Effect: Allow
-              Action:
-                - dynamodb:DescribeTable
-              Resource: !GetAtt MetriEavTable.Arn
-
-            # Contadores secuenciales (auto_generate strategy=sequential)
-            - Effect: Allow
-              Action:
-                - dynamodb:GetItem
-                - dynamodb:PutItem
-                - dynamodb:ConditionCheckItem
-                - dynamodb:UpdateItem
-                - dynamodb:Scan
-              Resource: !GetAtt MetriSequenceRegistryTable.Arn
 
             # EDA: EventBridge (domain & fault events)
             - Effect: Allow
@@ -630,18 +482,9 @@ Resources:
           MBF_TMP_CACHE_MAX_MB: "450"
           MBF_L0_MAX_ROWS: "4096"
           MBF_GROUP_COMMIT_WINDOW_MS: "15"
-          # ── Almacenamiento Unificado S3 y Control ──
+          # ── Almacenamiento Unificado S3 ──
           AWS_S3_LAKE_BUCKET: !Ref MetriDataLakeBucket
           AWS_S3_EXPORT_BUCKET: !Ref MetriDataLakeBucket
-          EAV_TABLE_NAME: !Ref EavTableName
-          SEQUENCE_REGISTRY_TABLE: !Ref SequenceRegistryTableName
-          CEDAR_POLICIES_TABLE: !Ref MetriSchemasTable
-          QUOTA_TABLE: !Ref MetriSchemasTable
-          # ── Desactivación de Motores Costosos Legacy (Athena / Firehose / QueryCache DDB) ──
-          ATHENA_MODE: "stub"
-          KINESIS_MODE: "stub"
-          QUERY_CACHE_MODE: "off"
-          QUERY_CACHE_GENERATION: "off"
           # ── EDA ──
           OUTBOX_QUEUE_URL: !GetAtt MetriOutboxQueue.QueueUrl
           FAULT_BUS_NAME: "metri-faults"
@@ -651,9 +494,9 @@ Resources:
           METRI_BOOTSTRAP_MASTER_EMAIL: "admin@metri.one"
           METRI_BOOTSTRAP_MASTER_USERNAME: "admin"
           METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
-          FORCE_DEPLOY: "2"
+          FORCE_DEPLOY: "3"
 
-  # ── 7. Observabilidad Estructurada con Retención Acotada (14 días) ───────────
+  # ── 6. Observabilidad Estructurada con Retención Acotada (14 días) ───────────
   MetriEngineLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -679,12 +522,6 @@ Outputs:
   MetriVortexEngineMode:
     Description: "Modo activo del motor binario Metri Vortex (.mbf)"
     Value: !Ref MbfEngineMode
-  MetriEavTableArn:
-    Description: "ARN de la tabla EAV de estado"
-    Value: !GetAtt MetriEavTable.Arn
-  MetriEavTableName:
-    Description: "Nombre físico de la tabla EAV"
-    Value: !Ref MetriEavTable
   MetriHMACTokenStore:
     Description: "Autenticación HMAC-SHA256 | Secret en Secrets Manager + KMS"
     Value: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:metri-hmac-secret-${AWS::StackName}"

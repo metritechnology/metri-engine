@@ -12,6 +12,7 @@ use crate::domain::protocols::{
 };
 
 pub mod format;
+pub mod storage;
 pub mod tx;
 pub mod zones;
 
@@ -194,30 +195,4 @@ impl IMbfObjectStore for InMemoryChaosS3Store {
         self.puts_count.fetch_add(1, Ordering::Relaxed);
         Ok(new_etag)
     }
-}
-
-/// Returns `true` when the unified Metri Vortex (`.mbf`) engine is active (`MBF_ENGINE_MODE=primary`)
-/// and the entity is a domain/business model whose legacy OLTP/OLAP EAV/Athena connection is severed at the root.
-///
-/// Only the IAM & tenant control-plane entities (`user`, `role`, `user_group`, `tenant`, `tenant_plugin`,
-/// `domain_plugin`, `domain_quota`, `api_key`, `sequence_registry`) keep control-plane lookup for session auth.
-pub fn is_mbf_primary_cutover(entity_type: &str) -> bool {
-    let mbf_primary = std::env::var("MBF_ENGINE_MODE")
-        .map(|v| v.eq_ignore_ascii_case("primary"))
-        .unwrap_or(false);
-    if !mbf_primary {
-        return false;
-    }
-    !matches!(
-        entity_type,
-        "user"
-            | "role"
-            | "user_group"
-            | "tenant"
-            | "tenant_plugin"
-            | "domain_plugin"
-            | "domain_quota"
-            | "api_key"
-            | "sequence_registry"
-    )
 }

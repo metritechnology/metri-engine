@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aws_sdk_dynamodb::types::AttributeValue;
+use crate::mbf::storage::{AttributeValue, Blob};
 use tracing::debug;
 
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -313,10 +313,7 @@ impl EavReader {
         attr_names.insert("#pk".to_string(), "PK".to_string());
         attr_names.insert("#sk".to_string(), "SK".to_string());
         attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
-        attr_values.insert(
-            ":sk_max".to_string(),
-            AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(sk_max)),
-        );
+        attr_values.insert(":sk_max".to_string(), AttributeValue::B(Blob::new(sk_max)));
 
         let raw_items = self
             .ddb
@@ -706,6 +703,5 @@ fn extract_datom_value(item: &HashMap<String, AttributeValue>) -> Option<DatomVa
         AttributeValue::Bool(b) => Some(DatomValue::Bool(*b)),
         AttributeValue::B(_) => Some(DatomValue::Bytes(vec![])), // placeholder
         AttributeValue::Null(_) => Some(DatomValue::Null),
-        _ => None,
     }
 }

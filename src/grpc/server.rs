@@ -27,62 +27,19 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
 
     info!("Iniciando gRPC Server (Tonic-Web) en {}...", addr);
 
-    // Lee la tabla EAV y el prefijo OLAP desde env vars (alineado con template.yaml)
+    // Lee el identificador de almacenamiento .mbf desde env vars
     let eav_table =
-        std::env::var("EAV_TABLE_NAME").unwrap_or_else(|_| "metri-eav-local".to_string());
-    let olap_prefix =
-        std::env::var("KINESIS_STREAM_PREFIX").unwrap_or_else(|_| "metri-olap-stream".to_string());
+        std::env::var("EAV_TABLE_NAME").unwrap_or_else(|_| "metri-mbf-local".to_string());
 
     let ddb_client = Arc::new(crate::infrastructure::dynamodb::DynamoClient::new(&eav_table).await);
     let query_exec =
         crate::eav::reader::query::EavQueryExecutor::new(Arc::clone(&ddb_client), &eav_table);
     let pull_read = crate::eav::reader::pull::EavReader::new(Arc::clone(&ddb_client), &eav_table);
 
-    // ── Query result cache (PLAN_CACHE_JANUS_DYNAMODB.md) ───────────────────
-    // Modo por env (default off — el motor arranca sin la tabla). La
-    // política se valida fail-fast aquí, una sola vez (ADR-004).
-    let query_cache_policy = crate::janus::cache::QueryCachePolicy::from_env()?;
-    let query_cache_table = std::env::var("QUERY_CACHE_TABLE")
-        .unwrap_or_else(|_| "metri-query-cache-local".to_string());
-    let query_cache: Arc<crate::janus::cache::QueryCacheFrontend> = match query_cache_policy.mode {
-        crate::janus::cache::CacheMode::Ddb => {
-            info!(
-                "[Server] QueryCache en MODO DDB | tabla: {} | canales: {}",
-                query_cache_table,
-                if query_cache_policy.channels.oltp {
-                    "oltp"
-                } else {
-                    ""
-                }
-            );
-            Arc::new(crate::janus::cache::QueryCacheFrontend::ddb(
-                Arc::new(
-                    crate::infrastructure::dynamodb_query_cache::DynamoKvCache::new(
-                        Arc::clone(&ddb_client),
-                        query_cache_table.clone(),
-                    ),
-                ),
-                query_cache_policy.clone(),
-            ))
-        }
-        crate::janus::cache::CacheMode::Shadow => {
-            info!("[Server] QueryCache en MODO SHADOW — medición de hit rate sin costo");
-            Arc::new(crate::janus::cache::QueryCacheFrontend::shadow(
-                query_cache_policy.clone(),
-            ))
-        }
-        crate::janus::cache::CacheMode::Off => {
-            info!("[Server] QueryCache DESACTIVADA (QUERY_CACHE_MODE=off)");
-            Arc::new(crate::janus::cache::QueryCacheFrontend::disabled())
-        }
-    };
-    let generation_on = std::env::var("QUERY_CACHE_GENERATION")
-        .map(|v| v == "on")
-        .unwrap_or(false);
+    let query_cache: Arc<crate::janus::cache::QueryCacheFrontend> =
+        Arc::new(crate::janus::cache::QueryCacheFrontend::disabled());
 
-    // El consumo de cuota vive en un contador atómico, fuera del log de datoms.
-    // Superponerlo al leer `domain_quota` es lo que permite que el camino de
-    // escritura no tenga que mantener una copia al día: ver quota/projection.rs.
+    // El consumo de cuota vive en un contador atómico respaldado por MbfStorageClient (.mbf).
     let quota_counter: Arc<dyn crate::quota::QuotaCounter> = Arc::new(
         crate::quota::QuotaLedger::new(Arc::clone(&ddb_client), &eav_table),
     );
@@ -91,37 +48,12 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
             &quota_counter,
         ))));
 
-    // ── Write Path — channel registry ────────────────────────────────────────
-    // OLTP: EavWriter → TransactWriteItems DynamoDB (tabla: EAV_TABLE_NAME)
-    // F3: con generación activa, el escritor bumpa la caché de consultas del
-    // tenant en el embudo post-commit (un bump por commit, no por entidad).
-    let mut eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), &eav_table);
-    if generation_on && query_cache_policy.mode == crate::janus::cache::CacheMode::Ddb {
-        info!(
-            "[Server] Invalidación por generación ACTIVA para la caché de consultas | tabla: {query_cache_table}"
-        );
-        eav_writer = eav_writer.with_query_cache_invalidator(Arc::new(
-            crate::infrastructure::dynamodb_query_cache::DynamoGenInvalidator::new(
-                Arc::clone(&ddb_client),
-                query_cache_table,
-            ),
-        ));
-    }
+    // ── Write Path — channel registry (.mbf unificado) ───────────────────────
+    let eav_writer = crate::eav::writer::EavWriter::new(Arc::clone(&ddb_client), &eav_table);
     let oltp_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
         crate::janus_router::oltp_channel::OltpChannel::new(eav_writer.clone()),
     );
-
-    // OLAP: Real or Stub Firehose client injection
-    let stream_writer: Arc<dyn crate::domain::protocols::IStreamWriter> =
-        if std::env::var("KINESIS_MODE").unwrap_or_default() == "stub" {
-            info!("[Server] KinesisFirehoseWriter inicializado en MODO STUB (StubStreamWriter)");
-            Arc::new(crate::infrastructure::kinesis::StubStreamWriter::new())
-        } else {
-            Arc::new(crate::infrastructure::kinesis::KinesisFirehoseWriter::new().await)
-        };
-    let olap_channel: Arc<dyn crate::janus_router::router::IWriteChannel> = Arc::new(
-        crate::janus_router::olap_channel::OlapChannel::new(&olap_prefix, stream_writer),
-    );
+    let olap_channel = Arc::clone(&oltp_channel);
 
     let mut channel_registry: std::collections::HashMap<
         crate::codice::registry::EngineChannel,
@@ -143,43 +75,11 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
     // ── Interceptors y Pipeline ──────────────────────────────────────────────
     let audit_interceptor = Arc::new(
         crate::infrastructure::audit::interceptor::AuditInterceptorImpl::new(Arc::clone(
-            &olap_channel,
+            &oltp_channel,
         )),
     );
 
-    let athena_engine: Option<Arc<dyn crate::domain::protocols::IQueryEngine>> = if std::env::var(
-        "ATHENA_MODE",
-    )
-    .unwrap_or_default()
-        == "stub"
-    {
-        let lake_bucket =
-            std::env::var("AWS_S3_LAKE_BUCKET").unwrap_or_else(|_| "metri-lake-local".to_string());
-        info!(
-            "[Server] IQueryEngine inicializado en MODO LOCAL (LocalS3QueryEngine) | bucket: {}",
-            lake_bucket
-        );
-        let engine =
-            crate::infrastructure::local_s3_query_engine::LocalS3QueryEngine::new(lake_bucket)
-                .await;
-        Some(Arc::new(engine) as Arc<dyn crate::domain::protocols::IQueryEngine>)
-    } else {
-        let workgroup =
-            std::env::var("ATHENA_WORKGROUP").unwrap_or_else(|_| "metri-analytics".to_string());
-        let s3_bucket = std::env::var("AWS_S3_LAKE_BUCKET")
-            .unwrap_or_else(|_| "metri-lake-982592308819-us-east-1".to_string());
-        let output_location = format!("s3://{s3_bucket}/athena-results/");
-        let database =
-            std::env::var("GLUE_DATABASE_NAME").unwrap_or_else(|_| "metri_olap".to_string());
-        info!("[Server] Inicializando AthenaQueryEngine con workgroup: {}, database: {}, output_location: {}", workgroup, database, output_location);
-        let engine = crate::infrastructure::athena::AthenaQueryEngine::new(
-            workgroup,
-            output_location,
-            database,
-        )
-        .await;
-        Some(Arc::new(engine) as Arc<dyn crate::domain::protocols::IQueryEngine>)
-    };
+    let athena_engine: Option<Arc<dyn crate::domain::protocols::IQueryEngine>> = None;
 
     // ── SQS FIFO y Moira Emitter ─────────────────────────────────────────────
     let sqs_mode = std::env::var("SQS_MODE").unwrap_or_default();
@@ -314,26 +214,8 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
     let eda_web_service = tonic_web::enable(eda_service_raw);
 
     // ── QuotaService (IA Token Accounting) ───────────────────────────────────
-    //
-    // Las reservas en vuelo viven en su propia tabla, compartidas entre
-    // réplicas: cualquiera puede conciliar o devolver lo que otra reservó.
-    // `memory` sirve para un despliegue de una sola réplica o para desarrollo
-    // sin la tabla creada; con más de una réplica es incorrecto, porque cada
-    // proceso solo vería sus propios tickets.
-    let quota_table =
-        std::env::var("QUOTA_TABLE").unwrap_or_else(|_| "metri-quota-local".to_string());
     let reservation_store: Arc<dyn crate::quota::ReservationStore> =
-        if std::env::var("QUOTA_RESERVATION_STORE").unwrap_or_default() == "memory" {
-            tracing::warn!(
-                "[Server] Reservas de cuota EN MEMORIA — no válido con más de una réplica"
-            );
-            Arc::new(crate::quota::MemoryReservationStore::new())
-        } else {
-            Arc::new(crate::quota::DynamoReservationStore::new(
-                Arc::clone(&ddb_client),
-                &quota_table,
-            ))
-        };
+        Arc::new(crate::quota::MemoryReservationStore::new());
 
     let quota_grpc_impl = super::quota_service::QuotaServiceImpl::new(
         oltp_exec.clone(),

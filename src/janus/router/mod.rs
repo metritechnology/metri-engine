@@ -1,5 +1,4 @@
 //! Read-path routing helpers — channel execution per query plan.
-pub mod olap;
 pub mod oltp;
 pub mod post_processor;
 pub mod translator;

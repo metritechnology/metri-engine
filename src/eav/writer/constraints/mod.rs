@@ -33,7 +33,7 @@ use crate::codice::registry::EntityModel;
 use crate::domain::errors::DomainError;
 use crate::eav::types::datom::DatomValue;
 use crate::eav::writer::transact::TransactOp;
-use aws_sdk_dynamodb::types::TransactWriteItem;
+use crate::mbf::storage::TransactWriteItem;
 use std::collections::HashMap;
 
 /// Todo lo que un planificador necesita saber de una escritura.

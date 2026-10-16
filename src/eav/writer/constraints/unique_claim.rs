@@ -23,7 +23,7 @@ use crate::codice::registry::{ConstraintKind, ConstraintScope, EntityModel};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::datom::DatomValue;
 use crate::eav::writer::transact::TransactOp;
-use aws_sdk_dynamodb::types::{AttributeValue, Put, TransactWriteItem};
+use crate::mbf::storage::{AttributeValue, Blob, Put, TransactWriteItem};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -143,7 +143,7 @@ impl ConstraintPlanner for UniqueClaimPlanner {
             // PK/eid — así que el cambio de tipo es seguro.
             item.insert(
                 "SK".to_string(),
-                AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(b"#CLAIM".to_vec())),
+                AttributeValue::B(Blob::new(b"#CLAIM".to_vec())),
             );
             item.insert(
                 "eid".to_string(),

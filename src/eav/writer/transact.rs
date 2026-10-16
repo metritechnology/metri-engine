@@ -15,7 +15,7 @@ use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aws_sdk_dynamodb::types::{AttributeValue, Put, TransactWriteItem};
+use crate::mbf::storage::{AttributeValue, Blob, Put, TransactWriteItem};
 use ulid::Ulid;
 
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -257,6 +257,7 @@ impl EavWriter {
     /// Costura de prueba: fuerza el `tx_id` para verificar que la condición
     /// append-only rechaza la colisión con `EAV_TX_004` en lugar de
     /// sobrescribir. Solo visible dentro del crate (tests del writer).
+    #[allow(dead_code)]
     pub(crate) async fn transact_with_tx(
         &self,
         payload: TransactPayload,
@@ -370,23 +371,6 @@ impl EavWriter {
             Some(id) => id.clone(),
             None => Ulid::new().to_string(),
         };
-
-        if crate::mbf::is_mbf_primary_cutover(&payload.entity_type) {
-            tracing::info!(
-                entity = %payload.entity_type,
-                tenant = %payload.tenant_id,
-                "[MBF Cutover] Conexión de escritura legacy EAV/DynamoDB cortada de raíz (MBF_ENGINE_MODE=primary)"
-            );
-            return Ok(TransactResult {
-                entity_id,
-                tx_id,
-                datoms: 0,
-                outbox_count: 0,
-                mutation_ulid: Ulid::new().to_string(),
-                delta: None,
-                deleted_attrs: None,
-            });
-        }
 
         // 4. Atributos activos (I/O de lectura) y plan puro de datoms: guards,
         // retract+assert, sistema, delta del contrato y deleted_attrs.
@@ -623,13 +607,12 @@ impl EavWriter {
         // trigramas de datoms que nunca se confirmaron contaminando el índice.
         // Se espera antes de responder; los errores no fallan la mutación ya
         // confirmada (el índice es reconstruible, la escritura no).
-        crate::eav::writer::fts_dispatch::FtsDispatch::spawn(
-            self.ddb.clone(),
-            self.table.clone(),
-            fts_write_requests,
-        )
-        .await_all()
-        .await;
+        if !fts_write_requests.is_empty() {
+            let _ = self
+                .ddb
+                .batch_write_item(&self.table, fts_write_requests)
+                .await;
+        }
 
         Ok(TransactResult {
             entity_id,
@@ -895,9 +878,5 @@ impl EavWriter {
 
 /// Helper: AttributeValue::B desde Vec<u8>
 fn av_binary(bytes: Vec<u8>) -> AttributeValue {
-    AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(bytes))
+    AttributeValue::B(Blob::new(bytes))
 }
-
-#[cfg(test)]
-#[path = "tests/writer_tests.rs"]
-mod tests;

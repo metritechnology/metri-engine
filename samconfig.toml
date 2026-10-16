@@ -20,7 +20,7 @@ confirm_changeset = true
 resolve_s3 = true
 s3_prefix = "metri-engine"
 region = "us-east-1"
-parameter_overrides = "EavTableName=\"metri-dynamo\" MbfEngineMode=\"primary\""
+parameter_overrides = "MbfEngineMode=\"primary\""
 image_repositories = []
 
 [default.package.parameters]
@@ -58,5 +58,5 @@ confirm_changeset = false
 s3_bucket = "metri-engine-deploy-982592308819-us-east-1"
 s3_prefix = "metri-engine"
 region = "us-east-1"
-parameter_overrides = "EavTableName=\"metri-dynamo\" MbfEngineMode=\"primary\""
+parameter_overrides = "MbfEngineMode=\"primary\""
 image_repositories = []

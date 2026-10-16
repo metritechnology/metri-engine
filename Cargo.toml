@@ -16,13 +16,9 @@ prost          = "0.12"
 prost-types    = "0.12"
 
 # ─── AWS SDK ─────────────────────────────────────────────────────────────────
-aws-config     = { version = "1",  features = ["behavior-version-latest"] }
-aws-sdk-dynamodb   = "1"
-aws-sdk-s3         = "1"
-aws-sdk-athena     = "1"
-aws-sdk-sqs        = "1"
-aws-sdk-firehose   = "1"
-aws-sdk-glue       = "1"
+aws-config          = { version = "1",  features = ["behavior-version-latest"] }
+aws-sdk-s3          = "1"
+aws-sdk-sqs         = "1"
 aws-sdk-eventbridge = "1"
 
 # ─── AWS Lambda Runtime ───────────────────────────────────────────────────────
@@ -45,10 +41,7 @@ uuid           = { version = "1", features = ["v4"] }
 chrono         = { version = "0.4", features = ["serde"] }
 chrono-tz      = "0.9"         # shift_by_calendar / timezone-aware (reemplaza java.time.ZonedDateTime)
 
-# ─── SQL Compiler ─────────────────────────────────────────────────────────────
-sea-query      = { version = "0.31", features = ["attr", "backend-mysql", "backend-postgres"] }
-
-# ─── FlatBuffers (Janus ↔ EAV contract) ──────────────────────────────────────
+# ─── FlatBuffers (Janus ↔ MBF contract) ──────────────────────────────────────
 flatbuffers    = "25.12.19"
 
 # ─── Autorización Cedar (ABAC) ────────────────────────────────────────────────

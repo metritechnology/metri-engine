@@ -30,14 +30,12 @@
 #[path = "tests/fakes.rs"]
 pub mod test_fakes;
 
-pub mod dynamo_store;
 pub mod ledger;
 pub mod projection;
 pub mod reservations;
 pub mod resolver;
 pub mod sweeper;
 
-pub use dynamo_store::DynamoReservationStore;
 pub use ledger::{DebitOutcome, QuotaCounter, QuotaLedger, SettleOutcome};
 pub use projection::QuotaUsageOverlay;
 pub use reservations::{

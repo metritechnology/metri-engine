@@ -105,12 +105,12 @@ impl ISessionStore for HmacTokenStore {
 
         info!("[HMAC] Revocando token, jti: {jti}");
 
-        use aws_sdk_dynamodb::types::AttributeValue;
+        use crate::mbf::storage::{AttributeValue, Blob};
         let mut item = std::collections::HashMap::new();
         item.insert("PK".to_string(), AttributeValue::S(pk));
         item.insert(
             "SK".to_string(),
-            AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(b"REVOKED".to_vec())),
+            AttributeValue::B(Blob::new(b"REVOKED".to_vec())),
         );
         item.insert("ttl".to_string(), AttributeValue::N(expires.to_string()));
 

@@ -5,7 +5,7 @@
 
 use crate::codice::registry::AttributeDescriptor;
 use crate::eav::types::datom::Datom;
-use aws_sdk_dynamodb::types::{AttributeValue, PutRequest, WriteRequest};
+use crate::mbf::storage::{AttributeValue, Blob, PutRequest, WriteRequest};
 
 /// Genera todos los trigrams únicos de un texto (lowercase, Unicode normalizado).
 /// "Bomba Hidráulica" → ["bom", "omb", "mba", "ba ", ...]
@@ -42,10 +42,7 @@ pub fn build_fts_items(datom: &Datom, attr: &AttributeDescriptor) -> Vec<WriteRe
 
             let mut item = std::collections::HashMap::new();
             item.insert("PK".to_string(), AttributeValue::S(pk));
-            item.insert(
-                "SK".to_string(),
-                AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(sk_bytes)),
-            );
+            item.insert("SK".to_string(), AttributeValue::B(Blob::new(sk_bytes)));
 
             let put_request = PutRequest::builder().set_item(Some(item)).build().ok()?;
 

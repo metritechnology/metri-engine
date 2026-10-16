@@ -5,8 +5,6 @@ mod oltp_comparison_tests;
 mod oltp_compiler_tests;
 mod oltp_fuzzy_tests;
 mod pagination_tests;
-mod sql_compiler_tests;
-mod sql_fuzzy_tests;
 mod temporal_bridge_tests;
 
 mod formula_evaluator_tests;
