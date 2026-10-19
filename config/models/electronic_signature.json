@@ -34,13 +34,29 @@
     {
       "name": "ip_address",
       "type": "string",
-      "fts": true
+      "fts": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "device_fingerprint",
       "type": "string",
       "fts": true,
-      "description": "Metadata del dispositivo recolectada al milisegundo de la firma para pruebas de No Repudio"
+      "description": "Metadata del dispositivo recolectada al milisegundo de la firma para pruebas de No Repudio",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "snapshot_hash",

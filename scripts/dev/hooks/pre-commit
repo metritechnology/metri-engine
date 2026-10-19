@@ -17,6 +17,10 @@ PY=.venv/bin/python3
 [ -x "$PY" ] || PY=python3
 "$PY" scripts/docs/gen_reference.py --check || status=1
 
+echo "▶ patrón Result estricto + SOLID / DRY / Clean Code por archivo (ratchet)"
+"$PY" scripts/dev/check_result_pattern.py --strict || status=1
+"$PY" scripts/dev/check_clean_code.py || status=1
+
 echo "▶ guard: archivos de fuente excluidos por .gitignore"
 # Solo importan fuentes; los artefactos derivados (.pyc, __pycache__) están
 # bien ignorados.

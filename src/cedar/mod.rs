@@ -34,7 +34,7 @@ pub use engine::CedarAuthorizer;
 pub(crate) use evaluator::is_known_domain;
 pub(crate) use evaluator::principal_grant_keys;
 pub use evaluator::step4_evaluate_cedar;
-pub use pipeline::{get_principal_data, intercept};
+pub use pipeline::{get_principal_data, intercept, intercept_auth};
 pub use ports::{EntityReader, PolicyStore, PrincipalCache};
 pub use principal_graph::{assemble_principal_graph, step2_query_oltp, step3_consolidate};
 pub use request::AuthRequest;

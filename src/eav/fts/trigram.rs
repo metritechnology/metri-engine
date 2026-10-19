@@ -7,11 +7,12 @@ use crate::codice::registry::AttributeDescriptor;
 use crate::eav::types::datom::Datom;
 use crate::mbf::storage::{AttributeValue, Blob, PutRequest, WriteRequest};
 
-/// Genera todos los trigrams únicos de un texto (lowercase, Unicode normalizado).
+/// Genera todos los trigrams únicos de un texto (lowercase, sin acentos diacríticos).
 /// `"Nodo Primario"` → `["  n", " no", "nod", "odo", ...]`
 pub fn generate_trigrams(text: &str) -> Vec<String> {
     // pg_trgm style padding: 2 spaces prefix, 1 space suffix
-    let padded = format!("  {} ", text.to_lowercase());
+    let normalized = crate::aegis::oltp::fuzzy::remove_accents(&text.to_lowercase());
+    let padded = format!("  {} ", normalized);
     let chars: Vec<char> = padded.chars().collect();
     let mut trigrams: Vec<String> = chars.windows(3).map(|w| w.iter().collect()).collect();
     trigrams.sort();

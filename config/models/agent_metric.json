@@ -19,42 +19,162 @@
     {
       "name": "request_latency_ms",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "lognormal",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true
+      }
     },
     {
       "name": "router_latency_ms",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "lognormal",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true
+      }
     },
     {
       "name": "avg_llm_latency_ms",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "lognormal",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true
+      }
     },
     {
       "name": "avg_tool_latency_ms",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "lognormal",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true
+      }
     },
     {
       "name": "iterations",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "poisson",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "input_tokens",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "poisson",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "output_tokens",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "poisson",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "total_tools_called",
       "type": "long",
-      "is_measure": true
+      "is_measure": true,
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "poisson",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "fallback_used",
@@ -65,5 +185,18 @@
       "name": "modules_selected",
       "type": "string"
     }
-  ]
+  ],
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": [
+      "request_latency_ms",
+      "router_latency_ms",
+      "avg_llm_latency_ms",
+      "avg_tool_latency_ms",
+      "iterations",
+      "input_tokens",
+      "output_tokens",
+      "total_tools_called"
+    ]
+  }
 }

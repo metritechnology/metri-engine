@@ -32,6 +32,8 @@ pub struct EngineConfig {
     pub environment: Option<String>,
     /// `HMAC_SECRET` tal como llegó al arranque (None = ausente).
     pub hmac_secret: Option<String>,
+    /// Tabla lógica para `sequence_registry` (`SEQUENCE_REGISTRY_TABLE`).
+    pub sequence_registry_table: String,
 }
 
 impl Default for EngineConfig {
@@ -41,6 +43,7 @@ impl Default for EngineConfig {
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
             environment: None,
             hmac_secret: None,
+            sequence_registry_table: "metri-sequence-registry".to_string(),
         }
     }
 }
@@ -53,11 +56,14 @@ impl EngineConfig {
         let master_tenant_id = std::env::var("MASTER_TENANT_ID")
             .or_else(|_| std::env::var("METRI_MASTER_TENANT_ID"))
             .unwrap_or_else(|_| "system".to_string());
+        let sequence_registry_table = std::env::var("SEQUENCE_REGISTRY_TABLE")
+            .unwrap_or_else(|_| "metri-sequence-registry".to_string());
         Self {
             master_tenant_id,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
             environment: std::env::var("ENVIRONMENT").ok(),
             hmac_secret: std::env::var("HMAC_SECRET").ok(),
+            sequence_registry_table,
         }
     }
 
@@ -68,6 +74,7 @@ impl EngineConfig {
             max_list_limit,
             environment: None,
             hmac_secret: None,
+            sequence_registry_table: "metri-sequence-registry".to_string(),
         }
     }
 }

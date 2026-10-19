@@ -24,13 +24,31 @@
       "name": "title",
       "type": "string",
       "fts": true,
-      "description": "Nombre humano del plan («Mantenimiento semanal — bomba hidráulica»). La saga lo presta a cada OT que engendra: una orden sin título no valida contra este Códice."
+      "description": "Nombre humano del plan («Mantenimiento semanal — bomba hidráulica»). La saga lo presta a cada OT que engendra: una orden sin título no valida contra este Códice.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "description",
       "type": "string",
       "fts": true,
-      "description": "Qué cubre el plan y por qué existe: el contexto que hereda cada orden que engendra."
+      "description": "Qué cubre el plan y por qué existe: el contexto que hereda cada orden que engendra.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "priority",
@@ -59,7 +77,22 @@
       "name": "estimated_duration_hours",
       "type": "decimal",
       "is_measure": true,
-      "description": "Duración estimada que hereda cada orden engendrada (horas)."
+      "description": "Duración estimada que hereda cada orden engendrada (horas).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "lognormal",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true
+      }
     },
     {
       "name": "assignees",
@@ -262,5 +295,32 @@
       "description": "Evento final de retiro. Permite desencadenar limpieza logística en integraciones ERP de terceros."
     }
   ],
-  "description": "Plan preventivo. Las trampas (scheduled_job) las crea/retira el pm-orchestrator de metri-cmms-plugin por convergencia; el motor almacena y valida."
+  "description": "Plan preventivo. Las trampas (scheduled_job) las crea/retira el pm-orchestrator de metri-cmms-plugin por convergencia; el motor almacena y valida.",
+  "spatial_profile": {
+    "enabled": true,
+    "lat_field": "latitude",
+    "lon_field": "longitude",
+    "h3_resolutions": [
+      7,
+      9,
+      11,
+      13
+    ],
+    "morton_z_order": true
+  },
+  "survival_profile": {
+    "enabled": true,
+    "subject_ref_field": "asset_id",
+    "terminal_event_values": [
+      "OVERDUE"
+    ],
+    "censored_event_values": [
+      "ACTIVE",
+      "COMPLETED"
+    ],
+    "event_epoch_field": "next_due_date",
+    "restoration_duration_field": "estimated_duration_hours",
+    "fit_weibull_3p": true,
+    "enable_kaplan_meier_censoring": true
+  }
 }

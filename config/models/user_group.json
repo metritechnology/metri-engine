@@ -9,7 +9,15 @@
       "unique": "identity",
       "required": true,
       "fts": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "description",

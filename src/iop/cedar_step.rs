@@ -13,7 +13,9 @@ use std::sync::Arc;
 use cedar_policy::PolicySet;
 use tracing::info;
 
-use crate::cedar::{intercept, is_master_tenant, CedarAuthorizer, PrincipalCache};
+use crate::cedar::{
+    intercept_auth, is_master_tenant, AuthRequest, CedarAuthorizer, PrincipalCache,
+};
 use crate::domain::errors::DomainError;
 use crate::domain::protocols::ISessionStore;
 use crate::eav::reader::pull::EavReader;
@@ -50,7 +52,7 @@ impl CedarAuthorizerStep {
 
 #[async_trait::async_trait]
 impl IopStep for CedarAuthorizerStep {
-    /// Evalúa autorización Zero-Trust usando cedar::pipeline::intercept real.
+    /// Evalúa autorización Zero-Trust usando cedar::pipeline::intercept_auth real.
     #[tracing::instrument(
         name = "iop.step1.cedar.start",
         skip(self, ctx),
@@ -61,15 +63,7 @@ impl IopStep for CedarAuthorizerStep {
         )
     )]
     async fn execute(&self, ctx: IopContext) -> Result<IopContext, DomainError> {
-        match self.execute_inner(ctx).await {
-            Ok(c) => Ok(c),
-            Err(e) => {
-                let span = tracing::Span::current();
-                span.record("error.code", e.code.canonical_code());
-                span.record("otel.status_code", "ERROR");
-                Err(e)
-            }
-        }
+        crate::iop::core::record_step_span_error(self.execute_inner(ctx).await)
     }
 }
 
@@ -77,63 +71,25 @@ impl CedarAuthorizerStep {
     async fn execute_inner(&self, mut ctx: IopContext) -> Result<IopContext, DomainError> {
         info!(tenant = %ctx.tenant_id, "[CedarStep] Evaluando autorización Zero-Trust...");
 
-        // Construir un dummy request para poder invocar la frontera de transporte del interceptor
-        let mut dummy_req = tonic::Request::new(());
+        let req_str = |key: &str| ctx.request.get(key).and_then(|v| v.as_str());
+        let action_fallback = (!ctx.operation.is_empty()).then_some(ctx.operation.as_str());
+        let entity_type_fallback =
+            (!ctx.entity_type.is_empty()).then_some(ctx.entity_type.as_str());
 
-        // Copiar metadatos / cabeceras desde la request guardada en IopContext
-        if let Some(auth_val) = ctx.request.get("authorization").and_then(|v| v.as_str()) {
-            if let Ok(m_val) = auth_val.parse() {
-                dummy_req.metadata_mut().insert("authorization", m_val);
-            }
-        }
-        if let Some(act_val) = ctx.request.get("x-metri-action").and_then(|v| v.as_str()) {
-            if let Ok(m_val) = act_val.parse() {
-                dummy_req.metadata_mut().insert("x-metri-action", m_val);
-            }
-        }
-        if let Some(et_val) = ctx
-            .request
-            .get("x-metri-entity-type")
-            .and_then(|v| v.as_str())
-        {
-            if let Ok(m_val) = et_val.parse() {
-                dummy_req
-                    .metadata_mut()
-                    .insert("x-metri-entity-type", m_val);
-            }
-        }
-        if let Some(eid_val) = ctx
-            .request
-            .get("x-metri-entity-id")
-            .and_then(|v| v.as_str())
-        {
-            if let Ok(m_val) = eid_val.parse() {
-                dummy_req.metadata_mut().insert("x-metri-entity-id", m_val);
-            }
-        }
-        if let Some(dom_val) = ctx.request.get("x-metri-domains").and_then(|v| v.as_str()) {
-            if let Ok(m_val) = dom_val.parse() {
-                dummy_req.metadata_mut().insert("x-metri-domains", m_val);
-            }
-        }
+        let auth = AuthRequest {
+            authorization: req_str("authorization"),
+            sid: req_str("sid"),
+            action: req_str("x-metri-action").or(action_fallback),
+            entity_type: req_str("x-metri-entity-type").or(entity_type_fallback),
+            entity_id: req_str("x-metri-entity-id"),
+            domains: req_str("x-metri-domains"),
+            dev_test_tenant: req_str("test-tenant"),
+            dev_test_user: req_str("test-user"),
+            dev_test_roles: req_str("test-roles"),
+        };
 
-        // Si faltan cabeceras específicas en la request pero están en el contexto IOP, poblarlas
-        if dummy_req.metadata().get("x-metri-action").is_none() {
-            if let Ok(m_val) = ctx.operation.parse() {
-                dummy_req.metadata_mut().insert("x-metri-action", m_val);
-            }
-        }
-        if dummy_req.metadata().get("x-metri-entity-type").is_none() {
-            if let Ok(m_val) = ctx.entity_type.parse() {
-                dummy_req
-                    .metadata_mut()
-                    .insert("x-metri-entity-type", m_val);
-            }
-        }
-
-        // Ejecutar interceptor real
-        let cedar_ctx = intercept(
-            &dummy_req,
+        let cedar_ctx = intercept_auth(
+            &auth,
             self.valkey_store.as_ref(),
             &self.eav_reader,
             self.cache.as_ref(),
@@ -142,7 +98,6 @@ impl CedarAuthorizerStep {
         )
         .await?;
 
-        // Enriquecer el IopContext con el output verificado e inyectado por Cedar
         if ctx.tenant_id.is_empty() || !is_master_tenant(&cedar_ctx.tenant_id) {
             ctx.tenant_id = cedar_ctx.tenant_id.clone();
         }
@@ -156,12 +111,10 @@ impl CedarAuthorizerStep {
             ctx.granted_action_keys.clear();
         } else {
             ctx.cross_tenant_scope = "NONE".to_string();
-            ctx.granted_action_keys
-                .insert(format!("{}:VIEW", ctx.entity_type));
-            ctx.granted_action_keys
-                .insert(format!("{}:CREATE", ctx.entity_type));
-            ctx.granted_action_keys
-                .insert(format!("{}:UPDATE", ctx.entity_type));
+            for verb in ["VIEW", "CREATE", "UPDATE"] {
+                ctx.granted_action_keys
+                    .insert(format!("{}:{verb}", ctx.entity_type));
+            }
         }
 
         info!(

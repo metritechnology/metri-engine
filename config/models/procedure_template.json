@@ -8,13 +8,31 @@
       "type": "string",
       "required": true,
       "fts": true,
-      "is_dimension": true
+      "is_dimension": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "description",
       "type": "string",
       "fts": true,
-      "description": "Propósito y alcance del procedimiento formal: un formulario de pasos tipados con scoring, al estilo de los Procedure Templates de MaintainX."
+      "description": "Propósito y alcance del procedimiento formal: un formulario de pasos tipados con scoring, al estilo de los Procedure Templates de MaintainX.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "lifecycle_state",

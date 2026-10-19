@@ -1,0 +1,389 @@
+{
+  "generated_at": "2026-10-19",
+  "files": {
+    "scripts/dev/query_client.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/dev/seed_assets.py": {
+      "srp_file_lines": 1
+    },
+    "scripts/dev/seed_base.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/dev/seed_quotas.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/dev/seed_system_quotas.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/ops/bootstrap_github_oidc.py": {
+      "srp_file_lines": 1
+    },
+    "scripts/ops/bootstrap_production.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/ops/check_production_data.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/ops/create_system_locations.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/ops/ingest_production.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/ops/query_system_assets.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/ops/seed_quotas_production.py": {
+      "dry_python_infra": 1
+    },
+    "scripts/ops/verify_auth.py": {
+      "dry_python_infra": 1
+    },
+    "src/aegis/ast_ir.rs": {
+      "cc_fn_length": 2,
+      "srp_file_lines": 1
+    },
+    "src/aegis/formula/evaluator.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1
+    },
+    "src/aegis/formula/lexer.rs": {
+      "cc_fn_length": 1
+    },
+    "src/aegis/formula/parser.rs": {
+      "cc_fn_length": 1
+    },
+    "src/aegis/mbf/mod.rs": {
+      "cc_fn_length": 9,
+      "dip_layer_violation": 2,
+      "srp_file_lines": 1
+    },
+    "src/aegis/oltp/aggregation.rs": {
+      "cc_fn_length": 1
+    },
+    "src/aegis/oltp/caster.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1
+    },
+    "src/aegis/oltp/channel.rs": {
+      "cc_fn_length": 1
+    },
+    "src/aegis/oltp/comparison.rs": {
+      "cc_fn_length": 1,
+      "cc_fn_params": 1,
+      "cc_nesting_depth": 1
+    },
+    "src/aegis/oltp/executor.rs": {
+      "cc_fn_length": 6,
+      "cc_fn_params": 1,
+      "cc_nesting_depth": 6,
+      "srp_file_lines": 1
+    },
+    "src/aegis/oltp/filter.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1
+    },
+    "src/aegis/oltp/hydrator.rs": {
+      "cc_fn_length": 2,
+      "cc_fn_params": 1,
+      "cc_nesting_depth": 3
+    },
+    "src/aegis/temporal_bridge.rs": {
+      "dip_layer_violation": 1
+    },
+    "src/cedar/authn.rs": {
+      "dry_duplicate_block": 2
+    },
+    "src/cedar/evaluator/analytical.rs": {
+      "cc_nesting_depth": 1
+    },
+    "src/cedar/evaluator/grants.rs": {
+      "cc_nesting_depth": 1,
+      "dry_duplicate_block": 2
+    },
+    "src/cedar/evaluator/mutational.rs": {
+      "cc_fn_length": 1
+    },
+    "src/cedar/pipeline.rs": {
+      "cc_fn_params": 2,
+      "dip_layer_violation": 2
+    },
+    "src/cedar/principal_graph.rs": {
+      "cc_fn_params": 2,
+      "srp_file_lines": 1
+    },
+    "src/cedar/request.rs": {
+      "dip_layer_violation": 1
+    },
+    "src/codice/registry.rs": {
+      "cc_fn_length": 3,
+      "cc_nesting_depth": 2,
+      "srp_file_lines": 1
+    },
+    "src/codice/sequence.rs": {
+      "cc_fn_params": 1
+    },
+    "src/codice/validator.rs": {
+      "cc_fn_length": 2,
+      "cc_nesting_depth": 1
+    },
+    "src/domain/errors.rs": {
+      "cc_fn_length": 1
+    },
+    "src/domain/protocols.rs": {
+      "dip_layer_violation": 2
+    },
+    "src/eav/fts/searcher.rs": {
+      "cc_fn_length": 1
+    },
+    "src/eav/reader/pull.rs": {
+      "cc_fn_length": 2,
+      "dry_duplicate_block": 3,
+      "srp_file_lines": 1
+    },
+    "src/eav/reader/query.rs": {
+      "cc_fn_length": 2,
+      "cc_nesting_depth": 1,
+      "srp_file_lines": 1
+    },
+    "src/eav/types/datom.rs": {
+      "cc_fn_params": 2
+    },
+    "src/eav/writer/constraints/mod.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1
+    },
+    "src/eav/writer/constraints/unique_claim.rs": {
+      "cc_fn_length": 1
+    },
+    "src/eav/writer/datom_plan.rs": {
+      "cc_fn_length": 2,
+      "cc_fn_params": 1
+    },
+    "src/eav/writer/enricher.rs": {
+      "cc_fn_length": 1,
+      "cc_fn_params": 1
+    },
+    "src/eav/writer/outbox.rs": {
+      "cc_fn_length": 1
+    },
+    "src/eav/writer/transact.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 2,
+      "srp_file_lines": 1
+    },
+    "src/grpc/agent_config_service.rs": {
+      "cc_fn_length": 1,
+      "dry_scattered_env": 1
+    },
+    "src/grpc/bootstrap.rs": {
+      "cc_fn_length": 1
+    },
+    "src/grpc/eda_service.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 7,
+      "dry_scattered_env": 1
+    },
+    "src/grpc/handlers/authz.rs": {
+      "cc_fn_length": 1
+    },
+    "src/grpc/handlers/bulk.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1,
+      "dry_duplicate_block": 4
+    },
+    "src/grpc/handlers/composite.rs": {
+      "cc_fn_length": 1
+    },
+    "src/grpc/handlers/explore.rs": {
+      "cc_fn_length": 3,
+      "dry_duplicate_block": 6
+    },
+    "src/grpc/handlers/query.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 2
+    },
+    "src/grpc/handlers/query_support.rs": {
+      "cc_fn_length": 2,
+      "srp_file_lines": 1
+    },
+    "src/grpc/handlers/routing.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 7
+    },
+    "src/grpc/handlers/sequence_config.rs": {
+      "cc_fn_length": 2
+    },
+    "src/grpc/handlers/transact.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 4
+    },
+    "src/grpc/handlers/validations.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1
+    },
+    "src/grpc/quota_service.rs": {
+      "cc_fn_length": 2,
+      "dry_scattered_env": 2,
+      "srp_file_lines": 1
+    },
+    "src/grpc/server.rs": {
+      "cc_fn_length": 1,
+      "dry_scattered_env": 12
+    },
+    "src/grpc/translator.rs": {
+      "cc_fn_length": 1
+    },
+    "src/infrastructure/domain_event_bus.rs": {
+      "dry_scattered_env": 1
+    },
+    "src/infrastructure/s3_export.rs": {
+      "cc_fn_length": 1
+    },
+    "src/infrastructure/session_store.rs": {
+      "dry_duplicate_block": 1
+    },
+    "src/iop/quota_step.rs": {
+      "cc_fn_length": 1
+    },
+    "src/iop/sherlog.rs": {
+      "cc_fn_length": 1,
+      "dip_layer_violation": 7,
+      "dry_scattered_env": 2
+    },
+    "src/janus/abac_clauses.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 3
+    },
+    "src/janus/aggregator.rs": {
+      "cc_fn_length": 2,
+      "cc_nesting_depth": 2
+    },
+    "src/janus/ast_compiler.rs": {
+      "cc_fn_length": 2,
+      "dry_duplicate_block": 4,
+      "srp_file_lines": 1
+    },
+    "src/janus/cache/mod.rs": {
+      "dry_scattered_env": 4,
+      "srp_file_lines": 1
+    },
+    "src/janus/normalizer/query.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1,
+      "srp_file_lines": 1
+    },
+    "src/janus/plan_selector.rs": {
+      "cc_nesting_depth": 1
+    },
+    "src/janus/router/mod.rs": {
+      "cc_fn_params": 1
+    },
+    "src/janus/router/oltp.rs": {
+      "cc_fn_length": 1,
+      "cc_fn_params": 1
+    },
+    "src/janus/router/post_processor.rs": {
+      "cc_fn_length": 1,
+      "cc_nesting_depth": 1
+    },
+    "src/janus/router/translator.rs": {
+      "cc_fn_length": 1
+    },
+    "src/janus_router/oltp_channel.rs": {
+      "cc_fn_length": 4,
+      "cc_fn_params": 1,
+      "cc_nesting_depth": 1,
+      "dry_scattered_env": 1,
+      "srp_file_lines": 1
+    },
+    "src/janus_router/saga.rs": {
+      "cc_fn_length": 1,
+      "cc_fn_params": 1
+    },
+    "src/mbf/format/mod.rs": {
+      "cc_fn_length": 1,
+      "cc_fn_params": 3,
+      "srp_file_lines": 1
+    },
+    "src/mbf/storage.rs": {
+      "cc_fn_length": 4,
+      "cc_fn_params": 2,
+      "cc_nesting_depth": 2,
+      "dip_layer_violation": 6,
+      "dry_scattered_env": 7,
+      "srp_file_lines": 1
+    },
+    "src/mbf/tx/mod.rs": {
+      "cc_fn_length": 2,
+      "cc_fn_params": 1
+    },
+    "src/mbf/zones/bi_synopses.rs": {
+      "cc_fn_length": 1,
+      "srp_file_lines": 1
+    },
+    "src/mbf/zones/csr_graph.rs": {
+      "cc_fn_params": 1,
+      "dry_duplicate_block": 2
+    },
+    "src/mbf/zones/financial_ledger.rs": {
+      "cc_fn_length": 1,
+      "cc_fn_params": 1,
+      "dry_duplicate_block": 2,
+      "srp_file_lines": 1
+    },
+    "src/mbf/zones/fuzzy_math_catalog.rs": {
+      "srp_file_lines": 1
+    },
+    "src/mbf/zones/hybrid_search.rs": {
+      "cc_fn_length": 3,
+      "srp_file_lines": 1
+    },
+    "src/mbf/zones/iot_timeseries.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 3
+    },
+    "src/mbf/zones/pax_mvcc.rs": {
+      "cc_fn_length": 1,
+      "dry_duplicate_block": 1,
+      "srp_file_lines": 1
+    },
+    "src/quota/ledger.rs": {
+      "dip_layer_violation": 1
+    },
+    "src/quota/resolver.rs": {
+      "dry_scattered_env": 1
+    },
+    "src/quota/sweeper.rs": {
+      "cc_fn_length": 1
+    },
+    "src/temporal/time_frame.rs": {
+      "cc_fn_length": 1
+    },
+    "tests/e2e/cache_verify.py": {
+      "dry_python_infra": 1
+    },
+    "tests/e2e/integration_e2e.py": {
+      "dry_python_infra": 1
+    },
+    "tests/e2e/production_smoke_test.py": {
+      "dry_python_infra": 2
+    },
+    "tests/reliability/formula_reliability_test.py": {
+      "dry_python_infra": 1
+    },
+    "tests/reliability/scale_reliability_test.py": {
+      "dry_python_infra": 1
+    },
+    "tests/reliability/scale_vizmeta_test.py": {
+      "dry_python_infra": 1
+    },
+    "tests/unit/grpc_web_client.py": {
+      "dry_python_infra": 1
+    },
+    "tests/unit/test_eda_prod.py": {
+      "dry_python_infra": 1
+    }
+  }
+}

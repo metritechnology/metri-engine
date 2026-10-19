@@ -1,5 +1,6 @@
 .PHONY: help run build build-release test test-integration check doc ci \
-        hooks smoke deploy clean fmt lint result-check result-strict
+        hooks smoke deploy clean fmt lint result-check result-strict \
+        clean-code-check clean-code-strict clean-code-file
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Metri Engine — Makefile (Rust Native · Unified .mbf HTAP Engine)
@@ -41,6 +42,15 @@ result-check: ## Auditoría del patrón Result en modo ratchet (no-regresión)
 result-strict: ## Auditoría del patrón Result estricta (lo que corre CI)
 	python3 scripts/dev/check_result_pattern.py --strict
 
+clean-code-check: ## Auditoría por archivo de SOLID, DRY y Clean Code en modo ratchet
+	python3 scripts/dev/check_clean_code.py
+
+clean-code-strict: ## Auditoría estricta de SOLID, DRY y Clean Code (meta 0 violaciones)
+	python3 scripts/dev/check_clean_code.py --strict
+
+clean-code-file: ## Scorecard 0-100 de SOLID, DRY y Clean Code para un archivo (FILE=src/...)
+	python3 scripts/dev/check_clean_code.py --file $(FILE)
+
 check: ## cargo check rápido
 	cargo check
 
@@ -49,6 +59,7 @@ ci: ## Espejo local del CI (rust.yml): fmt, audits, cargo doc, gate clippy y tes
 	python3 scripts/docs/gen_reference.py --check
 	python3 scripts/dev/check_docs.py
 	python3 scripts/dev/check_result_pattern.py --strict
+	python3 scripts/dev/check_clean_code.py
 	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --lib
 	cargo clippy --all-targets > clippy_local.txt 2>&1 || true
 	@bash -c 'if grep -q "^error" clippy_local.txt; then \
@@ -58,6 +69,7 @@ ci: ## Espejo local del CI (rust.yml): fmt, audits, cargo doc, gate clippy y tes
 	if [ "$$COUNT" -gt 88 ]; then \
 		echo "✗ Clippy creció sobre la línea base (88): $$COUNT"; exit 1; fi'
 	cargo test --lib
+	cargo test --test architecture_solid_guard
 	@echo "✅ Espejo CI en verde — lo que vas a pushar es lo que CI va a aprobar"
 
 hooks: ## Instala el pre-commit hook (fmt + referencia + guard de fuentes)

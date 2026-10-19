@@ -47,7 +47,22 @@
       "type": "number",
       "is_measure": true,
       "required": true,
-      "description": "El costo unitario real imputado a este movimiento en céntimos (calculado según el método contable del tenant: FIFO, LIFO o PMP)."
+      "description": "El costo unitario real imputado a este movimiento en céntimos (calculado según el método contable del tenant: FIFO, LIFO o PMP).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "pareto",
+        "outlier_sigma_threshold": 4.0,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": false,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": true,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "currency",

@@ -53,6 +53,12 @@ jobs:
       - name: Patrón Result — auditoría estricta (cero violaciones)
         run: python3 scripts/dev/check_result_pattern.py --strict
 
+      - name: SOLID, DRY & Clean Code — auditoría por archivo (ratchet)
+        run: python3 scripts/dev/check_clean_code.py
+
+      - name: Guardián de Arquitectura Hexagonal y SOLID (tests/architecture_solid_guard.rs)
+        run: cargo test --test architecture_solid_guard
+
       # PLAN_DOCUMENTACION.md — Fase 0: ratchet de cabeceras //! (§2.7).
       # Corre en modo ratchet (no --strict) hasta cerrar la Fase 5.
       - name: Documentación — auditor de cabeceras (ratchet)

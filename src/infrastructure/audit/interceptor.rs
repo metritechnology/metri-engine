@@ -87,15 +87,12 @@ impl IAuditInterceptor for AuditInterceptorImpl {
             req_map,
         );
 
-        let channel = Arc::clone(&self.telemetry_channel);
-        tokio::spawn(async move {
-            if let Err(e) = channel.route(ctx).await {
-                error!(
-                    "[AuditInterceptor] Falla al escribir en canal de persistencia MBF: {:?}",
-                    e
-                );
-                // FASE 10: sherlog.emit_fault(AUD_001)
-            }
-        });
+        if let Err(e) = self.telemetry_channel.route(ctx).await {
+            error!(
+                "[AuditInterceptor] Falla al escribir en canal de persistencia MBF: {:?}",
+                e
+            );
+            // FASE 10: sherlog.emit_fault(AUD_001)
+        }
     }
 }

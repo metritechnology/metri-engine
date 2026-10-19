@@ -796,7 +796,29 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
 
     let spatial_profile = json
         .get("spatial_profile")
-        .and_then(|v| serde_json::from_value::<SpatialProfile>(v.clone()).ok());
+        .and_then(|v| serde_json::from_value::<SpatialProfile>(v.clone()).ok())
+        .or_else(|| {
+            let has_attr = |target: &str| attributes.iter().any(|a| a.name == target);
+            if has_attr("latitude") && has_attr("longitude") {
+                Some(SpatialProfile {
+                    enabled: true,
+                    lat_field: "latitude".to_string(),
+                    lon_field: "longitude".to_string(),
+                    h3_resolutions: vec![7, 9, 11, 13],
+                    morton_z_order: true,
+                })
+            } else if has_attr("start_latitude") && has_attr("start_longitude") {
+                Some(SpatialProfile {
+                    enabled: true,
+                    lat_field: "start_latitude".to_string(),
+                    lon_field: "start_longitude".to_string(),
+                    h3_resolutions: vec![7, 9, 11, 13],
+                    morton_z_order: true,
+                })
+            } else {
+                None
+            }
+        });
 
     Ok(EntityModel {
         entity,

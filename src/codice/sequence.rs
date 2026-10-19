@@ -21,7 +21,7 @@ use tracing::info;
 
 use crate::codice::registry::EntityModel;
 use crate::domain::errors::DomainError;
-use crate::infrastructure::dynamodb::{av_number, av_string, DynamoClient};
+use crate::mbf::storage::{av_number, av_string, DynamoClient};
 
 /// Sufijo canónico de los sequence codes.
 const SEQ_SUFFIX: &str = "_seq";
@@ -70,6 +70,31 @@ pub struct SequencePolicy {
 }
 
 impl SeqAttrConfig {
+    /// Construye la configuración secuencial desde el bloque JSON `auto_generate` del Códice (SSOT DRY).
+    pub fn from_auto_generate(name: &str, auto_gen: &serde_json::Value) -> Option<Self> {
+        if auto_gen.get("strategy").and_then(|v| v.as_str()) != Some("sequential") {
+            return None;
+        }
+        Some(Self {
+            name: name.to_string(),
+            prefix: auto_gen
+                .get("prefix")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            padding: auto_gen
+                .get("padding")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(4) as usize,
+            scope_resolution: ScopeResolution::from_str(
+                auto_gen
+                    .get("scope_resolution")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("exact"),
+            ),
+        })
+    }
+
     /// Merge: la fila global del tenant manda sobre la config del Códice.
     pub fn apply_policy(&mut self, policy: &SequencePolicy) {
         if let Some(prefix) = &policy.prefix {
@@ -90,27 +115,7 @@ impl SeqAttrConfig {
 pub fn parse_seq_defaults(model: &EntityModel, field_name: &str) -> Option<SeqAttrConfig> {
     let attr = model.attributes.iter().find(|a| a.name == field_name)?;
     let auto_gen = attr.auto_generate.as_ref()?;
-    if auto_gen.get("strategy").and_then(|v| v.as_str()) != Some("sequential") {
-        return None;
-    }
-    Some(SeqAttrConfig {
-        name: attr.name.clone(),
-        prefix: auto_gen
-            .get("prefix")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        padding: auto_gen
-            .get("padding")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(4) as usize,
-        scope_resolution: ScopeResolution::from_str(
-            auto_gen
-                .get("scope_resolution")
-                .and_then(|v| v.as_str())
-                .unwrap_or("exact"),
-        ),
-    })
+    SeqAttrConfig::from_auto_generate(&attr.name, auto_gen)
 }
 
 /// Construye la clave canónica del contador.
@@ -167,14 +172,11 @@ fn format_code(prefix: &str, segment: Option<&str>, padding: usize, value: u64) 
     }
 }
 
-/// Tabla DynamoDB para sequence_registry.
-/// El nombre viaja por env (`SEQUENCE_REGISTRY_TABLE`, IaC: MetriSequenceRegistryTable
-/// en template.yaml) con el valor canónico como fallback: que el stack y el
-/// binario no puedan divergir es lo que evita repetir el incidente de prod del
-/// 2026-09 — tabla ausente, `inject` en Err, OT creada sin número.
+/// Tabla para sequence_registry leída desde `EngineConfig` (SSOT).
 pub(crate) fn sequence_registry_table() -> String {
-    std::env::var("SEQUENCE_REGISTRY_TABLE")
-        .unwrap_or_else(|_| "metri-sequence-registry".to_string())
+    crate::domain::config::engine_config()
+        .sequence_registry_table
+        .clone()
 }
 
 /// Fila cruda de un contador (el item de Dynamo, si existe).

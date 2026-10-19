@@ -338,6 +338,18 @@ pub trait IopStep: Send + Sync {
     async fn compensate(&self, _ctx: &IopContext) {}
 }
 
+/// Registra `error.code` y `otel.status_code = ERROR` en el span activo si un paso IOP falla (DRY).
+pub fn record_step_span_error(
+    res: Result<IopContext, DomainError>,
+) -> Result<IopContext, DomainError> {
+    if let Err(ref e) = res {
+        let span = tracing::Span::current();
+        span.record("error.code", e.code.canonical_code());
+        span.record("otel.status_code", "ERROR");
+    }
+    res
+}
+
 /// Moira Emitter — fire-and-forget EDA tras Ok.
 #[async_trait::async_trait]
 pub trait MoiraEmitter: Send + Sync {

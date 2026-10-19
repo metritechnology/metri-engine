@@ -425,6 +425,7 @@ impl EavQueryExecutor {
         entity_type: &str,
         limit: u64,
     ) -> Result<Vec<String>, DomainError> {
+        let _ = self.ddb.sync_if_needed(&self.table).await;
         if limit == 0 {
             if let Ok(cache) = AEVT_SCAN_CACHE.read() {
                 let cache_key = (tenant.to_string(), entity_type.to_string());

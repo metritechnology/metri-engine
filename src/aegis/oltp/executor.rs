@@ -1363,6 +1363,18 @@ fn resolve_required_attrs(
 
     // Mapear/Resolver nombres con namespace usando el global CodeRegistry
     let registry = crate::codice::global();
+    if ast_ir
+        .search
+        .as_ref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+    {
+        if let Some(model) = registry.get_model(entity_type) {
+            for f in &model.fts_fields {
+                raw_attrs.insert(f.clone());
+            }
+        }
+    }
     let mut resolved_attrs = std::collections::HashSet::new();
 
     for raw_attr in raw_attrs {
@@ -1463,6 +1475,7 @@ fn row_passes_filters(
             let mut checked = false;
             if let Some(model) = crate::codice::registry::global().get_model(entity_name) {
                 if !model.fts_fields.is_empty() {
+                    let mut combined_fts = String::new();
                     for f in &model.fts_fields {
                         let bare_f = f.split('/').next_back().unwrap_or(f);
                         let val_opt = row.get(f).or_else(|| row.get(bare_f));
@@ -1470,14 +1483,23 @@ fn row_passes_filters(
                         if let Some(val) = val_opt.and_then(|v| v.as_str()) {
                             if crate::aegis::oltp::fuzzy::fuzzy_match(val, term) {
                                 passes_search = true;
-                                checked = true;
                                 break;
+                            }
+                            if !val.is_empty() {
+                                if !combined_fts.is_empty() {
+                                    combined_fts.push(' ');
+                                }
+                                combined_fts.push_str(val);
                             }
                         }
                     }
-                    if !passes_search {
-                        checked = true;
+                    if !passes_search
+                        && !combined_fts.is_empty()
+                        && crate::aegis::oltp::fuzzy::fuzzy_match(&combined_fts, term)
+                    {
+                        passes_search = true;
                     }
+                    checked = true;
                 }
             }
 

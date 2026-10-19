@@ -128,8 +128,12 @@ impl OltpChannel {
         let mut outbox_count = 0usize;
         let actor = ctx.user_id; // atribución de auditoría para todo el bulk
 
-        // Concurrent ingestion of chunks to leverage in-memory DynamoDB performance
+        // Concurrent ingestion of chunks with consolidated S3 .mbf batch flush per chunk
         for chunk in records.chunks(100) {
+            self.writer
+                .client()
+                .begin_bulk_s3_batch(self.writer.table())
+                .await?;
             let mut futures = Vec::with_capacity(chunk.len());
             for raw_record in chunk {
                 let writer = self.writer.clone();
@@ -181,6 +185,11 @@ impl OltpChannel {
             }
 
             let results = futures::future::join_all(futures).await;
+            let flush_res = self
+                .writer
+                .client()
+                .finish_bulk_s3_batch(self.writer.table())
+                .await;
             for res in results {
                 match res {
                     Ok(Ok(tx_res)) => {
@@ -208,6 +217,7 @@ impl OltpChannel {
                     }
                 }
             }
+            flush_res?;
         }
 
         // Deferred cache invalidation: single invalidation for the entire bulk operation

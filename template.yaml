@@ -494,7 +494,7 @@ Resources:
           METRI_BOOTSTRAP_MASTER_EMAIL: "admin@metri.one"
           METRI_BOOTSTRAP_MASTER_USERNAME: "admin"
           METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
-          FORCE_DEPLOY: "5"
+          FORCE_DEPLOY: "8"
 
   # ── 6. Observabilidad Estructurada con Retención Acotada (14 días) ───────────
   MetriEngineLogGroup:

@@ -5,7 +5,10 @@
   "track_history": true,
   "cross_covariance_matrix": {
     "enabled": true,
-    "measure_fields": ["purchase_cost_cents", "salvage_value_cents"]
+    "measure_fields": [
+      "purchase_cost_cents",
+      "salvage_value_cents"
+    ]
   },
   "attributes": [
     {
@@ -65,7 +68,15 @@
       "type": "string",
       "unique": "tenant",
       "fts": true,
-      "description": "Código de barras o QR que el técnico escanea en campo (ASSETS.md §6.4). Es el código de operación, no el ULID interno; conecta con la identificación de equipos de las inspecciones."
+      "description": "Código de barras o QR que el técnico escanea en campo (ASSETS.md §6.4). Es el código de operación, no el ULID interno; conecta con la identificación de equipos de las inspecciones.",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "status",
@@ -117,7 +128,16 @@
       "name": "description",
       "type": "string",
       "fts": true,
-      "description": "Descripción del activo: qué hace, contexto operativo y notas para el técnico."
+      "description": "Descripción del activo: qué hace, contexto operativo y notas para el técnico.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "manufacturer_company_id",
@@ -158,7 +178,16 @@
       "name": "omniclass_name",
       "type": "string",
       "fts": true,
-      "description": "Nombre o descripción verbal correspondiente al código de clasificación OmniClass."
+      "description": "Nombre o descripción verbal correspondiente al código de clasificación OmniClass.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "purchase_date",
@@ -184,7 +213,11 @@
         "synopsis_tier": "hyper_512b",
         "distribution_family": "pareto",
         "outlier_sigma_threshold": 4.0,
-        "ema_alphas": [0.05, 0.20, 0.50],
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
         "enable_cusum": false,
         "enable_benford_audit": true,
         "enable_weibull_mle": false
@@ -200,7 +233,11 @@
         "synopsis_tier": "hyper_512b",
         "distribution_family": "pareto",
         "outlier_sigma_threshold": 4.0,
-        "ema_alphas": [0.05, 0.20, 0.50],
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
         "enable_cusum": false,
         "enable_benford_audit": true,
         "enable_weibull_mle": false

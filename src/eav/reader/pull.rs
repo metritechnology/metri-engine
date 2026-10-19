@@ -106,6 +106,7 @@ impl EavReader {
         entity_id: &str,
         attrs: Option<&[&str]>, // None = todos los atributos
     ) -> Result<EntityMap, DomainError> {
+        let _ = self.ddb.sync_if_needed(&self.table).await;
         let pk = format!("T#{}#E#{}", tenant_id, entity_id);
 
         // 1. Check in-memory cache

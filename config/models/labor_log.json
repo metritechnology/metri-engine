@@ -34,14 +34,44 @@
       "name": "duration_minutes",
       "type": "decimal",
       "is_measure": true,
-      "default_rollup": "sum"
+      "default_rollup": "sum",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "lognormal",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": true
+      }
     },
     {
       "name": "hourly_rate_cents",
       "type": "number",
       "is_measure": true,
       "default_rollup": "sum",
-      "description": "Tarifa horaria al momento del registro, en la unidad menor de la divisa (céntimos)."
+      "description": "Tarifa horaria al momento del registro, en la unidad menor de la divisa (céntimos).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "pareto",
+        "outlier_sigma_threshold": 4.0,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": false,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": true,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "start_latitude",
@@ -78,5 +108,24 @@
       "of": "start_time",
       "description": "Un fichaje no puede terminar antes de empezar: end_time nunca anterior a start_time."
     }
-  ]
+  ],
+  "spatial_profile": {
+    "enabled": true,
+    "lat_field": "start_latitude",
+    "lon_field": "start_longitude",
+    "h3_resolutions": [
+      7,
+      9,
+      11,
+      13
+    ],
+    "morton_z_order": true
+  },
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": [
+      "duration_minutes",
+      "hourly_rate_cents"
+    ]
+  }
 }

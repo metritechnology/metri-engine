@@ -9,13 +9,31 @@
       "required": true,
       "fts": true,
       "is_dimension": true,
-      "description": "Nombre de la plantilla de checklist (ej: 'Seguridad de sótano')."
+      "description": "Nombre de la plantilla de checklist (ej: 'Seguridad de sótano').",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "description",
       "type": "string",
       "fts": true,
-      "description": "Propósito y alcance de la plantilla de verificación."
+      "description": "Propósito y alcance de la plantilla de verificación.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "status",

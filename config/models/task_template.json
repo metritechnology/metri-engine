@@ -9,7 +9,16 @@
       "required": true,
       "fts": true,
       "is_dimension": true,
-      "description": "Nombre de la tarea de plantilla (ej: 'Drenar el depósito')."
+      "description": "Nombre de la tarea de plantilla (ej: 'Drenar el depósito').",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "estimated_duration_minutes",

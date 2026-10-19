@@ -111,8 +111,13 @@ path = "src/main.rs"
 insta = "1.47.2"
 proptest = "1.11.0"
 
-# ─── Documentación (PLAN_DOCUMENTACION.md §2.5) ─────────────────────────────
-# Los enlaces intra-doc rotos rompen `cargo doc`; missing_docs entra en la Fase 6.
+# ─── Seguridad de memoria y Documentación (Clean Code + PLAN_DOCUMENTACION.md §2.5) ──
+# `deny` (en vez de `forbid`) porque el código generado por `flatc` en `OUT_DIR`
+# (`src/janus/fbs.rs`) emite `#[allow(unsafe_code)]`. El uso en código manual
+# está prohibido por `check_clean_code.py` y `tests/architecture_solid_guard.rs`.
+[lints.rust]
+unsafe_code = "deny"
+
 [lints.rustdoc]
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "deny"

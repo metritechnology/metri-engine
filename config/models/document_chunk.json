@@ -26,7 +26,16 @@
       "name": "chunk_content",
       "type": "string",
       "required": true,
-      "description": "El bloque de texto crudo de la ficha técnica que se extrajo de esta sección."
+      "description": "El bloque de texto crudo de la ficha técnica que se extrajo de esta sección.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "semantic_embedding",
@@ -42,7 +51,15 @@
     {
       "name": "metadata_tags",
       "type": "string",
-      "description": "Palabras clave o metadatos de categoría extraídos (ej. 'especificaciones', 'mantenimiento', 'lubricación')."
+      "description": "Palabras clave o metadatos de categoría extraídos (ej. 'especificaciones', 'mantenimiento', 'lubricación').",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "owner_entity_type",

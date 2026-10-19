@@ -577,6 +577,129 @@ impl MbfHyperSynopsis512 {
         (fill_rate, tail_risk_prob)
     }
 
+    // ── Benford's Law First-Digit Chi-Squared Audit (§1.1 #3, §2.2 & §7) ──────
+
+    /// Critical $\chi^2$ threshold at $\alpha = 0.05$ with $\text{df} = 8$ ($\chi^2_{0.95, 8} = 15.51$, §7).
+    pub const BENFORD_CRITICAL_CHI2_ALPHA_005: f64 = 15.51;
+
+    /// Extracts the leading non-zero base-10 digit $d \in \{1,\dots,9\}$ of any finite non-zero number $x$.
+    #[inline]
+    pub fn leading_base10_digit(x: f64) -> Option<usize> {
+        let abs_x = x.abs();
+        if !abs_x.is_finite() || abs_x <= 0.0 {
+            return None;
+        }
+        let log10_x = abs_x.log10();
+        let mantissa = 10.0_f64.powf(log10_x - log10_x.floor());
+        let digit = (mantissa + 1e-12).floor() as usize;
+        if (1..=9).contains(&digit) {
+            Some(digit)
+        } else {
+            Some(1)
+        }
+    }
+
+    /// Computes the empirical first-digit relative frequencies $[f_1, \dots, f_9]$ and valid sample size $n$ (§7).
+    pub fn benford_first_digit_frequencies(values: &[f64]) -> ([f64; 9], usize) {
+        let mut counts = [0usize; 9];
+        let mut total = 0usize;
+        for &v in values {
+            if let Some(d) = Self::leading_base10_digit(v) {
+                counts[d - 1] += 1;
+                total += 1;
+            }
+        }
+        let mut freqs = [0.0_f64; 9];
+        if total > 0 {
+            let n_f = total as f64;
+            for i in 0..9 {
+                freqs[i] = (counts[i] as f64) / n_f;
+            }
+        }
+        (freqs, total)
+    }
+
+    /// Computes Benford's Law First-Digit Chi-Squared statistic:
+    /// $\chi^2_{\text{Benford}} = n \sum_{d=1}^9 \frac{(f_d - \log_{10}(1 + 1/d))^2}{\log_{10}(1 + 1/d)}$ (§7).
+    pub fn benford_chi_squared(values: &[f64]) -> f64 {
+        let (freqs, n) = Self::benford_first_digit_frequencies(values);
+        if n == 0 {
+            return 0.0;
+        }
+        let n_f = n as f64;
+        let mut chi2 = 0.0_f64;
+        for d in 1..=9 {
+            let expected_p = (1.0 + 1.0 / (d as f64)).log10();
+            let diff = freqs[d - 1] - expected_p;
+            chi2 += (diff * diff) / expected_p;
+        }
+        n_f * chi2
+    }
+
+    /// Returns `true` when the sample conforms to Benford's Law ($\chi^2_{\text{Benford}} < \text{threshold}$, default `15.51` at $\alpha = 0.05$, §7).
+    #[inline]
+    pub fn passes_benford_audit(values: &[f64], critical_threshold: Option<f64>) -> bool {
+        let threshold = critical_threshold.unwrap_or(Self::BENFORD_CRITICAL_CHI2_ALPHA_005);
+        Self::benford_chi_squared(values) < threshold
+    }
+
+    // ── Complete Survival & Renewal KPIs from Códice SurvivalAnalysisProfile (§4.1 & §4.2) ──
+
+    /// Evaluates all 7 analytical Survival & Renewal KPIs defined in Spec 09 §4.2 in $O(1)$
+    /// from an interarrival/lifetime synopsis (`self`) and a restoration/repair synopsis (`restoration_synopsis`).
+    pub fn evaluate_survival_renewal_kpis(
+        &self,
+        restoration_synopsis: &Self,
+        window_duration: f64,
+        mission_time_t: f64,
+        planned_renewal_cost: f64,
+        unplanned_event_cost: f64,
+    ) -> SurvivalRenewalKpis {
+        let mttr = restoration_synopsis.pebay_mean_m1.max(0.0);
+        let total_downtime = ((restoration_synopsis.sum_exact_i128.max(0) as f64) / 10_000.0)
+            .max(mttr * (restoration_synopsis.valid_count as f64));
+        let n_failures = self.valid_count.max(restoration_synopsis.valid_count);
+        let mtbf = if n_failures > 0 && window_duration > total_downtime {
+            (window_duration - total_downtime) / (n_failures as f64)
+        } else {
+            self.pebay_mean_m1.max(0.0)
+        };
+        let mttf = self.mean_interarrival_time();
+        let availability_pct = if mtbf + mttr > 1e-12 {
+            ((mtbf / (mtbf + mttr)) * 100.0).clamp(0.0, 100.0)
+        } else {
+            100.0
+        };
+
+        let (beta, eta, gamma_loc) = self.weibull_3p_params();
+        let shifted_t = (mission_time_t - gamma_loc).max(0.0);
+        let (reliability_r_t, hazard_rate_h_t) = if shifted_t <= 0.0 {
+            (1.0, 0.0)
+        } else {
+            let ratio = shifted_t / eta;
+            let r_t = (-ratio.powf(beta)).exp().clamp(0.0, 1.0);
+            let h_t = (beta / eta) * ratio.powf(beta - 1.0);
+            (r_t, h_t.max(0.0))
+        };
+
+        let optimal_renewal_interval =
+            self.optimal_renewal_interval(planned_renewal_cost, unplanned_event_cost);
+
+        SurvivalRenewalKpis {
+            mttr,
+            mtbf,
+            mttf,
+            availability_pct,
+            weibull_beta: beta,
+            weibull_eta: eta,
+            weibull_gamma_loc: gamma_loc,
+            reliability_r_t,
+            hazard_rate_h_t,
+            kaplan_meier_s_t: self.kaplan_meier_survival(mission_time_t),
+            optimal_renewal_interval,
+        }
+    }
+
     fn standard_normal_cdf(z: f64) -> f64 {
         // Abramowitz & Stegun 7.1.26 rational approximation
         let sign = if z < 0.0 { -1.0 } else { 1.0 };
@@ -596,5 +719,106 @@ impl MbfHyperSynopsis512 {
         let z_safe = z.max(0.1);
         let term = (z_safe + 1.0 / (12.0 * z_safe - 1.0 / (10.0 * z_safe))) / std::f64::consts::E;
         (2.0 * PI / z_safe).sqrt() * term.powf(z_safe)
+    }
+}
+
+/// Complete $O(1)$ Survival & Renewal KPI evaluation output matching Spec 09 §4.2.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct SurvivalRenewalKpis {
+    pub mttr: f64,
+    pub mtbf: f64,
+    pub mttf: f64,
+    pub availability_pct: f64,
+    pub weibull_beta: f64,
+    pub weibull_eta: f64,
+    pub weibull_gamma_loc: f64,
+    pub reliability_r_t: f64,
+    pub hazard_rate_h_t: f64,
+    pub kaplan_meier_s_t: f64,
+    pub optimal_renewal_interval: Option<f64>,
+}
+
+impl DimensionalUnitRegistry {
+    /// Builds a `DimensionalUnitRegistry` from Códice `AffineTransformSpec` mappings (`unit_code -> AffineTransformSpec`, §6).
+    pub fn from_codice_specs<'a>(
+        specs: impl IntoIterator<Item = (&'a str, &'a crate::codice::AffineTransformSpec)>,
+    ) -> Self {
+        let mut reg = Self::new();
+        for (code, spec) in specs {
+            reg.register(code, AffineTransform::new(spec.scale_a, spec.offset_b));
+        }
+        reg
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn benford_law_chi_squared_distinguishes_natural_exponential_from_fabricated_numbers() {
+        // 1. Natural geometric/exponential series ($1.15^k$) obeys Benford's Law closely (chi2 < 15.51)
+        let natural_invoices: Vec<f64> = (1..=200).map(|k| 100.0 * 1.15_f64.powi(k)).collect();
+        let chi2_natural = MbfHyperSynopsis512::benford_chi_squared(&natural_invoices);
+        assert!(
+            chi2_natural < MbfHyperSynopsis512::BENFORD_CRITICAL_CHI2_ALPHA_005,
+            "Natural geometric series must pass Benford audit: chi2={chi2_natural}"
+        );
+        assert!(MbfHyperSynopsis512::passes_benford_audit(
+            &natural_invoices,
+            None
+        ));
+
+        // 2. Fabricated invoices clustered around 800..999 (all starting with 8 or 9) violate Benford's Law (chi2 >> 15.51)
+        let fabricated_invoices: Vec<f64> = (0..100).map(|i| 850.0 + (i as f64) * 1.2).collect();
+        let chi2_fabricated = MbfHyperSynopsis512::benford_chi_squared(&fabricated_invoices);
+        assert!(
+            chi2_fabricated > MbfHyperSynopsis512::BENFORD_CRITICAL_CHI2_ALPHA_005,
+            "Fabricated numbers must fail Benford audit: chi2={chi2_fabricated}"
+        );
+        assert!(!MbfHyperSynopsis512::passes_benford_audit(
+            &fabricated_invoices,
+            None
+        ));
+    }
+
+    #[test]
+    fn survival_renewal_kpis_and_markov_chain_and_dimensional_registry_succeed() {
+        let lifetimes: Vec<(i64, f64)> = (1..=40)
+            .map(|i| {
+                let u = (i as f64) / 41.0;
+                let t = 2000.0 * (-((1.0 - u).ln())).powf(1.0 / 2.5);
+                (i * 1000, t)
+            })
+            .collect();
+        let repairs: Vec<(i64, f64)> = (1..=40)
+            .map(|i| (i * 1000, 12.0 + (i % 5) as f64))
+            .collect();
+
+        let life_syn =
+            MbfHyperSynopsis512::from_observations(&lifetimes, 0, &[2200.0, 2400.0], 0.0);
+        let rep_syn = MbfHyperSynopsis512::from_observations(&repairs, 0, &[], 0.0);
+
+        let kpis =
+            life_syn.evaluate_survival_renewal_kpis(&rep_syn, 100_000.0, 1500.0, 400.0, 2500.0);
+        assert!(kpis.mttr > 10.0 && kpis.mttr < 20.0);
+        assert!(kpis.mtbf > 2000.0);
+        assert!(kpis.mttf > 1400.0);
+        assert!(kpis.availability_pct > 95.0 && kpis.availability_pct <= 100.0);
+        assert!(kpis.reliability_r_t > 0.0 && kpis.reliability_r_t < 1.0);
+        assert!(kpis.hazard_rate_h_t > 0.0);
+        assert!(kpis.optimal_renewal_interval.is_some());
+
+        let chain = DiscreteMarkovChain::<4>::from_state_sequence(&[0, 0, 1, 2, 0, 1, 3, 0]);
+        let steady = chain.steady_state_distribution();
+        let sum_p: f64 = steady.iter().sum();
+        assert!((sum_p - 1.0).abs() < 1e-6);
+
+        let spec = crate::codice::AffineTransformSpec {
+            scale_a: 0.09290304,
+            offset_b: 0.0,
+        };
+        let reg = DimensionalUnitRegistry::from_codice_specs([("FT2", &spec)]);
+        assert!((reg.normalize(100.0, "ft2") - 9.290304).abs() < 1e-6);
     }
 }

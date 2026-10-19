@@ -9,7 +9,7 @@ use crate::domain::protocols::DomainResult;
 use crate::mbf::format::pad_to_64;
 
 pub use super::fuzzy_math_catalog::{
-    AffineTransform, DimensionalUnitRegistry, DiscreteMarkovChain,
+    AffineTransform, DimensionalUnitRegistry, DiscreteMarkovChain, SurvivalRenewalKpis,
 };
 
 /// Zone 5 binary magic (`"MBFZ5SYN"`).
@@ -31,7 +31,84 @@ pub struct NumericBlockSynopsis {
 }
 
 impl NumericBlockSynopsis {
-    /// Sample variance $s^2 = M_2 / (n - 1)$ in $O(1)$.
+    /// Builds a 64-byte `NumericBlockSynopsis` from a slice of finite `f64` observations using Welford's single-pass recurrence (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
+    pub fn from_values(values: &[f64], null_count: u32, kll_sketch_offset: u64) -> Self {
+        if values.is_empty() {
+            return Self {
+                valid_count: 0,
+                null_count,
+                sum: 0.0,
+                mean: 0.0,
+                m2: 0.0,
+                min: f64::INFINITY,
+                max: f64::NEG_INFINITY,
+                kll_sketch_offset,
+                reserved_pad: 0,
+            };
+        }
+        let mut sum = 0.0;
+        let mut mean = 0.0;
+        let mut m2 = 0.0;
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        for (idx, &x) in values.iter().enumerate() {
+            sum += x;
+            if x < min {
+                min = x;
+            }
+            if x > max {
+                max = x;
+            }
+            let n = (idx + 1) as f64;
+            let delta = x - mean;
+            mean += delta / n;
+            let delta2 = x - mean;
+            m2 += delta * delta2;
+        }
+        Self {
+            valid_count: values.len().min(u32::MAX as usize) as u32,
+            null_count,
+            sum,
+            mean,
+            m2,
+            min,
+            max,
+            kll_sketch_offset,
+            reserved_pad: 0,
+        }
+    }
+
+    /// Merges two 64-byte `NumericBlockSynopsis` records in $O(1)$ using Chan/Welford's parallel variance formula (`04_ALGORITHMS_AND_PAPERS.md` §2.1):
+    /// $$n_C = n_A + n_B, \quad \delta = \mu_B - \mu_A, \quad \mu_C = \mu_A + \delta \frac{n_B}{n_C}, \quad M_{2,C} = M_{2,A} + M_{2,B} + \delta^2 \frac{n_A n_B}{n_C}$$
+    #[inline]
+    pub fn merge(&self, other: &Self) -> Self {
+        if self.valid_count == 0 {
+            return *other;
+        }
+        if other.valid_count == 0 {
+            return *self;
+        }
+        let n_a = f64::from(self.valid_count);
+        let n_b = f64::from(other.valid_count);
+        let n_c = n_a + n_b;
+        let delta = other.mean - self.mean;
+        let mean_c = self.mean + delta * (n_b / n_c);
+        let m2_c = self.m2 + other.m2 + delta * delta * (n_a * n_b / n_c);
+
+        Self {
+            valid_count: self.valid_count.saturating_add(other.valid_count),
+            null_count: self.null_count.saturating_add(other.null_count),
+            sum: self.sum + other.sum,
+            mean: mean_c,
+            m2: m2_c,
+            min: self.min.min(other.min),
+            max: self.max.max(other.max),
+            kll_sketch_offset: self.kll_sketch_offset,
+            reserved_pad: 0,
+        }
+    }
+
+    /// Sample variance $s^2 = M_2 / (n - 1)$ in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
     #[inline]
     pub fn sample_variance(&self) -> f64 {
         if self.valid_count <= 1 {
@@ -41,10 +118,21 @@ impl NumericBlockSynopsis {
         }
     }
 
-    /// Standard deviation $s = \sqrt{M_2 / (n - 1)}$ in $O(1)$.
+    /// Standard deviation $s = \sqrt{M_2 / (n - 1)}$ in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
     #[inline]
     pub fn std_dev(&self) -> f64 {
         self.sample_variance().sqrt()
+    }
+
+    /// Standardized Z-Score $z = \frac{x_{\text{actual}} - \mu_C}{s}$ in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
+    #[inline]
+    pub fn z_score(&self, x_actual: f64) -> f64 {
+        let s = self.std_dev();
+        if s <= 1e-15 {
+            0.0
+        } else {
+            (x_actual - self.mean) / s
+        }
     }
 }
 
@@ -104,6 +192,29 @@ impl CompactKllSketch {
         let idx = ((clamped * 29.0).round() as usize).min(28);
         self.quantiles_30[idx]
     }
+
+    /// Merges two `CompactKllSketch` quantile summaries in $O(1)$ via weighted order-statistic compaction (`04_ALGORITHMS_AND_PAPERS.md` §1 Row 7).
+    pub fn merge(&self, other: &Self) -> Self {
+        if self.count == 0 {
+            return *other;
+        }
+        if other.count == 0 {
+            return *self;
+        }
+        let total = self.count + other.count;
+        let wa = (self.count as f64) / (total as f64);
+        let wb = (other.count as f64) / (total as f64);
+        let mut quantiles_30 = [0.0_f64; 29];
+        for i in 0..29 {
+            quantiles_30[i] = wa * self.quantiles_30[i] + wb * other.quantiles_30[i];
+        }
+        Self {
+            count: total,
+            min_val: self.min_val.min(other.min_val),
+            max_val: self.max_val.max(other.max_val),
+            quantiles_30,
+        }
+    }
 }
 
 /// Spec §4.6.2 Xor8 Filter (~9.84 bits/key, `< 0.39%` false positive rate) for $O(1)$ block pruning.
@@ -148,6 +259,112 @@ impl Xor8Filter {
         (self.fingerprints[h0] & fp) == fp
             && (self.fingerprints[h1] & fp.rotate_left(3)) == fp.rotate_left(3)
             && (self.fingerprints[h2] & fp.rotate_right(2)) == fp.rotate_right(2)
+    }
+}
+
+/// Compressed 32-bit Roaring Bitmap (`04_ALGORITHMS_AND_PAPERS.md` §1 Row 8, Chambi et al., *SPE 2016*)
+/// partitioning 32-bit row IDs by upper 16-bit chunk key (`u16`) into 64-bit word bitmap containers
+/// supporting hardware-accelerated `AND` (`&`), `OR` (`|`), and `AND_NOT` (`& !`) set intersections.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoaringBitmap32 {
+    /// Sorted list of `(high_16_key, 1024 x u64 bitmap words)` containers.
+    pub containers: std::collections::BTreeMap<u16, Vec<u64>>,
+}
+
+impl RoaringBitmap32 {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Builds a `RoaringBitmap32` from a slice of 32-bit row IDs.
+    pub fn from_row_ids(row_ids: &[u32]) -> Self {
+        let mut bm = Self::new();
+        for &id in row_ids {
+            bm.insert(id);
+        }
+        bm
+    }
+
+    /// Inserts a 32-bit `row_id` into its corresponding 16-bit container.
+    #[inline]
+    pub fn insert(&mut self, row_id: u32) {
+        let hi = (row_id >> 16) as u16;
+        let lo = (row_id & 0xFFFF) as usize;
+        let word_idx = lo / 64;
+        let bit_idx = lo % 64;
+        let words = self
+            .containers
+            .entry(hi)
+            .or_insert_with(|| vec![0u64; 1024]);
+        words[word_idx] |= 1u64 << bit_idx;
+    }
+
+    /// Tests whether `row_id` is present in $O(1)$.
+    #[inline]
+    pub fn contains(&self, row_id: u32) -> bool {
+        let hi = (row_id >> 16) as u16;
+        let lo = (row_id & 0xFFFF) as usize;
+        self.containers
+            .get(&hi)
+            .is_some_and(|words| (words[lo / 64] & (1u64 << (lo % 64))) != 0)
+    }
+
+    /// Computes the exact cardinality (popcount) across all containers using hardware `POPCNT`.
+    pub fn cardinality(&self) -> u64 {
+        self.containers
+            .values()
+            .flat_map(|words| words.iter())
+            .map(|w| u64::from(w.count_ones()))
+            .sum()
+    }
+
+    /// Word-level SIMD-friendly intersection (`self & other`) across matching 16-bit containers.
+    pub fn and(&self, other: &Self) -> Self {
+        let mut out = Self::new();
+        for (&hi, words_a) in &self.containers {
+            if let Some(words_b) = other.containers.get(&hi) {
+                let mut merged = vec![0u64; 1024];
+                let mut any_non_zero = false;
+                for i in 0..1024 {
+                    let w = words_a[i] & words_b[i];
+                    merged[i] = w;
+                    any_non_zero |= w != 0;
+                }
+                if any_non_zero {
+                    out.containers.insert(hi, merged);
+                }
+            }
+        }
+        out
+    }
+
+    /// Word-level SIMD-friendly union (`self | other`) across 16-bit containers.
+    pub fn or(&self, other: &Self) -> Self {
+        let mut out = self.clone();
+        for (&hi, words_b) in &other.containers {
+            let entry = out.containers.entry(hi).or_insert_with(|| vec![0u64; 1024]);
+            for i in 0..1024 {
+                entry[i] |= words_b[i];
+            }
+        }
+        out
+    }
+
+    /// Materializes all set 32-bit row IDs in ascending order.
+    pub fn to_vec(&self) -> Vec<u32> {
+        let mut out = Vec::new();
+        for (&hi, words) in &self.containers {
+            let hi_base = (u32::from(hi)) << 16;
+            for (word_idx, &word) in words.iter().enumerate() {
+                let mut w = word;
+                while w != 0 {
+                    let bit = w.trailing_zeros();
+                    out.push(hi_base | ((word_idx as u32) * 64 + bit));
+                    w &= w - 1;
+                }
+            }
+        }
+        out
     }
 }
 
@@ -948,5 +1165,41 @@ mod tests {
         let w_syn = MbfHyperSynopsis512::from_observations(&weibull_obs, 0, &[4200.0, 4500.0], 0.0);
         assert!(w_syn.weibull_beta_mle > 2.2 && w_syn.weibull_beta_mle < 3.5);
         assert!(w_syn.optimal_renewal_interval(500.0, 3000.0).is_some());
+    }
+
+    #[test]
+    fn chan_welford_synopsis_merge_z_score_kll_merge_and_roaring_bitmap_work() {
+        let block_a = NumericBlockSynopsis::from_values(&[10.0, 20.0, 30.0, 40.0], 1, 0);
+        let block_b = NumericBlockSynopsis::from_values(&[50.0, 60.0, 70.0, 80.0], 2, 0);
+        let direct = NumericBlockSynopsis::from_values(
+            &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0],
+            3,
+            0,
+        );
+        let merged = block_a.merge(&block_b);
+        assert_eq!(merged.valid_count, 8);
+        assert_eq!(merged.null_count, 3);
+        assert!((merged.mean - direct.mean).abs() < 1e-12);
+        assert!((merged.sample_variance() - direct.sample_variance()).abs() < 1e-12);
+        assert!((merged.std_dev() - direct.std_dev()).abs() < 1e-12);
+        assert!((merged.z_score(merged.mean)).abs() < 1e-12);
+        assert!((merged.z_score(merged.mean + 2.0 * merged.std_dev()) - 2.0).abs() < 1e-12);
+
+        let kll_a = CompactKllSketch::from_values(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        let kll_b = CompactKllSketch::from_values(&[6.0, 7.0, 8.0, 9.0, 10.0]);
+        let kll_m = kll_a.merge(&kll_b);
+        assert_eq!(kll_m.count, 10);
+        assert_eq!(kll_m.min_val, 1.0);
+        assert_eq!(kll_m.max_val, 10.0);
+        assert!(kll_m.query_quantile(0.5) > 4.0 && kll_m.query_quantile(0.5) < 7.0);
+
+        let bm1 = RoaringBitmap32::from_row_ids(&[1, 5, 65_540, 131_075]);
+        let bm2 = RoaringBitmap32::from_row_ids(&[5, 10, 65_540, 200_000]);
+        let inter = bm1.and(&bm2);
+        assert_eq!(inter.cardinality(), 2);
+        assert_eq!(inter.to_vec(), vec![5, 65_540]);
+        let union = bm1.or(&bm2);
+        assert_eq!(union.cardinality(), 6);
+        assert!(union.contains(131_075) && union.contains(200_000));
     }
 }

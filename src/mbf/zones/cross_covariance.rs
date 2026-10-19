@@ -234,6 +234,47 @@ impl MbfCrossCovarianceMatrix {
         mat.pearson_correlation_matrix()
     }
 
+    /// Computes the exact Bivariate Pearson Correlation $r_{XY} = \frac{C_{XY}}{\sqrt{M_{2,X} M_{2,Y}}} \in [-1, 1]$ in $O(1)$
+    /// directly from pre-aggregated co-moments (`04_ALGORITHMS_AND_PAPERS.md` §2.2).
+    #[inline]
+    pub fn bivariate_correlation(&self, idx_x: usize, idx_y: usize) -> f64 {
+        let m = self.dimension;
+        if idx_x >= m || idx_y >= m || self.count < 2 {
+            return 0.0;
+        }
+        if idx_x == idx_y {
+            return 1.0;
+        }
+        let m2_x = self.co_moments[idx_x * m + idx_x];
+        let m2_y = self.co_moments[idx_y * m + idx_y];
+        let denom = (m2_x * m2_y).sqrt();
+        if denom <= 1e-15 {
+            0.0
+        } else {
+            (self.co_moments[idx_x * m + idx_y] / denom).clamp(-1.0, 1.0)
+        }
+    }
+
+    /// Solves Simple Bivariate Ordinary Least Squares (`LINEAR_REGRESSION`, $y = m x + b$) in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.2):
+    /// $$m = \frac{C_{XY}}{M_{2,X}}, \qquad b = \mu_Y - m \cdot \mu_X$$
+    /// Returns `Some((slope_m, intercept_b, r_xy))`.
+    #[inline]
+    pub fn simple_linear_regression(&self, idx_x: usize, idx_y: usize) -> Option<(f64, f64, f64)> {
+        let m = self.dimension;
+        if idx_x >= m || idx_y >= m || self.count < 2 {
+            return None;
+        }
+        let m2_x = self.co_moments[idx_x * m + idx_x];
+        if m2_x.abs() <= 1e-15 {
+            return None;
+        }
+        let c_xy = self.co_moments[idx_x * m + idx_y];
+        let slope_m = c_xy / m2_x;
+        let intercept_b = self.means[idx_y] - slope_m * self.means[idx_x];
+        let r_xy = self.bivariate_correlation(idx_x, idx_y);
+        Some((slope_m, intercept_b, r_xy))
+    }
+
     /// Solves Multiple Linear Regression (OLS) directly from the pre-aggregated co-moment matrix in $O(M^3)$
     /// via Cholesky $L L^T$ decomposition (§4.3 #2) without reading a single data row!
     /// Predicts target column `target_idx` from `predictor_indices`.
@@ -479,5 +520,16 @@ mod tests {
         assert_eq!(bin.len() % 64, 0);
         let decoded = MbfCrossCovarianceMatrix::decode_zone_binary(&bin).unwrap();
         assert_eq!(decoded, merged);
+
+        // Verify O(1) Bivariate Simple Linear Regression (§2.2): y = 12.5 + 4.0 * x
+        let mut biv = MbfCrossCovarianceMatrix::new(2);
+        for x in 1..=20 {
+            let xf = x as f64;
+            biv.push_row(&[xf, 12.5 + 4.0 * xf]);
+        }
+        let (slope_m, intercept_b, r_xy) = biv.simple_linear_regression(0, 1).unwrap();
+        assert!((slope_m - 4.0).abs() < 1e-10);
+        assert!((intercept_b - 12.5).abs() < 1e-10);
+        assert!((r_xy - 1.0).abs() < 1e-10);
     }
 }

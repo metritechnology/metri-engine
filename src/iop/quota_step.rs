@@ -79,15 +79,7 @@ where
         )
     )]
     async fn execute(&self, ctx: IopContext) -> Result<IopContext, DomainError> {
-        match self.execute_inner(ctx).await {
-            Ok(c) => Ok(c),
-            Err(e) => {
-                let span = tracing::Span::current();
-                span.record("error.code", e.code.canonical_code());
-                span.record("otel.status_code", "ERROR");
-                Err(e)
-            }
-        }
+        crate::iop::core::record_step_span_error(self.execute_inner(ctx).await)
     }
 
     /// Devuelve la unidad debitada cuando el pipeline no llegó a escribir.

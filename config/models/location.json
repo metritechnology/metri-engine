@@ -10,7 +10,16 @@
       "type": "string",
       "fts": true,
       "required": true,
-      "description": "Nombre representativo de la ubicación (ej: 'Planta Ensamblado Norte')."
+      "description": "Nombre representativo de la ubicación (ej: 'Planta Ensamblado Norte').",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "tag",
@@ -23,7 +32,15 @@
         "prefix": "L-",
         "length": 6
       },
-      "description": "Código de negocio único autogenerado por inquilino para ámbito de secuencia."
+      "description": "Código de negocio único autogenerado por inquilino para ámbito de secuencia.",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "floc_code",
@@ -31,7 +48,15 @@
       "unique": "tenant",
       "fts": true,
       "pattern": "^[A-Z0-9]{2,6}(-[A-Z0-9]{2,8})*$",
-      "description": "Código de Ubicación Funcional (Functional Location FLOC) estandarizado tipo SAP (único por tenant)."
+      "description": "Código de Ubicación Funcional (Functional Location FLOC) estandarizado tipo SAP (único por tenant).",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "status",
@@ -64,13 +89,43 @@
       "name": "risk_probability_score",
       "type": "integer",
       "is_measure": true,
-      "description": "Escala de probabilidad de falla o evento de riesgo (1-5, ISO 31000 / RCM)."
+      "description": "Escala de probabilidad de falla o evento de riesgo (1-5, ISO 31000 / RCM).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "risk_impact_score",
       "type": "integer",
       "is_measure": true,
-      "description": "Escala de impacto o consecuencia operacional/EHS (1-5, ISO 31000 / RCM)."
+      "description": "Escala de impacto o consecuencia operacional/EHS (1-5, ISO 31000 / RCM).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "parent_location_id",
@@ -84,7 +139,16 @@
       "name": "description",
       "type": "string",
       "fts": true,
-      "description": "Descripción detallada del propósito u operaciones de la ubicación."
+      "description": "Descripción detallada del propósito u operaciones de la ubicación.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "omniclass_code",
@@ -97,7 +161,16 @@
       "name": "omniclass_name",
       "type": "string",
       "fts": true,
-      "description": "Nombre o descripción verbal correspondiente al código de clasificación OmniClass Table 13."
+      "description": "Nombre o descripción verbal correspondiente al código de clasificación OmniClass Table 13.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "is_primary",
@@ -150,7 +223,23 @@
       "type": "double",
       "is_measure": true,
       "default_rollup": "sum",
-      "description": "Dimensión de superficie física."
+      "description": "Dimensión de superficie física.",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false,
+        "unit_field_ref": "area_unit"
+      }
     },
     {
       "name": "area_unit",
@@ -210,5 +299,25 @@
       "detail_type_output": "system.location.status_changed",
       "description": "Evento de auditoría de cambio de estado operativo en una ubicación."
     }
-  ]
+  ],
+  "spatial_profile": {
+    "enabled": true,
+    "lat_field": "latitude",
+    "lon_field": "longitude",
+    "h3_resolutions": [
+      7,
+      9,
+      11,
+      13
+    ],
+    "morton_z_order": true
+  },
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": [
+      "risk_probability_score",
+      "risk_impact_score",
+      "area_value"
+    ]
+  }
 }

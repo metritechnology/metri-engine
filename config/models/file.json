@@ -8,7 +8,16 @@
       "type": "string",
       "required": true,
       "fts": true,
-      "description": "Nombre original del archivo tal como fue subido por el usuario."
+      "description": "Nombre original del archivo tal como fue subido por el usuario.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "mime_type",
@@ -28,7 +37,22 @@
       "type": "number",
       "required": true,
       "is_measure": true,
-      "description": "Tamaño del archivo original en bytes (i64 por precisión)."
+      "description": "Tamaño del archivo original en bytes (i64 por precisión).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "checksum_sha256",
@@ -71,7 +95,22 @@
       "name": "optimized_size_bytes",
       "type": "number",
       "is_measure": true,
-      "description": "Tamaño del archivo después de optimización por Metri Store. Null si aún no se procesó."
+      "description": "Tamaño del archivo después de optimización por Metri Store. Null si aún no se procesó.",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "optimized_mime_type",
@@ -84,7 +123,22 @@
       "type": "decimal",
       "is_measure": true,
       "default_rollup": "avg",
-      "description": "Porcentaje de reducción de tamaño logrado (0.0 a 100.0). Útil para analytics de eficiencia del storage."
+      "description": "Porcentaje de reducción de tamaño logrado (0.0 a 100.0). Útil para analytics de eficiencia del storage.",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "processing_status",
@@ -133,7 +187,22 @@
       "name": "chunks_count",
       "type": "number",
       "is_measure": true,
-      "description": "Cantidad de document_chunks generados para este archivo. 0 si no se embeddeó."
+      "description": "Cantidad de document_chunks generados para este archivo. 0 si no se embeddeó.",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "poisson",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "uploaded_by",
@@ -161,5 +230,14 @@
       "index": true,
       "description": "Si es 'true' (ej: Firmas o Biometrías), el Engine le aplica invisibilidad fantasma contra cualquier rpc Query. Solo el Point-Read directo por UUID logrará materializarlo previniendo Data Leaks en paginaciones masivas."
     }
-  ]
+  ],
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": [
+      "file_size_bytes",
+      "optimized_size_bytes",
+      "size_reduction_percent",
+      "chunks_count"
+    ]
+  }
 }

@@ -10,7 +10,16 @@
       "type": "string",
       "fts": true,
       "required": true,
-      "description": "Nombre de la organización o empresa arrendataria (Tenant)."
+      "description": "Nombre de la organización o empresa arrendataria (Tenant).",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "tag",
@@ -23,7 +32,15 @@
         "prefix": "TNT-",
         "length": 6
       },
-      "description": "Código autogenerado de negocio único para el tenant."
+      "description": "Código autogenerado de negocio único para el tenant.",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "status",

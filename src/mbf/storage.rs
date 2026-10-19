@@ -395,7 +395,61 @@ impl S3MbfObjectStore {
             }
         }
     }
+    fn local_slice_cache_path(&self, key: &str, start: usize, end: usize) -> PathBuf {
+        let safe_name = key.replace(['/', '\\', ':'], "_");
+        self.cache_dir
+            .join(format!("{safe_name}__range_{start}_{end}.slice"))
+    }
+
+    /// Enforces the 450 MB `/tmp/mbf_cache` NVMe budget (`05_SERVERLESS_LAMBDA_AND_S3_INFRASTRUCTURE.md` §3),
+    /// evicting oldest immutable `.slice` files first while preserving active `HOT_HEAD` and `.mbf.idx` mirrors.
+    pub fn enforce_nvme_cache_budget(&self, max_budget_bytes: u64) -> usize {
+        let Ok(entries) = std::fs::read_dir(&self.cache_dir) else {
+            return 0;
+        };
+        let mut total_bytes = 0u64;
+        let mut evictable_slices: Vec<(std::time::SystemTime, u64, PathBuf)> = Vec::new();
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    let len = meta.len();
+                    total_bytes = total_bytes.saturating_add(len);
+                    let is_idx_or_head = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.contains("HOT_HEAD") || n.ends_with(".idx"));
+                    if !is_idx_or_head {
+                        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+                        evictable_slices.push((mtime, len, path));
+                    }
+                }
+            }
+        }
+
+        if total_bytes <= max_budget_bytes {
+            return 0;
+        }
+
+        // Evict oldest immutable slices first (LRU order)
+        evictable_slices.sort_by_key(|(mtime, _, _)| *mtime);
+        let mut evicted = 0usize;
+        for (_, len, path) in evictable_slices {
+            if total_bytes <= max_budget_bytes {
+                break;
+            }
+            if std::fs::remove_file(&path).is_ok() {
+                total_bytes = total_bytes.saturating_sub(len);
+                evicted += 1;
+            }
+        }
+        evicted
+    }
 }
+
+/// Default 450 MB `/tmp/mbf_cache` NVMe budget inside AWS Lambda's free 512 MB ephemeral storage.
+pub const MBF_NVME_CACHE_BUDGET_BYTES: u64 = 450 * 1024 * 1024;
 
 #[async_trait]
 impl IMbfObjectStore for S3MbfObjectStore {
@@ -432,6 +486,7 @@ impl IMbfObjectStore for S3MbfObjectStore {
                 } else {
                     etag
                 };
+                let _ = self.enforce_nvme_cache_budget(MBF_NVME_CACHE_BUDGET_BYTES);
                 let _ = std::fs::write(&local_path, &bytes);
                 Ok(Some(MbfObjectPayload {
                     bytes,
@@ -447,30 +502,83 @@ impl IMbfObjectStore for S3MbfObjectStore {
         key: &str,
         cached_etag: &str,
     ) -> DomainResult<MbfConditionalGet> {
-        match self.get_object(key).await? {
-            None => Ok(MbfConditionalGet::NotFound),
-            Some(obj) if obj.etag == cached_etag => Ok(MbfConditionalGet::NotModified),
-            Some(obj) => Ok(MbfConditionalGet::Modified(obj)),
+        match self
+            .fetch_partition_if_changed(key, Some(cached_etag))
+            .await
+        {
+            Ok(cond) => Ok(cond),
+            Err(_) => match self.get_object(key).await? {
+                None => Ok(MbfConditionalGet::NotFound),
+                Some(obj) if obj.etag == cached_etag => Ok(MbfConditionalGet::NotModified),
+                Some(obj) => Ok(MbfConditionalGet::Modified(obj)),
+            },
         }
     }
 
     async fn get_byte_range(&self, key: &str, start: usize, end: usize) -> DomainResult<Vec<u8>> {
-        let Some(obj) = self.get_object(key).await? else {
+        if start > end {
             return Err(DomainError::mbf(
                 ErrorCode::MbfCorrupt001,
-                format!("MBF object not found: {key}"),
-            ));
-        };
-        if start > end || end > obj.bytes.len() {
-            return Err(DomainError::mbf(
-                ErrorCode::MbfCorrupt001,
-                format!(
-                    "Invalid byte range {start}..{end} for len {}",
-                    obj.bytes.len()
-                ),
+                format!("Invalid byte range {start}..{end}"),
             ));
         }
-        Ok(obj.bytes[start..end].to_vec())
+        if start == end {
+            return Ok(Vec::new());
+        }
+
+        // 1. Fast path: check if the exact immutable slice is already in `/tmp/mbf_cache`
+        let slice_path = self.local_slice_cache_path(key, start, end);
+        if let Ok(cached_slice) = std::fs::read(&slice_path) {
+            if cached_slice.len() == end - start {
+                return Ok(cached_slice);
+            }
+        }
+
+        // 2. Second fast path: check if the full object is already cached on local NVMe
+        let full_local_path = self.local_cache_path(key);
+        if let Ok(full_bytes) = std::fs::read(&full_local_path) {
+            if end > full_bytes.len() {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    format!(
+                        "Invalid byte range {start}..{end} for len {}",
+                        full_bytes.len()
+                    ),
+                ));
+            }
+            let slice = full_bytes[start..end].to_vec();
+            let _ = std::fs::write(&slice_path, &slice);
+            return Ok(slice);
+        }
+
+        // 3. Terabyte-Scale S3 Native HTTP Range GET (`Range: bytes=start-(end-1)`)
+        // Downloads ONLY the requested 64B-aligned byte window instead of the entire 256MB-1GB L2 archive!
+        let range_header = format!("bytes={start}-{}", end - 1);
+        let resp = self
+            .s3_client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .range(range_header)
+            .send()
+            .await
+            .map_err(|e| {
+                DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    format!("S3 Range GET ({start}..{end}) failed on {key}: {e}"),
+                )
+            })?;
+
+        let collected = resp.body.collect().await.map_err(|e| {
+            DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                format!("Failed reading S3 Range body for {key}: {e}"),
+            )
+        })?;
+        let slice = collected.into_bytes().to_vec();
+        let _ = self.enforce_nvme_cache_budget(MBF_NVME_CACHE_BUDGET_BYTES);
+        let _ = std::fs::write(&slice_path, &slice);
+        Ok(slice)
     }
 
     async fn put_if_match(
@@ -493,17 +601,20 @@ impl IMbfObjectStore for S3MbfObjectStore {
         }
 
         let new_etag = Self::compute_etag(&bytes);
+        let _ = self.enforce_nvme_cache_budget(MBF_NVME_CACHE_BUDGET_BYTES);
         let _ = std::fs::write(&local_path, &bytes);
 
-        let _ = self
+        let mut put_req = self
             .s3_client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
             .content_type("application/x-metri-mbf")
-            .body(aws_sdk_s3::primitives::ByteStream::from(bytes))
-            .send()
-            .await;
+            .body(aws_sdk_s3::primitives::ByteStream::from(bytes));
+        if let Some(exp) = expected_etag {
+            put_req = put_req.if_match(format!("\"{exp}\""));
+        }
+        let _ = put_req.send().await;
         Ok(new_etag)
     }
 }
@@ -553,8 +664,10 @@ impl MbfWriteCondition {
     }
 }
 
-const MBF_PARTITION_SNAP_MAGIC: [u8; 8] = *b"MBFPART1";
-const MBF_ENTITY_SNAP_MAGIC: [u8; 8] = *b"MBFENTZ1";
+const MBF_PARTITION_SNAP_MAGIC_V1: [u8; 8] = *b"MBFPART1";
+const MBF_PARTITION_SNAP_MAGIC: [u8; 8] = *b"MBFPART2";
+const MBF_ENTITY_SNAP_MAGIC_V1: [u8; 8] = *b"MBFENTZ1";
+const MBF_ENTITY_SNAP_MAGIC: [u8; 8] = *b"MBFENTZ2";
 
 fn write_bytes_slice(buf: &mut Vec<u8>, bytes: &[u8]) {
     buf.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
@@ -597,6 +710,12 @@ fn read_str_binary(bytes: &[u8], offset: &mut usize) -> DomainResult<String> {
     })
 }
 
+fn extract_tenant_prefix(pk: &str) -> Option<&str> {
+    let rest = pk.strip_prefix("T#")?;
+    let hash_pos = rest.find('#')?;
+    Some(&pk[..2 + hash_pos + 1]) // e.g., "T#system#"
+}
+
 fn write_attribute_value_binary(buf: &mut Vec<u8>, val: &AttributeValue) {
     match val {
         AttributeValue::S(s) => {
@@ -622,7 +741,42 @@ fn write_attribute_value_binary(buf: &mut Vec<u8>, val: &AttributeValue) {
     }
 }
 
+fn write_attribute_value_compact(
+    buf: &mut Vec<u8>,
+    val: &AttributeValue,
+    tenant_prefix: Option<&str>,
+) {
+    if let (AttributeValue::S(s), Some(tp)) = (val, tenant_prefix) {
+        if let Some(after_tp) = s.strip_prefix(tp) {
+            if let Some(suffix) = after_tp.strip_prefix("A#") {
+                buf.push(0x11);
+                write_str_binary(buf, suffix);
+                return;
+            }
+            if let Some(suffix) = after_tp.strip_prefix("V#") {
+                buf.push(0x12);
+                write_str_binary(buf, suffix);
+                return;
+            }
+            if let Some(suffix) = after_tp.strip_prefix("R#") {
+                buf.push(0x13);
+                write_str_binary(buf, suffix);
+                return;
+            }
+        }
+    }
+    write_attribute_value_binary(buf, val);
+}
+
 fn read_attribute_value_binary(bytes: &[u8], offset: &mut usize) -> DomainResult<AttributeValue> {
+    read_attribute_value_compact(bytes, offset, None)
+}
+
+fn read_attribute_value_compact(
+    bytes: &[u8],
+    offset: &mut usize,
+    tenant_prefix: Option<&str>,
+) -> DomainResult<AttributeValue> {
     if *offset >= bytes.len() {
         return Err(DomainError::mbf(
             ErrorCode::MbfCorrupt001,
@@ -659,6 +813,21 @@ fn read_attribute_value_binary(bytes: &[u8], offset: &mut usize) -> DomainResult
             *offset += 1;
             Ok(AttributeValue::Null(n))
         }
+        0x11 => {
+            let suffix = read_str_binary(bytes, offset)?;
+            let tp = tenant_prefix.unwrap_or("T#system#");
+            Ok(AttributeValue::S(format!("{tp}A#{suffix}")))
+        }
+        0x12 => {
+            let suffix = read_str_binary(bytes, offset)?;
+            let tp = tenant_prefix.unwrap_or("T#system#");
+            Ok(AttributeValue::S(format!("{tp}V#{suffix}")))
+        }
+        0x13 => {
+            let suffix = read_str_binary(bytes, offset)?;
+            let tp = tenant_prefix.unwrap_or("T#system#");
+            Ok(AttributeValue::S(format!("{tp}R#{suffix}")))
+        }
         other => Err(DomainError::mbf(
             ErrorCode::MbfCorrupt001,
             format!("Unknown binary AttributeValue tag: 0x{other:02X}"),
@@ -666,6 +835,7 @@ fn read_attribute_value_binary(bytes: &[u8], offset: &mut usize) -> DomainResult
     }
 }
 
+#[allow(dead_code)]
 fn write_item_map_binary(buf: &mut Vec<u8>, item: &HashMap<String, AttributeValue>) {
     let mut entries: Vec<(&String, &AttributeValue)> = item.iter().collect();
     entries.sort_by(|a, b| a.0.cmp(b.0));
@@ -699,6 +869,131 @@ fn read_item_map_binary(
     Ok(item)
 }
 
+/// Writes an item map using bitflags to elide duplicate `PK`/`SK` values, 1-byte FSST codes for standard EAV keys,
+/// and prefix-stripping for `T#<tenant>#(A|V|R)#` index strings.
+fn write_item_map_compact(
+    buf: &mut Vec<u8>,
+    pk: &str,
+    sk: &[u8],
+    item: &HashMap<String, AttributeValue>,
+) {
+    let mut flags = 0u8;
+    let elide_pk = matches!(item.get("PK"), Some(AttributeValue::S(s)) if s == pk);
+    if elide_pk {
+        flags |= 0x01;
+    }
+    let elide_sk_blob = matches!(item.get("SK"), Some(AttributeValue::B(b)) if b.as_ref() == sk);
+    let elide_sk_str = !elide_sk_blob
+        && matches!(item.get("SK"), Some(AttributeValue::S(s)) if s.as_bytes() == sk);
+    if elide_sk_blob {
+        flags |= 0x02;
+    } else if elide_sk_str {
+        flags |= 0x04;
+    }
+
+    let mut entries: Vec<(&String, &AttributeValue)> = item
+        .iter()
+        .filter(|(k, _)| {
+            if k.as_str() == "PK" && elide_pk {
+                return false;
+            }
+            if k.as_str() == "SK" && (elide_sk_blob || elide_sk_str) {
+                return false;
+            }
+            true
+        })
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+
+    buf.push(flags);
+    buf.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    let tp = extract_tenant_prefix(pk);
+
+    for (k, v) in entries {
+        let key_code: u8 = match k.as_str() {
+            "ap" => 0x01,
+            "as" => 0x02,
+            "v" => 0x03,
+            "vp" => 0x04,
+            "vs" => 0x05,
+            "rp" => 0x06,
+            "rs" => 0x07,
+            "current_value" => 0x08,
+            "updated_at" => 0x09,
+            _ => 0xFF,
+        };
+        buf.push(key_code);
+        if key_code == 0xFF {
+            write_str_binary(buf, k);
+        }
+        write_attribute_value_compact(buf, v, tp);
+    }
+}
+
+fn read_item_map_compact(
+    bytes: &[u8],
+    offset: &mut usize,
+    pk: &str,
+    sk: &[u8],
+) -> DomainResult<HashMap<String, AttributeValue>> {
+    if *offset + 3 > bytes.len() {
+        return Err(DomainError::mbf(
+            ErrorCode::MbfCorrupt001,
+            "Truncated compact item map header",
+        ));
+    }
+    let flags = bytes[*offset];
+    *offset += 1;
+    let count = u16::from_le_bytes([bytes[*offset], bytes[*offset + 1]]) as usize;
+    *offset += 2;
+
+    let mut item = HashMap::with_capacity(count + 2);
+    if (flags & 0x01) != 0 {
+        item.insert("PK".to_string(), AttributeValue::S(pk.to_string()));
+    }
+    if (flags & 0x02) != 0 {
+        item.insert("SK".to_string(), AttributeValue::B(Blob::new(sk.to_vec())));
+    } else if (flags & 0x04) != 0 {
+        item.insert(
+            "SK".to_string(),
+            AttributeValue::S(String::from_utf8_lossy(sk).into_owned()),
+        );
+    }
+
+    let tp = extract_tenant_prefix(pk);
+    for _ in 0..count {
+        if *offset >= bytes.len() {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Unexpected EOF reading compact item key code",
+            ));
+        }
+        let key_code = bytes[*offset];
+        *offset += 1;
+        let k = match key_code {
+            0x01 => "ap".to_string(),
+            0x02 => "as".to_string(),
+            0x03 => "v".to_string(),
+            0x04 => "vp".to_string(),
+            0x05 => "vs".to_string(),
+            0x06 => "rp".to_string(),
+            0x07 => "rs".to_string(),
+            0x08 => "current_value".to_string(),
+            0x09 => "updated_at".to_string(),
+            0xFF => read_str_binary(bytes, offset)?,
+            other => {
+                return Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    format!("Unknown compact item key code: 0x{other:02X}"),
+                ));
+            }
+        };
+        let v = read_attribute_value_compact(bytes, offset, tp)?;
+        item.insert(k, v);
+    }
+    Ok(item)
+}
+
 /// Pure binary wire snapshot of a `.mbf` partition (Zero-JSON).
 #[derive(Debug, Default, Clone)]
 pub struct MbfPartitionWireSnapshot {
@@ -709,15 +1004,22 @@ pub struct MbfPartitionWireSnapshot {
 }
 
 impl MbfPartitionWireSnapshot {
-    /// Encodes the partition snapshot into a 64-byte aligned binary payload (`"MBFPART1"` + LZ4 binary streams).
+    /// Encodes the partition snapshot into a 64-byte aligned binary payload (`"MBFPART2"` + delta-PK + compact bitflag map + LZ4).
     pub fn encode_binary(&self) -> Vec<u8> {
-        let mut raw = Vec::with_capacity(128 + self.items.len() * 96);
+        let mut raw = Vec::with_capacity(128 + self.items.len() * 48);
         raw.extend_from_slice(&self.epoch_id.to_le_bytes());
         raw.extend_from_slice(&(self.items.len() as u32).to_le_bytes());
+        let mut prev_pk = "";
         for ((pk, sk), item) in &self.items {
-            write_str_binary(&mut raw, pk);
+            if !prev_pk.is_empty() && pk == prev_pk {
+                raw.push(0x01); // 1-byte delta-encoded PK match
+            } else {
+                raw.push(0x00);
+                write_str_binary(&mut raw, pk);
+                prev_pk = pk.as_str();
+            }
             write_bytes_slice(&mut raw, sk);
-            write_item_map_binary(&mut raw, item);
+            write_item_map_compact(&mut raw, pk, sk, item);
         }
         raw.extend_from_slice(&(self.quota_counters.len() as u32).to_le_bytes());
         for ((t, q), val) in &self.quota_counters {
@@ -742,14 +1044,24 @@ impl MbfPartitionWireSnapshot {
         out
     }
 
-    /// Decodes a 64-byte aligned binary payload produced by [`Self::encode_binary`].
+    /// Decodes a 64-byte aligned binary payload produced by [`Self::encode_binary`] (supports both `MBFPART1` and `MBFPART2`).
     pub fn decode_binary(bytes: &[u8]) -> DomainResult<Self> {
-        if bytes.len() < 16 || bytes[0..8] != MBF_PARTITION_SNAP_MAGIC {
+        if bytes.len() < 16 {
             return Err(DomainError::mbf(
                 ErrorCode::MbfCorrupt001,
-                "Invalid MBFPartitionWireSnapshot magic (expected MBFPART1)",
+                "Truncated MBFPartitionWireSnapshot header",
             ));
         }
+        let is_v2 = if bytes[0..8] == MBF_PARTITION_SNAP_MAGIC {
+            true
+        } else if bytes[0..8] == MBF_PARTITION_SNAP_MAGIC_V1 {
+            false
+        } else {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid MBFPartitionWireSnapshot magic (expected MBFPART1 or MBFPART2)",
+            ));
+        };
         let mut len_buf = [0u8; 8];
         len_buf.copy_from_slice(&bytes[8..16]);
         let comp_len = u64::from_le_bytes(len_buf) as usize;
@@ -782,11 +1094,29 @@ impl MbfPartitionWireSnapshot {
         offset += 4;
         let item_count = u32::from_le_bytes(u32_buf) as usize;
         let mut items = Vec::with_capacity(item_count);
+        let mut prev_pk = String::new();
         for _ in 0..item_count {
-            let pk = read_str_binary(&raw, &mut offset)?;
-            let sk = read_bytes_slice(&raw, &mut offset)?;
-            let item = read_item_map_binary(&raw, &mut offset)?;
-            items.push(((pk, sk), item));
+            if is_v2 {
+                if offset >= raw.len() {
+                    return Err(DomainError::mbf(
+                        ErrorCode::MbfCorrupt001,
+                        "Truncated PK delta flag in MBFPART2",
+                    ));
+                }
+                let same_pk = raw[offset] != 0;
+                offset += 1;
+                if !same_pk {
+                    prev_pk = read_str_binary(&raw, &mut offset)?;
+                }
+                let sk = read_bytes_slice(&raw, &mut offset)?;
+                let item = read_item_map_compact(&raw, &mut offset, &prev_pk, &sk)?;
+                items.push(((prev_pk.clone(), sk), item));
+            } else {
+                let pk = read_str_binary(&raw, &mut offset)?;
+                let sk = read_bytes_slice(&raw, &mut offset)?;
+                let item = read_item_map_binary(&raw, &mut offset)?;
+                items.push(((pk, sk), item));
+            }
         }
 
         if offset + 4 > raw.len() {
@@ -858,17 +1188,18 @@ pub struct MbfEntityWireSnapshot {
 }
 
 impl MbfEntityWireSnapshot {
-    /// Encodes a single entity's datoms into a 64-byte aligned binary payload (`"MBFENTZ1"` + LZ4 binary datoms).
+    /// Encodes a single entity's datoms into a 64-byte aligned binary payload (`"MBFENTZ2"` + compact bitflag map + LZ4).
     pub fn encode_binary(&self) -> Vec<u8> {
-        let mut raw = Vec::with_capacity(64 + self.datoms.len() * 64);
+        let mut raw = Vec::with_capacity(64 + self.datoms.len() * 36);
         write_str_binary(&mut raw, &self.tenant_id);
         write_str_binary(&mut raw, &self.entity_type);
         write_str_binary(&mut raw, &self.entity_id);
         raw.extend_from_slice(&self.epoch_id.to_le_bytes());
         raw.extend_from_slice(&(self.datoms.len() as u32).to_le_bytes());
+        let entity_pk = format!("T#{}#E#{}", self.tenant_id, self.entity_id);
         for (sk, item) in &self.datoms {
             write_bytes_slice(&mut raw, sk);
-            write_item_map_binary(&mut raw, item);
+            write_item_map_compact(&mut raw, &entity_pk, sk, item);
         }
         let compressed = lz4_flex::compress_prepend_size(&raw);
         let mut out = Vec::with_capacity(16 + compressed.len() + 64);
@@ -879,14 +1210,24 @@ impl MbfEntityWireSnapshot {
         out
     }
 
-    /// Decodes a binary entity snapshot produced by [`Self::encode_binary`].
+    /// Decodes a binary entity snapshot produced by [`Self::encode_binary`] (supports both `MBFENTZ1` and `MBFENTZ2`).
     pub fn decode_binary(bytes: &[u8]) -> DomainResult<Self> {
-        if bytes.len() < 16 || bytes[0..8] != MBF_ENTITY_SNAP_MAGIC {
+        if bytes.len() < 16 {
             return Err(DomainError::mbf(
                 ErrorCode::MbfCorrupt001,
-                "Invalid MbfEntityWireSnapshot magic (expected MBFENTZ1)",
+                "Truncated MbfEntityWireSnapshot header",
             ));
         }
+        let is_v2 = if bytes[0..8] == MBF_ENTITY_SNAP_MAGIC {
+            true
+        } else if bytes[0..8] == MBF_ENTITY_SNAP_MAGIC_V1 {
+            false
+        } else {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Invalid MbfEntityWireSnapshot magic (expected MBFENTZ1 or MBFENTZ2)",
+            ));
+        };
         let mut len_buf = [0u8; 8];
         len_buf.copy_from_slice(&bytes[8..16]);
         let comp_len = u64::from_le_bytes(len_buf) as usize;
@@ -921,9 +1262,14 @@ impl MbfEntityWireSnapshot {
         offset += 4;
         let count = u32::from_le_bytes(u32_buf) as usize;
         let mut datoms = Vec::with_capacity(count);
+        let entity_pk = format!("T#{tenant_id}#E#{entity_id}");
         for _ in 0..count {
             let sk = read_bytes_slice(&raw, &mut offset)?;
-            let item = read_item_map_binary(&raw, &mut offset)?;
+            let item = if is_v2 {
+                read_item_map_compact(&raw, &mut offset, &entity_pk, &sk)?
+            } else {
+                read_item_map_binary(&raw, &mut offset)?
+            };
             datoms.push((sk, item));
         }
         Ok(Self {
@@ -1158,6 +1504,8 @@ struct MbfPartitionStore {
     epoch_id: u64,
     last_s3_etag: Option<String>,
     last_sync_ms: i64,
+    bulk_depth: usize,
+    dirty_entities: std::collections::BTreeSet<(String, String, String)>,
     /// Primary index `(PK, SK_bytes) -> Item` (EAVT).
     items: BTreeMap<PrimaryKey, HashMap<String, AttributeValue>>,
     /// Native secondary BTree index for `AEVT` (`(ap, as_bytes, PrimaryKey)`).
@@ -1197,6 +1545,97 @@ impl MbfPartitionStore {
         if let Some((rp, rs_bytes)) = extract_index_key(item, "rp", "rs") {
             self.vaet_index.insert((rp, rs_bytes, key.clone()), ());
         }
+        if let Some((tenant_id, entity_id)) =
+            key.0.strip_prefix("T#").and_then(|s| s.split_once("#E#"))
+        {
+            if key.1.len() == 11 && key.1[10] != 0 {
+                let attr_name_opt = item
+                    .get("ap")
+                    .and_then(|av| match av {
+                        AttributeValue::S(ap_str) => ap_str.split_once("#A#").map(|(_, a)| a),
+                        _ => None,
+                    })
+                    .map(|a| a.split('#').next().unwrap_or(a));
+
+                match item.get("v") {
+                    Some(AttributeValue::S(text)) => {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty()
+                            && !trimmed.starts_with('{')
+                            && !trimmed.starts_with('[')
+                        {
+                            let is_system_attr = attr_name_opt
+                                .map(|attr_name| {
+                                    attr_name == "entity_type"
+                                        || attr_name == "entity/type"
+                                        || attr_name == "entity/ulid"
+                                        || attr_name == "entity/id"
+                                        || attr_name == "tenant/id"
+                                        || attr_name.starts_with("meta/")
+                                        || attr_name == "payload"
+                                        || attr_name == "event_type"
+                                        || attr_name == "aggregate_id"
+                                        || attr_name == "aggregate_type"
+                                        || attr_name == "mutation_id"
+                                })
+                                .unwrap_or(false);
+                            if !is_system_attr {
+                                crate::eav::fts::searcher::register_fts_document(
+                                    tenant_id, entity_id, trimmed,
+                                );
+                                if matches!(attr_name_opt, Some("synonyms" | "equivalence_group")) {
+                                    let group: Vec<&str> = trimmed
+                                        .split([',', ';', '|'])
+                                        .map(str::trim)
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                    if group.len() >= 2 {
+                                        crate::eav::fts::searcher::register_tenant_synonym_group(
+                                            tenant_id, &group,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Some(AttributeValue::N(num_str)) => {
+                        if let Some(attr_name) = attr_name_opt {
+                            if matches!(attr_name, "latitude" | "start_latitude") {
+                                if let Ok(lat) = num_str.trim().parse::<f64>() {
+                                    crate::eav::fts::searcher::register_fts_entity_coordinate_axis(
+                                        tenant_id, entity_id, true, lat,
+                                    );
+                                }
+                            } else if matches!(attr_name, "longitude" | "start_longitude") {
+                                if let Ok(lon) = num_str.trim().parse::<f64>() {
+                                    crate::eav::fts::searcher::register_fts_entity_coordinate_axis(
+                                        tenant_id, entity_id, false, lon,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Some(AttributeValue::B(blob)) => {
+                        if matches!(attr_name_opt, Some("semantic_embedding" | "embedding")) {
+                            let bytes = blob.as_ref();
+                            if bytes.len() >= 16 && bytes.len() % 4 == 0 {
+                                let mut vec = Vec::with_capacity(bytes.len() / 4);
+                                for chunk in bytes.chunks_exact(4) {
+                                    let bits = u32::from_le_bytes([
+                                        chunk[0], chunk[1], chunk[2], chunk[3],
+                                    ]);
+                                    vec.push(f32::from_bits(bits));
+                                }
+                                crate::eav::fts::searcher::register_fts_entity_embedding(
+                                    tenant_id, entity_id, vec,
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     fn unindex_item(&mut self, key: &PrimaryKey, item: &HashMap<String, AttributeValue>) {
@@ -1211,6 +1650,7 @@ impl MbfPartitionStore {
         }
     }
 
+    #[allow(dead_code)]
     fn rebuild_secondary_indexes(&mut self) {
         self.aevt_index.clear();
         self.avet_index.clear();
@@ -1247,17 +1687,48 @@ impl MbfPartitionStore {
     }
 
     fn apply_wire_snapshot(&mut self, snap: MbfPartitionWireSnapshot, etag: String, now_ms: i64) {
-        self.epoch_id = snap.epoch_id;
-        self.items = snap.items.into_iter().collect();
-        self.quota_counters = snap.quota_counters.into_iter().collect();
-        self.quota_idem = snap.quota_idem.into_iter().collect();
-        self.rebuild_secondary_indexes();
+        let remote_is_newer = snap.epoch_id >= self.epoch_id;
+        self.epoch_id = self.epoch_id.max(snap.epoch_id);
+        for (key, remote_item) in snap.items {
+            let should_insert = match self.items.get(&key) {
+                None => true,
+                Some(local_item) => {
+                    let local_seq = local_item
+                        .get("current_value")
+                        .and_then(av_number)
+                        .and_then(|n| n.parse::<i64>().ok());
+                    let remote_seq = remote_item
+                        .get("current_value")
+                        .and_then(av_number)
+                        .and_then(|n| n.parse::<i64>().ok());
+                    match (local_seq, remote_seq) {
+                        (Some(l), Some(r)) => r > l || (r == l && remote_is_newer),
+                        _ => remote_is_newer,
+                    }
+                }
+            };
+            if should_insert {
+                self.insert_indexed(key, remote_item);
+            }
+        }
+        for (k, v) in snap.quota_counters {
+            let entry = self.quota_counters.entry(k).or_insert(0);
+            if remote_is_newer || v > *entry {
+                *entry = (*entry).max(v);
+            }
+        }
+        for (k, v) in snap.quota_idem {
+            self.quota_idem.entry(k).or_insert(v);
+        }
         self.last_s3_etag = Some(etag);
         self.last_sync_ms = now_ms;
     }
 }
 
 static GLOBAL_MBF_PARTITIONS: Lazy<RwLock<HashMap<String, Arc<RwLock<MbfPartitionStore>>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+static GLOBAL_MBF_S3_LOCKS: Lazy<RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 fn partition_for(table: &str) -> Arc<RwLock<MbfPartitionStore>> {
@@ -1274,6 +1745,31 @@ fn partition_for(table: &str) -> Arc<RwLock<MbfPartitionStore>> {
         );
     }
     Arc::new(RwLock::new(MbfPartitionStore::default()))
+}
+
+fn s3_io_lock_for(table: &str) -> Arc<tokio::sync::Mutex<()>> {
+    if let Ok(guard) = GLOBAL_MBF_S3_LOCKS.read() {
+        if let Some(lock) = guard.get(table) {
+            return Arc::clone(lock);
+        }
+    }
+    if let Ok(mut guard) = GLOBAL_MBF_S3_LOCKS.write() {
+        return Arc::clone(
+            guard
+                .entry(table.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+        );
+    }
+    Arc::new(tokio::sync::Mutex::new(()))
+}
+
+fn evict_all_read_caches_on_remote_sync() {
+    if let Ok(mut eav) = crate::eav::reader::pull::EAV_CACHE.write() {
+        eav.clear();
+    }
+    if let Ok(mut aevt) = crate::eav::reader::query::AEVT_SCAN_CACHE.write() {
+        aevt.clear();
+    }
 }
 
 fn extract_pk_sk(item: &HashMap<String, AttributeValue>) -> Option<PrimaryKey> {
@@ -1363,21 +1859,89 @@ impl MbfStorageClient {
         format!("{}/vortex/{table}.mbf", s3.prefix())
     }
 
+    /// Public helper for read paths (`EavQueryExecutor` / `EavReader`) to ensure S3 ETag freshness before serving cached scans.
+    pub async fn sync_if_needed(&self, table: &str) -> Result<(), DomainError> {
+        self.sync_from_s3(table, false).await
+    }
+
+    /// Starts a deferred S3 bulk ingestion scope so N concurrent row mutations execute in memory and flush once at the end.
+    pub async fn begin_bulk_s3_batch(&self, table: &str) -> Result<(), DomainError> {
+        if self.s3_store.is_none() {
+            return Ok(());
+        }
+        let s3_lock = s3_io_lock_for(table);
+        let _io_guard = s3_lock.lock().await;
+        self.sync_from_s3_inner(table, true).await?;
+        let part = partition_for(table);
+        if let Ok(mut guard) = part.write() {
+            guard.bulk_depth += 1;
+        }
+        Ok(())
+    }
+
+    /// Ends a deferred S3 bulk ingestion scope and flushes the consolidated `.mbf` vortex and entity files to S3.
+    pub async fn finish_bulk_s3_batch(&self, table: &str) -> Result<(), DomainError> {
+        if self.s3_store.is_none() {
+            return Ok(());
+        }
+        let should_flush = {
+            let part = partition_for(table);
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            guard.bulk_depth = guard.bulk_depth.saturating_sub(1);
+            guard.bulk_depth == 0
+        };
+        if should_flush {
+            self.flush_to_s3(table, Vec::new()).await?;
+        }
+        Ok(())
+    }
+
     /// Synchronizes the in-memory `.mbf` partition store with S3 if a remote container committed newer state.
     async fn sync_from_s3(&self, table: &str, force: bool) -> Result<(), DomainError> {
+        if self.s3_store.is_none() {
+            return Ok(());
+        }
+        let part = partition_for(table);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        {
+            let guard = part
+                .read()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav002, "Poisoned MBF partition lock"))?;
+            if guard.bulk_depth > 0 {
+                return Ok(());
+            }
+            if !force && guard.last_s3_etag.is_some() && (now_ms - guard.last_sync_ms) < 200 {
+                return Ok(());
+            }
+        }
+        let s3_lock = s3_io_lock_for(table);
+        let _io_guard = s3_lock.lock().await;
+        self.sync_from_s3_inner(table, force).await
+    }
+
+    async fn sync_from_s3_inner(&self, table: &str, force: bool) -> Result<(), DomainError> {
         let Some(s3) = &self.s3_store else {
             return Ok(());
         };
         let part = partition_for(table);
         let now_ms = chrono::Utc::now().timestamp_millis();
 
-        let (known_etag, last_sync) = {
+        let (known_etag, last_sync, in_bulk) = {
             let guard = part
                 .read()
                 .map_err(|_| DomainError::eav(ErrorCode::Eav002, "Poisoned MBF partition lock"))?;
-            (guard.last_s3_etag.clone(), guard.last_sync_ms)
+            (
+                guard.last_s3_etag.clone(),
+                guard.last_sync_ms,
+                guard.bulk_depth > 0,
+            )
         };
 
+        if in_bulk {
+            return Ok(());
+        }
         if !force && known_etag.is_some() && (now_ms - last_sync) < 200 {
             return Ok(());
         }
@@ -1403,6 +1967,7 @@ impl MbfStorageClient {
                         if let Ok(mut guard) = part.write() {
                             guard.apply_wire_snapshot(snap, payload.etag, now_ms);
                         }
+                        evict_all_read_caches_on_remote_sync();
                     }
                 }
             }
@@ -1420,12 +1985,37 @@ impl MbfStorageClient {
             return Ok(());
         };
         let part = partition_for(table);
+        {
+            let mut guard = part
+                .write()
+                .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            for te in touched_entities {
+                guard.dirty_entities.insert(te);
+            }
+            if guard.bulk_depth > 0 {
+                return Ok(());
+            }
+        }
+
+        let s3_lock = s3_io_lock_for(table);
+        let _io_guard = s3_lock.lock().await;
+
+        // Always pull and merge any newer remote S3 state under the S3 I/O lock before serializing our snapshot
+        self.sync_from_s3_inner(table, true).await?;
+
         let prefix = s3.prefix().to_string();
 
         let (vortex_bytes, entity_files) = {
             let mut guard = part
                 .write()
                 .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+            if guard.bulk_depth > 0 {
+                return Ok(());
+            }
+            let entities_to_flush: Vec<(String, String, String)> =
+                std::mem::take(&mut guard.dirty_entities)
+                    .into_iter()
+                    .collect();
             guard.epoch_id += 1;
             let epoch = guard.epoch_id;
             let row_count = guard.items.len() as u64;
@@ -1434,13 +2024,36 @@ impl MbfStorageClient {
             let vortex_bin = encode_mbf_envelope(0, row_count, epoch, "system", table, &raw_bin)?;
 
             let mut extra_files: Vec<(String, Vec<u8>)> = Vec::new();
-            for (tenant_id, entity_type, entity_id) in touched_entities {
+            let mut latest_cell_payloads: BTreeMap<(String, u8), Vec<u8>> = BTreeMap::new();
+            let mut touched_tenants: std::collections::BTreeSet<String> =
+                std::collections::BTreeSet::new();
+
+            for (tenant_id, entity_type, entity_id) in entities_to_flush {
+                // Skip generating per-entity S3 files for transient infrastructure events
+                // (already persisted in the main vortex/{table}.mbf snapshot).
+                if matches!(
+                    entity_type.as_str(),
+                    "outbox_event" | "audit_log" | "domain_fault"
+                ) {
+                    continue;
+                }
+                touched_tenants.insert(tenant_id.clone());
+
                 let target_pk = format!("T#{tenant_id}#E#{entity_id}");
                 let range_start = (target_pk.clone(), Vec::new());
                 let mut datoms = Vec::new();
+                let mut fallback_text_parts = Vec::new();
                 for ((item_pk, item_sk), item) in guard.items.range(range_start..) {
                     if item_pk != &target_pk {
                         break;
+                    }
+                    if item_sk.len() == 11 && item_sk[10] != 0 {
+                        if let Some(AttributeValue::S(s)) = item.get("v") {
+                            let trimmed = s.trim();
+                            if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                                fallback_text_parts.push(trimmed.to_string());
+                            }
+                        }
                     }
                     datoms.push((item_sk.clone(), item.clone()));
                 }
@@ -1468,30 +2081,93 @@ impl MbfStorageClient {
                     let idx_key = format!(
                         "{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf.idx"
                     );
-                    let cell_key =
-                        format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf");
-                    let search_zone =
-                        crate::eav::fts::searcher::export_tenant_zone5b_bytes(&tenant_id);
+                    let fallback_desc = fallback_text_parts.join(" ");
+                    let search_zone = crate::eav::fts::searcher::export_single_entity_zone5b_bytes(
+                        &tenant_id,
+                        &entity_id,
+                        &fallback_desc,
+                    );
+                    let numeric_obs: Vec<(i64, f64)> = ent_snap
+                        .datoms
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(idx, (sk, item))| {
+                            if sk.len() == 11 && sk[10] == 0 {
+                                return None;
+                            }
+                            let val = item.get("v").and_then(av_number)?.parse::<f64>().ok()?;
+                            if !val.is_finite() {
+                                return None;
+                            }
+                            Some(((epoch as i64) * 1000 + (idx as i64), val))
+                        })
+                        .collect();
+                    let ent_syn =
+                        crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::from_observations(
+                            &numeric_obs,
+                            0,
+                            &[],
+                            0.0,
+                        );
+                    let synopsis_zone =
+                        crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(&[
+                            ent_syn,
+                        ]);
                     let idx_bin = encode_mbf_idx_mirror(
                         cell_id,
                         epoch,
                         ent_snap.datoms.len() as u32,
                         &tenant_id,
                         &search_zone,
-                        &[],
+                        &synopsis_zone,
                     );
                     extra_files.push((entity_key, ent_bin.clone()));
                     extra_files.push((idx_key, idx_bin));
-                    extra_files.push((cell_key, ent_bin));
+                    latest_cell_payloads.insert((tenant_id.clone(), cell_id), ent_bin);
                 }
+            }
+
+            for ((tenant_id, cell_id), cell_bin) in latest_cell_payloads {
+                let cell_key = format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf");
+                extra_files.push((cell_key, cell_bin));
+            }
+
+            for tenant_id in touched_tenants {
+                let tenant_search_zone =
+                    crate::eav::fts::searcher::export_tenant_zone5b_bytes(&tenant_id);
+                let tenant_syn_zone =
+                    crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(
+                        &[crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::default()],
+                    );
+                let tenant_idx_bin = encode_mbf_idx_mirror(
+                    0,
+                    epoch,
+                    row_count.min(u64::from(u32::MAX)) as u32,
+                    &tenant_id,
+                    &tenant_search_zone,
+                    &tenant_syn_zone,
+                );
+                let tenant_idx_key = format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD.mbf.idx");
+                extra_files.push((tenant_idx_key, tenant_idx_bin));
             }
             (vortex_bin, extra_files)
         };
 
         let vortex_key = self.vortex_s3_key(s3, table);
         let new_etag = s3.put_raw_mbf(&vortex_key, vortex_bytes).await?;
-        for (ekey, ebytes) in entity_files {
-            let _ = s3.put_raw_mbf(&ekey, ebytes).await;
+
+        if !entity_files.is_empty() {
+            let mut join_set = tokio::task::JoinSet::new();
+            for (ekey, ebytes) in entity_files {
+                while join_set.len() >= 32 {
+                    let _ = join_set.join_next().await;
+                }
+                let s3_clone = Arc::clone(s3);
+                join_set.spawn(async move {
+                    let _ = s3_clone.put_raw_mbf(&ekey, ebytes).await;
+                });
+            }
+            while join_set.join_next().await.is_some() {}
         }
 
         if let Ok(mut guard) = part.write() {
@@ -2233,6 +2909,94 @@ mod tests {
                 .quota_counters
                 .get(&("system".to_string(), "generic_record".to_string())),
             Some(&1)
+        );
+    }
+
+    #[test]
+    fn test_compact_mbf_entity_and_single_idx_optimization() {
+        let tenant_id = "system";
+        let entity_id = "01M534FE21GVM9KV40HV0RXE6B";
+        let pk = format!("T#{tenant_id}#E#{entity_id}");
+        let mut datoms = Vec::new();
+        let mut raw_v1_size = 0usize;
+
+        for idx in 0..21u8 {
+            let sk = vec![0, 0, 0, 0, 0, 0, 0, idx, 0, idx, 1];
+            let mut item = HashMap::new();
+            item.insert("PK".to_string(), AttributeValue::S(pk.clone()));
+            item.insert("SK".to_string(), AttributeValue::B(Blob::new(sk.clone())));
+            item.insert(
+                "ap".to_string(),
+                AttributeValue::S(format!("T#{tenant_id}#A#attr_{idx}")),
+            );
+            item.insert(
+                "as".to_string(),
+                AttributeValue::B(Blob::new(vec![1, 2, 3, idx])),
+            );
+            item.insert(
+                "v".to_string(),
+                AttributeValue::S(format!("Valor operativo industrial #{idx}")),
+            );
+            item.insert(
+                "vp".to_string(),
+                AttributeValue::S(format!("T#{tenant_id}#V#attr_{idx}")),
+            );
+            item.insert(
+                "vs".to_string(),
+                AttributeValue::B(Blob::new(vec![4, 5, 6, idx])),
+            );
+            let mut v1_buf = Vec::new();
+            write_bytes_slice(&mut v1_buf, &sk);
+            write_item_map_binary(&mut v1_buf, &item);
+            raw_v1_size += v1_buf.len();
+            datoms.push((sk, item));
+        }
+
+        let snap = MbfEntityWireSnapshot {
+            tenant_id: tenant_id.to_string(),
+            entity_type: "asset".to_string(),
+            entity_id: entity_id.to_string(),
+            epoch_id: 99,
+            datoms: datoms.clone(),
+        };
+        let encoded = snap.encode_binary();
+        assert_eq!(&encoded[0..8], b"MBFENTZ2");
+        assert_eq!(encoded.len() % 64, 0);
+
+        let decoded = MbfEntityWireSnapshot::decode_binary(&encoded).unwrap();
+        assert_eq!(decoded.entity_id, entity_id);
+        assert_eq!(decoded.datoms.len(), 21);
+        assert_eq!(decoded.datoms, datoms);
+
+        // Verify raw v2 compact item map is < 50% of raw v1 item map size
+        let mut raw_v2_size = 0usize;
+        for (sk, item) in &datoms {
+            let mut v2_buf = Vec::new();
+            write_bytes_slice(&mut v2_buf, sk);
+            write_item_map_compact(&mut v2_buf, &pk, sk, item);
+            raw_v2_size += v2_buf.len();
+        }
+        assert!(
+            raw_v2_size * 2 < raw_v1_size,
+            "Expected raw_v2_size ({raw_v2_size}) < 50% of raw_v1_size ({raw_v1_size})"
+        );
+
+        // Verify single-entity .mbf.idx is compact (< 2,048 bytes instead of 100 KB)
+        let single_z5b = crate::eav::fts::searcher::export_single_entity_zone5b_bytes(
+            tenant_id,
+            entity_id,
+            "Variador de Frecuencia Danfoss #100 Unidad operativa industrial",
+        );
+        let syn_zone =
+            crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(&[
+                crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::default(),
+            ]);
+        let idx_bytes = encode_mbf_idx_mirror(2, 99, 21, tenant_id, &single_z5b, &syn_zone);
+        assert_eq!(idx_bytes.len() % 64, 0);
+        assert!(
+            idx_bytes.len() <= 2048,
+            "Expected compact single-entity .mbf.idx <= 2048 B, got {} B",
+            idx_bytes.len()
         );
     }
 }

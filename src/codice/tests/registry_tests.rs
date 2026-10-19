@@ -619,3 +619,85 @@ fn test_models_do_not_discriminate_oltp_olap_engine() {
         );
     }
 }
+
+/// Candado de Spec 09 (`09_CODICE_METADATA_AND_FUZZY_MATH_ENGINE.md`):
+/// Verifica que el 100% de los atributos `is_measure: true` tengan `math_profile`,
+/// el 100% de los atributos `fts: true` tengan `fuzzy_profile`, y todas las entidades
+/// con coordenadas, múltiples métricas o ciclos de supervivencia tengan sus perfiles activos.
+#[test]
+fn test_spec_09_codice_metadata_and_fuzzy_math_profiles_100_percent_coverage() {
+    let models_dir = std::path::Path::new("config/models");
+    let (registry, _rules) =
+        CodeRegistry::build(models_dir).expect("config/models debe compilar con perfiles Spec 09");
+
+    let mut total_measures = 0usize;
+    let mut total_fts = 0usize;
+
+    for entity_name in registry.entity_names() {
+        let model = registry.get_model(entity_name).unwrap();
+        let measure_count = model.attributes.iter().filter(|a| a.is_measure).count();
+        if measure_count >= 2 {
+            assert!(
+                model
+                    .cross_covariance_matrix
+                    .as_ref()
+                    .is_some_and(|c| c.enabled && c.measure_fields.len() >= 2),
+                "La entidad '{entity_name}' con {measure_count} medidas debe tener cross_covariance_matrix activo"
+            );
+        }
+
+        for attr in &model.attributes {
+            if attr.is_measure {
+                total_measures += 1;
+                assert!(
+                    attr.math_profile.is_some(),
+                    "El atributo de medida '{entity_name}.{}' debe tener math_profile",
+                    attr.name
+                );
+            }
+            if attr.fts {
+                total_fts += 1;
+                assert!(
+                    attr.fuzzy_profile.is_some(),
+                    "El atributo FTS '{entity_name}.{}' debe tener fuzzy_profile",
+                    attr.name
+                );
+            }
+        }
+    }
+
+    assert!(
+        total_measures >= 30,
+        "Se esperaban >= 30 atributos de medida"
+    );
+    assert!(total_fts >= 50, "Se esperaban >= 50 atributos FTS");
+
+    for survival_ent in ["downtime_log", "work_order", "preventive_maintenance"] {
+        let m = registry.get_model(survival_ent).unwrap();
+        assert!(
+            m.survival_profile.as_ref().is_some_and(|s| s.enabled),
+            "La entidad '{survival_ent}' debe declarar survival_profile activo"
+        );
+    }
+
+    for spatial_ent in [
+        "location",
+        "work_order",
+        "preventive_maintenance",
+        "labor_log",
+    ] {
+        let m = registry.get_model(spatial_ent).unwrap();
+        assert!(
+            m.spatial_profile.as_ref().is_some_and(|s| s.enabled),
+            "La entidad '{spatial_ent}' debe declarar spatial_profile activo"
+        );
+    }
+
+    let doc_chunk = registry.get_model("document_chunk").unwrap();
+    let emb_attr = doc_chunk
+        .attributes
+        .iter()
+        .find(|a| a.name == "semantic_embedding")
+        .unwrap();
+    assert_eq!(emb_attr.dimensions, Some(1024));
+}

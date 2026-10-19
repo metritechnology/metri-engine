@@ -13,8 +13,9 @@
 //! 3-8 chars → 1 (1 error tipográfico)
 //! ≥ 9 chars → 2 (2 errores)
 
-use crate::eav::fts::searcher::damerau_levenshtein;
+use crate::eav::fts::searcher::{canonicalize_alphanumeric_code, damerau_levenshtein};
 use crate::eav::fts::trigram::generate_trigrams;
+use crate::mbf::zones::hybrid_search::MbfHybridSearchIndex;
 use std::collections::HashSet;
 
 /// Threshold adaptativo por longitud del término.
@@ -46,35 +47,44 @@ pub fn remove_accents(s: &str) -> String {
 /// "Chiller A-01" → ["chiller", "a", "01"]
 fn tokenize(s: &str) -> Vec<String> {
     remove_accents(&s.to_lowercase())
-        .split(|c: char| c.is_whitespace() || c == '-' || c == '_' || c == '.')
+        .split(|c: char| c.is_whitespace() || c == '-' || c == '_' || c == '.' || c == '#')
         .filter(|t| !t.is_empty())
         .map(str::to_string)
         .collect()
 }
 
-/// True si `value` contiene `term` de forma aproximada, aprovechando capacidades técnicas EAV.
-///
-/// Pipeline (short-circuit):
-///   1. Guard: vacío → false
-///   2. Fast path: substring case-insensitive y sin acentos
-///   3. Fast Fuzzy path: Trigram intersection score (>= 0.75 de coincidencia)
-///   4. Deep Fuzzy path: Damerau-Levenshtein distance <= threshold por token
-pub fn fuzzy_match(value: &str, term: &str) -> bool {
-    if value.is_empty() || term.is_empty() {
+fn fuzzy_match_single_term(
+    value: &str,
+    v_lower: &str,
+    val_tokens: &[String],
+    t_lower: &str,
+) -> bool {
+    if t_lower.is_empty() {
         return false;
     }
-
-    let v_lower = remove_accents(&value.to_lowercase());
-    let t_lower = remove_accents(&term.to_lowercase());
-
-    // Fast path
-    if v_lower.contains(&t_lower) {
+    if v_lower.contains(t_lower) {
         return true;
     }
 
-    // Fast Fuzzy Path via Trigrams (EAV FTS Capability)
-    let term_trigrams = generate_trigrams(&t_lower);
-    let val_trigrams = generate_trigrams(&v_lower);
+    let has_digit = t_lower.chars().any(|c| c.is_ascii_digit());
+    if t_lower.chars().count() >= 2 {
+        let q_code = canonicalize_alphanumeric_code(t_lower);
+        if q_code.len() >= 2 {
+            let v_code = canonicalize_alphanumeric_code(value);
+            if v_code.contains(&q_code) {
+                return true;
+            }
+        }
+    }
+    // Si el término contiene dígitos (ej. "001", "SN-2026-001", "A-TU77MXU"),
+    // sólo debe coincidir por substring o código alfanumérico canónico (homóglifos O->0, I/L->1),
+    // nunca sustituyendo dígitos distintos ("001" != "002" ni "011").
+    if has_digit {
+        return false;
+    }
+
+    let term_trigrams = generate_trigrams(t_lower);
+    let val_trigrams = generate_trigrams(v_lower);
 
     if !term_trigrams.is_empty() && !val_trigrams.is_empty() {
         let val_set: HashSet<_> = val_trigrams.iter().collect();
@@ -85,13 +95,68 @@ pub fn fuzzy_match(value: &str, term: &str) -> bool {
         }
     }
 
-    // Deep Fuzzy path via Damerau-Levenshtein (EAV FTS Capability)
-    let thresh = fuzzy_threshold(&t_lower);
+    let thresh = fuzzy_threshold(t_lower);
     if thresh == 0 {
         return false;
     }
 
-    tokenize(value)
-        .iter()
-        .any(|token| damerau_levenshtein(token, &t_lower) <= thresh)
+    let q_phon = if t_lower.chars().count() >= 4 {
+        MbfHybridSearchIndex::encode_romance_phonetic(t_lower)
+    } else {
+        String::new()
+    };
+
+    val_tokens.iter().any(|token| {
+        let dl = damerau_levenshtein(token, t_lower);
+        if dl <= thresh {
+            return true;
+        }
+        if !q_phon.is_empty()
+            && dl <= 2
+            && MbfHybridSearchIndex::encode_romance_phonetic(token) == q_phon
+        {
+            return true;
+        }
+        false
+    })
+}
+
+/// True si `value` contiene `term` de forma aproximada, aprovechando capacidades técnicas EAV.
+///
+/// Pipeline (short-circuit):
+///   1. Guard: vacío → false
+///   2. Fast path: substring case-insensitive y sin acentos
+///   3. Alphanumeric code normalizer (Spec 09 §5.3.B)
+///   4. Fast Fuzzy path: Trigram intersection score (>= 0.75 de coincidencia)
+///   5. Deep Fuzzy & Phonetic path: Damerau-Levenshtein + Romance Phonetic por token y multi-palabra
+pub fn fuzzy_match(value: &str, term: &str) -> bool {
+    let term_trimmed = term.trim();
+    if value.is_empty() || term_trimmed.is_empty() {
+        return false;
+    }
+
+    let v_lower = remove_accents(&value.to_lowercase());
+    let t_lower = remove_accents(&term_trimmed.to_lowercase());
+
+    // Fast path
+    if v_lower.contains(&t_lower) {
+        return true;
+    }
+
+    let val_tokens = tokenize(value);
+    if fuzzy_match_single_term(value, &v_lower, &val_tokens, &t_lower) {
+        return true;
+    }
+
+    let query_words: Vec<&str> = t_lower
+        .split_whitespace()
+        .filter(|w| !w.is_empty())
+        .collect();
+    if query_words.len() > 1 {
+        return query_words
+            .iter()
+            .all(|qw| fuzzy_match_single_term(value, &v_lower, &val_tokens, qw));
+    }
+
+    false
 }

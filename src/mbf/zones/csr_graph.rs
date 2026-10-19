@@ -218,6 +218,38 @@ impl CsrGraphZone {
         out
     }
 
+    /// Evaluates the contiguous Euler interval check `tin[u] <= row_tin <= tout[u]` across a dense columnar slice
+    /// of row `location_tin` values in 16-lane vectorized batches (`04_ALGORITHMS_AND_PAPERS.md` §3.1),
+    /// returning the matching row indices in $O(N/16)$ without pointer chasing or recursive joins.
+    pub fn filter_rows_in_subtree_vectorized(
+        &self,
+        root_id: u32,
+        row_location_tins: &[u32],
+    ) -> Vec<u32> {
+        let Some(root_euler) = self.euler_nodes.get(&root_id) else {
+            return Vec::new();
+        };
+        let tin_u = root_euler.tin;
+        let tout_u = root_euler.tout;
+        let mut matching_rows = Vec::new();
+
+        for (chunk_idx, chunk) in row_location_tins.chunks(16).enumerate() {
+            let base = (chunk_idx * 16) as u32;
+            let mut lane_mask = 0u16;
+            for (lane, &loc_tin) in chunk.iter().enumerate() {
+                if loc_tin >= tin_u && loc_tin <= tout_u {
+                    lane_mask |= 1u16 << lane;
+                }
+            }
+            while lane_mask != 0 {
+                let lane = lane_mask.trailing_zeros();
+                matching_rows.push(base + lane);
+                lane_mask &= lane_mask - 1;
+            }
+        }
+        matching_rows
+    }
+
     /// Encodes Zone 2 into a 64-byte aligned binary slab (§4.3):
     /// `[Magic "MBFZ2CSR" (8B) | EulerTreeNode Slab (16B aligned) | Forward CSR Edges | Reverse CSR Edges | Padding 64B]`.
     pub fn encode_zone_binary(&self) -> Vec<u8> {
@@ -358,5 +390,12 @@ mod tests {
         assert_eq!(restored.euler_nodes[&7].inherited_attribute_id, 100);
         assert_eq!(restored.euler_nodes[&5].inherited_attribute_id, 200);
         assert_eq!(restored.reverse_referrers(6, 1), &[10, 11]);
+
+        let row_tins: Vec<u32> = (1..=7).map(|id| restored.euler_nodes[&id].tin).collect();
+        // Subtree of node 2 contains nodes 2, 4, 6, 7 -> indices 1, 3, 5, 6 in `row_tins`
+        assert_eq!(
+            restored.filter_rows_in_subtree_vectorized(2, &row_tins),
+            vec![1, 3, 5, 6]
+        );
     }
 }

@@ -109,18 +109,16 @@ pub(crate) fn cedar_context(
 use crate::cedar::engine::CedarAuthorizer;
 use crate::cedar::evaluator::step4_evaluate_cedar;
 
-pub async fn intercept<T>(
-    req: &tonic::Request<T>,
+pub async fn intercept_auth(
+    auth: &AuthRequest<'_>,
     valkey_store: &dyn ISessionStore,
     eav_reader: &dyn EntityReader,
     cache: &dyn PrincipalCache,
     cedar_engine: &CedarAuthorizer,
     policy_cache: &dyn PolicyStore,
 ) -> Result<CedarContext, DomainError> {
-    let auth = AuthRequest::from_tonic(req);
-
     let started = Instant::now();
-    let principal = resolve_principal(&auth, valkey_store, eav_reader, cache).await?;
+    let principal = resolve_principal(auth, valkey_store, eav_reader, cache).await?;
 
     let action = auth.cedar_action();
     let mut resource = auth.cedar_resource();
@@ -166,6 +164,26 @@ pub async fn intercept<T>(
         principal.roles,
         domain_dict,
     ))
+}
+
+pub async fn intercept<T>(
+    req: &tonic::Request<T>,
+    valkey_store: &dyn ISessionStore,
+    eav_reader: &dyn EntityReader,
+    cache: &dyn PrincipalCache,
+    cedar_engine: &CedarAuthorizer,
+    policy_cache: &dyn PolicyStore,
+) -> Result<CedarContext, DomainError> {
+    let auth = AuthRequest::from_tonic(req);
+    intercept_auth(
+        &auth,
+        valkey_store,
+        eav_reader,
+        cache,
+        cedar_engine,
+        policy_cache,
+    )
+    .await
 }
 
 pub async fn get_principal_data<T>(

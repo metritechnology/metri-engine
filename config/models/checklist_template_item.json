@@ -24,7 +24,16 @@
       "type": "string",
       "required": true,
       "fts": true,
-      "description": "Pregunta mostrada al técnico."
+      "description": "Pregunta mostrada al técnico.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "type",

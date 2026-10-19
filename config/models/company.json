@@ -10,13 +10,31 @@
       "required": true,
       "fts": true,
       "is_dimension": true,
-      "description": "Nombre comercial de la empresa u organización."
+      "description": "Nombre comercial de la empresa u organización.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "legal_name",
       "type": "string",
       "fts": true,
-      "description": "Razón social completa o nombre legal registrado."
+      "description": "Razón social completa o nombre legal registrado.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "tag",
@@ -29,7 +47,15 @@
         "prefix": "C-",
         "length": 6
       },
-      "description": "Código de negocio único autogenerado por inquilino para la empresa."
+      "description": "Código de negocio único autogenerado por inquilino para la empresa.",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "company_type",
@@ -60,7 +86,15 @@
       "type": "string",
       "unique": "tenant",
       "fts": true,
-      "description": "Identificador fiscal oficial (RFC, RUT, NIT, VAT, EIN) único por tenant."
+      "description": "Identificador fiscal oficial (RFC, RUT, NIT, VAT, EIN) único por tenant.",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "tax_regime",
@@ -90,7 +124,16 @@
       "name": "primary_contact_name",
       "type": "string",
       "fts": true,
-      "description": "Nombre de la persona o enlace principal de contacto."
+      "description": "Nombre de la persona o enlace principal de contacto.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "primary_contact_role",
@@ -118,7 +161,22 @@
       "name": "hourly_rate_cents",
       "type": "number",
       "is_measure": true,
-      "description": "Tarifa horaria acordada para contratistas/proveedores de servicio en céntimos."
+      "description": "Tarifa horaria acordada para contratistas/proveedores de servicio en céntimos.",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "pareto",
+        "outlier_sigma_threshold": 4.0,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": false,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": true,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "currency",
@@ -143,14 +201,37 @@
       "name": "sla_rating",
       "type": "number",
       "is_measure": true,
-      "description": "Calificación o score de desempeño de proveedor / SLA (0.0 a 5.0)."
+      "description": "Calificación o score de desempeño de proveedor / SLA (0.0 a 5.0).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "erp_external_id",
       "type": "string",
       "unique": "tenant",
       "fts": true,
-      "description": "ID externo en el ERP empresarial (SAP LIFNR/KUNNR, NetSuite ID, Odoo Partner ID) único por tenant."
+      "description": "ID externo en el ERP empresarial (SAP LIFNR/KUNNR, NetSuite ID, Odoo Partner ID) único por tenant.",
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      }
     },
     {
       "name": "custom_attributes",
@@ -181,5 +262,12 @@
       "detail_type_output": "system.company.status_changed",
       "description": "Evento de auditoría al cambiar el estado comercial de una empresa."
     }
-  ]
+  ],
+  "cross_covariance_matrix": {
+    "enabled": true,
+    "measure_fields": [
+      "hourly_rate_cents",
+      "sla_rating"
+    ]
+  }
 }

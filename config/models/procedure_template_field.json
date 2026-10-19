@@ -23,13 +23,31 @@
       "name": "label",
       "type": "string",
       "required": true,
-      "fts": true
+      "fts": true,
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 3.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "description",
       "type": "string",
       "fts": true,
-      "description": "Instrucción extendida del paso: qué medir, qué revisar, criterio de aceptación."
+      "description": "Instrucción extendida del paso: qué medir, qué revisar, criterio de aceptación.",
+      "fuzzy_profile": {
+        "max_edit_distance": 2,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "romance_phonetic",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 1.5,
+        "synonym_dictionary_uri": "urn:api:system:cmms_synonyms"
+      }
     },
     {
       "name": "field_type",
@@ -69,7 +87,22 @@
       "name": "score",
       "type": "number",
       "is_measure": true,
-      "description": "Peso del campo en el scoring del procedimiento (0 = informativo, no puntúa)."
+      "description": "Peso del campo en el scoring del procedimiento (0 = informativo, no puntúa).",
+      "math_profile": {
+        "synopsis_tier": "hyper_512b",
+        "distribution_family": "gaussian",
+        "outlier_sigma_threshold": 3.5,
+        "ema_alphas": [
+          0.05,
+          0.2,
+          0.5
+        ],
+        "enable_cusum": true,
+        "cusum_slack_k": 0.5,
+        "cusum_threshold_h": 4.0,
+        "enable_benford_audit": false,
+        "enable_weibull_mle": false
+      }
     },
     {
       "name": "field_order",

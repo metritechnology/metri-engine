@@ -131,9 +131,34 @@ impl EliasFanoEntityDirectory {
         }
         None
     }
+
+    /// Reconstructs the $i$-th monotonic offset in $O(1)$ from the Elias-Fano high-bit unary array and low-bit array (§1 Row 2).
+    pub fn select_offset(&self, rank: usize) -> Option<u64> {
+        if rank >= self.ef_low_bits.len() {
+            return None;
+        }
+        let low = self.ef_low_bits[rank];
+        // Locate the `rank`-th set bit (0-indexed) in `ef_high_bits`
+        let mut remaining = rank;
+        for (word_idx, &word) in self.ef_high_bits.iter().enumerate() {
+            let ones = word.count_ones() as usize;
+            if remaining < ones {
+                let mut w = word;
+                for _ in 0..remaining {
+                    w &= w - 1;
+                }
+                let bit_pos = word_idx * 64 + (w.trailing_zeros() as usize);
+                let high = (bit_pos.saturating_sub(rank)) as u64;
+                return Some((high << self.ef_low_width) | low);
+            }
+            remaining -= ones;
+        }
+
+        None
+    }
 }
 
-/// Fast Static Symbol Table (`FSST`, up to 255 entries, §4.2.3) for dictionary/symbol compression of strings.
+/// Fast Static Symbol Table (`FSST`, up to 255 entries, §4.2.3 & `04_ALGORITHMS_AND_PAPERS.md` §1) for dictionary/symbol compression of strings.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FsstSymbolTable {
     pub symbols: Vec<String>,
@@ -164,6 +189,71 @@ impl FsstSymbolTable {
 
     pub fn decode_symbol(&self, code: u8) -> Option<&str> {
         self.symbols.get(code as usize).map(String::as_str)
+    }
+
+    /// Evaluates an equality predicate (`EQ`) directly on an FSST symbol code in $O(1)$ without decompressing the column block (§1 Row 1).
+    #[inline]
+    pub fn eval_eq_compressed(&self, code: u8, target: &str) -> bool {
+        self.symbol_to_code.get(target).copied() == Some(code)
+    }
+
+    /// Evaluates a prefix predicate (`STARTS_WITH`) directly against the FSST symbol table without decompressing the column block (§1 Row 1).
+    #[inline]
+    pub fn eval_starts_with_compressed(&self, code: u8, prefix: &str) -> bool {
+        self.decode_symbol(code)
+            .is_some_and(|sym| sym.starts_with(prefix))
+    }
+
+    /// Compresses an arbitrary string into an FSST byte stream using greedy longest-prefix symbol matching (up to 8 bytes per symbol) with `0xFF` escape bytes (§1 Row 1).
+    pub fn compress_bytes(&self, text: &str) -> Vec<u8> {
+        if let Some(&exact_code) = self.symbol_to_code.get(text) {
+            return vec![exact_code];
+        }
+        let bytes = text.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut pos = 0usize;
+        while pos < bytes.len() {
+            let mut matched: Option<(u8, usize)> = None;
+            let remaining = &text[pos..];
+            for (code, sym) in self.symbols.iter().enumerate() {
+                if !sym.is_empty() && remaining.starts_with(sym.as_str()) {
+                    let slen = sym.len();
+                    if matched.is_none_or(|(_, best_len)| slen > best_len) {
+                        matched = Some((code as u8, slen));
+                    }
+                }
+            }
+            if let Some((code, slen)) = matched {
+                out.push(code);
+                pos += slen;
+            } else {
+                out.push(Self::ESCAPE_CODE);
+                out.push(bytes[pos]);
+                pos += 1;
+            }
+        }
+        out
+    }
+
+    /// Decompresses an FSST byte stream back into a UTF-8 string.
+    pub fn decompress_bytes(&self, compressed: &[u8]) -> String {
+        let mut raw = Vec::with_capacity(compressed.len() * 2);
+        let mut i = 0usize;
+        while i < compressed.len() {
+            let b = compressed[i];
+            if b == Self::ESCAPE_CODE {
+                if i + 1 < compressed.len() {
+                    raw.push(compressed[i + 1]);
+                }
+                i += 2;
+            } else if let Some(sym) = self.decode_symbol(b) {
+                raw.extend_from_slice(sym.as_bytes());
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+        String::from_utf8_lossy(&raw).into_owned()
     }
 }
 
@@ -624,5 +714,30 @@ mod tests {
             restored.query_by_attribute_value("status", "COMPLETED", 5),
             vec![1]
         );
+    }
+
+    #[test]
+    fn elias_fano_select_offset_and_fsst_compressed_predicates_work() {
+        let mut map = HashMap::new();
+        map.insert("ENT-001".to_string(), vec![0, 1]);
+        map.insert("ENT-002".to_string(), vec![2]);
+        map.insert("ENT-003".to_string(), vec![3, 4, 5]);
+        let dir = EliasFanoEntityDirectory::build_from_map(&map);
+        assert_eq!(dir.select_offset(0), Some(0));
+        assert_eq!(dir.select_offset(1), Some((7 + 8) as u64));
+        assert_eq!(dir.select_offset(2), Some((7 + 8 + 7 + 4) as u64));
+        assert_eq!(dir.select_offset(3), None);
+
+        let mut fsst = FsstSymbolTable::new();
+        let c_open = fsst.intern_or_escape("OPEN_ACTIVE").unwrap();
+        let c_closed = fsst.intern_or_escape("CLOSED_ARCHIVE").unwrap();
+        assert!(fsst.eval_eq_compressed(c_open, "OPEN_ACTIVE"));
+        assert!(!fsst.eval_eq_compressed(c_open, "CLOSED_ARCHIVE"));
+        assert!(fsst.eval_starts_with_compressed(c_open, "OPEN_"));
+        assert!(!fsst.eval_starts_with_compressed(c_closed, "OPEN_"));
+
+        let compressed = fsst.compress_bytes("OPEN_ACTIVE-42");
+        assert!(compressed.len() < "OPEN_ACTIVE-42".len());
+        assert_eq!(fsst.decompress_bytes(&compressed), "OPEN_ACTIVE-42");
     }
 }

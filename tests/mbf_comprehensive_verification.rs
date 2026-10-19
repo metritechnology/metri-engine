@@ -874,3 +874,129 @@ async fn verify_eav_mbf_native_integration_and_binary_preservation() {
     assert_eq!(zone5b_bin.len() % 64, 0);
     assert_eq!(&zone5b_bin[0..8], b"MBFZ5BHS");
 }
+
+#[test]
+fn verify_terabyte_scale_federated_catalog_and_hilbert_zonemap_pruning() {
+    use metri_engine::aegis::mbf::{MbfTerabyteQueryFilter, MbfTieredTerabyteCatalog};
+
+    // 1,024 L2 archives x 1 GiB = 1.0 TiB (1,099,511,627,776 physical bytes, 5.12 Billion rows)
+    let catalog =
+        MbfTieredTerabyteCatalog::generate_terabyte_reference_catalog(1024).expect("1 TB catalog");
+    assert_eq!(catalog.total_physical_bytes, 1_099_511_627_776);
+    assert_eq!(catalog.total_rows, 5_120_000_000);
+
+    // 1. Full 1-TB aggregation across all 1,024 stripes via O(1) Pébay synopsis fusion
+    let t0 = std::time::Instant::now();
+    let kpi_resp = MbfBiEngine::execute_terabyte_federated_query(
+        &catalog,
+        "tenant_alpha",
+        &MbfTerabyteQueryFilter::default(),
+        BiOutputCast::Kpi,
+    )
+    .expect("1 TB KPI query");
+    let full_elapsed = t0.elapsed();
+    assert!(
+        full_elapsed.as_millis() < 25,
+        "Full 1 TB synopsis fusion took {:?} (must be < 25 ms)",
+        full_elapsed
+    );
+    assert_eq!(kpi_resp.flight_recorder.blocks_inspected_total, 1024);
+    assert_eq!(
+        kpi_resp.flight_recorder.blocks_resolved_o1_by_synopsis,
+        1024
+    );
+    assert_eq!(kpi_resp.flight_recorder.rows_scanned_fallback, 0);
+    assert_eq!(kpi_resp.payload["total_records"], 5_120_000_000_u64);
+
+    // 2. Pruned 1-TB query using 3D Hilbert + Temporal Zone Map (prunes 99.02% of stripes in < 5 ms)
+    let filter = MbfTerabyteQueryFilter {
+        min_timestamp_ms: 1_700_000_000_000,
+        max_timestamp_ms: 1_700_000_000_000 + 10 * 86_400_000 - 1,
+        min_hilbert_key: 0,
+        max_hilbert_key: 10 * 1_000_000 - 1,
+        ..Default::default()
+    };
+    let t1 = std::time::Instant::now();
+    let table_resp = MbfBiEngine::execute_terabyte_federated_query(
+        &catalog,
+        "tenant_alpha",
+        &filter,
+        BiOutputCast::Table,
+    )
+    .expect("Pruned 1 TB Table query");
+    let pruned_elapsed = t1.elapsed();
+    assert!(
+        pruned_elapsed.as_micros() < 5_000,
+        "Pruned 1 TB query took {:?} (must be < 5 ms)",
+        pruned_elapsed
+    );
+    assert_eq!(table_resp.flight_recorder.blocks_pruned_by_zonemap, 1014);
+    assert_eq!(
+        table_resp.flight_recorder.blocks_resolved_o1_by_synopsis,
+        10
+    );
+}
+
+#[test]
+fn verify_petabyte_scale_hierarchical_l3_catalog_and_boundary_drilldown() {
+    use metri_engine::aegis::mbf::{MbfPetabyteHierarchicalCatalog, MbfTerabyteQueryFilter};
+
+    // 1,024 L3 Super-Manifests x 1,024 L2 Stripes = 1,048,576 Stripes (1.0 PiB = 1,125,899,906,842,624 bytes, 5.24288 Trillion rows)
+    let pb_catalog = MbfPetabyteHierarchicalCatalog::generate_petabyte_reference_catalog(1024)
+        .expect("1 PB catalog");
+    assert_eq!(pb_catalog.total_l2_stripes, 1_048_576);
+    assert_eq!(pb_catalog.total_physical_bytes, 1_125_899_906_842_624);
+    assert_eq!(pb_catalog.total_rows, 5_242_880_000_000);
+
+    // 1. Full 1.0-Petabyte aggregation via L3 Super-Manifest collapse (fuses 1,048,576 stripes in 1,024 O(1) steps)
+    let t0 = std::time::Instant::now();
+    let full_pb = MbfBiEngine::execute_petabyte_hierarchical_query(
+        &pb_catalog,
+        "tenant_alpha",
+        &MbfTerabyteQueryFilter::default(),
+        BiOutputCast::Kpi,
+    )
+    .expect("1 PB KPI query");
+    let elapsed_full = t0.elapsed();
+    assert!(
+        elapsed_full.as_millis() < 25,
+        "Full 1 PB synopsis collapse took {:?} (must be < 25 ms)",
+        elapsed_full
+    );
+    assert_eq!(full_pb.flight_recorder.blocks_inspected_total, 1_048_576);
+    assert_eq!(
+        full_pb.flight_recorder.blocks_resolved_o1_by_synopsis,
+        1_048_576
+    );
+    assert_eq!(full_pb.flight_recorder.rows_scanned_fallback, 0);
+    assert_eq!(full_pb.payload["total_records"], 5_242_880_000_000_u64);
+
+    // 2. Partial-boundary drill-down across 1.0 Petabyte (99.99905% pruned in < 5 ms!)
+    let filter = MbfTerabyteQueryFilter {
+        min_timestamp_ms: 1_700_000_000_000,
+        max_timestamp_ms: 1_700_000_000_000 + 10 * 86_400_000 - 1,
+        min_hilbert_key: 0,
+        max_hilbert_key: 10 * 1_000_000 - 1,
+        ..Default::default()
+    };
+    let t1 = std::time::Instant::now();
+    let pruned_pb = MbfBiEngine::execute_petabyte_hierarchical_query(
+        &pb_catalog,
+        "tenant_alpha",
+        &filter,
+        BiOutputCast::Table,
+    )
+    .expect("Pruned 1 PB Table query");
+    let elapsed_pruned = t1.elapsed();
+    assert!(
+        elapsed_pruned.as_micros() < 5_000,
+        "Pruned 1 PB query took {:?} (must be < 5 ms)",
+        elapsed_pruned
+    );
+    assert_eq!(pruned_pb.flight_recorder.blocks_inspected_total, 1_048_576);
+    assert_eq!(
+        pruned_pb.flight_recorder.blocks_pruned_by_zonemap,
+        1_048_566
+    );
+    assert_eq!(pruned_pb.flight_recorder.blocks_resolved_o1_by_synopsis, 10);
+}
