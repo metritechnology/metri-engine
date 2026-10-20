@@ -122,13 +122,21 @@ impl OltpChannel {
         let mut ingested = 0usize;
         let mut outbox_count = 0usize;
         let actor = ctx.user_id; // atribución de auditoría para todo el bulk
+        let suppress_events = ctx
+            .request
+            .get("suppress_events")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
 
-        // Concurrent ingestion of chunks with consolidated S3 .mbf batch flush per chunk
+        // Un único lote S3 consolidado para toda la solicitud BulkIngest
+        self.writer
+            .client()
+            .begin_bulk_s3_batch(self.writer.table())
+            .await?;
+
+        let mut bulk_err: Option<DomainError> = None;
+
         for chunk in records.chunks(100) {
-            self.writer
-                .client()
-                .begin_bulk_s3_batch(self.writer.table())
-                .await?;
             let mut futures = Vec::with_capacity(chunk.len());
             for raw_record in chunk {
                 let writer = self.writer.clone();
@@ -169,7 +177,7 @@ impl OltpChannel {
                         entity_type,
                         entity_id: Some(entity_id),
                         op: TransactOp::Create,
-                        suppress_events: false,
+                        suppress_events,
                         attrs: validated,
                     };
 
@@ -180,11 +188,6 @@ impl OltpChannel {
             }
 
             let results = futures::future::join_all(futures).await;
-            let flush_res = self
-                .writer
-                .client()
-                .finish_bulk_s3_batch(self.writer.table())
-                .await;
             for res in results {
                 match res {
                     Ok(Ok(tx_res)) => {
@@ -197,7 +200,8 @@ impl OltpChannel {
                             err    = ?e,
                             "[OltpChannel] Bulk TX ACID falló — cortocircuito"
                         );
-                        return Err(e);
+                        bulk_err = Some(e);
+                        break;
                     }
                     Err(e) => {
                         error!(
@@ -205,15 +209,28 @@ impl OltpChannel {
                             err    = ?e,
                             "[OltpChannel] Tokio join task failed"
                         );
-                        return Err(DomainError::janus(
+                        bulk_err = Some(DomainError::janus(
                             ErrorCode::Jns001,
                             format!("Tokio join error: {:?}", e),
                         ));
+                        break;
                     }
                 }
             }
-            flush_res?;
+            if bulk_err.is_some() {
+                break;
+            }
         }
+
+        let flush_res = self
+            .writer
+            .client()
+            .finish_bulk_s3_batch(self.writer.table())
+            .await;
+        if let Some(err) = bulk_err {
+            return Err(err);
+        }
+        flush_res?;
 
         // Deferred cache invalidation: single invalidation for the entire bulk operation
         crate::eav::writer::cache_policy::invalidate_aevt_scan(tenant_id, entity_type);

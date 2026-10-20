@@ -283,6 +283,7 @@ impl EavWriter {
         tenant_id: &str,
         model: &crate::codice::registry::EntityModel,
         attrs: &HashMap<String, DatomValue>,
+        use_cache: bool,
     ) -> Result<(), DomainError> {
         use crate::codice::registry::ConstraintKind;
         for c in model
@@ -307,9 +308,15 @@ impl EavWriter {
             let Some(condiciones) = c.when.as_deref() else {
                 continue;
             };
-            let ref_attrs = self.get_active_attributes(tenant_id, ref_id).await?;
-            let ref_attrs: HashMap<String, DatomValue> =
-                ref_attrs.into_iter().map(|(k, (_, v))| (k, v)).collect();
+            let ref_attrs: HashMap<String, DatomValue> = if use_cache {
+                self.reader().pull(tenant_id, ref_id, None).await?
+            } else {
+                self.get_active_attributes(tenant_id, ref_id)
+                    .await?
+                    .into_iter()
+                    .map(|(k, (_, v))| (k, v))
+                    .collect()
+            };
             crate::eav::writer::constraints::check_ref_conditions(
                 &target,
                 ref_id,
@@ -388,7 +395,8 @@ impl EavWriter {
                     &payload.attrs,
                     &previo,
                 )?;
-                self.check_refs_de(&payload.tenant_id, model, &payload.attrs)
+                let use_ref_cache = opts.cache == CachePolicy::Deferred;
+                self.check_refs_de(&payload.tenant_id, model, &payload.attrs, use_ref_cache)
                     .await?;
             }
             for proj in &opts.projections {
@@ -406,8 +414,13 @@ impl EavWriter {
                         &proj.attrs,
                         &std::collections::HashMap::new(),
                     )?;
-                    self.check_refs_de(&payload.tenant_id, model, &proj.attrs)
-                        .await?;
+                    self.check_refs_de(
+                        &payload.tenant_id,
+                        model,
+                        &proj.attrs,
+                        opts.cache == CachePolicy::Deferred,
+                    )
+                    .await?;
                 }
             }
         }
@@ -737,19 +750,18 @@ impl EavWriter {
         tenant_id: &str,
         entity_id: &str,
     ) -> Result<HashMap<String, (u16, DatomValue)>, DomainError> {
-        let pk = format!("T#{}#E#{}", tenant_id, entity_id);
-        let key_condition = "#pk = :pk".to_string();
-        let mut attr_names = HashMap::new();
-        let mut attr_values = HashMap::new();
-        attr_names.insert("#pk".to_string(), "PK".to_string());
-        attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
-
+        let table_ref = self.table.as_str();
+        let attr_names = HashMap::from([("#pk".to_string(), "PK".to_string())]);
+        let attr_values = HashMap::from([(
+            ":pk".to_string(),
+            AttributeValue::S(format!("T#{tenant_id}#E#{entity_id}")),
+        )]);
         let raw_items = self
             .ddb
             .query(
-                &self.table,
+                table_ref,
                 None,
-                &key_condition,
+                "#pk = :pk",
                 attr_names,
                 attr_values,
                 true,
@@ -765,21 +777,22 @@ impl EavWriter {
 
         let mut active: HashMap<String, (u16, u64, DatomValue)> = HashMap::new();
         for item in raw_items {
-            let sk = match item.get("SK") {
-                Some(AttributeValue::B(blob)) => blob.as_ref(),
-                _ => continue,
-            };
-            let Some((attr_id, tx_id, op)) = crate::eav::types::encoding::decode_eavt_sk(sk) else {
+            let Some(AttributeValue::B(blob)) = item.get("SK") else {
                 continue;
             };
-
-            let attr_name = match crate::eav::writer::system_attrs::name_of(attr_id) {
-                Some(n) => n.to_string(),
-                None => match crate::codice::global().get_attr_name(attr_id) {
-                    Some(n) => n.to_string(),
-                    None => format!("attr_{}", attr_id),
-                },
+            let Some((attr_id, tx_id, op)) =
+                crate::eav::types::encoding::decode_eavt_sk(blob.as_ref())
+            else {
+                continue;
             };
+            let attr_name = crate::eav::writer::system_attrs::name_of(attr_id)
+                .map(ToString::to_string)
+                .or_else(|| {
+                    crate::codice::global()
+                        .get_attr_name(attr_id)
+                        .map(ToString::to_string)
+                })
+                .unwrap_or_else(|| format!("attr_{attr_id}"));
 
             let should_update = match active.get(&attr_name) {
                 None => true,

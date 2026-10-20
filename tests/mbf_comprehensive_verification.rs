@@ -1306,3 +1306,121 @@ async fn verify_all_eight_mbf_and_idx_bug_fixes_end_to_end() {
         "Quota counter must decrement to 2 when remote snapshot has a newer epoch_id"
     );
 }
+
+#[tokio::test]
+async fn mbf_1000_assets_linear_scalability_and_outbox_exclusion() {
+    use metri_engine::eav::fts::searcher::{
+        export_tenant_zone5b_bytes, fts_search_entity_ids, register_fts_documents_batch,
+    };
+    use metri_engine::mbf::zones::hybrid_search::{IndexedEntityDocument, MbfHybridSearchIndex};
+    use std::time::Instant;
+
+    let t0 = Instant::now();
+    let mut batch_docs = Vec::with_capacity(1_000);
+    for i in 0..1_000u32 {
+        batch_docs.push(IndexedEntityDocument {
+            entity_id: format!("01J99999999999999999{:06}", i),
+            row_id: i,
+            code: format!("ACT10K{:05}", i),
+            title: format!("Compresor Centrifugo Industrial {:05}", i),
+            description: format!(
+                "Equipo rotativo de alta eficiencia serie {:05} planta norte",
+                i
+            ),
+            embedding: None,
+            coordinates_wgs84: Some((4.60 + (f64::from(i) * 0.0001), -74.08)),
+        });
+    }
+    register_fts_documents_batch("tenant_scale_1k", batch_docs);
+    let elapsed_index = t0.elapsed();
+    assert!(
+        elapsed_index.as_millis() < 1_500,
+        "Batch FTS indexing of 1,000 entities must be linear and fast, took {:?}",
+        elapsed_index
+    );
+
+    let z5b_bytes = export_tenant_zone5b_bytes("tenant_scale_1k");
+    let decoded = MbfHybridSearchIndex::decode_zone_binary(&z5b_bytes).expect("decode 1k Zone5b");
+    assert_eq!(decoded.docs.len(), 1_000);
+
+    let hits = fts_search_entity_ids("ACT10K00999", "tenant_scale_1k")
+        .await
+        .expect("fts search");
+    assert!(!hits.is_empty());
+    assert_eq!(hits[0].entity_id, "01J99999999999999999000999");
+
+    // Verify outbox_event exclusion from vortex wire snapshot and cold-start FTS reconstruction
+    use metri_engine::eav::types::datom::DatomValue;
+    use metri_engine::eav::writer::{EavWriter, TransactOp, TransactPayload};
+    use metri_engine::mbf::storage::{
+        decode_mbf_envelope, MbfPartitionWireSnapshot, MbfStorageClient,
+    };
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    let storage = Arc::new(MbfStorageClient::new_stub());
+    let src_table = "metri_scale_src_table";
+    let writer = EavWriter::new(Arc::clone(&storage), src_table);
+
+    let mut loc_attrs = HashMap::new();
+    loc_attrs.insert(
+        "name".to_string(),
+        DatomValue::Str("Planta Sur".to_string()),
+    );
+    loc_attrs.insert(
+        "status".to_string(),
+        DatomValue::Str("OPERATIONAL".to_string()),
+    );
+    writer
+        .transact(TransactPayload {
+            tenant_id: "tenant_cold_sync".to_string(),
+            entity_id: Some("01J99900000000000000LOC999".to_string()),
+            entity_type: "location".to_string(),
+            attrs: loc_attrs,
+            op: TransactOp::Create,
+            suppress_events: true,
+        })
+        .await
+        .expect("create location");
+
+    let mut asset_attrs = HashMap::new();
+    asset_attrs.insert(
+        "name".to_string(),
+        DatomValue::Str("Generador Sincrono".to_string()),
+    );
+    asset_attrs.insert("tag".to_string(), DatomValue::Str("A-COLD-777".to_string()));
+    asset_attrs.insert(
+        "criticality".to_string(),
+        DatomValue::Str("HIGH".to_string()),
+    );
+    asset_attrs.insert("status".to_string(), DatomValue::Str("ACTIVE".to_string()));
+    asset_attrs.insert(
+        "location_id".to_string(),
+        DatomValue::Str("01J99900000000000000LOC999".to_string()),
+    );
+    asset_attrs.insert("purchase_cost_cents".to_string(), DatomValue::Long(500));
+
+    let tx_res = writer
+        .transact(TransactPayload {
+            tenant_id: "tenant_cold_sync".to_string(),
+            entity_id: Some("01J99900000000000000AST777".to_string()),
+            entity_type: "asset".to_string(),
+            attrs: asset_attrs,
+            op: TransactOp::Create,
+            suppress_events: false,
+        })
+        .await
+        .expect("create asset with outbox_event");
+    assert_eq!(tx_res.outbox_count, 1);
+
+    let (vortex_bytes, _) = storage
+        .export_flush_artifacts(src_table, "vortex")
+        .expect("export flush artifacts");
+    let (_, raw_snap) = decode_mbf_envelope(&vortex_bytes).expect("decode vortex envelope");
+    let snap = MbfPartitionWireSnapshot::decode_binary(raw_snap).expect("decode wire snapshot");
+    let outbox_pk = format!("T#tenant_cold_sync#E#{}", tx_res.mutation_ulid);
+    assert!(
+        snap.items.iter().all(|((pk, _), _)| pk != &outbox_pk),
+        "to_wire_snapshot must exclude ephemeral outbox_event entities from vortex snapshot"
+    );
+}

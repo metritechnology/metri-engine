@@ -1078,9 +1078,15 @@ impl MbfHybridSearchIndex {
         let mut u32_buf = [0u8; 4];
         u32_buf.copy_from_slice(&bytes[8..12]);
         let doc_count = u32::from_le_bytes(u32_buf) as usize;
+        u32_buf.copy_from_slice(&bytes[12..16]);
+        let lex_count = u32::from_le_bytes(u32_buf) as usize;
 
         let mut offset = 56usize;
         let mut idx = Self::new();
+        idx.docs.reserve(doc_count);
+        idx.entity_positions.reserve(doc_count);
+        idx.fst_lexicon.reserve(lex_count);
+        idx.token_keys_cache.reserve(lex_count);
         for _ in 0..doc_count {
             let entity_id = read_len_prefixed_str(bytes, &mut offset)?;
             if offset + 4 > bytes.len() {

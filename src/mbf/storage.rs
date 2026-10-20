@@ -1622,6 +1622,147 @@ fn is_non_searchable_attr(attr_name: &str) -> bool {
         )
 }
 
+struct ColdStartDocBuilder {
+    tenant_id: String,
+    doc: crate::mbf::zones::hybrid_search::IndexedEntityDocument,
+    lat: Option<f64>,
+    lon: Option<f64>,
+}
+
+impl ColdStartDocBuilder {
+    fn new(tenant_id: &str, entity_id: &str) -> Self {
+        Self {
+            tenant_id: tenant_id.to_string(),
+            doc: crate::mbf::zones::hybrid_search::IndexedEntityDocument {
+                entity_id: entity_id.to_string(),
+                row_id: 0,
+                code: String::new(),
+                title: String::new(),
+                description: String::new(),
+                embedding: None,
+                coordinates_wgs84: None,
+            },
+            lat: None,
+            lon: None,
+        }
+    }
+
+    fn feed(&mut self, attr_name_opt: Option<&str>, item: &HashMap<String, AttributeValue>) {
+        match item.get("v") {
+            Some(AttributeValue::S(text)) => self.feed_string(attr_name_opt, text.trim()),
+            Some(AttributeValue::N(num_str)) => self.feed_number(attr_name_opt, num_str.trim()),
+            Some(AttributeValue::B(blob)) => self.feed_blob(attr_name_opt, blob.as_ref()),
+            _ => {}
+        }
+    }
+
+    fn feed_string(&mut self, attr_name_opt: Option<&str>, trimmed: &str) {
+        if trimmed.is_empty()
+            || trimmed.starts_with('\x7b')
+            || trimmed.starts_with('[')
+            || attr_name_opt.is_some_and(is_non_searchable_attr)
+        {
+            return;
+        }
+        let is_title = matches!(
+            attr_name_opt,
+            Some("name" | "title" | "label" | "full_name" | "username")
+        );
+        let is_code = matches!(
+            attr_name_opt,
+            Some(
+                "tag"
+                    | "code"
+                    | "serial_number"
+                    | "barcode_qr_code"
+                    | "functional_location_code"
+                    | "sku"
+            )
+        );
+        if is_code {
+            let canon = crate::eav::fts::searcher::canonicalize_alphanumeric_code(trimmed);
+            if !canon.is_empty() && !self.doc.code.contains(&canon) {
+                if !self.doc.code.is_empty() {
+                    self.doc.code.push(' ');
+                }
+                self.doc.code.push_str(&canon);
+            }
+        }
+        if is_title && (self.doc.title.is_empty() || trimmed.len() > self.doc.title.len()) {
+            self.doc.title = trimmed.to_string();
+        }
+        if !self.doc.description.contains(trimmed) {
+            if !self.doc.description.is_empty() {
+                self.doc.description.push(' ');
+            }
+            self.doc.description.push_str(trimmed);
+        }
+        if matches!(attr_name_opt, Some("synonyms" | "equivalence_group")) {
+            let group: Vec<&str> = trimmed
+                .split([',', ';', '|'])
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect();
+            if group.len() >= 2 {
+                crate::eav::fts::searcher::register_tenant_synonym_group(&self.tenant_id, &group);
+            }
+        }
+    }
+
+    fn feed_number(&mut self, attr_name_opt: Option<&str>, num_str: &str) {
+        let Some(attr_name) = attr_name_opt else {
+            return;
+        };
+        if matches!(attr_name, "latitude" | "start_latitude") {
+            if let Ok(lat) = num_str.parse::<f64>() {
+                if lat.is_finite() {
+                    self.lat = Some(lat);
+                }
+            }
+        } else if matches!(attr_name, "longitude" | "start_longitude") {
+            if let Ok(lon) = num_str.parse::<f64>() {
+                if lon.is_finite() {
+                    self.lon = Some(lon);
+                }
+            }
+        }
+    }
+
+    fn feed_blob(&mut self, attr_name_opt: Option<&str>, bytes: &[u8]) {
+        if matches!(attr_name_opt, Some("semantic_embedding" | "embedding"))
+            && bytes.len() >= 16
+            && bytes.len() % 4 == 0
+        {
+            let mut vec = Vec::with_capacity(bytes.len() / 4);
+            for chunk in bytes.chunks_exact(4) {
+                let bits = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                vec.push(f32::from_bits(bits));
+            }
+            self.doc.embedding = Some(vec);
+        }
+    }
+
+    fn finish(
+        mut self,
+    ) -> Option<(
+        String,
+        crate::mbf::zones::hybrid_search::IndexedEntityDocument,
+    )> {
+        if let (Some(lat), Some(lon)) = (self.lat, self.lon) {
+            self.doc.coordinates_wgs84 = Some((lat, lon));
+        }
+        if self.doc.code.is_empty()
+            && self.doc.title.is_empty()
+            && self.doc.description.is_empty()
+            && self.doc.embedding.is_none()
+            && self.doc.coordinates_wgs84.is_none()
+        {
+            return None;
+        }
+        Some((self.tenant_id, self.doc))
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub(crate) struct MbfPartitionStore {
     pub(crate) epoch_id: u64,
@@ -1630,6 +1771,9 @@ pub(crate) struct MbfPartitionStore {
     pub(crate) bulk_depth: usize,
     pub(crate) dirty_entities: std::collections::BTreeSet<(String, String, String)>,
     pub(crate) transient_entities: std::collections::HashSet<String>,
+    pub(crate) outbox_entities: std::collections::HashSet<String>,
+    pub(crate) tenant_synopses_cache:
+        HashMap<String, BTreeMap<u16, crate::mbf::zones::bi_synopses::MbfHyperSynopsis512>>,
     /// Primary index `(PK, SK_bytes) -> Item` (EAVT).
     pub(crate) items: BTreeMap<PrimaryKey, HashMap<String, AttributeValue>>,
     /// Native secondary BTree index for `AEVT` (`(ap, as_bytes, PrimaryKey)`).
@@ -1663,7 +1807,11 @@ impl MbfPartitionStore {
         }
     }
 
-    fn index_item(&mut self, key: &PrimaryKey, item: &HashMap<String, AttributeValue>) {
+    fn index_secondary_only(
+        &mut self,
+        key: &PrimaryKey,
+        item: &HashMap<String, AttributeValue>,
+    ) -> Option<(String, String, Option<String>)> {
         if let Some((ap, as_bytes)) = extract_index_key(item, "ap", "as") {
             self.aevt_index.insert((ap, as_bytes, key.clone()), ());
         }
@@ -1674,33 +1822,85 @@ impl MbfPartitionStore {
             self.vaet_index.insert((rp, rs_bytes, key.clone()), ());
         }
         if key.1.len() != 11 || key.1[10] == 0 {
-            return;
+            return None;
         }
         if self.transient_entities.contains(key.0.as_str()) {
-            return;
+            return None;
         }
-        let Some((tenant_id, entity_id)) =
-            key.0.strip_prefix("T#").and_then(|s| s.split_once("#E#"))
-        else {
-            return;
-        };
+        let (tenant_id, entity_id) = key.0.strip_prefix("T#").and_then(|s| s.split_once("#E#"))?;
         let attr_name_opt = item
             .get("ap")
             .and_then(|av| match av {
                 AttributeValue::S(ap_str) => ap_str.split_once("#A#").map(|(_, a)| a),
                 _ => None,
             })
-            .map(|a| a.split('#').next().unwrap_or(a));
+            .map(|a| a.split('#').next().unwrap_or(a).to_string());
 
-        if attr_name_opt == Some(crate::eav::writer::system_attrs::TYPE_NAME) {
+        if attr_name_opt.as_deref() == Some(crate::eav::writer::system_attrs::TYPE_NAME) {
             if let Some(AttributeValue::S(et)) = item.get("v") {
-                if matches!(et.as_str(), "outbox_event" | "audit_log" | "domain_fault") {
+                if et == "outbox_event" {
                     self.transient_entities.insert(key.0.clone());
-                    return;
+                    self.outbox_entities.insert(key.0.clone());
+                    return None;
+                }
+                if matches!(et.as_str(), "audit_log" | "domain_fault") {
+                    self.transient_entities.insert(key.0.clone());
+                    return None;
                 }
             }
         }
-        self.index_item_fts(tenant_id, entity_id, attr_name_opt, item);
+        Some((tenant_id.to_string(), entity_id.to_string(), attr_name_opt))
+    }
+
+    fn index_item(&mut self, key: &PrimaryKey, item: &HashMap<String, AttributeValue>) {
+        if let Some((tenant_id, entity_id, attr_name_opt)) = self.index_secondary_only(key, item) {
+            self.index_item_fts(&tenant_id, &entity_id, attr_name_opt.as_deref(), item);
+        }
+    }
+
+    fn rebuild_fts_from_items(&self) {
+        let mut docs_by_tenant: HashMap<
+            String,
+            Vec<crate::mbf::zones::hybrid_search::IndexedEntityDocument>,
+        > = HashMap::new();
+        let mut current_pk = String::new();
+        let mut current_builder: Option<ColdStartDocBuilder> = None;
+
+        for ((pk, sk), item) in &self.items {
+            if sk.len() != 11 || sk[10] == 0 || self.transient_entities.contains(pk.as_str()) {
+                continue;
+            }
+            if pk != &current_pk {
+                if let Some(prev) = current_builder.take() {
+                    if let Some((t_id, doc)) = prev.finish() {
+                        docs_by_tenant.entry(t_id).or_default().push(doc);
+                    }
+                }
+                current_pk.clone_from(pk);
+                if let Some((t_id, e_id)) = pk.strip_prefix("T#").and_then(|s| s.split_once("#E#"))
+                {
+                    current_builder = Some(ColdStartDocBuilder::new(t_id, e_id));
+                }
+            }
+            if let Some(builder) = &mut current_builder {
+                let attr_name_opt = item
+                    .get("ap")
+                    .and_then(|av| match av {
+                        AttributeValue::S(ap_str) => ap_str.split_once("#A#").map(|(_, a)| a),
+                        _ => None,
+                    })
+                    .map(|a| a.split('#').next().unwrap_or(a));
+                builder.feed(attr_name_opt, item);
+            }
+        }
+        if let Some(last) = current_builder.take() {
+            if let Some((t_id, doc)) = last.finish() {
+                docs_by_tenant.entry(t_id).or_default().push(doc);
+            }
+        }
+        for (tenant_id, docs) in docs_by_tenant {
+            crate::eav::fts::searcher::register_fts_documents_batch(&tenant_id, docs);
+        }
     }
 
     fn index_item_fts(
@@ -1796,8 +1996,9 @@ impl MbfPartitionStore {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         for (k, item) in &keys_and_items {
-            self.index_item(k, item);
+            let _ = self.index_secondary_only(k, item);
         }
+        self.rebuild_fts_from_items();
     }
 
     pub(crate) fn to_wire_snapshot(&self) -> MbfPartitionWireSnapshot {
@@ -1806,7 +2007,9 @@ impl MbfPartitionStore {
             items: self
                 .items
                 .iter()
-                .filter(|((pk, _), _)| !pk.contains("#FTS#"))
+                .filter(|((pk, _), _)| {
+                    !pk.contains("#FTS#") && !self.outbox_entities.contains(pk.as_str())
+                })
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             quota_counters: self
@@ -1831,7 +2034,7 @@ impl MbfPartitionStore {
                 continue;
             }
             if was_empty {
-                self.index_item(&key, &remote_item);
+                let _ = self.index_secondary_only(&key, &remote_item);
                 self.items.insert(key, remote_item);
                 continue;
             }
@@ -1855,6 +2058,9 @@ impl MbfPartitionStore {
             if should_insert {
                 self.insert_indexed(key, remote_item);
             }
+        }
+        if was_empty {
+            self.rebuild_fts_from_items();
         }
         for (k, v) in snap.quota_counters {
             let entry = self.quota_counters.entry(k).or_insert(0);
@@ -2109,7 +2315,18 @@ impl MbfStorageClient {
             }
             MbfConditionalGet::NotFound => {
                 if let Ok(mut guard) = part.write() {
-                    guard.last_sync_ms = now_ms;
+                    if guard.last_s3_etag.is_some() {
+                        let bulk_depth = guard.bulk_depth;
+                        *guard = MbfPartitionStore {
+                            bulk_depth,
+                            last_sync_ms: now_ms,
+                            ..MbfPartitionStore::default()
+                        };
+                        crate::eav::fts::searcher::clear_all_fts_corpora();
+                        evict_all_read_caches_on_remote_sync();
+                    } else {
+                        guard.last_sync_ms = now_ms;
+                    }
                 }
             }
             MbfConditionalGet::Modified(payload) => {
@@ -2203,7 +2420,7 @@ impl MbfStorageClient {
         if !entity_files.is_empty() {
             let mut join_set = tokio::task::JoinSet::new();
             for (ekey, ebytes) in entity_files {
-                while join_set.len() >= 32 {
+                while join_set.len() >= 128 {
                     let _ = join_set.join_next().await;
                 }
                 let s3_clone = Arc::clone(s3);
@@ -2250,6 +2467,12 @@ impl MbfStorageClient {
             ) {
                 continue;
             }
+            if guard.last_s3_etag.is_none() {
+                guard
+                    .tenant_synopses_cache
+                    .entry(tenant_id.clone())
+                    .or_default();
+            }
             touched_tenants.insert(tenant_id.clone());
             Self::append_entity_flush_files(
                 guard,
@@ -2295,7 +2518,7 @@ impl MbfStorageClient {
 
     #[allow(clippy::too_many_arguments)]
     fn append_entity_flush_files(
-        guard: &MbfPartitionStore,
+        guard: &mut MbfPartitionStore,
         prefix: &str,
         epoch: u64,
         tenant_id: &str,
@@ -2356,7 +2579,8 @@ impl MbfStorageClient {
                 entity_id,
                 &fallback_desc,
             );
-            let ent_syns = Self::build_synopses_by_attribute(&ent_snap.datoms, epoch);
+            let ent_syns =
+                Self::build_and_merge_entity_synopses(guard, tenant_id, &ent_snap.datoms, epoch);
             let synopsis_zone =
                 crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(
                     &ent_syns,
@@ -2384,7 +2608,9 @@ impl MbfStorageClient {
         }
     }
 
-    fn build_synopses_by_attribute(
+    fn build_and_merge_entity_synopses(
+        guard: &mut MbfPartitionStore,
+        tenant_id: &str,
         datoms: &[(Vec<u8>, HashMap<String, AttributeValue>)],
         epoch: u64,
     ) -> Vec<crate::mbf::zones::bi_synopses::MbfHyperSynopsis512> {
@@ -2414,24 +2640,36 @@ impl MbfStorageClient {
         if by_attr.is_empty() {
             return vec![crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::default()];
         }
-        by_attr
-            .into_values()
-            .map(|obs| {
-                crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::from_observations(
-                    &obs,
-                    0,
-                    &[],
-                    0.0,
-                )
-            })
-            .collect()
+        let mut out = Vec::with_capacity(by_attr.len());
+        let mut cache_opt = guard.tenant_synopses_cache.get_mut(tenant_id);
+        for (attr_id, obs) in by_attr {
+            let syn = crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::from_observations(
+                &obs,
+                0,
+                &[],
+                0.0,
+            );
+            if let Some(cache) = &mut cache_opt {
+                cache
+                    .entry(attr_id)
+                    .and_modify(|existing| *existing = existing.merge(&syn))
+                    .or_insert_with(|| syn.clone());
+            }
+            out.push(syn);
+        }
+        out
     }
 
     fn build_tenant_synopses(
-        guard: &MbfPartitionStore,
+        guard: &mut MbfPartitionStore,
         tenant_id: &str,
         epoch: u64,
     ) -> Vec<crate::mbf::zones::bi_synopses::MbfHyperSynopsis512> {
+        if let Some(cached) = guard.tenant_synopses_cache.get(tenant_id) {
+            if !cached.is_empty() {
+                return cached.values().cloned().collect();
+            }
+        }
         let pk_prefix = format!("T#{tenant_id}#E#");
         let range_start = (pk_prefix.clone(), Vec::new());
         let mut by_attr: BTreeMap<u16, Vec<(i64, f64)>> = BTreeMap::new();
@@ -2467,17 +2705,23 @@ impl MbfStorageClient {
         if by_attr.is_empty() {
             return vec![crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::default()];
         }
-        by_attr
-            .into_values()
-            .map(|obs| {
+        let mut syn_map = BTreeMap::new();
+        for (attr_id, obs) in by_attr {
+            syn_map.insert(
+                attr_id,
                 crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::from_observations(
                     &obs,
                     0,
                     &[],
                     0.0,
-                )
-            })
-            .collect()
+                ),
+            );
+        }
+        let out: Vec<_> = syn_map.values().cloned().collect();
+        guard
+            .tenant_synopses_cache
+            .insert(tenant_id.to_string(), syn_map);
+        out
     }
 
     fn build_hot_head_frame(
@@ -2692,7 +2936,11 @@ impl MbfStorageClient {
             }
 
             for (tid, et, eid) in &touched {
-                if matches!(et.as_str(), "outbox_event" | "audit_log" | "domain_fault") {
+                if et == "outbox_event" {
+                    let pk = format!("T#{tid}#E#{eid}");
+                    guard.transient_entities.insert(pk.clone());
+                    guard.outbox_entities.insert(pk);
+                } else if matches!(et.as_str(), "audit_log" | "domain_fault") {
                     guard.transient_entities.insert(format!("T#{tid}#E#{eid}"));
                 }
             }

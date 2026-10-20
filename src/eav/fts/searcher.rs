@@ -32,6 +32,65 @@ fn fts_corpus() -> &'static RwLock<HashMap<String, TenantFtsState>> {
     IN_MEMORY_FTS_CORPUS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
+fn ensure_tenant_state<'a>(
+    guard: &'a mut HashMap<String, TenantFtsState>,
+    tenant_id: &str,
+) -> &'a mut TenantFtsState {
+    guard
+        .entry(tenant_id.to_string())
+        .or_insert_with(|| TenantFtsState {
+            docs: Vec::new(),
+            doc_positions: HashMap::new(),
+            partial_coords: HashMap::new(),
+            zone5b: MbfHybridSearchIndex::new(),
+        })
+}
+
+/// Limpia todos los corpus FTS en memoria de todos los tenants (usado tras purgas o reinicios del snapshot S3).
+pub fn clear_all_fts_corpora() {
+    if let Ok(mut guard) = fts_corpus().write() {
+        guard.clear();
+    }
+}
+
+/// Registra o consolida en lote una colección de documentos `IndexedEntityDocument` en el corpus FTS y en la Zona 5B del `tenant_id` adquiriendo un único bloqueo de escritura.
+pub fn register_fts_documents_batch(tenant_id: &str, docs: Vec<IndexedEntityDocument>) {
+    if docs.is_empty() {
+        return;
+    }
+    if let Ok(mut guard) = fts_corpus().write() {
+        let state = ensure_tenant_state(&mut guard, tenant_id);
+        state.docs.reserve(docs.len());
+        state.doc_positions.reserve(docs.len());
+        for mut doc in docs {
+            let combined = format!("{} {} {}", doc.code, doc.title, doc.description);
+            let trimmed = combined.trim();
+            if !trimmed.is_empty() {
+                if let Some(&pos) = state.doc_positions.get(&doc.entity_id) {
+                    let existing = &mut state.docs[pos];
+                    if !existing.1.contains(trimmed) {
+                        existing.1.push(' ');
+                        existing.1.push_str(trimmed);
+                    }
+                } else {
+                    let pos = state.docs.len();
+                    state.doc_positions.insert(doc.entity_id.clone(), pos);
+                    state
+                        .docs
+                        .push((doc.entity_id.clone(), trimmed.to_string()));
+                }
+            }
+            if let Some((lat, lon)) = doc.coordinates_wgs84 {
+                state
+                    .partial_coords
+                    .insert(doc.entity_id.clone(), (Some(lat), Some(lon)));
+            }
+            doc.row_id = state.zone5b.docs.len() as u32;
+            state.zone5b.index_document(doc);
+        }
+    }
+}
+
 /// Registra o actualiza el documento textual de una entidad en el corpus FTS local y en el índice `MbfHybridSearchIndex` (Zona 5B) del `tenant_id`.
 pub fn register_fts_document(tenant_id: &str, entity_id: &str, text: &str) {
     register_fts_document_attr(tenant_id, entity_id, None, text);
@@ -49,20 +108,7 @@ pub fn register_fts_document_attr(
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        if !guard.contains_key(tenant_id) {
-            guard.insert(
-                tenant_id.to_string(),
-                TenantFtsState {
-                    docs: Vec::new(),
-                    doc_positions: HashMap::new(),
-                    partial_coords: HashMap::new(),
-                    zone5b: MbfHybridSearchIndex::new(),
-                },
-            );
-        }
-        let Some(state) = guard.get_mut(tenant_id) else {
-            return;
-        };
+        let state = ensure_tenant_state(&mut guard, tenant_id);
         let mut is_new_segment = true;
         if let Some(&pos) = state.doc_positions.get(entity_id) {
             let existing = &mut state.docs[pos];
@@ -139,20 +185,7 @@ pub fn register_fts_entity_coordinate_axis(
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        if !guard.contains_key(tenant_id) {
-            guard.insert(
-                tenant_id.to_string(),
-                TenantFtsState {
-                    docs: Vec::new(),
-                    doc_positions: HashMap::new(),
-                    partial_coords: HashMap::new(),
-                    zone5b: MbfHybridSearchIndex::new(),
-                },
-            );
-        }
-        let Some(state) = guard.get_mut(tenant_id) else {
-            return;
-        };
+        let state = ensure_tenant_state(&mut guard, tenant_id);
         let entry = state
             .partial_coords
             .entry(entity_id.to_string())
@@ -201,20 +234,7 @@ pub fn register_fts_entity_embedding(tenant_id: &str, entity_id: &str, embedding
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        if !guard.contains_key(tenant_id) {
-            guard.insert(
-                tenant_id.to_string(),
-                TenantFtsState {
-                    docs: Vec::new(),
-                    doc_positions: HashMap::new(),
-                    partial_coords: HashMap::new(),
-                    zone5b: MbfHybridSearchIndex::new(),
-                },
-            );
-        }
-        let Some(state) = guard.get_mut(tenant_id) else {
-            return;
-        };
+        let state = ensure_tenant_state(&mut guard, tenant_id);
         let qv = crate::mbf::zones::hybrid_search::RaBitQVector::from_f32_slice(&embedding);
         if !state
             .zone5b
@@ -240,20 +260,7 @@ pub fn register_tenant_synonym_group(tenant_id: &str, group: &[&str]) {
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        if !guard.contains_key(tenant_id) {
-            guard.insert(
-                tenant_id.to_string(),
-                TenantFtsState {
-                    docs: Vec::new(),
-                    doc_positions: HashMap::new(),
-                    partial_coords: HashMap::new(),
-                    zone5b: MbfHybridSearchIndex::new(),
-                },
-            );
-        }
-        let Some(state) = guard.get_mut(tenant_id) else {
-            return;
-        };
+        let state = ensure_tenant_state(&mut guard, tenant_id);
         state.zone5b.thesaurus.register_equivalence_group(group);
     }
 }
