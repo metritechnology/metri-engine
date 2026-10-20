@@ -248,6 +248,15 @@ pub struct MbfHybridSearchIndex {
     pub spatial_morton_cells: HashMap<u64, Vec<u32>>,
     /// Longitud media de documento en caracteres para normalización BM25F.
     pub avg_doc_len: f64,
+    /// Mapa auxiliar en memoria `entity_id -> posición en self.docs` para consolidación en $O(1)$.
+    #[serde(skip)]
+    entity_positions: HashMap<String, usize>,
+    /// Suma acumulada de longitudes de caracteres `(code + title + description)` en `self.docs` para `avg_doc_len` en $O(1)$.
+    #[serde(skip)]
+    total_char_len: usize,
+    /// Caché en memoria `term -> (ngrams, phonetic_codes)` para evitar recomputar fonética y N-gramas en términos repetidos.
+    #[serde(skip)]
+    token_keys_cache: HashMap<String, (Vec<String>, Vec<String>)>,
 }
 
 impl MbfHybridSearchIndex {
@@ -277,9 +286,111 @@ impl MbfHybridSearchIndex {
         self
     }
 
+    #[inline]
+    fn doc_char_len(doc: &IndexedEntityDocument) -> usize {
+        doc.code.len() + doc.title.len() + doc.description.len()
+    }
+
+    fn ensure_fast_lookup_cache(&mut self) {
+        if self.entity_positions.len() != self.docs.len() {
+            self.entity_positions.clear();
+            self.entity_positions.reserve(self.docs.len());
+            let mut total = 0usize;
+            for (pos, d) in self.docs.iter().enumerate() {
+                self.entity_positions.insert(d.entity_id.clone(), pos);
+                total += Self::doc_char_len(d);
+            }
+            self.total_char_len = total;
+        }
+    }
+
+    #[inline]
+    pub(crate) fn push_unique_row_id(list: &mut Vec<u32>, row_id: u32) -> bool {
+        if let Some(&last) = list.last() {
+            if last == row_id {
+                return false;
+            }
+            if row_id > last {
+                list.push(row_id);
+                return true;
+            }
+            match list.binary_search(&row_id) {
+                Ok(_) => false,
+                Err(pos) => {
+                    list.insert(pos, row_id);
+                    true
+                }
+            }
+        } else {
+            list.push(row_id);
+            true
+        }
+    }
+
+    /// Obtiene una referencia inmutable al documento indexado de `entity_id` en $O(1)$.
+    pub fn get_document(&self, entity_id: &str) -> Option<&IndexedEntityDocument> {
+        if let Some(&pos) = self.entity_positions.get(entity_id) {
+            self.docs.get(pos)
+        } else {
+            self.docs.iter().find(|d| d.entity_id == entity_id)
+        }
+    }
+
+    /// Actualiza el título de un documento ya indexado en $O(1)$ manteniendo sincronizado `avg_doc_len`.
+    pub fn set_document_title(&mut self, entity_id: &str, title: String) {
+        self.ensure_fast_lookup_cache();
+        if let Some(&pos) = self.entity_positions.get(entity_id) {
+            if let Some(doc) = self.docs.get_mut(pos) {
+                let prev_len = Self::doc_char_len(doc);
+                doc.title = title;
+                let new_len = Self::doc_char_len(doc);
+                self.total_char_len = self.total_char_len.saturating_sub(prev_len) + new_len;
+                self.avg_doc_len = (self.total_char_len as f64) / (self.docs.len().max(1) as f64);
+            }
+        }
+    }
+
+    /// Actualiza las coordenadas WGS-84 y la celda espacial Morton/H3 de un documento ya indexado en $O(1)$.
+    pub fn set_document_coordinates(
+        &mut self,
+        entity_id: &str,
+        coords: (f64, f64),
+        h3_morton: u64,
+    ) -> bool {
+        self.ensure_fast_lookup_cache();
+        if let Some(&pos) = self.entity_positions.get(entity_id) {
+            if let Some(doc) = self.docs.get_mut(pos) {
+                doc.coordinates_wgs84 = Some(coords);
+                let cell_rows = self.spatial_morton_cells.entry(h3_morton).or_default();
+                Self::push_unique_row_id(cell_rows, doc.row_id);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Actualiza el vector de incrustación semántica y su cuantización `RaBitQ` de un documento ya indexado en $O(1)$.
+    pub fn set_document_embedding(
+        &mut self,
+        entity_id: &str,
+        embedding: Vec<f32>,
+        qv: RaBitQVector,
+    ) -> bool {
+        self.ensure_fast_lookup_cache();
+        if let Some(&pos) = self.entity_positions.get(entity_id) {
+            if let Some(doc) = self.docs.get_mut(pos) {
+                doc.embedding = Some(embedding);
+                self.rabitq_vectors.insert(doc.row_id, qv);
+                return true;
+            }
+        }
+        false
+    }
+
     /// Indexa o consolida un documento de entidad simultáneamente a través de las 6 capas de búsqueda.
     pub fn index_document(&mut self, doc: IndexedEntityDocument) {
-        let existing_pos = self.docs.iter().position(|d| d.entity_id == doc.entity_id);
+        self.ensure_fast_lookup_cache();
+        let existing_pos = self.entity_positions.get(&doc.entity_id).copied();
         let row_id = existing_pos.map_or(doc.row_id, |pos| self.docs[pos].row_id);
         let combined_text = format!("{} {} {}", doc.code, doc.title, doc.description);
         let mut tokens = Self::tokenize_normalized(&combined_text);
@@ -289,38 +400,7 @@ impl MbfHybridSearchIndex {
         }
 
         for token in &tokens {
-            let entry = self.fst_lexicon.entry(token.clone()).or_default();
-            if !entry.contains(&row_id) {
-                entry.push(row_id);
-            }
-            for del_variant in Self::generate_symspell_deletes(token, 2) {
-                let sym_entry = self.symspell_deletes.entry(del_variant).or_default();
-                if !sym_entry.contains(token) {
-                    sym_entry.push(token.clone());
-                }
-            }
-            for ng in Self::generate_ngrams(token) {
-                let ng_entry = self.ngram_bitmaps.entry(ng).or_default();
-                if !ng_entry.contains(&row_id) {
-                    ng_entry.push(row_id);
-                }
-            }
-            let ph = Self::encode_romance_phonetic(token);
-            if !ph.is_empty() {
-                let ph_entry = self.phonetic_index.entry(ph).or_default();
-                if !ph_entry.contains(&row_id) {
-                    ph_entry.push(row_id);
-                }
-            }
-            let (dm1, dm2) = Self::encode_double_metaphone(token);
-            for dm in [dm1, dm2] {
-                if !dm.is_empty() {
-                    let dm_entry = self.phonetic_index.entry(dm).or_default();
-                    if !dm_entry.contains(&row_id) {
-                        dm_entry.push(row_id);
-                    }
-                }
-            }
+            self.index_token(token, row_id);
         }
 
         if let Some(emb) = &doc.embedding {
@@ -335,22 +415,79 @@ impl MbfHybridSearchIndex {
             self.spatial_mbr[3] = self.spatial_mbr[3].max(lon);
             let h3_morton = Self::encode_spatial_cell_h3_morton(lat, lon);
             let cell_rows = self.spatial_morton_cells.entry(h3_morton).or_default();
-            if !cell_rows.contains(&row_id) {
-                cell_rows.push(row_id);
-            }
+            Self::push_unique_row_id(cell_rows, row_id);
         }
 
         if let Some(pos) = existing_pos {
+            let prev_len = Self::doc_char_len(&self.docs[pos]);
             Self::merge_existing_document(&mut self.docs[pos], doc);
+            let new_len = Self::doc_char_len(&self.docs[pos]);
+            self.total_char_len = self.total_char_len.saturating_sub(prev_len) + new_len;
         } else {
+            let pos = self.docs.len();
+            let new_len = Self::doc_char_len(&doc);
+            self.entity_positions.insert(doc.entity_id.clone(), pos);
             self.docs.push(doc);
+            self.total_char_len += new_len;
         }
-        let total_len: usize = self
-            .docs
-            .iter()
-            .map(|d| d.code.len() + d.title.len() + d.description.len())
-            .sum();
-        self.avg_doc_len = (total_len as f64) / (self.docs.len().max(1) as f64);
+        self.avg_doc_len = (self.total_char_len as f64) / (self.docs.len().max(1) as f64);
+    }
+
+    fn index_token(&mut self, token: &str, row_id: u32) {
+        if let Some(entry) = self.fst_lexicon.get_mut(token) {
+            if !Self::push_unique_row_id(entry, row_id) {
+                return;
+            }
+            if let Some((ngrams, phonetics)) = self.token_keys_cache.get(token) {
+                for ng in ngrams {
+                    if let Some(ng_entry) = self.ngram_bitmaps.get_mut(ng) {
+                        Self::push_unique_row_id(ng_entry, row_id);
+                    }
+                }
+                for ph in phonetics {
+                    if let Some(ph_entry) = self.phonetic_index.get_mut(ph) {
+                        Self::push_unique_row_id(ph_entry, row_id);
+                    }
+                }
+                return;
+            }
+        }
+
+        let token_owned = token.to_string();
+        let entry = self.fst_lexicon.entry(token_owned.clone()).or_default();
+        Self::push_unique_row_id(entry, row_id);
+
+        let max_del_dist = if token.len() > 16 { 1 } else { 2 };
+        for del_variant in Self::generate_symspell_deletes(token, max_del_dist) {
+            let sym_entry = self.symspell_deletes.entry(del_variant).or_default();
+            if !sym_entry.iter().any(|s| s == token) {
+                sym_entry.push(token_owned.clone());
+            }
+        }
+
+        let ngrams = Self::generate_ngrams(token);
+        for ng in &ngrams {
+            let ng_entry = self.ngram_bitmaps.entry(ng.clone()).or_default();
+            Self::push_unique_row_id(ng_entry, row_id);
+        }
+
+        let mut phonetics = Vec::with_capacity(3);
+        let ph = Self::encode_romance_phonetic(token);
+        if !ph.is_empty() {
+            let ph_entry = self.phonetic_index.entry(ph.clone()).or_default();
+            Self::push_unique_row_id(ph_entry, row_id);
+            phonetics.push(ph);
+        }
+        let (dm1, dm2) = Self::encode_double_metaphone(token);
+        for dm in [dm1, dm2] {
+            if !dm.is_empty() && !phonetics.contains(&dm) {
+                let dm_entry = self.phonetic_index.entry(dm.clone()).or_default();
+                Self::push_unique_row_id(dm_entry, row_id);
+                phonetics.push(dm);
+            }
+        }
+        self.token_keys_cache
+            .insert(token_owned, (ngrams, phonetics));
     }
 
     fn merge_existing_document(
@@ -510,7 +647,12 @@ impl MbfHybridSearchIndex {
 
         let mut hits: Vec<HybridSearchHit> = Vec::with_capacity(candidate_rows.len());
         for r_id in candidate_rows {
-            let Some(doc) = self.docs.iter().find(|d| d.row_id == r_id) else {
+            let doc = self
+                .docs
+                .get(r_id as usize)
+                .filter(|d| d.row_id == r_id)
+                .or_else(|| self.docs.iter().find(|d| d.row_id == r_id));
+            let Some(doc) = doc else {
                 continue;
             };
             let bm25f = self.compute_bm25f_score(doc, &query_tokens);

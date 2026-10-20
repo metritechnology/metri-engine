@@ -21,6 +21,7 @@ pub struct FtsResult {
 #[derive(Default)]
 struct TenantFtsState {
     docs: Vec<(String, String)>,
+    doc_positions: HashMap<String, usize>,
     partial_coords: HashMap<String, (Option<f64>, Option<f64>)>,
     zone5b: MbfHybridSearchIndex,
 }
@@ -48,15 +49,23 @@ pub fn register_fts_document_attr(
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        let state = guard
-            .entry(tenant_id.to_string())
-            .or_insert_with(|| TenantFtsState {
-                docs: Vec::new(),
-                partial_coords: HashMap::new(),
-                zone5b: MbfHybridSearchIndex::new(),
-            });
+        if !guard.contains_key(tenant_id) {
+            guard.insert(
+                tenant_id.to_string(),
+                TenantFtsState {
+                    docs: Vec::new(),
+                    doc_positions: HashMap::new(),
+                    partial_coords: HashMap::new(),
+                    zone5b: MbfHybridSearchIndex::new(),
+                },
+            );
+        }
+        let Some(state) = guard.get_mut(tenant_id) else {
+            return;
+        };
         let mut is_new_segment = true;
-        if let Some(existing) = state.docs.iter_mut().find(|(id, _)| id == entity_id) {
+        if let Some(&pos) = state.doc_positions.get(entity_id) {
+            let existing = &mut state.docs[pos];
             if !existing.1.contains(trimmed) {
                 existing.1.push(' ');
                 existing.1.push_str(trimmed);
@@ -64,6 +73,8 @@ pub fn register_fts_document_attr(
                 is_new_segment = false;
             }
         } else {
+            let pos = state.docs.len();
+            state.doc_positions.insert(entity_id.to_string(), pos);
             state
                 .docs
                 .push((entity_id.to_string(), trimmed.to_string()));
@@ -109,14 +120,9 @@ pub fn register_fts_document_attr(
                 coordinates_wgs84: coords,
             });
             if is_title_attr {
-                if let Some(doc) = state
+                state
                     .zone5b
-                    .docs
-                    .iter_mut()
-                    .find(|d| d.entity_id == entity_id)
-                {
-                    doc.title = trimmed.to_string();
-                }
+                    .set_document_title(entity_id, trimmed.to_string());
             }
         }
     }
@@ -133,13 +139,20 @@ pub fn register_fts_entity_coordinate_axis(
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        let state = guard
-            .entry(tenant_id.to_string())
-            .or_insert_with(|| TenantFtsState {
-                docs: Vec::new(),
-                partial_coords: HashMap::new(),
-                zone5b: MbfHybridSearchIndex::new(),
-            });
+        if !guard.contains_key(tenant_id) {
+            guard.insert(
+                tenant_id.to_string(),
+                TenantFtsState {
+                    docs: Vec::new(),
+                    doc_positions: HashMap::new(),
+                    partial_coords: HashMap::new(),
+                    zone5b: MbfHybridSearchIndex::new(),
+                },
+            );
+        }
+        let Some(state) = guard.get_mut(tenant_id) else {
+            return;
+        };
         let entry = state
             .partial_coords
             .entry(entity_id.to_string())
@@ -163,22 +176,10 @@ pub fn register_fts_entity_coordinate_axis(
                 state.zone5b.spatial_mbr[3] = lon;
             }
             let h3_morton = MbfHybridSearchIndex::encode_spatial_cell_h3_morton(lat, lon);
-            let mut found_doc = false;
-            for doc in &mut state.zone5b.docs {
-                if doc.entity_id == entity_id {
-                    doc.coordinates_wgs84 = Some((lat, lon));
-                    let cell_rows = state
-                        .zone5b
-                        .spatial_morton_cells
-                        .entry(h3_morton)
-                        .or_default();
-                    if !cell_rows.contains(&doc.row_id) {
-                        cell_rows.push(doc.row_id);
-                    }
-                    found_doc = true;
-                }
-            }
-            if !found_doc {
+            if !state
+                .zone5b
+                .set_document_coordinates(entity_id, (lat, lon), h3_morton)
+            {
                 let row_id = state.zone5b.docs.len() as u32;
                 state.zone5b.index_document(IndexedEntityDocument {
                     entity_id: entity_id.to_string(),
@@ -200,23 +201,25 @@ pub fn register_fts_entity_embedding(tenant_id: &str, entity_id: &str, embedding
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        let state = guard
-            .entry(tenant_id.to_string())
-            .or_insert_with(|| TenantFtsState {
-                docs: Vec::new(),
-                partial_coords: HashMap::new(),
-                zone5b: MbfHybridSearchIndex::new(),
-            });
+        if !guard.contains_key(tenant_id) {
+            guard.insert(
+                tenant_id.to_string(),
+                TenantFtsState {
+                    docs: Vec::new(),
+                    doc_positions: HashMap::new(),
+                    partial_coords: HashMap::new(),
+                    zone5b: MbfHybridSearchIndex::new(),
+                },
+            );
+        }
+        let Some(state) = guard.get_mut(tenant_id) else {
+            return;
+        };
         let qv = crate::mbf::zones::hybrid_search::RaBitQVector::from_f32_slice(&embedding);
-        if let Some(doc) = state
+        if !state
             .zone5b
-            .docs
-            .iter_mut()
-            .find(|d| d.entity_id == entity_id)
+            .set_document_embedding(entity_id, embedding.clone(), qv)
         {
-            doc.embedding = Some(embedding);
-            state.zone5b.rabitq_vectors.insert(doc.row_id, qv);
-        } else {
             let row_id = state.zone5b.docs.len() as u32;
             state.zone5b.index_document(IndexedEntityDocument {
                 entity_id: entity_id.to_string(),
@@ -237,13 +240,20 @@ pub fn register_tenant_synonym_group(tenant_id: &str, group: &[&str]) {
         return;
     }
     if let Ok(mut guard) = fts_corpus().write() {
-        let state = guard
-            .entry(tenant_id.to_string())
-            .or_insert_with(|| TenantFtsState {
-                docs: Vec::new(),
-                partial_coords: HashMap::new(),
-                zone5b: MbfHybridSearchIndex::new(),
-            });
+        if !guard.contains_key(tenant_id) {
+            guard.insert(
+                tenant_id.to_string(),
+                TenantFtsState {
+                    docs: Vec::new(),
+                    doc_positions: HashMap::new(),
+                    partial_coords: HashMap::new(),
+                    zone5b: MbfHybridSearchIndex::new(),
+                },
+            );
+        }
+        let Some(state) = guard.get_mut(tenant_id) else {
+            return;
+        };
         state.zone5b.thesaurus.register_equivalence_group(group);
     }
 }
@@ -285,13 +295,9 @@ pub fn export_single_entity_zone5b_bytes(
 ) -> Vec<u8> {
     let mut single_idx = MbfHybridSearchIndex::new();
     let existing_doc = fts_corpus().read().ok().and_then(|guard| {
-        guard.get(tenant_id).and_then(|s| {
-            s.zone5b
-                .docs
-                .iter()
-                .find(|d| d.entity_id == entity_id)
-                .cloned()
-        })
+        guard
+            .get(tenant_id)
+            .and_then(|s| s.zone5b.get_document(entity_id).cloned())
     });
     if let Some(mut doc) = existing_doc {
         doc.row_id = 0;

@@ -1594,17 +1594,22 @@ fn is_non_searchable_attr(attr_name: &str) -> bool {
         || attr_name == crate::eav::writer::system_attrs::ULID_NAME
         || attr_name == crate::eav::writer::system_attrs::TENANT_NAME
         || attr_name.starts_with("meta/")
+        || attr_name.ends_with("_id")
         || matches!(
             attr_name,
-            "payload"
+            "id" | "role_ids"
+                | "grants"
+                | "status"
+                | "criticality"
+                | "currency"
+                | "user_type"
+                | "tier"
+                | "storage_region"
+                | "payload"
                 | "detail_type"
                 | "event_type"
-                | "aggregate_id"
                 | "aggregate_type"
-                | "mutation_id"
                 | "action"
-                | "actor_id"
-                | "target_id"
                 | "ip_address"
                 | "user_agent"
                 | "changes_json"
@@ -1613,7 +1618,6 @@ fn is_non_searchable_attr(attr_name: &str) -> bool {
                 | "operation"
                 | "message"
                 | "context"
-                | "trace_id"
                 | "password_hash"
         )
 }
@@ -1625,7 +1629,7 @@ pub(crate) struct MbfPartitionStore {
     pub(crate) last_sync_ms: i64,
     pub(crate) bulk_depth: usize,
     pub(crate) dirty_entities: std::collections::BTreeSet<(String, String, String)>,
-    pub(crate) transient_entities: std::collections::HashSet<(String, String)>,
+    pub(crate) transient_entities: std::collections::HashSet<String>,
     /// Primary index `(PK, SK_bytes) -> Item` (EAVT).
     pub(crate) items: BTreeMap<PrimaryKey, HashMap<String, AttributeValue>>,
     /// Native secondary BTree index for `AEVT` (`(ap, as_bytes, PrimaryKey)`).
@@ -1669,14 +1673,17 @@ impl MbfPartitionStore {
         if let Some((rp, rs_bytes)) = extract_index_key(item, "rp", "rs") {
             self.vaet_index.insert((rp, rs_bytes, key.clone()), ());
         }
+        if key.1.len() != 11 || key.1[10] == 0 {
+            return;
+        }
+        if self.transient_entities.contains(key.0.as_str()) {
+            return;
+        }
         let Some((tenant_id, entity_id)) =
             key.0.strip_prefix("T#").and_then(|s| s.split_once("#E#"))
         else {
             return;
         };
-        if key.1.len() != 11 || key.1[10] == 0 {
-            return;
-        }
         let attr_name_opt = item
             .get("ap")
             .and_then(|av| match av {
@@ -1688,17 +1695,10 @@ impl MbfPartitionStore {
         if attr_name_opt == Some(crate::eav::writer::system_attrs::TYPE_NAME) {
             if let Some(AttributeValue::S(et)) = item.get("v") {
                 if matches!(et.as_str(), "outbox_event" | "audit_log" | "domain_fault") {
-                    self.transient_entities
-                        .insert((tenant_id.to_string(), entity_id.to_string()));
+                    self.transient_entities.insert(key.0.clone());
                     return;
                 }
             }
-        }
-        if self
-            .transient_entities
-            .contains(&(tenant_id.to_string(), entity_id.to_string()))
-        {
-            return;
         }
         self.index_item_fts(tenant_id, entity_id, attr_name_opt, item);
     }
@@ -1824,9 +1824,15 @@ impl MbfPartitionStore {
 
     fn apply_wire_snapshot(&mut self, snap: MbfPartitionWireSnapshot, etag: String, now_ms: i64) {
         let remote_is_newer = snap.epoch_id >= self.epoch_id;
+        let was_empty = self.items.is_empty();
         self.epoch_id = self.epoch_id.max(snap.epoch_id);
         for (key, remote_item) in snap.items {
             if key.0.contains("#FTS#") {
+                continue;
+            }
+            if was_empty {
+                self.index_item(&key, &remote_item);
+                self.items.insert(key, remote_item);
                 continue;
             }
             let should_insert = match self.items.get(&key) {
@@ -2437,11 +2443,7 @@ impl MbfStorageClient {
             if sk.len() != 11 || sk[10] == 0 {
                 continue;
             }
-            let eid = &pk[pk_prefix.len()..];
-            if guard
-                .transient_entities
-                .contains(&(tenant_id.to_string(), eid.to_string()))
-            {
+            if guard.transient_entities.contains(pk.as_str()) {
                 continue;
             }
             let attr_id = u16::from_be_bytes([sk[0], sk[1]]);
@@ -2691,7 +2693,7 @@ impl MbfStorageClient {
 
             for (tid, et, eid) in &touched {
                 if matches!(et.as_str(), "outbox_event" | "audit_log" | "domain_fault") {
-                    guard.transient_entities.insert((tid.clone(), eid.clone()));
+                    guard.transient_entities.insert(format!("T#{tid}#E#{eid}"));
                 }
             }
             // 2. Commit all items atomically and update native secondary indexes

@@ -311,7 +311,9 @@ impl MbfBackupManager {
         }
         guard.quota_counters.retain(|(t, _), _| t != tenant_id);
         guard.quota_idem.retain(|(t, _), _| t != tenant_id);
-        guard.transient_entities.retain(|(t, _)| t != tenant_id);
+        guard
+            .transient_entities
+            .retain(|pk| !pk.starts_with(&pk_prefix));
 
         for (key, item) in snap.items {
             if !key.0.contains("#FTS#") {
@@ -374,7 +376,7 @@ mod tests {
         client
             .put_item(
                 table,
-                sample_entity_item("mall_a", "chiller_01", "Chiller York 500TR - Original"),
+                sample_entity_item("mall_a", "unit_01", "Unidad Primaria 500TR - Original"),
             )
             .await
             .unwrap();
@@ -386,11 +388,11 @@ mod tests {
             .await
             .unwrap();
         client
-            .quota_settle(table, "mall_a", "work_order", 15)
+            .quota_settle(table, "mall_a", "quota_alpha", 15)
             .await
             .unwrap();
         client
-            .quota_settle(table, "mall_b", "work_order", 40)
+            .quota_settle(table, "mall_b", "quota_alpha", 40)
             .await
             .unwrap();
 
@@ -420,19 +422,19 @@ mod tests {
         client
             .put_item(
                 table,
-                sample_entity_item("mall_a", "chiller_01", "CORRUPTED_NAME"),
+                sample_entity_item("mall_a", "unit_01", "CORRUPTED_NAME"),
             )
             .await
             .unwrap();
         client
             .put_item(
                 table,
-                sample_entity_item("mall_a", "rogue_asset", "Should disappear on restore"),
+                sample_entity_item("mall_a", "rogue_entity", "Should disappear on restore"),
             )
             .await
             .unwrap();
         client
-            .quota_settle(table, "mall_a", "work_order", 100)
+            .quota_settle(table, "mall_a", "quota_alpha", 100)
             .await
             .unwrap();
         client
@@ -452,25 +454,25 @@ mod tests {
 
         // Verify mall_a is restored to exact checkpoint state
         let sk = [0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1];
-        let chiller = client
-            .get_item(table, "T#mall_a#E#chiller_01", Some(&sk))
+        let unit = client
+            .get_item(table, "T#mall_a#E#unit_01", Some(&sk))
             .await
             .unwrap()
             .unwrap();
         assert_eq!(
-            chiller.get("v").and_then(av_string),
-            Some("Chiller York 500TR - Original")
+            unit.get("v").and_then(av_string),
+            Some("Unidad Primaria 500TR - Original")
         );
         let rogue = client
-            .get_item(table, "T#mall_a#E#rogue_asset", Some(&sk))
+            .get_item(table, "T#mall_a#E#rogue_entity", Some(&sk))
             .await
             .unwrap();
         assert!(rogue.is_none());
         let quotas_a = client
-            .quota_read_many(table, "mall_a", &["work_order".to_string()])
+            .quota_read_many(table, "mall_a", &["quota_alpha".to_string()])
             .await
             .unwrap();
-        assert_eq!(quotas_a.get("work_order"), Some(&15));
+        assert_eq!(quotas_a.get("quota_alpha"), Some(&15));
 
         // Verify mall_b was NOT rolled back and retains escalator_02 + quota 40!
         let esc2 = client
@@ -479,10 +481,10 @@ mod tests {
             .unwrap();
         assert!(esc2.is_some());
         let quotas_b = client
-            .quota_read_many(table, "mall_b", &["work_order".to_string()])
+            .quota_read_many(table, "mall_b", &["quota_alpha".to_string()])
             .await
             .unwrap();
-        assert_eq!(quotas_b.get("work_order"), Some(&40));
+        assert_eq!(quotas_b.get("quota_alpha"), Some(&40));
     }
 
     #[tokio::test]
