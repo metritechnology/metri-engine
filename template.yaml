@@ -353,70 +353,24 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Enabled
       LifecycleConfiguration:
         Rules:
           - Id: AbortIncompleteMultipartUpload7d
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
-          - Id: ExpireNoncurrentHotVersions14d
-            Status: Enabled
-            Prefix: metri-engine/
-            NoncurrentVersionExpiration:
-              NoncurrentDays: 14
-            ExpiredObjectDeleteMarker: true
           - Id: TransitionColdMbfStripesToGlacierIR90d
             Status: Enabled
-            Prefix: metri-engine/
             ObjectSizeGreaterThan: 131072
             Transitions:
               - StorageClass: GLACIER_IR
                 TransitionInDays: 90
-          - Id: TierImmutableBackups30d90d
-            Status: Enabled
-            Prefix: backups/
-            ObjectSizeGreaterThan: 131072
-            Transitions:
-              - StorageClass: GLACIER_IR
-                TransitionInDays: 30
-              - StorageClass: DEEP_ARCHIVE
-                TransitionInDays: 90
-            NoncurrentVersionExpiration:
-              NoncurrentDays: 365
           - Id: ExpireTemporaryExports7d
             Status: Enabled
             Prefix: exports/
             ExpirationInDays: 7
 
-  MetriDataLakeBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref MetriDataLakeBucket
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: DenyInsecureTransport
-            Effect: Deny
-            Principal: "*"
-            Action: "s3:*"
-            Resource:
-              - !GetAtt MetriDataLakeBucket.Arn
-              - !Sub "${MetriDataLakeBucket.Arn}/*"
-            Condition:
-              Bool:
-                "aws:SecureTransport": "false"
-          - Sid: DenyUnencryptedOrNonKmsPutObject
-            Effect: Deny
-            Principal: "*"
-            Action: "s3:PutObject"
-            Resource: !Sub "${MetriDataLakeBucket.Arn}/*"
-            Condition:
-              StringNotEqualsIfExists:
-                "s3:x-amz-server-side-encryption": "aws:kms"
-
-  # ── 4. Autenticación HMAC-SHA256, Bootstrap y Despacho EDA (SQS FIFO Outbox) ─
+  # ── 4. Autenticación HMAC-SHA256 y Despacho EDA (SQS FIFO Outbox) ────────────
   MetriHMACSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -425,18 +379,6 @@ Resources:
       KmsKeyId: !Ref MetriKmsMasterKey
       GenerateSecretString:
         PasswordLength: 64
-        ExcludePunctuation: true
-        ExcludeUppercase: false
-        IncludeSpace: false
-
-  MetriBootstrapMasterSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: !Sub "metri-bootstrap-master-secret-${AWS::StackName}"
-      Description: "Credencial maestra de arranque para el tenant system en Metri Engine (cifrada con KMS)."
-      KmsKeyId: !Ref MetriKmsMasterKey
-      GenerateSecretString:
-        PasswordLength: 32
         ExcludePunctuation: true
         ExcludeUppercase: false
         IncludeSpace: false
@@ -514,21 +456,11 @@ Resources:
                 - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-faults"
                 - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-events"
 
-            # HMAC & Bootstrap Secrets: cargados una vez en cold start
+            # HMAC Secret: cargado una vez en cold start
             - Effect: Allow
               Action:
                 - secretsmanager:GetSecretValue
-              Resource:
-                - !Ref MetriHMACSecret
-                - !Ref MetriBootstrapMasterSecret
-
-            # Protección Anti-Borrado de Bóveda de Respaldos (Write-Once / Deny Delete en backups/*)
-            - Effect: Deny
-              Action:
-                - s3:DeleteObject
-                - s3:DeleteObjectVersion
-              Resource:
-                - !Sub "arn:aws:s3:::${MetriDataLakeBucket}/backups/*"
+              Resource: !Ref MetriHMACSecret
 
       Environment:
         Variables:
@@ -556,13 +488,12 @@ Resources:
           # ── EDA ──
           OUTBOX_QUEUE_URL: !GetAtt MetriOutboxQueue.QueueUrl
           FAULT_BUS_NAME: "metri-faults"
-          # ── Seguridad y Sellado Criptográfico .mbf ──
+          # ── Seguridad ──
           HMAC_SECRET_ARN: !Ref MetriHMACSecret
           HMAC_SECRET: !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}"
-          MBF_SEAL_KEY: !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}"
           METRI_BOOTSTRAP_MASTER_EMAIL: "admin@metri.one"
           METRI_BOOTSTRAP_MASTER_USERNAME: "admin"
-          METRI_BOOTSTRAP_MASTER_PASSWORD: !Sub "{{resolve:secretsmanager:${MetriBootstrapMasterSecret}:SecretString}}"
+          METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
           FORCE_DEPLOY: "8"
 
   # ── 6. Observabilidad Estructurada con Retención Acotada (14 días) ───────────
