@@ -33,6 +33,16 @@ fn fts_corpus() -> &'static RwLock<HashMap<String, TenantFtsState>> {
 
 /// Registra o actualiza el documento textual de una entidad en el corpus FTS local y en el índice `MbfHybridSearchIndex` (Zona 5B) del `tenant_id`.
 pub fn register_fts_document(tenant_id: &str, entity_id: &str, text: &str) {
+    register_fts_document_attr(tenant_id, entity_id, None, text);
+}
+
+/// Registra o consolida un atributo textual específico (`attr_name`) de una entidad dentro del índice `MbfHybridSearchIndex` (Zona 5B) del `tenant_id`.
+pub fn register_fts_document_attr(
+    tenant_id: &str,
+    entity_id: &str,
+    attr_name: Option<&str>,
+    text: &str,
+) {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return;
@@ -58,22 +68,56 @@ pub fn register_fts_document(tenant_id: &str, entity_id: &str, text: &str) {
                 .docs
                 .push((entity_id.to_string(), trimmed.to_string()));
         }
-        if is_new_segment {
+        let is_title_attr = matches!(
+            attr_name,
+            Some("name" | "title" | "label" | "full_name" | "username")
+        );
+        let is_code_attr = matches!(
+            attr_name,
+            Some(
+                "tag"
+                    | "code"
+                    | "serial_number"
+                    | "barcode_qr_code"
+                    | "functional_location_code"
+                    | "sku"
+            )
+        );
+        if is_new_segment || is_title_attr || is_code_attr {
             let coords = state
                 .partial_coords
                 .get(entity_id)
                 .and_then(|&(lat, lon)| lat.zip(lon));
             let row_id = state.zone5b.docs.len() as u32;
-            let canonical_code = canonicalize_alphanumeric_code(trimmed);
+            let code_field = if is_code_attr || attr_name.is_none() {
+                canonicalize_alphanumeric_code(trimmed)
+            } else {
+                String::new()
+            };
+            let title_field = if is_title_attr || attr_name.is_none() {
+                trimmed.to_string()
+            } else {
+                String::new()
+            };
             state.zone5b.index_document(IndexedEntityDocument {
                 entity_id: entity_id.to_string(),
                 row_id,
-                code: canonical_code,
-                title: trimmed.to_string(),
+                code: code_field,
+                title: title_field,
                 description: trimmed.to_string(),
                 embedding: None,
                 coordinates_wgs84: coords,
             });
+            if is_title_attr {
+                if let Some(doc) = state
+                    .zone5b
+                    .docs
+                    .iter_mut()
+                    .find(|d| d.entity_id == entity_id)
+                {
+                    doc.title = trimmed.to_string();
+                }
+            }
         }
     }
 }
@@ -251,6 +295,13 @@ pub fn export_single_entity_zone5b_bytes(
     });
     if let Some(mut doc) = existing_doc {
         doc.row_id = 0;
+        let fb = fallback_description.trim();
+        if !fb.is_empty() && doc.description.len() < fb.len() {
+            doc.description = fb.to_string();
+        }
+        if doc.title.is_empty() && !fb.is_empty() {
+            doc.title = fb.split_whitespace().take(8).collect::<Vec<_>>().join(" ");
+        }
         single_idx.index_document(doc);
     } else if !fallback_description.trim().is_empty() {
         single_idx.index_document(IndexedEntityDocument {

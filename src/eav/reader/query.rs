@@ -307,6 +307,7 @@ impl EavQueryExecutor {
         tenant: &str,
         term: &str,
     ) -> Result<Vec<String>, DomainError> {
+        let _ = self.ddb.sync_if_needed(&self.table).await;
         let clean_term = term.trim();
         let trigrams = generate_trigrams(clean_term);
         if trigrams.is_empty() {

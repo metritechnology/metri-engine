@@ -19,7 +19,7 @@ pub enum ActionType {
 }
 
 impl ActionType {
-    /// Serialización para el stream Kinesis (columna `action_type`).
+    /// Serialización canónica para la bitácora de auditoría (`action_type`).
     pub fn as_str(&self) -> &'static str {
         match self {
             ActionType::Write => "WRITE",

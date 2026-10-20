@@ -277,9 +277,10 @@ impl MbfHybridSearchIndex {
         self
     }
 
-    /// Indexa un documento de entidad simultáneamente a través de las 6 capas de búsqueda.
+    /// Indexa o consolida un documento de entidad simultáneamente a través de las 6 capas de búsqueda.
     pub fn index_document(&mut self, doc: IndexedEntityDocument) {
-        let row_id = doc.row_id;
+        let existing_pos = self.docs.iter().position(|d| d.entity_id == doc.entity_id);
+        let row_id = existing_pos.map_or(doc.row_id, |pos| self.docs[pos].row_id);
         let combined_text = format!("{} {} {}", doc.code, doc.title, doc.description);
         let mut tokens = Self::tokenize_normalized(&combined_text);
         let canon_code = Self::canonicalize_alphanumeric_code(&doc.code).to_ascii_lowercase();
@@ -288,29 +289,22 @@ impl MbfHybridSearchIndex {
         }
 
         for token in &tokens {
-            // Layer 1: Lexicon
             let entry = self.fst_lexicon.entry(token.clone()).or_default();
             if !entry.contains(&row_id) {
                 entry.push(row_id);
             }
-
-            // Layer 2: SymSpell Symmetric Deletes (edit distance d <= 2)
             for del_variant in Self::generate_symspell_deletes(token, 2) {
                 let sym_entry = self.symspell_deletes.entry(del_variant).or_default();
                 if !sym_entry.contains(token) {
                     sym_entry.push(token.clone());
                 }
             }
-
-            // Layer 3: 2-gram and 3-gram substring bitmaps
             for ng in Self::generate_ngrams(token) {
                 let ng_entry = self.ngram_bitmaps.entry(ng).or_default();
                 if !ng_entry.contains(&row_id) {
                     ng_entry.push(row_id);
                 }
             }
-
-            // Layer 4: Romance Phonetic + Double Metaphone
             let ph = Self::encode_romance_phonetic(token);
             if !ph.is_empty() {
                 let ph_entry = self.phonetic_index.entry(ph).or_default();
@@ -329,40 +323,72 @@ impl MbfHybridSearchIndex {
             }
         }
 
-        // Layer 5: RaBitQ Vector Index
         if let Some(emb) = &doc.embedding {
             self.rabitq_vectors
                 .insert(row_id, RaBitQVector::from_f32_slice(emb));
         }
 
-        // Layer 6: Spatiotemporal Morton Z-Order + Bounding Box
         if let Some((lat, lon)) = doc.coordinates_wgs84 {
-            if lat < self.spatial_mbr[0] {
-                self.spatial_mbr[0] = lat;
-            }
-            if lon < self.spatial_mbr[1] {
-                self.spatial_mbr[1] = lon;
-            }
-            if lat > self.spatial_mbr[2] {
-                self.spatial_mbr[2] = lat;
-            }
-            if lon > self.spatial_mbr[3] {
-                self.spatial_mbr[3] = lon;
-            }
+            self.spatial_mbr[0] = self.spatial_mbr[0].min(lat);
+            self.spatial_mbr[1] = self.spatial_mbr[1].min(lon);
+            self.spatial_mbr[2] = self.spatial_mbr[2].max(lat);
+            self.spatial_mbr[3] = self.spatial_mbr[3].max(lon);
             let h3_morton = Self::encode_spatial_cell_h3_morton(lat, lon);
-            self.spatial_morton_cells
-                .entry(h3_morton)
-                .or_default()
-                .push(row_id);
+            let cell_rows = self.spatial_morton_cells.entry(h3_morton).or_default();
+            if !cell_rows.contains(&row_id) {
+                cell_rows.push(row_id);
+            }
         }
 
-        self.docs.push(doc);
+        if let Some(pos) = existing_pos {
+            Self::merge_existing_document(&mut self.docs[pos], doc);
+        } else {
+            self.docs.push(doc);
+        }
         let total_len: usize = self
             .docs
             .iter()
             .map(|d| d.code.len() + d.title.len() + d.description.len())
             .sum();
         self.avg_doc_len = (total_len as f64) / (self.docs.len().max(1) as f64);
+    }
+
+    fn merge_existing_document(
+        existing: &mut IndexedEntityDocument,
+        incoming: IndexedEntityDocument,
+    ) {
+        if !incoming.code.is_empty() && !existing.code.contains(&incoming.code) {
+            if existing.code.is_empty() || existing.code == existing.entity_id {
+                existing.code = incoming.code;
+            } else {
+                existing.code.push(' ');
+                existing.code.push_str(&incoming.code);
+            }
+        }
+        if !incoming.title.is_empty() {
+            let incoming_has_spaces = incoming.title.contains(' ');
+            let existing_has_spaces = existing.title.contains(' ');
+            if existing.title.is_empty()
+                || (incoming_has_spaces && !existing_has_spaces)
+                || (incoming_has_spaces == existing_has_spaces
+                    && incoming.title.len() > existing.title.len())
+            {
+                existing.title = incoming.title;
+            }
+        }
+        if !incoming.description.is_empty() && !existing.description.contains(&incoming.description)
+        {
+            if !existing.description.is_empty() {
+                existing.description.push(' ');
+            }
+            existing.description.push_str(&incoming.description);
+        }
+        if incoming.embedding.is_some() {
+            existing.embedding = incoming.embedding;
+        }
+        if incoming.coordinates_wgs84.is_some() {
+            existing.coordinates_wgs84 = incoming.coordinates_wgs84;
+        }
     }
 
     /// Ejecuta una búsqueda híbrida de 6 capas combinando BM25F exacto, SymSpell $O(1)$, autómata de Levenshtein ($k \le 2$),

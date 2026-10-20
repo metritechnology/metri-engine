@@ -13,6 +13,9 @@ use crate::domain::errors::{DomainError, ErrorCode};
 /// código.
 pub const DEFAULT_MAX_LIST_LIMIT: i32 = 5_000;
 
+/// Clave legada de sellado `.mbf` preservada en el Key-Ring para lectura retrocompatible.
+pub const LEGACY_MBF_SEAL_KEY: &[u8] = b"METRI_VORTEX_MBF_SEAL_KEY_2026";
+
 /// Configuración global e inmutable del motor resuelta durante el arranque.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EngineConfig {
@@ -25,6 +28,8 @@ pub struct EngineConfig {
     pub environment: Option<String>,
     /// `HMAC_SECRET` tal como llegó al arranque (None = ausente).
     pub hmac_secret: Option<String>,
+    /// Clave maestra activa para `MbfTenantCryptoSeal` (`MBF_SEAL_KEY` o derivada de `HMAC_SECRET`).
+    pub mbf_seal_key: Option<String>,
     /// Tabla lógica para `sequence_registry` (`SEQUENCE_REGISTRY_TABLE`).
     pub sequence_registry_table: String,
 }
@@ -36,6 +41,7 @@ impl Default for EngineConfig {
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
             environment: None,
             hmac_secret: None,
+            mbf_seal_key: None,
             sequence_registry_table: "metri-sequence-registry".to_string(),
         }
     }
@@ -51,11 +57,17 @@ impl EngineConfig {
             .unwrap_or_else(|_| "system".to_string());
         let sequence_registry_table = std::env::var("SEQUENCE_REGISTRY_TABLE")
             .unwrap_or_else(|_| "metri-sequence-registry".to_string());
+        let hmac_secret = std::env::var("HMAC_SECRET").ok();
+        let mbf_seal_key = std::env::var("MBF_SEAL_KEY")
+            .ok()
+            .filter(|k| !k.is_empty())
+            .or_else(|| hmac_secret.clone().filter(|k| !k.is_empty()));
         Self {
             master_tenant_id,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
             environment: std::env::var("ENVIRONMENT").ok(),
-            hmac_secret: std::env::var("HMAC_SECRET").ok(),
+            hmac_secret,
+            mbf_seal_key,
             sequence_registry_table,
         }
     }
@@ -67,8 +79,26 @@ impl EngineConfig {
             max_list_limit,
             environment: None,
             hmac_secret: None,
+            mbf_seal_key: None,
             sequence_registry_table: "metri-sequence-registry".to_string(),
         }
+    }
+
+    /// Devuelve la clave maestra activa para sellar bloques `.mbf` (`MbfTenantCryptoSeal`).
+    /// Si existe `mbf_seal_key` o `hmac_secret` configurados en el entorno, los utiliza;
+    /// en modo local/test sin variables definidas, recurre a `LEGACY_MBF_SEAL_KEY`.
+    pub fn active_mbf_seal_key(&self) -> &[u8] {
+        if let Some(ref k) = self.mbf_seal_key {
+            if !k.is_empty() {
+                return k.as_bytes();
+            }
+        }
+        if let Some(ref h) = self.hmac_secret {
+            if !h.is_empty() {
+                return h.as_bytes();
+            }
+        }
+        LEGACY_MBF_SEAL_KEY
     }
 }
 

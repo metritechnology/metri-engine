@@ -158,6 +158,7 @@ impl CommittedDeltaFrame {
     /// Codifica una secuencia de `CommittedDeltaFrame` en un búfer binario `HOT_HEAD_c<k>.mbf` alineado a 64 bytes.
     /// Inicia con `MbfHeader` (`"METRIBIN"`), almacena `TxConflictSignature` de 32B más cargas comprimidas LZ4 y cierra con `MbfFooterTrailer` (`"MBFFOOTR"`).
     pub fn encode_hot_head_binary(tenant_id: &str, cell_id: u8, frames: &[Self]) -> Vec<u8> {
+        let now_ms = chrono::Utc::now().timestamp_millis();
         let last_epoch = frames.last().map_or(0, |f| f.signature.new_epoch_id);
         let tenant_hash = xxh64(tenant_id.as_bytes(), 0x4D45_5452_4932_3032);
         let header = MbfHeader::new(
@@ -165,8 +166,8 @@ impl CommittedDeltaFrame {
             frames.len() as u64,
             last_epoch,
             tenant_hash,
-            0x01,
-            1_700_000_000_000,
+            now_ms,
+            now_ms,
         )
         .with_flags(MBF_FLAG_HOT_HEAD);
 
@@ -192,6 +193,15 @@ impl CommittedDeltaFrame {
         let dir_len = (buf.len() as u64 - dir_offset) as u32;
         let header_crc = compute_crc32c(&buf[0..64]);
         let dir_crc = compute_crc32c(&buf[dir_offset as usize..]);
+        let mut hmac_24 = [0x48u8; 24];
+        if let Ok(seal) = crate::mbf::format::MbfTenantCryptoSeal::seal_active(
+            tenant_id,
+            "hot_head",
+            last_epoch,
+            &buf[dir_offset as usize..],
+        ) {
+            hmac_24.copy_from_slice(&seal.keyed_mac[0..24]);
+        }
 
         let footer = MbfFooterTrailer::new(
             dir_offset,
@@ -200,7 +210,7 @@ impl CommittedDeltaFrame {
             dir_crc,
             tenant_hash as u32,
             0,
-            [0x48; 24],
+            hmac_24,
         );
         buf.extend_from_slice(&footer.to_bytes());
         buf

@@ -23,14 +23,28 @@ pub fn build_fts_items(datom: &Datom, attr: &AttributeDescriptor) -> Vec<WriteRe
     if !attr.fts {
         return vec![];
     }
+    if let crate::eav::types::datom::DatomValue::Str(text) = &datom.value {
+        crate::eav::fts::searcher::register_fts_document_attr(
+            &datom.tenant_id,
+            &datom.entity_id,
+            Some(&datom.attr_name),
+            text,
+        );
+    }
+    build_fts_items_pure(datom, attr)
+}
+
+/// Construye de forma pura (sin efectos secundarios sobre el corpus en memoria antes del commit)
+/// las solicitudes de escritura FTS para un datom con `fts: true`.
+pub fn build_fts_items_pure(datom: &Datom, attr: &AttributeDescriptor) -> Vec<WriteRequest> {
+    if !attr.fts {
+        return vec![];
+    }
 
     let text = match &datom.value {
         crate::eav::types::datom::DatomValue::Str(s) => s.clone(),
         _ => return vec![],
     };
-
-    // Sincronizar automáticamente con el índice híbrido MBF Zona 5B por tenant
-    crate::eav::fts::searcher::register_fts_document(&datom.tenant_id, &datom.entity_id, &text);
 
     let mut keys: Vec<String> = generate_trigrams(&text)
         .into_iter()

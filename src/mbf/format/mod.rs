@@ -652,6 +652,63 @@ impl MbfTenantCryptoSeal {
         out
     }
 
+    /// Sella un bloque `.mbf` utilizando la clave maestra activa del `MbfSealKeyRing` global (`crypto_flags = 2`).
+    pub fn seal_active(
+        tenant_id: &str,
+        entity_type: &str,
+        epoch_id: u64,
+        payload: &[u8],
+    ) -> DomainResult<Self> {
+        let active_key = crate::domain::config::engine_config().active_mbf_seal_key();
+        let mut seal = Self::seal_block(active_key, tenant_id, entity_type, epoch_id, payload)?;
+        seal.crypto_flags = if active_key == crate::domain::config::LEGACY_MBF_SEAL_KEY {
+            1
+        } else {
+            2
+        };
+        Ok(seal)
+    }
+
+    /// Verifica en tiempo constante el sello criptográfico probando primero la clave activa del `EngineConfig`
+    /// y, como respaldo de rotación sin tiempo de inactividad, la clave legada `LEGACY_MBF_SEAL_KEY`.
+    pub fn verify_with_keyring(
+        &self,
+        expected_tenant_id: &str,
+        expected_entity_type: &str,
+        payload: &[u8],
+    ) -> DomainResult<()> {
+        let active_key = crate::domain::config::engine_config().active_mbf_seal_key();
+        match self.verify_block(
+            active_key,
+            expected_tenant_id,
+            expected_entity_type,
+            payload,
+        ) {
+            Ok(()) => Ok(()),
+            Err(err) if err.code == ErrorCode::MbfTenantSeal001 => Err(err),
+            Err(_) if active_key != crate::domain::config::LEGACY_MBF_SEAL_KEY => self
+                .verify_block(
+                    crate::domain::config::LEGACY_MBF_SEAL_KEY,
+                    expected_tenant_id,
+                    expected_entity_type,
+                    payload,
+                ),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Verifica en tiempo constante que la etiqueta HMAC truncada de 192 bits en `MbfFooterTrailer`
+    /// coincida exactamente con los primeros 24 bytes de `self.keyed_mac`.
+    pub fn verify_footer_tag(&self, footer: &MbfFooterTrailer) -> DomainResult<()> {
+        if !constant_time_eq::constant_time_eq(&self.keyed_mac[0..24], &footer.hmac_tag_truncated) {
+            return Err(DomainError::mbf(
+                ErrorCode::MbfCorrupt001,
+                "Footer truncated HMAC-192 tag does not match MbfTenantCryptoSeal",
+            ));
+        }
+        Ok(())
+    }
+
     fn derive_tenant_key(master_secret: &[u8], tenant_id: &str) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(b"METRI_MBF_V1_TENANT_KDF:");

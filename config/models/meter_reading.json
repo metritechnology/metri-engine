@@ -8,7 +8,7 @@
   "routing": {
     "is_iot_target": true,
     "write_path_locked": true,
-    "description": "CQRS Híbrido: Este modelo muta usando dos vías exclusivas. 1) En tiempo real por AWS Firehose directo a S3 Iceberg. 2) Vía 'rpc BulkIngest' (gRPC masivo). Metri Engine tiene strictly censurado procesar telemetría por la vía 1 a 1 transaccional humana ('rpc Transact' y FTS)."
+    "description": "Ingesta HTAP de Alta Frecuencia (.mbf): Este modelo se ingiere exclusivamente por lote vía 'rpc BulkIngest' hacia las celdas de series temporales HOT_HEAD_c6..c7.mbf sobre S3 (Zona 3 Delta-of-Delta + Chimp128 y Zona 5 FFT/Goertzel/Weibull). Metri Engine tiene estrictamente censurado procesar telemetría por la vía 1 a 1 transaccional humana ('rpc Transact' y FTS)."
   },
   "attributes": [
     {

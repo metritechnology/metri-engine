@@ -97,7 +97,7 @@ async fn seed_master(
             "status": "ACTIVE",
             "tier": "ENTERPRISE",
             "storage_region": "us-east-1",
-            "billing_admin_email": email.clone()
+            "billing_admin_email": email
         }),
     );
 
@@ -174,8 +174,8 @@ async fn seed_master(
         "payload".to_string(),
         json!({
             "id": "usr_master",
-            "username": username.clone(),
-            "email": email.clone(),
+            "username": username,
+            "email": email,
             "password_hash": password_hash,
             "first_name": "Super",
             "last_name": "Administrador",

@@ -101,10 +101,10 @@ impl ConstraintPlanner for UniqueClaimPlanner {
             .constraints
             .iter()
             .any(|c| c.kind == ConstraintKind::Unique)
+            || model.attributes.iter().any(|a| a.unique.is_some())
     }
 
     fn plan(&self, ctx: &ConstraintContext) -> Result<Vec<TransactWriteItem>, DomainError> {
-        // El borrado no libera la reclamación: ver la nota de cabecera.
         if ctx.op == TransactOp::Delete {
             return Ok(Vec::new());
         }
@@ -117,75 +117,101 @@ impl ConstraintPlanner for UniqueClaimPlanner {
             .iter()
             .filter(|c| c.kind == ConstraintKind::Unique)
         {
-            let Some(huella) = huella_clave(&ctx.model.entity, &constraint.attributes, ctx.attrs)
-            else {
+            if let Some(claim) =
+                Self::build_claim_item(ctx, &constraint.attributes, constraint.scope)?
+            {
+                items.push(claim);
+            }
+        }
+
+        for attr in &ctx.model.attributes {
+            let Some(unique_kind) = attr.unique.as_deref() else {
                 continue;
             };
-
-            let ambito = match constraint.scope {
-                ConstraintScope::Tenant => ctx.tenant_id,
-                ConstraintScope::Global => "GLOBAL",
-            };
-            let pk = format!("T#{ambito}#U#{}#{huella}", ctx.model.entity);
-
-            let mut item = HashMap::new();
-            item.insert("PK".to_string(), AttributeValue::S(pk));
-            // El SK del índice es BINARIO (tabla: SK B — [attr_id][tx_id][op]).
-            // Un SK String aquí era rechazado por DynamoDB con
-            // ValidationError "Type mismatch for key SK expected: B actual: S",
-            // lo que cancelaba el transact COMPLETO: ninguna entidad con una
-            // constraint unique cuyos atributos estuvieran presentes podía
-            // escribirse jamás (incidente 2026-09-18).
-            // Nadie lee el valor del SK del claim — las condiciones usan
-            // PK/eid — así que el cambio de tipo es seguro.
-            item.insert(
-                "SK".to_string(),
-                AttributeValue::B(Blob::new(b"#CLAIM".to_vec())),
-            );
-            item.insert(
-                "eid".to_string(),
-                AttributeValue::S(ctx.entity_id.to_string()),
-            );
-            item.insert(
-                "attrs".to_string(),
-                AttributeValue::S(constraint.attributes.join(",")),
-            );
-
-            // CREATE: nadie más puede tener la clave.
-            // UPDATE: nadie más, o yo mismo — así reescribirse es idempotente.
-            let (expr, valores) = match ctx.op {
-                TransactOp::Create => ("attribute_not_exists(PK)".to_string(), None),
-                _ => (
-                    "attribute_not_exists(PK) OR eid = :self".to_string(),
-                    Some((
-                        ":self".to_string(),
-                        AttributeValue::S(ctx.entity_id.to_string()),
-                    )),
-                ),
-            };
-
-            let mut put = Put::builder()
-                .table_name(ctx.table)
-                .set_item(Some(item))
-                .condition_expression(expr);
-
-            if let Some((k, v)) = valores {
-                put = put.expression_attribute_values(k, v);
+            let single_attr = [attr.name.clone()];
+            let already_declared = ctx.model.constraints.iter().any(|c| {
+                c.kind == ConstraintKind::Unique && c.attributes.as_slice() == single_attr
+            });
+            if already_declared {
+                continue;
             }
-
-            items.push(
-                TransactWriteItem::builder()
-                    .put(put.build().map_err(|e| {
-                        DomainError::eav(
-                            ErrorCode::Eav001,
-                            format!("no se pudo construir el item de reclamación: {e}"),
-                        )
-                    })?)
-                    .build(),
-            );
+            let scope = match unique_kind {
+                "identity" | "global" => ConstraintScope::Global,
+                _ => ConstraintScope::Tenant,
+            };
+            if let Some(claim) = Self::build_claim_item(ctx, &single_attr, scope)? {
+                items.push(claim);
+            }
         }
 
         Ok(items)
+    }
+}
+
+impl UniqueClaimPlanner {
+    fn build_claim_item(
+        ctx: &ConstraintContext,
+        attributes: &[String],
+        scope: ConstraintScope,
+    ) -> Result<Option<TransactWriteItem>, DomainError> {
+        let Some(huella) = huella_clave(&ctx.model.entity, attributes, ctx.attrs) else {
+            return Ok(None);
+        };
+        if attributes
+            .iter()
+            .any(|a| matches!(ctx.attrs.get(a), Some(DatomValue::Str(s)) if s.trim().is_empty()))
+        {
+            return Ok(None);
+        }
+
+        let ambito = match scope {
+            ConstraintScope::Tenant => ctx.tenant_id,
+            ConstraintScope::Global => "GLOBAL",
+        };
+        let pk = format!("T#{ambito}#U#{}#{huella}", ctx.model.entity);
+
+        let mut item = HashMap::new();
+        item.insert("PK".to_string(), AttributeValue::S(pk));
+        item.insert(
+            "SK".to_string(),
+            AttributeValue::B(Blob::new(b"#CLAIM".to_vec())),
+        );
+        item.insert(
+            "eid".to_string(),
+            AttributeValue::S(ctx.entity_id.to_string()),
+        );
+        item.insert("attrs".to_string(), AttributeValue::S(attributes.join(",")));
+
+        let (expr, valores) = match ctx.op {
+            TransactOp::Create => ("attribute_not_exists(PK)".to_string(), None),
+            _ => (
+                "attribute_not_exists(PK) OR eid = :self".to_string(),
+                Some((
+                    ":self".to_string(),
+                    AttributeValue::S(ctx.entity_id.to_string()),
+                )),
+            ),
+        };
+
+        let mut put = Put::builder()
+            .table_name(ctx.table)
+            .set_item(Some(item))
+            .condition_expression(expr);
+
+        if let Some((k, v)) = valores {
+            put = put.expression_attribute_values(k, v);
+        }
+
+        Ok(Some(
+            TransactWriteItem::builder()
+                .put(put.build().map_err(|e| {
+                    DomainError::eav(
+                        ErrorCode::Eav001,
+                        format!("no se pudo construir el item de reclamación: {e}"),
+                    )
+                })?)
+                .build(),
+        ))
     }
 }
 

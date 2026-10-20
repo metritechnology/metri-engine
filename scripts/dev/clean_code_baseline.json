@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-19",
+  "generated_at": "2026-10-20",
   "files": {
     "scripts/dev/query_client.py": {
       "dry_python_infra": 1
@@ -93,7 +93,7 @@
       "dip_layer_violation": 1
     },
     "src/cedar/authn.rs": {
-      "dry_duplicate_block": 2
+      "dry_duplicate_block": 1
     },
     "src/cedar/evaluator/analytical.rs": {
       "cc_nesting_depth": 1
@@ -135,7 +135,8 @@
       "dip_layer_violation": 2
     },
     "src/eav/fts/searcher.rs": {
-      "cc_fn_length": 1
+      "cc_fn_length": 2,
+      "srp_file_lines": 1
     },
     "src/eav/reader/pull.rs": {
       "cc_fn_length": 2,
@@ -154,11 +155,8 @@
       "cc_fn_length": 1,
       "cc_nesting_depth": 1
     },
-    "src/eav/writer/constraints/unique_claim.rs": {
-      "cc_fn_length": 1
-    },
     "src/eav/writer/datom_plan.rs": {
-      "cc_fn_length": 2,
+      "cc_fn_length": 1,
       "cc_fn_params": 1
     },
     "src/eav/writer/enricher.rs": {
@@ -170,7 +168,7 @@
     },
     "src/eav/writer/transact.rs": {
       "cc_fn_length": 1,
-      "dry_duplicate_block": 2,
+      "dry_duplicate_block": 1,
       "srp_file_lines": 1
     },
     "src/grpc/agent_config_service.rs": {
@@ -309,7 +307,7 @@
     },
     "src/mbf/storage.rs": {
       "cc_fn_length": 4,
-      "cc_fn_params": 2,
+      "cc_fn_params": 3,
       "cc_nesting_depth": 2,
       "dip_layer_violation": 6,
       "dry_scattered_env": 7,
@@ -337,7 +335,7 @@
       "srp_file_lines": 1
     },
     "src/mbf/zones/hybrid_search.rs": {
-      "cc_fn_length": 3,
+      "cc_fn_length": 2,
       "srp_file_lines": 1
     },
     "src/mbf/zones/iot_timeseries.rs": {

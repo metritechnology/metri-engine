@@ -42,8 +42,8 @@ enum ConstraintPolicy {
     /// Sí — el camino normal: la unicidad se vuelve invariante en la TX.
     #[default]
     Plan,
-    /// No — la ruta bulk salta las verificaciones por fila (comportamiento
-    /// histórico preservado; hoy ningún modelo declara constraints).
+    /// Omisión explícita para escenarios de prueba controlada.
+    #[allow(dead_code)]
     Skip,
 }
 
@@ -267,10 +267,7 @@ impl EavWriter {
             TxOptions {
                 actor,
                 cache: CachePolicy::Deferred,
-                // Comportamiento histórico de la ruta bulk: sin claims de
-                // restricción por fila (el canal bulk salta las verificaciones
-                // de unicidad por registro; hoy ningún modelo declara constraints).
-                constraints: ConstraintPolicy::Skip,
+                constraints: ConstraintPolicy::Plan,
                 ..TxOptions::default()
             },
         )
@@ -562,17 +559,9 @@ impl EavWriter {
         }
         // DEFERRED: el caller (route_bulk) invalida una sola vez al final del
         // lote — ver cache_policy::invalidate_aevt_scan.
-
-        // 8. FTS — DESPUÉS del commit: si la transacción falló, ya no quedan
-        // trigramas de datoms que nunca se confirmaron contaminando el índice.
-        // Se espera antes de responder; los errores no fallan la mutación ya
-        // confirmada (el índice es reconstruible, la escritura no).
-        if !fts_write_requests.is_empty() {
-            let _ = self
-                .ddb
-                .batch_write_item(&self.table, fts_write_requests)
-                .await;
-        }
+        // El índice FTS híbrido (Zona 5B) se actualiza atómicamente en `transact_write`
+        // mediante `MbfPartitionStore::index_item` sobre los datoms confirmados.
+        let _ = fts_write_requests;
 
         Ok(TransactResult {
             entity_id,

@@ -11,6 +11,8 @@ use crate::domain::protocols::{
     DomainResult, IClock, IMbfObjectStore, MbfConditionalGet, MbfObjectPayload,
 };
 
+/// Gestor de copias de seguridad inmutables, verificación forense de integridad y restauración granular/completa.
+pub mod backup;
 /// Especificación binaria de cabeceras, pies de página, directorio de columnas, sellos criptográficos y evolución de esquema.
 pub mod format;
 /// Motor de almacenamiento S3 + NVMe `/tmp` y almacén de estado indexado en memoria (`MbfStorageClient`).
@@ -19,6 +21,8 @@ pub mod storage;
 pub mod tx;
 /// Las 8 zonas físicas especializadas del formato binario `.mbf`.
 pub mod zones;
+
+pub use backup::{MbfBackupManager, MbfBackupMetadata, MbfIntegrityReport};
 
 /// Reloj determinista para pruebas de cierres fiscales, transiciones de horario de verano (DST) y ventanas de series temporales sin esperas reales.
 pub struct DeterministicClock {

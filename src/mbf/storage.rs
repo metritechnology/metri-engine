@@ -483,6 +483,29 @@ impl S3MbfObjectStore {
         }
         evicted
     }
+
+    /// Verifica en $O(1)$ la integridad física y de CRC32C de un archivo `.mbf` o `.idx` en `/tmp/mbf_cache`.
+    pub fn is_valid_cached_mbf(key: &str, bytes: &[u8]) -> bool {
+        if bytes.is_empty() {
+            return false;
+        }
+        if !(key.ends_with(".mbf") || key.ends_with(".idx")) {
+            return true;
+        }
+        if bytes.len() < 128 || bytes.len() % 64 != 0 {
+            return false;
+        }
+        let valid_magic = &bytes[0..8] == b"METRIBIN" || &bytes[0..8] == b"MBFINDEX";
+        if !valid_magic || &bytes[bytes.len() - 8..] != b"MBFFOOTR" {
+            return false;
+        }
+        let Ok(footer) =
+            crate::mbf::format::MbfFooterTrailer::from_bytes(&bytes[bytes.len() - 64..])
+        else {
+            return false;
+        };
+        footer.header_crc32c == crate::mbf::format::compute_crc32c(&bytes[0..64])
+    }
 }
 
 /// Presupuesto por defecto de 450 MB para la caché NVMe en `/tmp/mbf_cache`.
@@ -493,8 +516,11 @@ impl IMbfObjectStore for S3MbfObjectStore {
     async fn get_object(&self, key: &str) -> DomainResult<Option<MbfObjectPayload>> {
         let local_path = self.local_cache_path(key);
         if let Ok(bytes) = std::fs::read(&local_path) {
-            let etag = Self::compute_etag(&bytes);
-            return Ok(Some(MbfObjectPayload { bytes, etag }));
+            if Self::is_valid_cached_mbf(key, &bytes) {
+                let etag = Self::compute_etag(&bytes);
+                return Ok(Some(MbfObjectPayload { bytes, etag }));
+            }
+            let _ = std::fs::remove_file(&local_path);
         }
 
         let resp = self
@@ -1368,13 +1394,7 @@ pub fn encode_mbf_envelope(
     )
     .with_flags(MBF_FLAG_HAS_PAX | MBF_FLAG_CRYPTO_SEALED);
 
-    let seal = MbfTenantCryptoSeal::seal_block(
-        b"METRI_VORTEX_MBF_SEAL_KEY_2026",
-        tenant_id,
-        entity_type,
-        epoch_id,
-        payload,
-    )?;
+    let seal = MbfTenantCryptoSeal::seal_active(tenant_id, entity_type, epoch_id, payload)?;
 
     let mut padded_payload = payload.to_vec();
     pad_to_64(&mut padded_payload);
@@ -1430,7 +1450,10 @@ pub fn encode_mbf_envelope(
 pub fn decode_mbf_envelope(
     file_bytes: &[u8],
 ) -> DomainResult<(crate::mbf::format::MbfHeader, &[u8])> {
-    use crate::mbf::format::{compute_crc32c, MbfDirectoryIndex, MbfFooterTrailer, MbfHeader};
+    use crate::mbf::format::{
+        compute_crc32c, MbfDirectoryIndex, MbfFooterTrailer, MbfHeader, MbfTenantCryptoSeal,
+        MBF_FLAG_CRYPTO_SEALED,
+    };
 
     if file_bytes.len() < 256 || file_bytes.len() % 64 != 0 {
         return Err(DomainError::mbf(
@@ -1455,6 +1478,10 @@ pub fn decode_mbf_envelope(
             ErrorCode::MbfCorrupt001,
             "Header CRC32C mismatch in MBF footer",
         ));
+    }
+    if (header.flags & MBF_FLAG_CRYPTO_SEALED) != 0 {
+        let seal = MbfTenantCryptoSeal::from_bytes(&file_bytes[64..128])?;
+        seal.verify_footer_tag(&footer)?;
     }
 
     let dir_start = footer.directory_offset as usize;
@@ -1498,17 +1525,18 @@ pub fn encode_mbf_idx_mirror(
 ) -> Vec<u8> {
     use crate::mbf::format::{
         compute_crc32c, pad_to_64, MbfDirectoryIndex, MbfFooterTrailer, MbfHeader,
-        ZoneOffsetsTable, MBF_FLAG_HAS_SEARCH, MBF_FLAG_HAS_SYNOPSES,
+        MbfTenantCryptoSeal, ZoneOffsetsTable, MBF_FLAG_HAS_SEARCH, MBF_FLAG_HAS_SYNOPSES,
     };
 
+    let now_ms = chrono::Utc::now().timestamp_millis();
     let tenant_hash = xxhash_rust::xxh64::xxh64(tenant_id.as_bytes(), 0x4D45_5452_4932_3032);
     let header = MbfHeader::new_idx_mirror(
         u32::from(cell_id),
         u64::from(row_count),
         epoch_id,
         tenant_hash,
-        0x01,
-        1_700_000_000_000,
+        now_ms,
+        now_ms,
     )
     .with_flags(MBF_FLAG_HAS_SYNOPSES | MBF_FLAG_HAS_SEARCH);
 
@@ -1542,6 +1570,12 @@ pub fn encode_mbf_idx_mirror(
 
     let hdr_crc = compute_crc32c(&buf[0..64]);
     let dir_crc = compute_crc32c(&dir_bytes);
+    let mut hmac_24 = [0x49u8; 24];
+    if let Ok(seal) =
+        MbfTenantCryptoSeal::seal_active(tenant_id, "idx_mirror", epoch_id, &dir_bytes)
+    {
+        hmac_24.copy_from_slice(&seal.keyed_mac[0..24]);
+    }
     let footer = MbfFooterTrailer::new(
         dir_offset,
         dir_len,
@@ -1549,35 +1583,69 @@ pub fn encode_mbf_idx_mirror(
         dir_crc,
         tenant_hash as u32,
         0,
-        [0x49; 24],
+        hmac_24,
     );
     buf.extend_from_slice(&footer.to_bytes());
     buf
 }
 
+fn is_non_searchable_attr(attr_name: &str) -> bool {
+    attr_name == crate::eav::writer::system_attrs::TYPE_NAME
+        || attr_name == crate::eav::writer::system_attrs::ULID_NAME
+        || attr_name == crate::eav::writer::system_attrs::TENANT_NAME
+        || attr_name.starts_with("meta/")
+        || matches!(
+            attr_name,
+            "payload"
+                | "detail_type"
+                | "event_type"
+                | "aggregate_id"
+                | "aggregate_type"
+                | "mutation_id"
+                | "action"
+                | "actor_id"
+                | "target_id"
+                | "ip_address"
+                | "user_agent"
+                | "changes_json"
+                | "error_code"
+                | "layer"
+                | "operation"
+                | "message"
+                | "context"
+                | "trace_id"
+                | "password_hash"
+        )
+}
+
 #[derive(Debug, Default, Clone)]
-struct MbfPartitionStore {
-    epoch_id: u64,
-    last_s3_etag: Option<String>,
-    last_sync_ms: i64,
-    bulk_depth: usize,
-    dirty_entities: std::collections::BTreeSet<(String, String, String)>,
+pub(crate) struct MbfPartitionStore {
+    pub(crate) epoch_id: u64,
+    pub(crate) last_s3_etag: Option<String>,
+    pub(crate) last_sync_ms: i64,
+    pub(crate) bulk_depth: usize,
+    pub(crate) dirty_entities: std::collections::BTreeSet<(String, String, String)>,
+    pub(crate) transient_entities: std::collections::HashSet<(String, String)>,
     /// Primary index `(PK, SK_bytes) -> Item` (EAVT).
-    items: BTreeMap<PrimaryKey, HashMap<String, AttributeValue>>,
+    pub(crate) items: BTreeMap<PrimaryKey, HashMap<String, AttributeValue>>,
     /// Native secondary BTree index for `AEVT` (`(ap, as_bytes, PrimaryKey)`).
-    aevt_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
+    pub(crate) aevt_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
     /// Native secondary BTree index for `AVET` (`(vp, vs_bytes, PrimaryKey)`).
-    avet_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
+    pub(crate) avet_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
     /// Native secondary BTree index for `VAET` (`(rp, rs_bytes, PrimaryKey)`).
-    vaet_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
+    pub(crate) vaet_index: BTreeMap<(String, Vec<u8>, PrimaryKey), ()>,
     /// Quota counters `(tenant_id, quota_id) -> current_usage`.
-    quota_counters: HashMap<(String, String), i64>,
+    pub(crate) quota_counters: HashMap<(String, String), i64>,
     /// Quota idempotency marks `(tenant_id, idem_key) -> (quota_id, delta)`.
-    quota_idem: HashMap<(String, String), (String, i64)>,
+    pub(crate) quota_idem: HashMap<(String, String), (String, i64)>,
 }
 
 impl MbfPartitionStore {
-    fn insert_indexed(&mut self, key: PrimaryKey, item: HashMap<String, AttributeValue>) {
+    pub(crate) fn insert_indexed(
+        &mut self,
+        key: PrimaryKey,
+        item: HashMap<String, AttributeValue>,
+    ) {
         if let Some(old_item) = self.items.remove(&key) {
             self.unindex_item(&key, &old_item);
         }
@@ -1585,7 +1653,7 @@ impl MbfPartitionStore {
         self.items.insert(key, item);
     }
 
-    fn remove_indexed(&mut self, key: &PrimaryKey) {
+    pub(crate) fn remove_indexed(&mut self, key: &PrimaryKey) {
         if let Some(old_item) = self.items.remove(key) {
             self.unindex_item(key, &old_item);
         }
@@ -1601,95 +1669,107 @@ impl MbfPartitionStore {
         if let Some((rp, rs_bytes)) = extract_index_key(item, "rp", "rs") {
             self.vaet_index.insert((rp, rs_bytes, key.clone()), ());
         }
-        if let Some((tenant_id, entity_id)) =
+        let Some((tenant_id, entity_id)) =
             key.0.strip_prefix("T#").and_then(|s| s.split_once("#E#"))
-        {
-            if key.1.len() == 11 && key.1[10] != 0 {
-                let attr_name_opt = item
-                    .get("ap")
-                    .and_then(|av| match av {
-                        AttributeValue::S(ap_str) => ap_str.split_once("#A#").map(|(_, a)| a),
-                        _ => None,
-                    })
-                    .map(|a| a.split('#').next().unwrap_or(a));
+        else {
+            return;
+        };
+        if key.1.len() != 11 || key.1[10] == 0 {
+            return;
+        }
+        let attr_name_opt = item
+            .get("ap")
+            .and_then(|av| match av {
+                AttributeValue::S(ap_str) => ap_str.split_once("#A#").map(|(_, a)| a),
+                _ => None,
+            })
+            .map(|a| a.split('#').next().unwrap_or(a));
 
-                match item.get("v") {
-                    Some(AttributeValue::S(text)) => {
-                        let trimmed = text.trim();
-                        if !trimmed.is_empty()
-                            && !trimmed.starts_with('{')
-                            && !trimmed.starts_with('[')
-                        {
-                            let is_system_attr = attr_name_opt
-                                .map(|attr_name| {
-                                    attr_name == crate::eav::writer::system_attrs::TYPE_NAME
-                                        || attr_name == crate::eav::writer::system_attrs::ULID_NAME
-                                        || attr_name
-                                            == crate::eav::writer::system_attrs::TENANT_NAME
-                                        || attr_name.starts_with("meta/")
-                                        || attr_name == "payload"
-                                        || attr_name == "event_type"
-                                        || attr_name == "aggregate_id"
-                                        || attr_name == "aggregate_type"
-                                        || attr_name == "mutation_id"
-                                })
-                                .unwrap_or(false);
-                            if !is_system_attr {
-                                crate::eav::fts::searcher::register_fts_document(
-                                    tenant_id, entity_id, trimmed,
-                                );
-                                if matches!(attr_name_opt, Some("synonyms" | "equivalence_group")) {
-                                    let group: Vec<&str> = trimmed
-                                        .split([',', ';', '|'])
-                                        .map(str::trim)
-                                        .filter(|s| !s.is_empty())
-                                        .collect();
-                                    if group.len() >= 2 {
-                                        crate::eav::fts::searcher::register_tenant_synonym_group(
-                                            tenant_id, &group,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Some(AttributeValue::N(num_str)) => {
-                        if let Some(attr_name) = attr_name_opt {
-                            if matches!(attr_name, "latitude" | "start_latitude") {
-                                if let Ok(lat) = num_str.trim().parse::<f64>() {
-                                    crate::eav::fts::searcher::register_fts_entity_coordinate_axis(
-                                        tenant_id, entity_id, true, lat,
-                                    );
-                                }
-                            } else if matches!(attr_name, "longitude" | "start_longitude") {
-                                if let Ok(lon) = num_str.trim().parse::<f64>() {
-                                    crate::eav::fts::searcher::register_fts_entity_coordinate_axis(
-                                        tenant_id, entity_id, false, lon,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Some(AttributeValue::B(blob)) => {
-                        if matches!(attr_name_opt, Some("semantic_embedding" | "embedding")) {
-                            let bytes = blob.as_ref();
-                            if bytes.len() >= 16 && bytes.len() % 4 == 0 {
-                                let mut vec = Vec::with_capacity(bytes.len() / 4);
-                                for chunk in bytes.chunks_exact(4) {
-                                    let bits = u32::from_le_bytes([
-                                        chunk[0], chunk[1], chunk[2], chunk[3],
-                                    ]);
-                                    vec.push(f32::from_bits(bits));
-                                }
-                                crate::eav::fts::searcher::register_fts_entity_embedding(
-                                    tenant_id, entity_id, vec,
-                                );
-                            }
-                        }
-                    }
-                    _ => {}
+        if attr_name_opt == Some(crate::eav::writer::system_attrs::TYPE_NAME) {
+            if let Some(AttributeValue::S(et)) = item.get("v") {
+                if matches!(et.as_str(), "outbox_event" | "audit_log" | "domain_fault") {
+                    self.transient_entities
+                        .insert((tenant_id.to_string(), entity_id.to_string()));
+                    return;
                 }
             }
+        }
+        if self
+            .transient_entities
+            .contains(&(tenant_id.to_string(), entity_id.to_string()))
+        {
+            return;
+        }
+        self.index_item_fts(tenant_id, entity_id, attr_name_opt, item);
+    }
+
+    fn index_item_fts(
+        &self,
+        tenant_id: &str,
+        entity_id: &str,
+        attr_name_opt: Option<&str>,
+        item: &HashMap<String, AttributeValue>,
+    ) {
+        match item.get("v") {
+            Some(AttributeValue::S(text)) => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() && !trimmed.starts_with('{') && !trimmed.starts_with('[') {
+                    let skip = attr_name_opt.is_some_and(is_non_searchable_attr);
+                    if !skip {
+                        crate::eav::fts::searcher::register_fts_document_attr(
+                            tenant_id,
+                            entity_id,
+                            attr_name_opt,
+                            trimmed,
+                        );
+                        if matches!(attr_name_opt, Some("synonyms" | "equivalence_group")) {
+                            let group: Vec<&str> = trimmed
+                                .split([',', ';', '|'])
+                                .map(str::trim)
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            if group.len() >= 2 {
+                                crate::eav::fts::searcher::register_tenant_synonym_group(
+                                    tenant_id, &group,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Some(AttributeValue::N(num_str)) => {
+                if let Some(attr_name) = attr_name_opt {
+                    if matches!(attr_name, "latitude" | "start_latitude") {
+                        if let Ok(lat) = num_str.trim().parse::<f64>() {
+                            crate::eav::fts::searcher::register_fts_entity_coordinate_axis(
+                                tenant_id, entity_id, true, lat,
+                            );
+                        }
+                    } else if matches!(attr_name, "longitude" | "start_longitude") {
+                        if let Ok(lon) = num_str.trim().parse::<f64>() {
+                            crate::eav::fts::searcher::register_fts_entity_coordinate_axis(
+                                tenant_id, entity_id, false, lon,
+                            );
+                        }
+                    }
+                }
+            }
+            Some(AttributeValue::B(blob)) => {
+                if matches!(attr_name_opt, Some("semantic_embedding" | "embedding")) {
+                    let bytes = blob.as_ref();
+                    if bytes.len() >= 16 && bytes.len() % 4 == 0 {
+                        let mut vec = Vec::with_capacity(bytes.len() / 4);
+                        for chunk in bytes.chunks_exact(4) {
+                            let bits = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                            vec.push(f32::from_bits(bits));
+                        }
+                        crate::eav::fts::searcher::register_fts_entity_embedding(
+                            tenant_id, entity_id, vec,
+                        );
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1720,12 +1800,13 @@ impl MbfPartitionStore {
         }
     }
 
-    fn to_wire_snapshot(&self) -> MbfPartitionWireSnapshot {
+    pub(crate) fn to_wire_snapshot(&self) -> MbfPartitionWireSnapshot {
         MbfPartitionWireSnapshot {
             epoch_id: self.epoch_id,
             items: self
                 .items
                 .iter()
+                .filter(|((pk, _), _)| !pk.contains("#FTS#"))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             quota_counters: self
@@ -1745,6 +1826,9 @@ impl MbfPartitionStore {
         let remote_is_newer = snap.epoch_id >= self.epoch_id;
         self.epoch_id = self.epoch_id.max(snap.epoch_id);
         for (key, remote_item) in snap.items {
+            if key.0.contains("#FTS#") {
+                continue;
+            }
             let should_insert = match self.items.get(&key) {
                 None => true,
                 Some(local_item) => {
@@ -1768,8 +1852,10 @@ impl MbfPartitionStore {
         }
         for (k, v) in snap.quota_counters {
             let entry = self.quota_counters.entry(k).or_insert(0);
-            if remote_is_newer || v > *entry {
-                *entry = (*entry).max(v);
+            if remote_is_newer {
+                *entry = v;
+            } else if v > *entry {
+                *entry = v;
             }
         }
         for (k, v) in snap.quota_idem {
@@ -1786,7 +1872,7 @@ static GLOBAL_MBF_PARTITIONS: Lazy<RwLock<HashMap<String, Arc<RwLock<MbfPartitio
 static GLOBAL_MBF_S3_LOCKS: Lazy<RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
-fn partition_for(table: &str) -> Arc<RwLock<MbfPartitionStore>> {
+pub(crate) fn partition_for(table: &str) -> Arc<RwLock<MbfPartitionStore>> {
     if let Ok(guard) = GLOBAL_MBF_PARTITIONS.read() {
         if let Some(store) = guard.get(table) {
             return Arc::clone(store);
@@ -1818,7 +1904,7 @@ fn s3_io_lock_for(table: &str) -> Arc<tokio::sync::Mutex<()>> {
     Arc::new(tokio::sync::Mutex::new(()))
 }
 
-fn evict_all_read_caches_on_remote_sync() {
+pub(crate) fn evict_all_read_caches_on_remote_sync() {
     if let Ok(mut eav) = crate::eav::reader::pull::EAV_CACHE.write() {
         eav.clear();
     }
@@ -2034,15 +2120,46 @@ impl MbfStorageClient {
         Ok(())
     }
 
+    /// Serializa en memoria el sobre binario de la partición (`vortex/{table}.mbf`) y todos los artefactos
+    /// por entidad (`.mbf`, `.mbf.idx`), celda (`HOT_HEAD_c{cell_id}.mbf`) e índice de tenant (`HOT_HEAD.mbf.idx`)
+    /// pendientes de volcado para la tabla indicada.
+    pub fn export_flush_artifacts(
+        &self,
+        table: &str,
+        prefix: &str,
+    ) -> Result<(Vec<u8>, Vec<(String, Vec<u8>)>), DomainError> {
+        let part = partition_for(table);
+        let mut guard = part
+            .write()
+            .map_err(|_| DomainError::eav(ErrorCode::Eav001, "Poisoned MBF partition lock"))?;
+        Self::serialize_flush_artifacts(&mut guard, prefix, table)
+    }
+
+    /// Aplica un sobre binario de partición (`vortex/{table}.mbf`) recibido de una instancia remota.
+    pub fn apply_remote_vortex_envelope(
+        &self,
+        table: &str,
+        vortex_bytes: &[u8],
+        etag: &str,
+    ) -> Result<(), DomainError> {
+        let (_hdr, raw_bin) = decode_mbf_envelope(vortex_bytes)?;
+        let snap = MbfPartitionWireSnapshot::decode_binary(raw_bin)?;
+        let part = partition_for(table);
+        let mut guard = part
+            .write()
+            .map_err(|_| DomainError::eav(ErrorCode::Eav002, "Poisoned MBF partition lock"))?;
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        guard.apply_wire_snapshot(snap, etag.to_string(), now_ms);
+        evict_all_read_caches_on_remote_sync();
+        Ok(())
+    }
+
     /// Vuelca la partición binaria `.mbf` actualizada y los archivos `.mbf` / `.mbf.idx` por entidad hacia S3.
-    async fn flush_to_s3(
+    pub(crate) async fn flush_to_s3(
         &self,
         table: &str,
         touched_entities: Vec<(String, String, String)>,
     ) -> Result<(), DomainError> {
-        let Some(s3) = &self.s3_store else {
-            return Ok(());
-        };
         let part = partition_for(table);
         {
             let mut guard = part
@@ -2055,13 +2172,13 @@ impl MbfStorageClient {
                 return Ok(());
             }
         }
+        let Some(s3) = &self.s3_store else {
+            return Ok(());
+        };
 
         let s3_lock = s3_io_lock_for(table);
         let _io_guard = s3_lock.lock().await;
-
-        // Always pull and merge any newer remote S3 state under the S3 I/O lock before serializing our snapshot
         self.sync_from_s3_inner(table, true).await?;
-
         let prefix = s3.prefix().to_string();
 
         let (vortex_bytes, entity_files) = {
@@ -2071,145 +2188,7 @@ impl MbfStorageClient {
             if guard.bulk_depth > 0 {
                 return Ok(());
             }
-            let entities_to_flush: Vec<(String, String, String)> =
-                std::mem::take(&mut guard.dirty_entities)
-                    .into_iter()
-                    .collect();
-            guard.epoch_id += 1;
-            let epoch = guard.epoch_id;
-            let row_count = guard.items.len() as u64;
-            let snap = guard.to_wire_snapshot();
-            let raw_bin = snap.encode_binary();
-            let vortex_bin = encode_mbf_envelope(0, row_count, epoch, "system", table, &raw_bin)?;
-
-            let mut extra_files: Vec<(String, Vec<u8>)> = Vec::new();
-            let mut latest_cell_payloads: BTreeMap<(String, u8), Vec<u8>> = BTreeMap::new();
-            let mut touched_tenants: std::collections::BTreeSet<String> =
-                std::collections::BTreeSet::new();
-
-            for (tenant_id, entity_type, entity_id) in entities_to_flush {
-                // Skip generating per-entity S3 files for transient infrastructure events
-                // (already persisted in the main vortex/{table}.mbf snapshot).
-                if matches!(
-                    entity_type.as_str(),
-                    "outbox_event" | "audit_log" | "domain_fault"
-                ) {
-                    continue;
-                }
-                touched_tenants.insert(tenant_id.clone());
-
-                let target_pk = format!("T#{tenant_id}#E#{entity_id}");
-                let range_start = (target_pk.clone(), Vec::new());
-                let mut datoms = Vec::new();
-                let mut fallback_text_parts = Vec::new();
-                for ((item_pk, item_sk), item) in guard.items.range(range_start..) {
-                    if item_pk != &target_pk {
-                        break;
-                    }
-                    if item_sk.len() == 11 && item_sk[10] != 0 {
-                        if let Some(AttributeValue::S(s)) = item.get("v") {
-                            let trimmed = s.trim();
-                            if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                                fallback_text_parts.push(trimmed.to_string());
-                            }
-                        }
-                    }
-                    datoms.push((item_sk.clone(), item.clone()));
-                }
-                let ent_snap = MbfEntityWireSnapshot {
-                    tenant_id: tenant_id.clone(),
-                    entity_type: entity_type.clone(),
-                    entity_id: entity_id.clone(),
-                    epoch_id: epoch,
-                    datoms,
-                };
-                let ent_payload_bin = ent_snap.encode_binary();
-                let cell_id =
-                    crate::mbf::tx::DomainCellRouter::resolve_cell_id(&entity_type, &entity_id);
-                if let Ok(ent_bin) = encode_mbf_envelope(
-                    u32::from(cell_id),
-                    ent_snap.datoms.len() as u64,
-                    epoch,
-                    &tenant_id,
-                    &entity_type,
-                    &ent_payload_bin,
-                ) {
-                    let entity_key = format!(
-                        "{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf"
-                    );
-                    let idx_key = format!(
-                        "{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf.idx"
-                    );
-                    let fallback_desc = fallback_text_parts.join(" ");
-                    let search_zone = crate::eav::fts::searcher::export_single_entity_zone5b_bytes(
-                        &tenant_id,
-                        &entity_id,
-                        &fallback_desc,
-                    );
-                    let numeric_obs: Vec<(i64, f64)> = ent_snap
-                        .datoms
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(idx, (sk, item))| {
-                            if sk.len() == 11 && sk[10] == 0 {
-                                return None;
-                            }
-                            let val = item.get("v").and_then(av_number)?.parse::<f64>().ok()?;
-                            if !val.is_finite() {
-                                return None;
-                            }
-                            Some(((epoch as i64) * 1000 + (idx as i64), val))
-                        })
-                        .collect();
-                    let ent_syn =
-                        crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::from_observations(
-                            &numeric_obs,
-                            0,
-                            &[],
-                            0.0,
-                        );
-                    let synopsis_zone =
-                        crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(&[
-                            ent_syn,
-                        ]);
-                    let idx_bin = encode_mbf_idx_mirror(
-                        cell_id,
-                        epoch,
-                        ent_snap.datoms.len() as u32,
-                        &tenant_id,
-                        &search_zone,
-                        &synopsis_zone,
-                    );
-                    extra_files.push((entity_key, ent_bin.clone()));
-                    extra_files.push((idx_key, idx_bin));
-                    latest_cell_payloads.insert((tenant_id.clone(), cell_id), ent_bin);
-                }
-            }
-
-            for ((tenant_id, cell_id), cell_bin) in latest_cell_payloads {
-                let cell_key = format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf");
-                extra_files.push((cell_key, cell_bin));
-            }
-
-            for tenant_id in touched_tenants {
-                let tenant_search_zone =
-                    crate::eav::fts::searcher::export_tenant_zone5b_bytes(&tenant_id);
-                let tenant_syn_zone =
-                    crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(
-                        &[crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::default()],
-                    );
-                let tenant_idx_bin = encode_mbf_idx_mirror(
-                    0,
-                    epoch,
-                    row_count.min(u64::from(u32::MAX)) as u32,
-                    &tenant_id,
-                    &tenant_search_zone,
-                    &tenant_syn_zone,
-                );
-                let tenant_idx_key = format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD.mbf.idx");
-                extra_files.push((tenant_idx_key, tenant_idx_bin));
-            }
-            (vortex_bin, extra_files)
+            Self::serialize_flush_artifacts(&mut guard, &prefix, table)?
         };
 
         let vortex_key = self.vortex_s3_key(s3, table);
@@ -2234,6 +2213,290 @@ impl MbfStorageClient {
             guard.last_sync_ms = chrono::Utc::now().timestamp_millis();
         }
         Ok(())
+    }
+
+    fn serialize_flush_artifacts(
+        guard: &mut MbfPartitionStore,
+        prefix: &str,
+        table: &str,
+    ) -> Result<(Vec<u8>, Vec<(String, Vec<u8>)>), DomainError> {
+        let entities_to_flush: Vec<(String, String, String)> =
+            std::mem::take(&mut guard.dirty_entities)
+                .into_iter()
+                .collect();
+        guard.epoch_id += 1;
+        let epoch = guard.epoch_id;
+        let snap = guard.to_wire_snapshot();
+        let row_count = snap.items.len() as u64;
+        let raw_bin = snap.encode_binary();
+        let vortex_bin = encode_mbf_envelope(0, row_count, epoch, "system", table, &raw_bin)?;
+
+        let mut extra_files: Vec<(String, Vec<u8>)> = Vec::new();
+        let mut cell_frames: BTreeMap<(String, u8), Vec<crate::mbf::tx::CommittedDeltaFrame>> =
+            BTreeMap::new();
+        let mut touched_tenants: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+
+        for (tenant_id, entity_type, entity_id) in entities_to_flush {
+            if matches!(
+                entity_type.as_str(),
+                "outbox_event" | "audit_log" | "domain_fault"
+            ) {
+                continue;
+            }
+            touched_tenants.insert(tenant_id.clone());
+            Self::append_entity_flush_files(
+                guard,
+                prefix,
+                epoch,
+                &tenant_id,
+                &entity_type,
+                &entity_id,
+                &mut extra_files,
+                &mut cell_frames,
+            );
+        }
+
+        for ((tenant_id, cell_id), frames) in cell_frames {
+            let cell_key = format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf");
+            let cell_bin = crate::mbf::tx::CommittedDeltaFrame::encode_hot_head_binary(
+                &tenant_id, cell_id, &frames,
+            );
+            extra_files.push((cell_key, cell_bin));
+        }
+
+        for tenant_id in touched_tenants {
+            let tenant_search_zone =
+                crate::eav::fts::searcher::export_tenant_zone5b_bytes(&tenant_id);
+            let tenant_syns = Self::build_tenant_synopses(guard, &tenant_id, epoch);
+            let tenant_syn_zone =
+                crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(
+                    &tenant_syns,
+                );
+            let tenant_idx_bin = encode_mbf_idx_mirror(
+                0,
+                epoch,
+                row_count.min(u64::from(u32::MAX)) as u32,
+                &tenant_id,
+                &tenant_search_zone,
+                &tenant_syn_zone,
+            );
+            let tenant_idx_key = format!("{prefix}/tenants/{tenant_id}/head/HOT_HEAD.mbf.idx");
+            extra_files.push((tenant_idx_key, tenant_idx_bin));
+        }
+        Ok((vortex_bin, extra_files))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn append_entity_flush_files(
+        guard: &MbfPartitionStore,
+        prefix: &str,
+        epoch: u64,
+        tenant_id: &str,
+        entity_type: &str,
+        entity_id: &str,
+        extra_files: &mut Vec<(String, Vec<u8>)>,
+        cell_frames: &mut BTreeMap<(String, u8), Vec<crate::mbf::tx::CommittedDeltaFrame>>,
+    ) {
+        let target_pk = format!("T#{tenant_id}#E#{entity_id}");
+        let range_start = (target_pk.clone(), Vec::new());
+        let mut datoms = Vec::new();
+        let mut fallback_text_parts = Vec::new();
+        for ((item_pk, item_sk), item) in guard.items.range(range_start..) {
+            if item_pk != &target_pk {
+                break;
+            }
+            if item_sk.len() == 11 && item_sk[10] != 0 {
+                let attr_name_opt = item
+                    .get("ap")
+                    .and_then(av_string)
+                    .and_then(|ap_str| ap_str.split_once("#A#").map(|(_, a)| a))
+                    .map(|a| a.split('#').next().unwrap_or(a));
+                if !attr_name_opt.is_some_and(is_non_searchable_attr) {
+                    if let Some(AttributeValue::S(s)) = item.get("v") {
+                        let trimmed = s.trim();
+                        if !trimmed.is_empty() && !trimmed.starts_with('{') {
+                            fallback_text_parts.push(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+            datoms.push((item_sk.clone(), item.clone()));
+        }
+        let ent_snap = MbfEntityWireSnapshot {
+            tenant_id: tenant_id.to_string(),
+            entity_type: entity_type.to_string(),
+            entity_id: entity_id.to_string(),
+            epoch_id: epoch,
+            datoms,
+        };
+        let ent_payload_bin = ent_snap.encode_binary();
+        let cell_id = crate::mbf::tx::DomainCellRouter::resolve_cell_id(entity_type, entity_id);
+        if let Ok(ent_bin) = encode_mbf_envelope(
+            u32::from(cell_id),
+            ent_snap.datoms.len() as u64,
+            epoch,
+            tenant_id,
+            entity_type,
+            &ent_payload_bin,
+        ) {
+            let entity_key =
+                format!("{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf");
+            let idx_key =
+                format!("{prefix}/tenants/{tenant_id}/entities/{entity_type}/{entity_id}.mbf.idx");
+            let fallback_desc = fallback_text_parts.join(" ");
+            let search_zone = crate::eav::fts::searcher::export_single_entity_zone5b_bytes(
+                tenant_id,
+                entity_id,
+                &fallback_desc,
+            );
+            let ent_syns = Self::build_synopses_by_attribute(&ent_snap.datoms, epoch);
+            let synopsis_zone =
+                crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::encode_zone_binary_slice(
+                    &ent_syns,
+                );
+            let idx_bin = encode_mbf_idx_mirror(
+                cell_id,
+                epoch,
+                ent_snap.datoms.len() as u32,
+                tenant_id,
+                &search_zone,
+                &synopsis_zone,
+            );
+            extra_files.push((entity_key, ent_bin));
+            extra_files.push((idx_key, idx_bin));
+            cell_frames
+                .entry((tenant_id.to_string(), cell_id))
+                .or_default()
+                .push(Self::build_hot_head_frame(
+                    entity_type,
+                    entity_id,
+                    cell_id,
+                    epoch,
+                    ent_snap.datoms.len(),
+                ));
+        }
+    }
+
+    fn build_synopses_by_attribute(
+        datoms: &[(Vec<u8>, HashMap<String, AttributeValue>)],
+        epoch: u64,
+    ) -> Vec<crate::mbf::zones::bi_synopses::MbfHyperSynopsis512> {
+        let mut by_attr: BTreeMap<u16, Vec<(i64, f64)>> = BTreeMap::new();
+        for (idx, (sk, item)) in datoms.iter().enumerate() {
+            if sk.len() != 11 || sk[10] == 0 {
+                continue;
+            }
+            let attr_id = u16::from_be_bytes([sk[0], sk[1]]);
+            if attr_id <= 7 {
+                continue;
+            }
+            let Some(val) = item
+                .get("v")
+                .and_then(av_number)
+                .and_then(|n| n.parse::<f64>().ok())
+            else {
+                continue;
+            };
+            if val.is_finite() {
+                by_attr
+                    .entry(attr_id)
+                    .or_default()
+                    .push(((epoch as i64) * 1000 + (idx as i64), val));
+            }
+        }
+        if by_attr.is_empty() {
+            return vec![crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::default()];
+        }
+        by_attr
+            .into_values()
+            .map(|obs| {
+                crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::from_observations(
+                    &obs,
+                    0,
+                    &[],
+                    0.0,
+                )
+            })
+            .collect()
+    }
+
+    fn build_tenant_synopses(
+        guard: &MbfPartitionStore,
+        tenant_id: &str,
+        epoch: u64,
+    ) -> Vec<crate::mbf::zones::bi_synopses::MbfHyperSynopsis512> {
+        let pk_prefix = format!("T#{tenant_id}#E#");
+        let range_start = (pk_prefix.clone(), Vec::new());
+        let mut by_attr: BTreeMap<u16, Vec<(i64, f64)>> = BTreeMap::new();
+        let mut idx = 0i64;
+        for ((pk, sk), item) in guard.items.range(range_start..) {
+            if !pk.starts_with(&pk_prefix) {
+                break;
+            }
+            if sk.len() != 11 || sk[10] == 0 {
+                continue;
+            }
+            let eid = &pk[pk_prefix.len()..];
+            if guard
+                .transient_entities
+                .contains(&(tenant_id.to_string(), eid.to_string()))
+            {
+                continue;
+            }
+            let attr_id = u16::from_be_bytes([sk[0], sk[1]]);
+            if attr_id <= 7 {
+                continue;
+            }
+            if let Some(val) = item
+                .get("v")
+                .and_then(av_number)
+                .and_then(|n| n.parse::<f64>().ok())
+            {
+                if val.is_finite() {
+                    by_attr
+                        .entry(attr_id)
+                        .or_default()
+                        .push(((epoch as i64) * 1000 + idx, val));
+                    idx += 1;
+                }
+            }
+        }
+        if by_attr.is_empty() {
+            return vec![crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::default()];
+        }
+        by_attr
+            .into_values()
+            .map(|obs| {
+                crate::mbf::zones::bi_synopses::MbfHyperSynopsis512::from_observations(
+                    &obs,
+                    0,
+                    &[],
+                    0.0,
+                )
+            })
+            .collect()
+    }
+
+    fn build_hot_head_frame(
+        entity_type: &str,
+        entity_id: &str,
+        _cell_id: u8,
+        epoch: u64,
+        datom_count: usize,
+    ) -> crate::mbf::tx::CommittedDeltaFrame {
+        let sig = crate::mbf::tx::TxConflictSignature::from_keys(
+            epoch.saturating_sub(1),
+            epoch,
+            &[entity_id],
+            &[entity_id, entity_type],
+        );
+        crate::mbf::tx::CommittedDeltaFrame {
+            signature: sig,
+            payload_json: format!(
+                "{{\"entity_type\":\"{entity_type}\",\"entity_id\":\"{entity_id}\",\"datoms\":{datom_count}}}"
+            ),
+        }
     }
 
     /// Inserta o reemplaza un registro individual en la partición `.mbf` e indexa sus claves secundarias.
@@ -2426,6 +2689,11 @@ impl MbfStorageClient {
                 staged.push((key, put.item));
             }
 
+            for (tid, et, eid) in &touched {
+                if matches!(et.as_str(), "outbox_event" | "audit_log" | "domain_fault") {
+                    guard.transient_entities.insert((tid.clone(), eid.clone()));
+                }
+            }
             // 2. Commit all items atomically and update native secondary indexes
             for (key, item) in staged {
                 guard.insert_indexed(key, item);

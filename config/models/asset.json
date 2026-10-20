@@ -64,7 +64,7 @@
       "description": "Número de serie asignado por el fabricante del equipo (único por tenant)."
     },
     {
-      "name": "barcode_qr_code",
+      "name": "barcode",
       "type": "string",
       "unique": "tenant",
       "fts": true,

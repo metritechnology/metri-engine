@@ -126,21 +126,21 @@
       "event_trigger_type": "on_create",
       "filter_conditions": [],
       "detail_type_output": "system.iot.alert.created",
-      "description": "Sincroniza la regla de alerta hacia DynamoDB Rule Store e inyecta RULE_CHANGE en el stream Kinesis para hot-reload."
+      "description": "Sincroniza la regla de alerta hacia DynamoDB Rule Store (metri-iot-rules) vía LambdaRuleSynchronizer para evaluación en tiempo real."
     },
     {
       "rule_code": "IOT_ALERT_UPDATED",
       "event_trigger_type": "on_update",
       "filter_conditions": [],
       "detail_type_output": "system.iot.alert.updated",
-      "description": "Actualiza el umbral en DynamoDB e inyecta RULE_CHANGE en Kinesis para hot-reload in-flight."
+      "description": "Actualiza el umbral en DynamoDB Rule Store (metri-iot-rules) vía LambdaRuleSynchronizer para hot-reload en tiempo real."
     },
     {
       "rule_code": "IOT_ALERT_DELETED",
       "event_trigger_type": "on_delete",
       "filter_conditions": [],
       "detail_type_output": "system.iot.alert.deleted",
-      "description": "Elimina la regla de DynamoDB e inyecta el RULE_CHANGE de borrado en Kinesis para apagar el monitoreo in-memory de forma inmediata."
+      "description": "Elimina la regla de DynamoDB Rule Store (metri-iot-rules) vía LambdaRuleSynchronizer para apagar el monitoreo de forma inmediata."
     }
   ]
 }

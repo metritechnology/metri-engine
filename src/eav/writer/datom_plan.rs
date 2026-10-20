@@ -104,7 +104,7 @@ pub fn plan_entity_datoms(
         );
 
         if attr_desc.fts {
-            let reqs = crate::eav::fts::trigram::build_fts_items(&assert, attr_desc);
+            let reqs = crate::eav::fts::trigram::build_fts_items_pure(&assert, attr_desc);
             fts_requests.extend(reqs);
         }
 

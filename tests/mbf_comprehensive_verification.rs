@@ -1000,3 +1000,309 @@ fn verify_petabyte_scale_hierarchical_l3_catalog_and_boundary_drilldown() {
     );
     assert_eq!(pruned_pb.flight_recorder.blocks_resolved_o1_by_synopsis, 10);
 }
+
+#[tokio::test]
+async fn verify_all_eight_mbf_and_idx_bug_fixes_end_to_end() {
+    use metri_engine::codice::{global, init_global};
+    use metri_engine::eav::reader::query::{EavQueryExecutor, NativeQueryPlan};
+    use metri_engine::eav::types::DatomValue;
+    use metri_engine::eav::writer::{EavWriter, TransactOp, TransactPayload};
+    use metri_engine::mbf::format::{MbfDirectoryIndex, MbfHeader, MBF_FLAG_HOT_HEAD};
+    use metri_engine::mbf::storage::MbfStorageClient;
+    use metri_engine::mbf::zones::bi_synopses::MbfHyperSynopsis512;
+    use metri_engine::mbf::zones::hybrid_search::MbfHybridSearchIndex;
+
+    let models_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("config/models");
+    let (built_reg, _) = CodeRegistry::build(&models_dir).expect("build CodeRegistry");
+    init_global(built_reg);
+
+    let storage = Arc::new(MbfStorageClient::new_stub());
+    let table = "metri_fixes_table";
+    let writer = EavWriter::new(Arc::clone(&storage), table);
+    let query_executor = EavQueryExecutor::new(Arc::clone(&storage), table);
+
+    // 1. Insert first asset with unique tag, name, description, and numeric attributes
+    //    (Note: normal `transact` automatically creates an `outbox_event` in the same ACID TX!)
+    let asset1_id = "01J8Z000000000000000ASSET1";
+    let mut asset1_attrs = HashMap::new();
+    asset1_attrs.insert(
+        "name".to_string(),
+        DatomValue::Str("Turbina Principal Norte".to_string()),
+    );
+    asset1_attrs.insert(
+        "tag".to_string(),
+        DatomValue::Str("A-UNICO-001".to_string()),
+    );
+    asset1_attrs.insert(
+        "description".to_string(),
+        DatomValue::Str("Equipo critico de generacion".to_string()),
+    );
+    asset1_attrs.insert(
+        "criticality".to_string(),
+        DatomValue::Str("HIGH".to_string()),
+    );
+    asset1_attrs.insert("status".to_string(), DatomValue::Str("ACTIVE".to_string()));
+    asset1_attrs.insert(
+        "location_id".to_string(),
+        DatomValue::Str("01J8Z0000000000000000LOC01".to_string()),
+    );
+    asset1_attrs.insert("purchase_cost_cents".to_string(), DatomValue::Long(120));
+
+    let tx1_res = writer
+        .transact(TransactPayload {
+            tenant_id: "tenant_fixes".to_string(),
+            entity_id: Some(asset1_id.to_string()),
+            entity_type: "asset".to_string(),
+            attrs: asset1_attrs.clone(),
+            op: TransactOp::Create,
+            suppress_events: false,
+        })
+        .await
+        .expect("First asset transaction must succeed");
+    assert_eq!(
+        tx1_res.outbox_count, 1,
+        "Transaction must also persist 1 outbox_event in the same ACID write"
+    );
+
+    // 2. Insert second asset in the same cell to verify HOT_HEAD_c{cell}.mbf aggregates multiple entities
+    let asset2_id = "01J8Z000000000000000ASSET2";
+    let mut asset2_attrs = asset1_attrs.clone();
+    asset2_attrs.insert(
+        "name".to_string(),
+        DatomValue::Str("Turbina Secundaria Sur".to_string()),
+    );
+    asset2_attrs.insert(
+        "tag".to_string(),
+        DatomValue::Str("A-UNICO-002".to_string()),
+    );
+    writer
+        .transact(TransactPayload {
+            tenant_id: "tenant_fixes".to_string(),
+            entity_id: Some(asset2_id.to_string()),
+            entity_type: "asset".to_string(),
+            attrs: asset2_attrs,
+            op: TransactOp::Create,
+            suppress_events: false,
+        })
+        .await
+        .expect("Second asset transaction must succeed");
+
+    // 3. Bug #6 verification: Duplicate unique attribute `tag` on a 3rd entity must fail with EavTx001
+    let mut asset3_dup_attrs = asset1_attrs.clone();
+    asset3_dup_attrs.insert(
+        "name".to_string(),
+        DatomValue::Str("Turbina Duplicada".to_string()),
+    );
+    let dup_err = writer
+        .transact(TransactPayload {
+            tenant_id: "tenant_fixes".to_string(),
+            entity_id: Some("01J8Z000000000000000ASSET3".to_string()),
+            entity_type: "asset".to_string(),
+            attrs: asset3_dup_attrs,
+            op: TransactOp::Create,
+            suppress_events: false,
+        })
+        .await
+        .expect_err("Duplicate asset/tag across different entities must fail");
+    assert_eq!(dup_err.code, ErrorCode::Cod001);
+
+    // Idempotent update on the SAME entity with the same unique tag must succeed
+    writer
+        .transact(TransactPayload {
+            tenant_id: "tenant_fixes".to_string(),
+            entity_id: Some(asset1_id.to_string()),
+            entity_type: "asset".to_string(),
+            attrs: asset1_attrs,
+            op: TransactOp::Update,
+            suppress_events: false,
+        })
+        .await
+        .expect("Idempotent update of same entity with same unique tag must succeed");
+
+    // 4. Bug #2 verification: `vortex/{table}.mbf` wire snapshot must NOT contain any `#FTS#` keys,
+    //    and FTS search must still find the entity in memory.
+    let fts_hits = query_executor
+        .execute_native_plan(&NativeQueryPlan::FtsSearch {
+            tenant_id: "tenant_fixes".to_string(),
+            term: "Turbina".to_string(),
+        })
+        .await
+        .expect("FTS search");
+    assert!(
+        fts_hits.contains(&asset1_id.to_string()),
+        "FTS search must find asset1_id"
+    );
+
+    let (vortex_bytes, extra_files) = storage
+        .export_flush_artifacts(table, "vortex")
+        .expect("export_flush_artifacts");
+    let extra_map: HashMap<String, Vec<u8>> = extra_files.into_iter().collect();
+
+    let snapshot_str = String::from_utf8_lossy(&vortex_bytes);
+    assert!(
+        !snapshot_str.contains("#FTS#"),
+        "Wire snapshot must not contain #FTS# trigram bloat"
+    );
+
+    // 5. Bug #1, #3, #5, #7 verification on `<asset1_id>.mbf.idx` and `HOT_HEAD.mbf.idx`
+    let entity_idx_key = format!("vortex/tenants/tenant_fixes/entities/asset/{asset1_id}.mbf.idx");
+    let entity_idx_bytes = extra_map
+        .get(&entity_idx_key)
+        .expect("entity .mbf.idx must be generated");
+
+    let hot_head_idx_key = "vortex/tenants/tenant_fixes/head/HOT_HEAD.mbf.idx";
+    let hot_head_idx_bytes = extra_map
+        .get(hot_head_idx_key)
+        .expect("HOT_HEAD.mbf.idx must be generated");
+
+    for (label, bytes) in [
+        ("entity.mbf.idx", entity_idx_bytes),
+        ("HOT_HEAD.mbf.idx", hot_head_idx_bytes),
+    ] {
+        let header = MbfHeader::from_bytes(bytes).expect("valid MbfHeader");
+        // Bug #7: non-zero max_timestamp_ms & non-zero footer HMAC
+        assert!(
+            header.max_timestamp_ms > 0,
+            "{label} must have max_timestamp_ms > 0"
+        );
+        let footer = MbfFooterTrailer::from_bytes(&bytes[bytes.len() - 64..])
+            .expect("valid MbfFooterTrailer");
+        assert!(
+            footer.hmac_tag_truncated.iter().any(|&b| b != 0),
+            "{label} must have non-zero 24-byte hmac_tag_truncated"
+        );
+
+        let dir_off = footer.directory_offset as usize;
+        let dir_len = footer.directory_len as usize;
+        let dir = MbfDirectoryIndex::from_bytes(&bytes[dir_off..dir_off + dir_len])
+            .expect("valid MbfDirectoryIndex");
+
+        // Bug #5: Zone5aBiSynopses grouped by domain attribute without sys/created_at or sys/version pollution
+        let z5a_off = dir.zones.zone5_synopsis_offset as usize;
+        let z5a_len = dir.zones.zone5_synopsis_len as usize;
+        let synopses =
+            MbfHyperSynopsis512::decode_zone_binary_slice(&bytes[z5a_off..z5a_off + z5a_len])
+                .expect("decode Zone5a synopses");
+        assert_eq!(
+            synopses.len(),
+            1,
+            "{label} must have 1 synopsis for the single numeric domain attribute (useful_life_months)"
+        );
+        assert_eq!(synopses[0].min_val, 120.0);
+        assert_eq!(synopses[0].max_val, 120.0);
+        assert_eq!(synopses[0].pebay_mean_m1, 120.0);
+    }
+
+    // Bug #1: Entity `.mbf.idx` Zone5b has exactly 1 consolidated document with real title and code
+    let entity_footer =
+        MbfFooterTrailer::from_bytes(&entity_idx_bytes[entity_idx_bytes.len() - 64..])
+            .expect("entity footer");
+    let entity_dir = MbfDirectoryIndex::from_bytes(
+        &entity_idx_bytes[entity_footer.directory_offset as usize
+            ..entity_footer.directory_offset as usize + entity_footer.directory_len as usize],
+    )
+    .expect("entity dir");
+    let z5b_off = entity_dir.zones.zone5b_search_offset as usize;
+    let z5b_len = entity_dir.zones.zone5b_search_len as usize;
+    let entity_fts =
+        MbfHybridSearchIndex::decode_zone_binary(&entity_idx_bytes[z5b_off..z5b_off + z5b_len])
+            .expect("deserialize entity Zone5b");
+    assert_eq!(
+        entity_fts.docs.len(),
+        1,
+        "Entity .mbf.idx must have exactly 1 consolidated document"
+    );
+    assert_eq!(entity_fts.docs[0].entity_id, asset1_id);
+    assert_eq!(entity_fts.docs[0].title, "Turbina Principal Norte");
+    assert_eq!(
+        entity_fts.docs[0].code,
+        MbfHybridSearchIndex::canonicalize_alphanumeric_code("A-UNICO-001")
+    );
+    assert!(
+        entity_fts.docs[0]
+            .description
+            .contains("Equipo critico de generacion"),
+        "Consolidated description must include description text"
+    );
+
+    // Bug #3: Tenant `HOT_HEAD.mbf.idx` Zone5b must NOT contain outbox_event entities
+    let hh_footer =
+        MbfFooterTrailer::from_bytes(&hot_head_idx_bytes[hot_head_idx_bytes.len() - 64..])
+            .expect("hh footer");
+    let hh_dir = MbfDirectoryIndex::from_bytes(
+        &hot_head_idx_bytes[hh_footer.directory_offset as usize
+            ..hh_footer.directory_offset as usize + hh_footer.directory_len as usize],
+    )
+    .expect("hh dir");
+    let hh_z5b_off = hh_dir.zones.zone5b_search_offset as usize;
+    let hh_z5b_len = hh_dir.zones.zone5b_search_len as usize;
+    let hh_fts = MbfHybridSearchIndex::decode_zone_binary(
+        &hot_head_idx_bytes[hh_z5b_off..hh_z5b_off + hh_z5b_len],
+    )
+    .expect("deserialize HOT_HEAD Zone5b");
+    assert_eq!(
+        hh_fts.docs.len(),
+        2,
+        "HOT_HEAD.mbf.idx must contain only the 2 assets and 0 outbox_event documents"
+    );
+    assert!(
+        hh_fts
+            .docs
+            .iter()
+            .all(|d| d.entity_id != tx1_res.mutation_ulid),
+        "outbox_event must never be indexed in Zone5b"
+    );
+
+    // 6. Bug #4 verification: `HOT_HEAD_c{cell_id}.mbf` has MBF_FLAG_HOT_HEAD and contains both assets
+    let registry_ref = global();
+    let asset_model = registry_ref.get_model("asset").expect("asset model");
+    let cell_id = DomainCellRouter::classify_model_topology(asset_model, asset1_id);
+    let cell_key = format!("vortex/tenants/tenant_fixes/head/HOT_HEAD_c{cell_id}.mbf");
+    let cell_bytes = extra_map
+        .get(&cell_key)
+        .expect("HOT_HEAD_c{cell_id}.mbf must be generated");
+    let cell_hdr = MbfHeader::from_bytes(cell_bytes).expect("valid cell MbfHeader");
+    assert!(
+        (cell_hdr.flags & MBF_FLAG_HOT_HEAD) != 0,
+        "HOT_HEAD_c{{cell_id}}.mbf must have MBF_FLAG_HOT_HEAD set"
+    );
+    assert!(
+        cell_hdr.row_count >= 2,
+        "HOT_HEAD_c{{cell_id}}.mbf must aggregate rows from both assets in the cell, got {}",
+        cell_hdr.row_count
+    );
+
+    // 7. Bug #8 verification: Quota counter decrement in a newer wire snapshot propagates on remote sync
+    storage
+        .quota_settle(table, "tenant_fixes", "asset", 2)
+        .await
+        .expect("decrement quota counter to 2 on remote");
+    let (remote_vortex_bytes, _) = storage
+        .export_flush_artifacts(table, "vortex")
+        .expect("export remote snapshot with counter = 2");
+
+    // Local instance temporarily has higher counter (5) at an older epoch, then syncs the newer remote snapshot (2)
+    let local_table = "metri_fixes_local_table";
+    storage
+        .quota_settle(local_table, "tenant_fixes", "asset", 5)
+        .await
+        .expect("set local counter to 5");
+    let before_dec = storage
+        .quota_read_many(local_table, "tenant_fixes", &["asset".to_string()])
+        .await
+        .expect("read before sync");
+    assert_eq!(before_dec.get("asset").copied(), Some(5));
+
+    storage
+        .apply_remote_vortex_envelope(local_table, &remote_vortex_bytes, "etag-newer")
+        .expect("apply newer remote vortex envelope");
+    let after_dec = storage
+        .quota_read_many(local_table, "tenant_fixes", &["asset".to_string()])
+        .await
+        .expect("read after sync");
+    assert_eq!(
+        after_dec.get("asset").copied(),
+        Some(2),
+        "Quota counter must decrement to 2 when remote snapshot has a newer epoch_id"
+    );
+}

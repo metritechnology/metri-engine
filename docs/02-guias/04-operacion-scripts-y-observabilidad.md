@@ -17,8 +17,9 @@ scripts/
 │   └── result_pattern_allowlist.json # Allowlist congelado en 0 excepciones permitidas
 ├── docs/                          # Generación documental determinista desde fuentes de verdad
 │   └── gen_reference.py           # Genera docs/05-referencia/{api-grpc,modelos-codice,catalogo-errores}.md
-└── ops/                           # Automatización de infraestructura y seguridad cloud
-    └── bootstrap_github_oidc.py   # Provisiona el proveedor OIDC y rol IAM de mínimo privilegio en AWS
+├── ops/                           # Automatización de infraestructura y seguridad cloud
+│   ├── bootstrap_github_oidc.py   # Provisiona el proveedor OIDC y rol IAM de mínimo privilegio en AWS
+│   └── mbf_backup_restore.py      # Copias Server-Side en S3, auditoría binaria .mbf y restauración PITR
 ```
 
 ### 1.1 Uso Detallado de Cada Script
@@ -30,6 +31,7 @@ scripts/
 | `scripts/dev/check_docs.py` | `python3 scripts/dev/check_docs.py`<br>`python3 scripts/dev/check_docs.py --with-rustdoc` | `0` si todos los enlaces, diagramas y cobertura Rustdoc son válidos; `1` ante enlaces rotos o baja cobertura. |
 | `scripts/docs/gen_reference.py` | `python3 scripts/docs/gen_reference.py` (regenerar archivos)<br>`python3 scripts/docs/gen_reference.py --check` (verificar en CI sin modificar disco) | `0` si los archivos generados están sincronizados con `proto/`, `config/models/` y `config/errors/`; `1` si hay deriva. |
 | `scripts/ops/bootstrap_github_oidc.py` | `python3 scripts/ops/bootstrap_github_oidc.py --github-org <ORG> --github-repo <REPO> [--region us-east-1]` | `0` tras crear o actualizar de forma idempotente el OIDC Provider y el IAM Role en AWS. |
+| `scripts/ops/mbf_backup_restore.py` | `python3 scripts/ops/mbf_backup_restore.py verify --file <ruta.mbf>`<br>`python3 scripts/ops/mbf_backup_restore.py checkpoint --table <tabla> [--apply]`<br>`python3 scripts/ops/mbf_backup_restore.py restore --target-key <key> [--version-id <vid>] [--apply]` | `0` si la verificación, copia o restauración finaliza con éxito; `1` ante fallo de integridad o argumentos inválidos. |
 
 ---
 

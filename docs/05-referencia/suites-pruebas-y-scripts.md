@@ -103,7 +103,7 @@ Estas suites permiten validar instancias locales o remotas del servidor gRPC/gRP
 | `scripts/ops/seed_quotas_production.py` / `seed_entity_quotas.py` | Aprovisionamiento y actualización de cuotas operativas por tenant. |
 | `scripts/ops/verify_auth.py` / `check_production_data.py` / `list_production_users.py` / `query_system_assets.py` | Utilidades de verificación de autenticación HMAC/Cedar e inspección de estado en entornos remotos. |
 | `scripts/ops/invalidate_lambda_caches.py` | Utilidad operativa para forzar recarga de estado en instancias calientes de AWS Lambda. |
-| `scripts/ops/create_system_locations.py` / `ingest_production.py` / `dump_unique_ap.py` / `purge_production.py` / `purge_tenant_scan.py` / `reingesta_iceberg_failed.py` / `scan_production_ddb.py` / `sync_kinesis_s3.py` | Scripts operativos de administración y migración histórica de datos. |
+| `scripts/ops/create_system_locations.py` / `ingest_production.py` / `dump_unique_ap.py` / `purge_production.py` / `purge_tenant_scan.py` / `scan_production_ddb.py` | Scripts operativos de administración y migración histórica de datos. |
 | `scripts/common/{auth.py,grpc_client.py}` | Librería compartida de firma de tokens HMAC y cliente gRPC para todos los scripts Python. |
 | `scripts/proto/{metri_pb2.py,metri_pb2_grpc.py}` | Stubs Python generados desde `proto/metri.proto` para los scripts de prueba y operación. |
 | `scripts/local_suite/grpc_web_client.py` | Cliente auxiliar para ejecución de suites locales sobre HTTP/gRPC-Web. |

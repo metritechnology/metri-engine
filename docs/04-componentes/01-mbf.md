@@ -172,11 +172,12 @@ pub struct MbfHyperSynopsis512 {
 
 ## 4. Catálogo Exhaustivo de Archivos Fuente (1:1)
 
-La siguiente tabla documenta el 100% de los **13 archivos fuente** que integran `src/mbf/`:
+La siguiente tabla documenta el 100% de los **14 archivos fuente** que integran `src/mbf/`:
 
 | Archivo | Propósito | Ítems Públicos Clave |
 | :--- | :--- | :--- |
-| [`src/mbf/mod.rs`](../../src/mbf/mod.rs) | Punto de entrada del módulo `mbf`; declara los submódulos `format`, `storage`, `tx` y `zones`, y reexporta el motor principal. | `MbfStorageEngine`, `format`, `storage`, `tx`, `zones` |
+| [`src/mbf/mod.rs`](../../src/mbf/mod.rs) | Punto de entrada del módulo `mbf`; declara los submódulos `backup`, `format`, `storage`, `tx` y `zones`, y reexporta el motor principal. | `MbfStorageEngine`, `MbfBackupManager`, `backup`, `format`, `storage`, `tx`, `zones` |
+| [`src/mbf/backup.rs`](../../src/mbf/backup.rs) | Gestor de copias de seguridad inmutables, verificación forense de integridad y restauración granular por tenant o de partición completa. | `MbfBackupManager`, `MbfBackupMetadata`, `MbfIntegrityReport` |
 | [`src/mbf/format/mod.rs`](../../src/mbf/format/mod.rs) | Especificación binaria `.mbf` v1.0 alineada a 64 bytes, sumas de verificación CRC64-NVMe y BLAKE3-256, y utilidades de serialización binaria. | `MBF_MAGIC`, `MBF_ALIGNMENT`, `MbfZoneId`, `MbfHeader`, `ZoneDirectoryEntry`, `MbfFooter`, `crc64_nvme`, `blake3_hash_256`, `pad_to_64` |
 | [`src/mbf/tx/mod.rs`](../../src/mbf/tx/mod.rs) | Protocolo transaccional ACID de 2 pasos sobre almacenamiento de objetos (`WAL` + `CAS Manifest`), manifiestos de época y instantáneas MVCC. | `MbfBlockDescriptor`, `MbfEpochManifest`, `MvccSnapshot`, `MbfCommitProtocol` |
 | [`src/mbf/storage.rs`](../../src/mbf/storage.rs) | Motor HTAP completo: `MemTable` en RAM, ensamblador y lector de bloques de 7 zonas, caché local `mmap`, compactador L0->L1 y adaptador `KvStorePort`. | `MbfMemTable`, `MbfBlockBuilder`, `MbfBlockReader`, `MbfBlockInspection`, `LocalMmapBlockCache`, `MbfCompactor`, `MbfCompactionReport`, `MbfStorageEngine` |
