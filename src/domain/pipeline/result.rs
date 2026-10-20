@@ -1,10 +1,4 @@
-//! Railway helpers — semantic bridge from `[:ok]`/`[:error]` to `Result`.
-//!
-//! # Origin
-//! Equivalencia: Railway-Pattern helpers (ok?, error?, unwrap)
-//! En el stack anterior: (ok? result), (unwrap result)
-//! En Rust: Result<T, DomainError> es nativo — estos helpers son
-//! funciones de conveniencia para compatibilidad semántica.
+//! Funciones y macros de conveniencia para composición Railway-Oriented Programming sobre `Result<T, DomainError>`.
 
 use crate::domain::errors::DomainError;
 

@@ -1,10 +1,9 @@
-//! Zero-Trust authorization pipeline — steps 1 to 3b.
+//! Pipeline de autorización Zero-Trust: composición de los pasos `step1` a `step4`.
 //!
-//! Pipeline de autorización Zero-Trust.
-//!
-//! UNA composición de los pasos step1→step2→step3→step3b que antes estaba
-//! copiada en `intercept` y `get_principal_data`. Las fachadas públicas
-//! (`intercept`, `get_principal_data` en authorizer.rs) delegan aquí.
+//! Unifica la secuencia de autenticación (`step1`), consulta de grafo (`step2`),
+//! consolidación de perímetros (`step3`), ventana horaria (`step3b`), hidratación ABAC
+//! y evaluación del PDP (`step4`) detrás de las fachadas públicas `intercept`,
+//! `intercept_auth` y `get_principal_data`.
 
 use std::time::Instant;
 
@@ -109,6 +108,7 @@ pub(crate) fn cedar_context(
 use crate::cedar::engine::CedarAuthorizer;
 use crate::cedar::evaluator::step4_evaluate_cedar;
 
+/// Ejecuta el pipeline completo de autorización Zero-Trust a partir de un `AuthRequest` agnóstico de transporte.
 pub async fn intercept_auth(
     auth: &AuthRequest<'_>,
     valkey_store: &dyn ISessionStore,
@@ -166,6 +166,7 @@ pub async fn intercept_auth(
     ))
 }
 
+/// Intercepta una petición `tonic::Request<T>` ejecutando el pipeline completo de autorización Zero-Trust.
 pub async fn intercept<T>(
     req: &tonic::Request<T>,
     valkey_store: &dyn ISessionStore,
@@ -186,6 +187,8 @@ pub async fn intercept<T>(
     .await
 }
 
+/// Resuelve y consolida los datos del principal (`PrincipalData`) para una petición `tonic::Request<T>`
+/// respetando la política de autenticación configurada (`Production` o `DevBypass`).
 pub async fn get_principal_data<T>(
     req: &tonic::Request<T>,
     valkey_store: &dyn ISessionStore,

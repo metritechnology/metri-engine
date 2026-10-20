@@ -1,20 +1,17 @@
-//! Aegis — the compilers and executors for the unified Metri Vortex (.mbf) engine.
+//! Compiladores y ejecutores analíticos y transaccionales sobre el motor unificado `.mbf` (Aegis).
 //!
-//! Módulos principales:
+//! Submódulos principales:
+//! - `mbf`: Ejecutor analítico vectorizado de latencia cero sobre el formato binario `.mbf` (`Metri Binary Format`).
+//! - `oltp`: Planes físicos transaccionales y analíticos en memoria sobre datoms EAV / `.mbf`.
+//! - `formula`: Motor de evaluación de fórmulas matemáticas sandboxeado (`lexer` -> `parser` -> `resolver` -> `evaluator`).
+//! - `ast_ir`: Representación intermedia tipada (`AstIr`) desacoplada de JSON crudo.
+//! - `pagination`: Codificación y decodificación de cursores opacos `Base64(offset:limit)`.
+//! - `label_template`: Interpolación pura de plantillas estilo Mustache (`{{campo}}`).
+//! - `temporal_bridge`: Puente entre los tipos temporales Protobuf/FlatBuffers y el módulo `temporal` canónico.
 //!
-//! - [`mbf`] — ejecutor vectorizado sobre Metri Binary Format (`.mbf`).
-//! - [`oltp`] — planes físicos transaccionales y analíticos sobre `.mbf`.
-//! - [`formula`] — lenguaje de fórmulas sandboxeado (lexer → parser →
-//!   resolver → evaluator).
-//!
-//! Más utilidades transversales: [`ast_ir`] (IR tipado), [`pagination`]
-//! (cursores), [`label_template`] (interpolación) y [`temporal_bridge`]
-//! (tipos de tiempo proto/FBS → `temporal`).
-//!
-//! # Guarantees
-//!
-//! - Ejecución unificada `.mbf` con aislamiento estricto por tenant.
-//! - Sin I/O en compiladores: los compiladores son puros; el I/O vive en los ejecutores.
+//! # Garantías Arquitectónicas
+//! - Ejecución unificada sobre `.mbf` con aislamiento criptográfico y estructural por `tenant_id`.
+//! - Separación estricta entre compilación pura (sin I/O) y ejecución física.
 pub mod ast_ir;
 pub mod formula;
 pub mod label_template;

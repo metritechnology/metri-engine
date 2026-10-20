@@ -1,4 +1,4 @@
-//! Zone 1 PAX columnar storage with MVCC time-travel visibility vectors, Elias-Fano + MPHF directory, and FSST symbol compression.
+//! Almacenamiento columnar PAX de la Zona 1 con vectores de visibilidad MVCC para viajes en el tiempo, directorio Elias-Fano + MPHF y compresión simbólica FSST.
 
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -10,41 +10,49 @@ use crate::mbf::format::{pad_to_64, MbfCellValue, MBF_ROW_GROUP_SIZE};
 
 const ZONE1_MAGIC: [u8; 8] = *b"MBFZ1PAX";
 
-/// MVCC row visibility metadata for snapshot isolation and time-travel queries (`as_of_tx`, §4.2).
+/// Metadatos de visibilidad MVCC por versión de fila para aislamiento de instantánea y consultas históricas (`as_of_tx`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MvccRowVersion {
+    /// Identificador físico de fila dentro del bloque PAX.
     pub row_id: u32,
+    /// Época de transacción en que se afirmó esta versión de fila.
     pub tx_assert_epoch: u64,
+    /// Época de transacción en que se retractó la fila (`u64::MAX` indica versión actualmente activa).
     pub tx_retract_epoch: u64, // u64::MAX means currently active (not retracted)
 }
 
 impl MvccRowVersion {
+    /// Valor centinela de época que indica que la versión de fila permanece activa (no retractada).
     pub const ACTIVE_EPOCH: u64 = u64::MAX;
 
-    /// Returns true if this row version was alive at `snapshot_epoch`.
+    /// Devuelve `true` si esta versión de fila estaba vigente en `snapshot_epoch`.
     #[inline]
     pub fn is_visible_at(&self, snapshot_epoch: u64) -> bool {
         self.tx_assert_epoch <= snapshot_epoch && snapshot_epoch < self.tx_retract_epoch
     }
 }
 
-/// Elias-Fano monotonic offset sequence + MPHF displacement table for $O(1)$ `EAVT` entity lookups (§4.2.1).
+/// Secuencia monótona de desplazamientos Elias-Fano y tabla de desplazamiento MPHF para búsquedas `EAVT` de entidades en $O(1)$.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EliasFanoEntityDirectory {
+    /// Semilla de hash utilizada por la función hash perfecta mínima (MPHF).
     pub mphf_seed: u64,
+    /// Lista ordenada lexicográficamente de identificadores de entidad.
     pub sorted_entity_ids: Vec<String>,
-    /// Monotonically increasing byte/row offsets compressed via Elias-Fano low/high bit split.
+    /// Ancho en bits de la parte baja de Elias-Fano.
     pub ef_low_width: u8,
+    /// Arreglo de bits inferiores de la codificación Elias-Fano.
     pub ef_low_bits: Vec<u64>,
+    /// Bitvector unario de bits superiores de la codificación Elias-Fano.
     pub ef_high_bits: Vec<u64>,
-    /// Row version chain per sorted entity index.
+    /// Cadena de versiones de fila (`row_id`) para cada entidad ordenada.
     pub entity_row_chains: Vec<Vec<u32>>,
-    /// MPHF slot displacement table mapping `xxh64(entity_id, mphf_seed) % bucket_count` to sorted index.
+    /// Tabla de ranuras MPHF que mapea `xxh64(entity_id, mphf_seed) % bucket_count` al índice ordenado.
     pub mphf_slots: Vec<u32>,
 }
 
 impl EliasFanoEntityDirectory {
-    /// Builds an Elias-Fano + MPHF directory from an entity primary key map.
+    /// Construye un directorio Elias-Fano + MPHF a partir del mapa de claves primarias de entidades.
     pub fn build_from_map(index: &HashMap<String, Vec<u32>>) -> Self {
         let mut pairs: Vec<(String, Vec<u32>)> =
             index.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
@@ -111,7 +119,7 @@ impl EliasFanoEntityDirectory {
         }
     }
 
-    /// Resolves `entity_id` to its versioned row chain in $O(1)$ via MPHF slot probing.
+    /// Resuelve `entity_id` hacia su cadena de filas versionadas en $O(1)$ mediante sondeo en la tabla MPHF.
     pub fn lookup_rows(&self, entity_id: &str) -> Option<&[u32]> {
         if self.mphf_slots.is_empty() {
             return None;
@@ -132,7 +140,7 @@ impl EliasFanoEntityDirectory {
         None
     }
 
-    /// Reconstructs the $i$-th monotonic offset in $O(1)$ from the Elias-Fano high-bit unary array and low-bit array (§1 Row 2).
+    /// Reconstruye el $i$-ésimo desplazamiento monótono en $O(1)$ a partir de los arreglos de bits altos y bajos de Elias-Fano.
     pub fn select_offset(&self, rank: usize) -> Option<u64> {
         if rank >= self.ef_low_bits.len() {
             return None;
@@ -158,21 +166,24 @@ impl EliasFanoEntityDirectory {
     }
 }
 
-/// Fast Static Symbol Table (`FSST`, up to 255 entries, §4.2.3 & `04_ALGORITHMS_AND_PAPERS.md` §1) for dictionary/symbol compression of strings.
+/// Tabla estática rápida de símbolos (`FSST`, hasta 255 entradas) para compresión por diccionario de cadenas.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FsstSymbolTable {
+    /// Vector de símbolos registrados indexados por su código de 1 byte (`0..255`).
     pub symbols: Vec<String>,
     symbol_to_code: HashMap<String, u8>,
 }
 
 impl FsstSymbolTable {
+    /// Código de escape (`0xFF`) que precede a un byte literal no perteneciente a la tabla de símbolos.
     pub const ESCAPE_CODE: u8 = 0xFF;
 
+    /// Crea una nueva tabla de símbolos FSST vacía.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Interns a frequent string or status token into the 255-entry symbol table.
+    /// Interna una cadena frecuente o token de estado dentro de las 255 entradas disponibles de la tabla de símbolos.
     pub fn intern_or_escape(&mut self, text: &str) -> Option<u8> {
         if let Some(&code) = self.symbol_to_code.get(text) {
             return Some(code);
@@ -187,24 +198,25 @@ impl FsstSymbolTable {
         }
     }
 
+    /// Decodifica un código de 1 byte devolviendo el símbolo UTF-8 asociado.
     pub fn decode_symbol(&self, code: u8) -> Option<&str> {
         self.symbols.get(code as usize).map(String::as_str)
     }
 
-    /// Evaluates an equality predicate (`EQ`) directly on an FSST symbol code in $O(1)$ without decompressing the column block (§1 Row 1).
+    /// Evalúa un predicado de igualdad (`EQ`) directamente sobre un código de símbolo FSST en $O(1)$ sin descomprimir la columna.
     #[inline]
     pub fn eval_eq_compressed(&self, code: u8, target: &str) -> bool {
         self.symbol_to_code.get(target).copied() == Some(code)
     }
 
-    /// Evaluates a prefix predicate (`STARTS_WITH`) directly against the FSST symbol table without decompressing the column block (§1 Row 1).
+    /// Evalúa un predicado de prefijo (`STARTS_WITH`) directamente contra la tabla de símbolos FSST sin descomprimir la columna.
     #[inline]
     pub fn eval_starts_with_compressed(&self, code: u8, prefix: &str) -> bool {
         self.decode_symbol(code)
             .is_some_and(|sym| sym.starts_with(prefix))
     }
 
-    /// Compresses an arbitrary string into an FSST byte stream using greedy longest-prefix symbol matching (up to 8 bytes per symbol) with `0xFF` escape bytes (§1 Row 1).
+    /// Comprime una cadena arbitraria en un flujo de bytes FSST mediante coincidencia voraz del prefijo más largo con byte de escape `0xFF`.
     pub fn compress_bytes(&self, text: &str) -> Vec<u8> {
         if let Some(&exact_code) = self.symbol_to_code.get(text) {
             return vec![exact_code];
@@ -235,7 +247,7 @@ impl FsstSymbolTable {
         out
     }
 
-    /// Decompresses an FSST byte stream back into a UTF-8 string.
+    /// Descomprime un flujo de bytes FSST reconstruyendo la cadena UTF-8 original.
     pub fn decompress_bytes(&self, compressed: &[u8]) -> String {
         let mut raw = Vec::with_capacity(compressed.len() * 2);
         let mut i = 0usize;
@@ -257,22 +269,29 @@ impl FsstSymbolTable {
     }
 }
 
-/// Zone 1 PAX + MVCC block storing entities with O(1) primary key lookup, secondary attribute index, and time-travel history.
+/// Bloque PAX + MVCC de la Zona 1 que almacena entidades con búsqueda de clave primaria en $O(1)$, índice secundario de atributos e historial temporal.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PaxMvccZone {
+    /// Nombre canónico del tipo de entidad almacenado en la zona.
     pub entity_type: String,
+    /// Índice primario de entidad `entity_id -> Vec<row_id>`.
     pub primary_key_index: HashMap<String, Vec<u32>>,
+    /// Vector de versiones de fila MVCC indexado por `row_id`.
     pub mvcc_versions: Vec<MvccRowVersion>,
+    /// Almacenamiento columnar denso por nombre de atributo.
     pub columns: HashMap<String, Vec<MbfCellValue>>,
+    /// Tabla de símbolos FSST compartida por las columnas de texto del bloque.
     pub fsst_table: FsstSymbolTable,
+    /// Directorio sucinto Elias-Fano + MPHF sobre las entidades del bloque.
     pub directory: EliasFanoEntityDirectory,
-    /// Active visibility bitmaps: 512 bytes (`[u64; 64]`) per 4,096-row micro-block (§4.2).
+    /// Mapas de bits de visibilidad activa: 512 bytes (`[u64; 64]`) por cada microbloque de 4,096 filas.
     pub active_visibility_words: Vec<u64>,
-    /// Native secondary attribute-value index `(attr_name, canonical_value_str) -> Vec<row_id>` for O(log N) AVET filtering.
+    /// Índice secundario nativo atributo-valor `(attr_name, canonical_value_str) -> Vec<row_id>` para filtrado AVET en $O(\log N)$.
     pub avet_secondary_index: BTreeMap<(String, String), Vec<u32>>,
 }
 
 impl PaxMvccZone {
+    /// Crea una nueva zona `PaxMvccZone` vacía para el tipo de entidad especificado.
     pub fn new(entity_type: impl Into<String>) -> Self {
         Self {
             entity_type: entity_type.into(),
@@ -286,8 +305,8 @@ impl PaxMvccZone {
         }
     }
 
-    /// Upserts an entity version at `epoch_id`, automatically retracting any previous active version
-    /// and updating the 512B visibility bitmap, FSST symbol table, and secondary AVET index.
+    /// Inserta o actualiza una versión de entidad en `epoch_id`, retractando automáticamente cualquier versión activa previa
+    /// y actualizando el mapa de bits de visibilidad de 512 bytes, la tabla FSST y el índice secundario AVET.
     pub fn upsert_entity(
         &mut self,
         entity_id: &str,
@@ -368,7 +387,7 @@ impl PaxMvccZone {
         new_row_id
     }
 
-    /// Pulls an entity's attributes as of `snapshot_epoch` (Time-Travel Pull) using the MPHF directory if built.
+    /// Reconstruye los atributos de una entidad en el instante `snapshot_epoch` (Time-Travel Pull) utilizando el directorio MPHF.
     pub fn pull_as_of(
         &self,
         entity_id: &str,
@@ -395,7 +414,7 @@ impl PaxMvccZone {
         Some(map)
     }
 
-    /// Looks up active `row_id`s matching `(attr_name, value_str)` in $O(\log N)$ via the secondary AVET index.
+    /// Busca los `row_id` activos que coinciden con `(attr_name, value_str)` en $O(\log N)$ mediante el índice secundario AVET.
     pub fn query_by_attribute_value(
         &self,
         attr_name: &str,
@@ -419,7 +438,7 @@ impl PaxMvccZone {
             .collect()
     }
 
-    /// Returns all visible `row_id`s at `snapshot_epoch`.
+    /// Devuelve todos los `row_id` visibles en la época `snapshot_epoch`.
     pub fn visible_rows_at(&self, snapshot_epoch: u64) -> Vec<u32> {
         self.mvcc_versions
             .iter()
@@ -428,8 +447,7 @@ impl PaxMvccZone {
             .collect()
     }
 
-    /// Encodes Zone 1 into a 64-byte aligned binary slab (Zero-JSON, §4.2):
-    /// `[Magic "MBFZ1PAX" (8B) | entity_type | MVCC vectors (tx_assert, tx_retract, bitmap) | PK Index | FSST Table | Columnar PAX Slabs | Padding 64B]`.
+    /// Codifica la Zona 1 en un bloque binario alineado a 64 bytes (cero JSON) con cabecera `"MBFZ1PAX"`, vectores MVCC, directorio de entidades, tabla FSST y columnas PAX.
     pub fn encode_zone_binary(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(&ZONE1_MAGIC);
@@ -493,7 +511,7 @@ impl PaxMvccZone {
         buf
     }
 
-    /// Decodes a Zone 1 `PaxMvccZone` from a binary slice.
+    /// Decodifica una instancia de `PaxMvccZone` de la Zona 1 a partir de un corte binario.
     pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 12 || bytes[0..8] != ZONE1_MAGIC {
             return Err(DomainError::mbf(

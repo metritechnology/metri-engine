@@ -1,4 +1,4 @@
-//! Comprehensive E2E verification suite for the domain-agnostic Metri Vortex (.mbf) engine, Aegis BI, 35+ mathematical functions, quantitative ledger, 6-layer hybrid search, S3 ACID concurrency, and strict architectural decoupling guard.
+//! Suite exhaustiva de verificación E2E del motor binario unificado Metri Vortex (`.mbf`), Aegis BI, funciones matemáticas, libro contable cuantitativo, búsqueda híbrida y concurrencia ACID en S3.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -439,7 +439,7 @@ async fn verify_spec_03_mbf_binary_format_zero_json_and_indexed_queries() {
         item.insert("SK".to_string(), AttributeValue::B(Blob::new(vec![0, i])));
         item.insert(
             "ap".to_string(),
-            AttributeValue::S("T#t1#A#entity_type#record_alpha".to_string()),
+            AttributeValue::S("T#t1#A#entity/type#record_alpha".to_string()),
         );
         item.insert("as".to_string(), AttributeValue::B(Blob::new(vec![i])));
         item.insert(

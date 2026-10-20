@@ -1,15 +1,17 @@
-//! ABAC clause construction from the CedarCtx.
+//! Construcción de cláusulas ABAC desde el `CedarCtx`.
 //!
-//! Construcción de cláusulas ABAC desde el CedarCtx.
-//! transforma {entity + boundaries + user-id + schema} -> nodo AST IR ABAC.
+//! Transforma `{entity + boundaries + user_id + schema}` en un nodo AST IR ABAC inmutable.
 
 use serde_json::{json, Value};
 
 use crate::domain::errors::{DomainError, ErrorCode};
 // Import CedarCtx which holds boundaries eventually
 
+/// Campos de propiedad (`is_owner`) y asignación (`is_assignee`) declarados en el modelo del Códice.
 pub struct OwnershipFields {
+    /// Nombre cualificado del atributo de propietario (`{entity}/{attr}`), si existe.
     pub owner_field: Option<String>,
+    /// Nombre cualificado del atributo de asignado (`{entity}/{attr}`), si existe.
     pub assignee_field: Option<String>,
 }
 

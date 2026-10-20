@@ -1,4 +1,9 @@
-//! Aegis MBF vectorized BI execution engine, 6 `BiOutputCast` formatters, and domain-agnostic `MbfAnalyticalWorkspace`.
+//! Motor de ejecución analítica vectorizada sobre `.mbf` (`MbfBiEngine`), formateadores `BiOutputCast` y `MbfAnalyticalWorkspace`.
+//!
+//! Ensambla las 7 zonas binarias especializadas del formato `.mbf` (`Metri Binary Format`)
+//! y ejecuta consultas analíticas BI con verificación criptográfica Zero-Trust por tenant,
+//! poda cuádruple de bloques (`ZoneMap` + curva de Hilbert 3D) y fusión algebraica $O(1)$
+//! de sinopsis hiper-compactas de 512 bytes desde escalas de Megabytes hasta Petabytes.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -20,65 +25,94 @@ use crate::mbf::zones::hybrid_search::{
 use crate::mbf::zones::iot_timeseries::Chimp128SeriesBlock;
 use crate::mbf::zones::pax_mvcc::PaxMvccZone;
 
-/// Hardware & block pruning telemetry attached to every BI query execution (`MbfExecutionFlightRecorder`).
+/// Telemetría de hardware y poda de bloques adjunta a cada ejecución de consulta BI (`MbfExecutionFlightRecorder`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MbfExecutionFlightRecorder {
+    /// Total de bloques o *stripes* `.mbf` inspeccionados en el catálogo.
     pub blocks_inspected_total: u32,
+    /// Cantidad de bloques descartados sin lectura física gracias a `ZoneMap` o intervalos de Hilbert.
     pub blocks_pruned_by_zonemap: u32,
+    /// Cantidad de bloques resueltos en tiempo constante $O(1)$ mediante fusión algebraica de sinopsis.
     pub blocks_resolved_o1_by_synopsis: u32,
+    /// Cantidad de filas escaneadas en modo fallback columnar cuando un predicado requiere inspección fina.
     pub rows_scanned_fallback: u64,
 }
 
-/// Supported visualization output casts matching `OutputCastType` in `proto/metri.proto`.
+/// Formatos de proyección visual soportados en correspondencia con `OutputCastType` en `proto/metri.proto`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BiOutputCast {
+    /// Indicador escalar de rendimiento (`KPI`) con estadísticos de orden superior y cierre contable.
     Kpi = 1,
+    /// Serie de tiempo descomprimida desde bloques `Chimp128` con descriptores espectrales.
     Timeseries = 2,
+    /// Tabla analítica con regresión lineal múltiple OLS y parámetros Weibull MLE.
     Table = 3,
+    /// Distribución porcentual con reparto exacto de Hamilton en punto fijo de 128 bits.
     Pie = 4,
+    /// Gráfico de burbujas con probabilidad de supervivencia y tasa de riesgo (*hazard*) Weibull.
     Bubble = 5,
+    /// Exportación tabular formateada en texto CSV.
     CsvExport = 6,
 }
 
-/// Formatted BI response payload with deterministic flight recorder metrics.
+/// Respuesta analítica BI formateada junto con su telemetría determinista de ejecución.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MbfBiQueryResponse {
+    /// Tipo de proyección visual aplicado al resultado.
     pub cast_type: BiOutputCast,
+    /// Carga útil estructurada en JSON con las métricas y series calculadas.
     pub payload: serde_json::Value,
+    /// Telemetría de inspección, poda y fusión de bloques `.mbf`.
     pub flight_recorder: MbfExecutionFlightRecorder,
 }
 
-/// Domain-agnostic multi-zone `.mbf` analytical workspace assembling all 7 specialized `.mbf` binary zones:
-/// - Zone 1 (`PaxMvccZone`): Columnar PAX + MVCC + Elias-Fano + FSST
-/// - Zone 2 (`CsrGraphZone`): Forward/Backward CSR + Euler Tour hierarchy
-/// - Zone 3 (`Chimp128SeriesBlock`): Gorilla/Chimp128 + Delta-of-Delta time-series with affine canonicalization
-/// - Zone 4 (`FinancialLedgerZone` + `FenwickPrefixSum128`): 128-bit Fixed-Point ledger + Fenwick prefix trees
-/// - Zone 5 (`MbfHyperSynopsis512`): 512-byte AVX-512 aligned univariate, Weibull MLE, and spectral synopses
-/// - Zone 5B (`MbfHybridSearchIndex`): 6-layer multimodal hybrid search index
-/// - Zone 6B (`MbfCrossCovarianceMatrix`): Incremental Pébay co-moment matrix for $O(1)$ OLS/Ridge/PCA
+/// Espacio de trabajo analítico multizona `.mbf` agnóstico al dominio que integra las 7 zonas binarias especializadas:
+/// - Zona 1 (`PaxMvccZone`): Almacenamiento columnar PAX + MVCC + directorio Elias-Fano + compresión FSST.
+/// - Zona 2 (`CsrGraphZone`): Grafo CSR bidireccional + árbol de cobertura Euler Tour.
+/// - Zona 3 (`Chimp128SeriesBlock`): Series temporales Gorilla/Chimp128 + Delta-of-Delta con canonicalización afín.
+/// - Zona 4 (`FinancialLedgerZone` + `FenwickPrefixSum128`): Libro mayor en punto fijo de 128 bits + árboles de Fenwick.
+/// - Zona 5 (`MbfHyperSynopsis512`): Sinopsis univariadas, supervivencia Weibull MLE y análisis espectral alineadas a 512 bytes.
+/// - Zona 5B (`MbfHybridSearchIndex`): Índice de búsqueda híbrida multimodal de 6 capas.
+/// - Zona 6B (`MbfCrossCovarianceMatrix`): Matriz incremental de co-momentos de Pébay para OLS/Ridge/PCA en $O(1)$.
 #[derive(Debug, Clone)]
 pub struct MbfAnalyticalWorkspace {
+    /// Identificador del tenant propietario del espacio de trabajo.
     pub tenant_id: String,
+    /// Nombre canónico de la entidad almacenada.
     pub entity_name: String,
+    /// Cabecera binaria de 64 bytes del archivo `.mbf`.
     pub header: MbfHeader,
+    /// Sello criptográfico HMAC-SHA256 que vincula el bloque al tenant y entidad.
     pub tenant_seal: MbfTenantCryptoSeal,
+    /// Zona 1: Almacenamiento columnar PAX con control de concurrencia MVCC.
     pub primary_pax: PaxMvccZone,
+    /// Zona 2: Grafo de referencias CSR y jerarquía Euler Tour.
     pub hierarchy_graph: CsrGraphZone,
+    /// Zona 3: Serie temporal primaria comprimida con Chimp128.
     pub primary_timeseries_iot: Chimp128SeriesBlock,
+    /// Zona 3: Serie temporal armónica de alta frecuencia para análisis espectral.
     pub spectral_timeseries_iot: Chimp128SeriesBlock,
+    /// Zona 4: Libro mayor financiero multimoneda con cadena Merkle y valoración de inventario.
     pub financial_ledger: FinancialLedgerZone,
+    /// Zona 4: Árbol de sumas prefijas de Fenwick de 128 bits para consultas de rango en $O(\log N)$.
     pub prefix_sums_fenwick: FenwickPrefixSum128,
+    /// Zona 5: Sinopsis estadística de 512 bytes de la métrica principal.
     pub primary_metric_synopsis: MbfHyperSynopsis512,
+    /// Zona 5: Sinopsis de supervivencia Weibull MLE con soporte de censura por la derecha.
     pub survival_weibull_synopsis: MbfHyperSynopsis512,
+    /// Zona 5: Sinopsis espectral con frecuencia dominante, RMS y factor de cresta.
     pub spectral_synopsis: MbfHyperSynopsis512,
+    /// Zona 6B: Matriz de covarianza cruzada multivariada incremental.
     pub multivariate_cov: MbfCrossCovarianceMatrix,
+    /// Zona 5B: Índice de búsqueda híbrida léxica, fonética, vectorial y espacial.
     pub hybrid_search_index: MbfHybridSearchIndex,
 }
 
 impl MbfAnalyticalWorkspace {
+    /// Secreto maestro de referencia para derivación de sellos criptográficos `.mbf` por tenant.
     pub const MASTER_SECRET: &'static [u8] = b"METRI_VORTEX_ENGINE_KMS_MASTER_KEY_2026";
 
-    /// Generates a deterministic, mathematically verifiable multi-zone `.mbf` workspace with known ground truths.
+    /// Genera un espacio de trabajo `.mbf` multizona determinista y matemáticamente verificable.
     pub fn generate_synthetic_reference() -> DomainResult<Self> {
         let tenant_id = "tenant_alpha".to_string();
         let entity_name = "entity_record".to_string();
@@ -1121,14 +1155,20 @@ impl MbfBiEngine {
     }
 }
 
-/// Multidimensional block-pruning filter for Terabyte/Petabyte federated queries over `.mbf.idx`.
+/// Filtro multidimensional de poda de bloques para consultas federadas de escala Terabyte/Petabyte sobre `.mbf.idx`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MbfTerabyteQueryFilter {
+    /// Cota inferior inclusiva de tiempo en milisegundos epoch.
     pub min_timestamp_ms: i64,
+    /// Cota superior inclusiva de tiempo en milisegundos epoch.
     pub max_timestamp_ms: i64,
+    /// Cota inferior en la curva de llenado de espacio de Hilbert 3D.
     pub min_hilbert_key: u64,
+    /// Cota superior en la curva de llenado de espacio de Hilbert 3D.
     pub max_hilbert_key: u64,
+    /// Valor mínimo de la métrica principal para poda por `ZoneMap`.
     pub min_value_bound: f64,
+    /// Valor máximo de la métrica principal para poda por `ZoneMap`.
     pub max_value_bound: f64,
 }
 
@@ -1145,37 +1185,60 @@ impl Default for MbfTerabyteQueryFilter {
     }
 }
 
-/// Compact `.mbf.idx` descriptor for a single immutable L1 (`16–64 MB`) or L2 (`256 MB–1 GB`) `.mbf` stripe.
+/// Descriptor compacto `.mbf.idx` para un *stripe* inmutable de nivel L1 (`16–64 MB`) o L2 (`256 MB–1 GB`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MbfStripeSynopsisDescriptor {
+    /// Identificador único del *stripe* dentro del catálogo.
     pub stripe_id: String,
+    /// Nivel jerárquico de compactación (`1` = L1, `2` = L2).
     pub level: u8,
+    /// Clave del objeto `.mbf` completo en el almacenamiento S3.
     pub s3_key: String,
+    /// Clave del objeto espejo `.mbf.idx` de sinopsis en S3.
     pub idx_s3_key: String,
+    /// Cantidad total de filas contenidas en el *stripe*.
     pub row_count: u64,
+    /// Tamaño físico en bytes del archivo `.mbf` representado.
     pub physical_bytes: u64,
+    /// Marca de tiempo mínima en milisegundos epoch dentro del *stripe*.
     pub min_timestamp_ms: i64,
+    /// Marca de tiempo máxima en milisegundos epoch dentro del *stripe*.
     pub max_timestamp_ms: i64,
+    /// Clave mínima en la curva de Hilbert 3D dentro del *stripe*.
     pub min_hilbert_key: u64,
+    /// Clave máxima en la curva de Hilbert 3D dentro del *stripe*.
     pub max_hilbert_key: u64,
+    /// Sinopsis estadística univariada de 512 bytes de la métrica principal.
     pub primary_synopsis: MbfHyperSynopsis512,
+    /// Sinopsis de supervivencia Weibull MLE del *stripe*.
     pub survival_synopsis: MbfHyperSynopsis512,
+    /// Sinopsis espectral de frecuencia y energía del *stripe*.
     pub spectral_synopsis: MbfHyperSynopsis512,
+    /// Matriz de co-momentos de covarianza cruzada del *stripe*.
     pub cov_matrix: MbfCrossCovarianceMatrix,
+    /// Valor contable de cierre (`closing_book_value`) al final del *stripe*.
     pub closing_book_value: FixedDecimal128,
+    /// Costo unitario promedio ponderado (`WAC`) vigente al cierre del *stripe*.
     pub running_wac_unit_cost: FixedDecimal128,
 }
 
-/// Federated L1/L2 `.mbf.idx` synopsis catalog scaling linearly from Gigabytes to multi-Terabyte and Petabyte datasets
-/// while keeping active Lambda memory consumption under a few Megabytes.
+/// Catálogo federado de sinopsis `.mbf.idx` de niveles L1/L2 que escala desde Gigabytes hasta múltiples Terabytes
+/// manteniendo una huella de memoria en AWS Lambda de pocos Megabytes.
 #[derive(Debug, Clone)]
 pub struct MbfTieredTerabyteCatalog {
+    /// Identificador del tenant propietario del catálogo.
     pub tenant_id: String,
+    /// Nombre canónico de la entidad indexada.
     pub entity_name: String,
+    /// Cabecera binaria de 64 bytes del catálogo.
     pub catalog_header: MbfHeader,
+    /// Sello criptográfico HMAC-SHA256 del catálogo para verificación Zero-Trust.
     pub tenant_seal: MbfTenantCryptoSeal,
+    /// Volumen físico total en bytes representado por todos los *stripes* del catálogo.
     pub total_physical_bytes: u64,
+    /// Cantidad total de filas acumuladas en el catálogo.
     pub total_rows: u64,
+    /// Lista ordenada de descriptores de *stripes* L1/L2.
     pub stripes: Vec<MbfStripeSynopsisDescriptor>,
 }
 
@@ -1273,39 +1336,61 @@ impl MbfTieredTerabyteCatalog {
     }
 }
 
-/// Level-3 (`L3`) Super-Manifest aggregating `1,024` L2 stripes (`1.0 TiB` = $1,099,511,627,776$ bytes, $5.12 \times 10^9$ rows)
-/// into a single 512-byte synopsis node so that 1 Petabyte ($1,048,576$ L2 stripes) requires only $1,024$ L3 nodes (~1.8 MB RAM).
+/// Super-Manifiesto de Nivel 3 (`L3`) que pre-agrega `1.024` *stripes* L2 (`1,0 TiB`, $5,12 \times 10^9$ filas)
+/// en un único nodo de sinopsis de 512 bytes, permitiendo representar 1 Petabyte con solo $1.024$ nodos L3 (~1,8 MB en RAM).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MbfPetabyteSuperManifest {
+    /// Identificador único del Super-Manifiesto L3.
     pub super_manifest_id: String,
+    /// Número de *stripes* L2 hijos consolidados en este nodo L3.
     pub l2_stripe_count: u32,
+    /// Cantidad total de filas consolidadas en este nodo L3.
     pub row_count: u64,
+    /// Tamaño físico total en bytes representado por este nodo L3.
     pub physical_bytes: u64,
+    /// Marca de tiempo mínima en milisegundos epoch del nodo L3.
     pub min_timestamp_ms: i64,
+    /// Marca de tiempo máxima en milisegundos epoch del nodo L3.
     pub max_timestamp_ms: i64,
+    /// Clave mínima de Hilbert 3D del nodo L3.
     pub min_hilbert_key: u64,
+    /// Clave máxima de Hilbert 3D del nodo L3.
     pub max_hilbert_key: u64,
+    /// Sinopsis estadística univariada fusionada de los *stripes* hijos.
     pub primary_synopsis: MbfHyperSynopsis512,
+    /// Sinopsis de supervivencia Weibull fusionada de los *stripes* hijos.
     pub survival_synopsis: MbfHyperSynopsis512,
+    /// Sinopsis espectral fusionada de los *stripes* hijos.
     pub spectral_synopsis: MbfHyperSynopsis512,
+    /// Matriz de covarianza cruzada fusionada de los *stripes* hijos.
     pub cov_matrix: MbfCrossCovarianceMatrix,
+    /// Valor contable en libros al cierre del nodo L3.
     pub closing_book_value: FixedDecimal128,
+    /// Costo unitario promedio ponderado (`WAC`) al cierre del nodo L3.
     pub running_wac_unit_cost: FixedDecimal128,
-    /// Optional L2 child stripes materialized on-demand only when a query boundary partially intersects this L3 node.
+    /// Descriptores hijos L2 materializados bajo demanda cuando un predicado intersecta parcialmente la frontera del nodo L3.
     pub boundary_l2_stripes: Vec<MbfStripeSynopsisDescriptor>,
 }
 
-/// Two-tier Hierarchical Petabyte Catalog (`L3 Super-Manifests` $\rightarrow$ `L2 Stripes`) scaling to
-/// **1+ Petabytes ($1,048,576$ L2 stripes, $5.24 \times 10^{12}$ rows)** within `< 2 MB` of AWS Lambda RAM.
+/// Catálogo jerárquico de dos niveles a escala Petabyte (`Super-Manifiestos L3` -> `Stripes L2`) capaz de indexar
+/// más de **1 Petabyte ($1.048.576$ *stripes* L2, $5,24 \times 10^{12}$ filas)** en menos de `2 MB` de RAM en AWS Lambda.
 #[derive(Debug, Clone)]
 pub struct MbfPetabyteHierarchicalCatalog {
+    /// Identificador del tenant propietario del catálogo jerárquico.
     pub tenant_id: String,
+    /// Nombre canónico de la entidad indexada.
     pub entity_name: String,
+    /// Cabecera binaria de 64 bytes del catálogo jerárquico.
     pub catalog_header: MbfHeader,
+    /// Sello criptográfico HMAC-SHA256 del catálogo jerárquico.
     pub tenant_seal: MbfTenantCryptoSeal,
+    /// Volumen físico total en bytes representado por el catálogo completo.
     pub total_physical_bytes: u64,
+    /// Cantidad total de filas representadas en el catálogo.
     pub total_rows: u64,
+    /// Cantidad total de *stripes* L2 agrupados bajo los Super-Manifiestos L3.
     pub total_l2_stripes: u32,
+    /// Vector de Super-Manifiestos de nivel L3 (1 TiB por cada nodo L3).
     pub l3_super_manifests: Vec<MbfPetabyteSuperManifest>,
 }
 

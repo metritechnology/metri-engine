@@ -1,10 +1,8 @@
-//! In-memory session store — tests and development only.
+//! Almacén de sesiones en memoria (`InMemorySessionStore`) exclusivo para pruebas y desarrollo.
 //!
-//! Session store en memoria.
-//!
-//! ÚNICAMENTE para tests y desarrollo: nunca se construye en producción
-//! (server.rs monta `HmacTokenStore`). A diferencia de antes, `revoke_session`
-//! respeta el contrato del trait (LSP): un jti revocado ya no autentica.
+//! Nunca se instancia en producción (`server.rs` monta `HmacTokenStore`).
+//! Respeta el contrato de sustitución de Liskov (`ISessionStore`): un `jti` revocado
+//! mediante `revoke_session` deja de autenticar inmediatamente.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
@@ -14,8 +12,10 @@ use async_trait::async_trait;
 use crate::domain::errors::DomainError;
 use crate::domain::protocols::{ISessionStore, Session};
 
+/// Capacidad máxima de sesiones almacenadas en memoria antes de desalojar entradas antiguas.
 pub const MAX_SESSION_CACHE_SIZE: usize = 10_000;
 
+/// Implementación en memoria de `ISessionStore` con soporte de revocación por `jti` para pruebas.
 pub struct InMemorySessionStore {
     sessions: RwLock<HashMap<String, Session>>,
     revoked: RwLock<HashSet<String>>,
@@ -28,6 +28,7 @@ impl Default for InMemorySessionStore {
 }
 
 impl InMemorySessionStore {
+    /// Crea un almacén de sesiones en memoria vacío.
     pub fn new() -> Self {
         Self {
             sessions: RwLock::new(HashMap::new()),
@@ -35,6 +36,7 @@ impl InMemorySessionStore {
         }
     }
 
+    /// Inserta o actualiza una sesión asociada al token indicado en el almacén en memoria.
     pub fn insert(&self, token: &str, session: Session) {
         if let Ok(mut lock) = self.sessions.write() {
             if lock.len() >= MAX_SESSION_CACHE_SIZE && !lock.contains_key(token) {

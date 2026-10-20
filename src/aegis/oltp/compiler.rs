@@ -1,9 +1,7 @@
-//! OLTP compiler — AST IR to physical EAV plan.
+//! Compilador de consultas AST IR hacia planes físicos de lectura EAV (`NativeQueryPlan`).
 //!
-//! Compilador OLTP: AST IR → plan físico EAV (`NativeQueryPlan`).
-//!
-//! Conecta la salida del PlanSelector (`janus::plan_selector::EavQueryPlan`)
-//! con el ejecutor físico (`eav::reader::query::EavQueryExecutor`).
+//! Conecta la decisión del selector de índices (`janus::plan_selector::EavQueryPlan`)
+//! con el ejecutor físico de particiones sobre `.mbf` (`eav::reader::query::EavQueryExecutor`).
 
 use serde_json::Value;
 use tracing::debug;

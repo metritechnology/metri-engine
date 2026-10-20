@@ -1,4 +1,4 @@
-//! Zone 2 CSR bidirectional graph and hierarchical Euler Tour interval tree for O(1) subtree rollups.
+//! Grafo bidireccional CSR de la Zona 2 y árbol de intervalos jerárquico Euler Tour para agregaciones de subárboles en $O(1)$.
 
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
@@ -10,55 +10,67 @@ use crate::mbf::format::pad_to_64;
 
 const ZONE2_MAGIC: [u8; 8] = *b"MBFZ2CSR";
 
-/// 16-byte aligned Euler Tour interval node (`[tin, tout]`) for arbitrary self-referential hierarchies (§4.3).
+/// Nodo de intervalo Euler Tour alineado a 16 bytes (`[tin, tout]`) para jerarquías autorreferenciales arbitrarias.
 #[repr(C, align(16))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct EulerTreeNode {
+    /// Instante de entrada (`tin`) del recorrido en profundidad (DFS) de Euler.
     pub tin: u32,
+    /// Instante de salida (`tout`) del recorrido en profundidad (DFS) de Euler.
     pub tout: u32,
+    /// Identificador de atributo heredado de forma descendente en la jerarquía.
     pub inherited_attribute_id: u32,
+    /// Profundidad del nodo respecto a la raíz del árbol.
     pub depth: u16,
+    /// Banderas de estado del nodo (Bit 0: indica si posee nodos hijos).
     pub flags: u16, // Bit 0: has_children
 }
 
 impl EulerTreeNode {
-    /// Returns true if `other` belongs to the subtree rooted at `self` (including `self`) in $O(1)$.
+    /// Devuelve `true` si `other` pertenece al subárbol enraizado en `self` (incluyendo a `self`) en $O(1)$.
     #[inline]
     pub fn contains_in_subtree(&self, other: &EulerTreeNode) -> bool {
         self.tin <= other.tin && other.tin <= self.tout
     }
 
+    /// Devuelve `true` si el nodo posee al menos un nodo hijo directo.
     #[inline]
     pub fn has_children(&self) -> bool {
         (self.flags & 1) != 0
     }
 }
 
-/// Zone 2 CSR Graph + Hierarchical Euler Tour Engine (§4.3).
-/// Stores both the dynamic adjacency indices and the flat contiguous CSR arrays (`fwd_offsets`, `fwd_targets`, `rev_offsets`, `rev_sources`).
+/// Motor de grafo CSR y árbol jerárquico Euler Tour de la Zona 2.
+/// Almacena tanto los índices dinámicos de adyacencia como los arreglos planos contiguos CSR (`fwd_offsets`, `fwd_targets`, `rev_offsets`, `rev_sources`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CsrGraphZone {
+    /// Mapa de nodos del árbol de intervalos Euler Tour por identificador de fila/nodo.
     pub euler_nodes: HashMap<u32, EulerTreeNode>,
-    /// Forward edges: `(source_row_id, attr_id) -> Vec<target_row_id>`
+    /// Aristas directas: `(source_row_id, attr_id) -> Vec<target_row_id>`.
     pub forward_csr: HashMap<(u32, u16), Vec<u32>>,
-    /// Reverse VAET edges: `(target_row_id, attr_id) -> Vec<source_row_id>`
+    /// Aristas inversas VAET: `(target_row_id, attr_id) -> Vec<source_row_id>`.
     pub reverse_vaet_csr: HashMap<(u32, u16), Vec<u32>>,
-    /// Contiguous Forward CSR arrays (§4.3.1)
+    /// Arreglo contiguo de desplazamientos de aristas salientes (Forward CSR).
     pub fwd_offsets: Vec<u32>,
+    /// Arreglo contiguo de nodos destino de aristas salientes (Forward CSR).
     pub fwd_targets: Vec<u32>,
+    /// Arreglo contiguo de identificadores de atributo de aristas salientes.
     pub fwd_attr_ids: Vec<u16>,
-    /// Contiguous Reverse CSR arrays (§4.3.2)
+    /// Arreglo contiguo de desplazamientos de aristas entrantes (Reverse CSR).
     pub rev_offsets: Vec<u32>,
+    /// Arreglo contiguo de nodos origen de aristas entrantes (Reverse CSR).
     pub rev_sources: Vec<u32>,
+    /// Arreglo contiguo de identificadores de atributo de aristas entrantes.
     pub rev_attr_ids: Vec<u16>,
 }
 
 impl CsrGraphZone {
+    /// Crea una nueva instancia vacía de `CsrGraphZone`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds a reference edge and automatically indexes its inverse VAET edge.
+    /// Añade una arista de referencia directa e indexa automáticamente su arista inversa VAET.
     pub fn add_reference_edge(&mut self, source_row: u32, attr_id: u16, target_row: u32) {
         self.forward_csr
             .entry((source_row, attr_id))
@@ -70,7 +82,7 @@ impl CsrGraphZone {
             .push(source_row);
     }
 
-    /// Materializes the contiguous flat CSR arrays (`fwd_offsets`, `fwd_targets`, `rev_offsets`, `rev_sources`, §4.3).
+    /// Materializa los arreglos planos contiguos CSR (`fwd_offsets`, `fwd_targets`, `rev_offsets`, `rev_sources`).
     pub fn seal_contiguous_csr_arrays(&mut self) {
         let max_src = self
             .forward_csr
@@ -129,15 +141,15 @@ impl CsrGraphZone {
         }
     }
 
-    /// Returns all entities referencing `target_row` via `attr_id` in $O(1)$ slice lookup.
+    /// Devuelve todas las entidades que referencian a `target_row` mediante `attr_id` en tiempo $O(1)$.
     pub fn reverse_referrers(&self, target_row: u32, attr_id: u16) -> &[u32] {
         self.reverse_vaet_csr
             .get(&(target_row, attr_id))
             .map_or(&[], Vec::as_slice)
     }
 
-    /// Compiles an arbitrary self-referential hierarchy tree from `(node_id, Option<parent_id>, Option<own_inherited_attr_id>)`
-    /// into $O(1)$ Euler Tour intervals `[tin, tout]` with automatic top-down attribute inheritance.
+    /// Compila un árbol jerárquico autorreferencial a partir de tuplas `(node_id, Option<parent_id>, Option<own_inherited_attr_id>)`
+    /// en intervalos Euler Tour `[tin, tout]` con herencia descendente automática de atributos.
     pub fn build_hierarchical_euler_tree(&mut self, nodes: &[(u32, Option<u32>, Option<u32>)]) {
         let mut children_map: HashMap<u32, Vec<u32>> = HashMap::new();
         let mut own_attr_map: HashMap<u32, Option<u32>> = HashMap::new();
@@ -203,7 +215,7 @@ impl CsrGraphZone {
         );
     }
 
-    /// Filters all descendant node IDs in the subtree rooted at `root_id` using a single integer range check `[tin..=tout]`.
+    /// Filtra todos los identificadores de nodos descendientes en el subárbol enraizado en `root_id` mediante la comprobación de rango `[tin..=tout]`.
     pub fn filter_subtree_descendants(&self, root_id: u32) -> Vec<u32> {
         let Some(root_euler) = self.euler_nodes.get(&root_id) else {
             return Vec::new();
@@ -218,9 +230,8 @@ impl CsrGraphZone {
         out
     }
 
-    /// Evaluates the contiguous Euler interval check `tin[u] <= row_tin <= tout[u]` across a dense columnar slice
-    /// of row `location_tin` values in 16-lane vectorized batches (`04_ALGORITHMS_AND_PAPERS.md` §3.1),
-    /// returning the matching row indices in $O(N/16)$ without pointer chasing or recursive joins.
+    /// Evalúa la pertenencia al intervalo de Euler `tin[u] <= row_tin <= tout[u]` sobre un corte columnar denso
+    /// en lotes vectorizados de 16 carriles, devolviendo los índices de fila coincidentes en $O(N/16)$.
     pub fn filter_rows_in_subtree_vectorized(
         &self,
         root_id: u32,
@@ -250,8 +261,7 @@ impl CsrGraphZone {
         matching_rows
     }
 
-    /// Encodes Zone 2 into a 64-byte aligned binary slab (§4.3):
-    /// `[Magic "MBFZ2CSR" (8B) | EulerTreeNode Slab (16B aligned) | Forward CSR Edges | Reverse CSR Edges | Padding 64B]`.
+    /// Codifica la Zona 2 en un bloque binario alineado a 64 bytes con cabecera `"MBFZ2CSR"`, nodos Euler Tour y aristas CSR.
     pub fn encode_zone_binary(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(&ZONE2_MAGIC);
@@ -286,7 +296,7 @@ impl CsrGraphZone {
         buf
     }
 
-    /// Decodes a Zone 2 `CsrGraphZone` from a binary slice and rebuilds both Forward and Reverse VAET CSR indices.
+    /// Decodifica una instancia de `CsrGraphZone` desde un corte binario de la Zona 2 y reconstruye los índices CSR directos e inversos.
     pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 16 || bytes[0..8] != ZONE2_MAGIC {
             return Err(DomainError::mbf(

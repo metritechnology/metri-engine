@@ -1,4 +1,4 @@
-//! Tests for `aegis::oltp::aggregation`.
+//! Pruebas unitarias de las 14 estrategias de agregación estadística en memoria (`aegis::oltp::aggregation`).
 use crate::aegis::oltp::aggregation::*;
 use serde_json::json;
 

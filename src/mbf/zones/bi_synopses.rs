@@ -1,4 +1,4 @@
-//! Zone 5 MbfHyperSynopsis512 (512-byte mathematical synopsis) for O(1) higher-order moments, Weibull reliability, econometrics, and spectral FFT/PSD.
+//! Zona 5 del formato MBF: `MbfHyperSynopsis512` (sinopsis matemática de 512 bytes) para momentos de orden superior en $O(1)$, confiabilidad de Weibull, econometría y análisis espectral FFT/PSD.
 
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
@@ -12,26 +12,35 @@ pub use super::fuzzy_math_catalog::{
     AffineTransform, DimensionalUnitRegistry, DiscreteMarkovChain, SurvivalRenewalKpis,
 };
 
-/// Zone 5 binary magic (`"MBFZ5SYN"`).
+/// Bytes mágicos de la Zona 5 (`"MBFZ5SYN"`).
 pub const MBF_ZONE5_MAGIC: [u8; 8] = *b"MBFZ5SYN";
 
-/// Spec §4.6.1 64-byte aligned `NumericBlockSynopsis` (`#[repr(C, align(64))]`, 1 CPU cache line).
+/// Sinopsis numérica de bloque alineada a 64 bytes (`NumericBlockSynopsis`, `#[repr(C, align(64))]`, 1 línea de caché de CPU).
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Pod, Zeroable)]
 pub struct NumericBlockSynopsis {
+    /// Cantidad de observaciones numéricas válidas (no nulas) en el bloque.
     pub valid_count: u32,
+    /// Cantidad de valores nulos registrados en el bloque.
     pub null_count: u32,
+    /// Suma aritmética acumulada de las observaciones válidas.
     pub sum: f64,
+    /// Media muestral calculada mediante recurrencia estable de Welford.
     pub mean: f64,
+    /// Segundo momento central acumulado $M_2 = \sum (x_i - \bar{x})^2$ de Welford.
     pub m2: f64,
+    /// Valor mínimo observado en el bloque.
     pub min: f64,
+    /// Valor máximo observado en el bloque.
     pub max: f64,
+    /// Desplazamiento en bytes hacia el boceto de cuantiles KLL asociado.
     pub kll_sketch_offset: u64,
+    /// Relleno reservado para garantizar alineación exacta a 64 bytes.
     pub reserved_pad: u64,
 }
 
 impl NumericBlockSynopsis {
-    /// Builds a 64-byte `NumericBlockSynopsis` from a slice of finite `f64` observations using Welford's single-pass recurrence (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
+    /// Construye un `NumericBlockSynopsis` de 64 bytes a partir de una rebanada de observaciones finitas `f64` usando la recurrencia de un solo paso de Welford.
     pub fn from_values(values: &[f64], null_count: u32, kll_sketch_offset: u64) -> Self {
         if values.is_empty() {
             return Self {
@@ -78,7 +87,7 @@ impl NumericBlockSynopsis {
         }
     }
 
-    /// Merges two 64-byte `NumericBlockSynopsis` records in $O(1)$ using Chan/Welford's parallel variance formula (`04_ALGORITHMS_AND_PAPERS.md` §2.1):
+    /// Fusiona dos registros `NumericBlockSynopsis` de 64 bytes en $O(1)$ mediante la fórmula de varianza paralela de Chan/Welford:
     /// $$n_C = n_A + n_B, \quad \delta = \mu_B - \mu_A, \quad \mu_C = \mu_A + \delta \frac{n_B}{n_C}, \quad M_{2,C} = M_{2,A} + M_{2,B} + \delta^2 \frac{n_A n_B}{n_C}$$
     #[inline]
     pub fn merge(&self, other: &Self) -> Self {
@@ -108,7 +117,7 @@ impl NumericBlockSynopsis {
         }
     }
 
-    /// Sample variance $s^2 = M_2 / (n - 1)$ in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
+    /// Calcula la varianza muestral $s^2 = M_2 / (n - 1)$ en tiempo $O(1)$.
     #[inline]
     pub fn sample_variance(&self) -> f64 {
         if self.valid_count <= 1 {
@@ -118,13 +127,13 @@ impl NumericBlockSynopsis {
         }
     }
 
-    /// Standard deviation $s = \sqrt{M_2 / (n - 1)}$ in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
+    /// Calcula la desviación estándar muestral $s = \sqrt{M_2 / (n - 1)}$ en tiempo $O(1)$.
     #[inline]
     pub fn std_dev(&self) -> f64 {
         self.sample_variance().sqrt()
     }
 
-    /// Standardized Z-Score $z = \frac{x_{\text{actual}} - \mu_C}{s}$ in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.1).
+    /// Calcula el puntaje Z estandarizado $z = \frac{x_{\text{actual}} - \mu_C}{s}$ en tiempo $O(1)$.
     #[inline]
     pub fn z_score(&self, x_actual: f64) -> f64 {
         let s = self.std_dev();
@@ -136,13 +145,17 @@ impl NumericBlockSynopsis {
     }
 }
 
-/// Spec §4.6.2 Compact 256-byte KLL Quantile Sketch (`#[repr(C, align(64))]`, 4 CPU cache lines).
+/// Boceto compacto de cuantiles KLL de 256 bytes (`CompactKllSketch`, `#[repr(C, align(64))]`, 4 líneas de caché de CPU).
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Pod, Zeroable)]
 pub struct CompactKllSketch {
+    /// Cantidad total de observaciones resumidas en el boceto.
     pub count: u64,
+    /// Valor mínimo exacto observado.
     pub min_val: f64,
+    /// Valor máximo exacto observado.
     pub max_val: f64,
+    /// Arreglo de 29 puntos de corte intermedios distribuidos uniformemente en treintiles.
     pub quantiles_30: [f64; 29],
 }
 
@@ -153,7 +166,7 @@ impl Default for CompactKllSketch {
 }
 
 impl CompactKllSketch {
-    /// Builds a 256-byte KLL quantile sketch from sorted or unsorted values.
+    /// Construye un boceto de cuantiles KLL de 256 bytes a partir de valores ordenados o desordenados.
     pub fn from_values(values: &[f64]) -> Self {
         if values.is_empty() {
             return Self::zeroed();
@@ -177,7 +190,7 @@ impl CompactKllSketch {
         }
     }
 
-    /// Queries an approximate quantile $p \in [0, 1]$ in $O(1)$.
+    /// Consulta un cuantil aproximado para una probabilidad $p$ en `` `[0, 1]` `` en tiempo $O(1)$.
     pub fn query_quantile(&self, p: f64) -> f64 {
         if self.count == 0 {
             return 0.0;
@@ -193,7 +206,7 @@ impl CompactKllSketch {
         self.quantiles_30[idx]
     }
 
-    /// Merges two `CompactKllSketch` quantile summaries in $O(1)$ via weighted order-statistic compaction (`04_ALGORITHMS_AND_PAPERS.md` §1 Row 7).
+    /// Fusiona dos resúmenes de cuantiles `CompactKllSketch` en tiempo $O(1)$ mediante compactación ponderada de estadísticos de orden.
     pub fn merge(&self, other: &Self) -> Self {
         if self.count == 0 {
             return *other;
@@ -217,15 +230,17 @@ impl CompactKllSketch {
     }
 }
 
-/// Spec §4.6.2 Xor8 Filter (~9.84 bits/key, `< 0.39%` false positive rate) for $O(1)$ block pruning.
+/// Filtro probabilístico `Xor8Filter` (~9.84 bits/clave, tasa de falsos positivos `< 0.39%`) para poda de bloques en $O(1)$.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Xor8Filter {
+    /// Semilla determinista de 64 bits empleada para dispersar las claves.
     pub seed: u64,
+    /// Arreglo tripartito de huellas (*fingerprints*) de 8 bits.
     pub fingerprints: Vec<u8>,
 }
 
 impl Xor8Filter {
-    /// Builds an Xor8 filter from 64-bit key hashes.
+    /// Construye un filtro `Xor8Filter` a partir de una rebanada de hashes de clave de 64 bits.
     pub fn from_keys(keys: &[u64]) -> Self {
         let len = ((keys.len() * 123) / 100).max(32).next_multiple_of(3);
         let third = len / 3;
@@ -245,7 +260,7 @@ impl Xor8Filter {
         Self { seed, fingerprints }
     }
 
-    /// Returns `false` if `key` is guaranteed NOT to be in the block ($O(1)$ block pruning).
+    /// Devuelve `false` si se garantiza que `key` NO pertenece al bloque (poda de bloques en $O(1)$ sin falsos negativos).
     pub fn may_contain(&self, key: u64) -> bool {
         if self.fingerprints.len() < 3 {
             return false;
@@ -262,21 +277,22 @@ impl Xor8Filter {
     }
 }
 
-/// Compressed 32-bit Roaring Bitmap (`04_ALGORITHMS_AND_PAPERS.md` §1 Row 8, Chambi et al., *SPE 2016*)
-/// partitioning 32-bit row IDs by upper 16-bit chunk key (`u16`) into 64-bit word bitmap containers
-/// supporting hardware-accelerated `AND` (`&`), `OR` (`|`), and `AND_NOT` (`& !`) set intersections.
+/// Mapa de bits comprimido de 32 bits (`RoaringBitmap32`, Chambi et al.)
+/// que particiona los identificadores de fila de 32 bits por sus 16 bits superiores (`u16`) en contenedores de palabras de 64 bits,
+/// soportando intersecciones `AND` (`&`), uniones `OR` (`|`) y diferencias `AND_NOT` (`& !`) aceleradas por hardware.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoaringBitmap32 {
-    /// Sorted list of `(high_16_key, 1024 x u64 bitmap words)` containers.
+    /// Mapa ordenado de contenedores `(high_16_key, 1024 x u64 palabras de bitmap)`.
     pub containers: std::collections::BTreeMap<u16, Vec<u64>>,
 }
 
 impl RoaringBitmap32 {
+    /// Crea un `RoaringBitmap32` vacío.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Builds a `RoaringBitmap32` from a slice of 32-bit row IDs.
+    /// Construye un `RoaringBitmap32` a partir de una rebanada de identificadores de fila de 32 bits.
     pub fn from_row_ids(row_ids: &[u32]) -> Self {
         let mut bm = Self::new();
         for &id in row_ids {
@@ -285,7 +301,7 @@ impl RoaringBitmap32 {
         bm
     }
 
-    /// Inserts a 32-bit `row_id` into its corresponding 16-bit container.
+    /// Inserta un identificador `row_id` de 32 bits en su contenedor correspondiente de 16 bits.
     #[inline]
     pub fn insert(&mut self, row_id: u32) {
         let hi = (row_id >> 16) as u16;
@@ -299,7 +315,7 @@ impl RoaringBitmap32 {
         words[word_idx] |= 1u64 << bit_idx;
     }
 
-    /// Tests whether `row_id` is present in $O(1)$.
+    /// Comprueba si `row_id` está presente en el mapa de bits en tiempo $O(1)$.
     #[inline]
     pub fn contains(&self, row_id: u32) -> bool {
         let hi = (row_id >> 16) as u16;
@@ -309,7 +325,7 @@ impl RoaringBitmap32 {
             .is_some_and(|words| (words[lo / 64] & (1u64 << (lo % 64))) != 0)
     }
 
-    /// Computes the exact cardinality (popcount) across all containers using hardware `POPCNT`.
+    /// Calcula la cardinalidad exacta (*popcount*) sobre todos los contenedores usando la instrucción hardware `POPCNT`.
     pub fn cardinality(&self) -> u64 {
         self.containers
             .values()
@@ -318,7 +334,7 @@ impl RoaringBitmap32 {
             .sum()
     }
 
-    /// Word-level SIMD-friendly intersection (`self & other`) across matching 16-bit containers.
+    /// Intersección a nivel de palabra compatible con SIMD (`self & other`) entre contenedores de 16 bits coincidentes.
     pub fn and(&self, other: &Self) -> Self {
         let mut out = Self::new();
         for (&hi, words_a) in &self.containers {
@@ -338,7 +354,7 @@ impl RoaringBitmap32 {
         out
     }
 
-    /// Word-level SIMD-friendly union (`self | other`) across 16-bit containers.
+    /// Unión a nivel de palabra compatible con SIMD (`self | other`) entre contenedores de 16 bits.
     pub fn or(&self, other: &Self) -> Self {
         let mut out = self.clone();
         for (&hi, words_b) in &other.containers {
@@ -350,7 +366,7 @@ impl RoaringBitmap32 {
         out
     }
 
-    /// Materializes all set 32-bit row IDs in ascending order.
+    /// Materializa todos los identificadores de fila de 32 bits activos en orden ascendente.
     pub fn to_vec(&self) -> Vec<u32> {
         let mut out = Vec::new();
         for (&hi, words) in &self.containers {
@@ -368,68 +384,113 @@ impl RoaringBitmap32 {
     }
 }
 
-/// 512-byte aligned mathematical hyper-synopsis (`#[repr(C, align(64))]`, exactly 8 CPU cache lines).
-/// Unlocks 35+ statistical, actuarial, reliability, econometric, and spectral IoT functions in $O(1)$ per block.
+/// Hipersinopsis matemática alineada a 512 bytes (`#[repr(C, align(64))]`, exactamente 8 líneas de caché de CPU).
+///
+/// Habilita más de 35 funciones estadísticas, actuariales, de confiabilidad industrial, econométricas y espectrales de IoT en tiempo $O(1)$ por bloque.
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Pod, Zeroable)]
 pub struct MbfHyperSynopsis512 {
     // [Cache Line 0: Pébay Moments M1..M4 & Exact Financial Sum — 64 Bytes]
+    /// Cantidad total de observaciones válidas (no nulas) en el bloque.
     pub valid_count: u64,
+    /// Cantidad total de observaciones nulas en el bloque.
     pub null_count: u64,
+    /// Suma financiera exacta en punto fijo (`i128` escalado por $10^4$).
     pub sum_exact_i128: i128,
+    /// Media aritmética de primer orden ($M_1$) calculada mediante el algoritmo de Pébay.
     pub pebay_mean_m1: f64,
+    /// Momento central acumulado de segundo orden ($M_2$) de Pébay.
     pub pebay_m2: f64,
+    /// Momento central acumulado de tercer orden ($M_3$) de Pébay para asimetría (*skewness*).
     pub pebay_m3: f64,
+    /// Momento central acumulado de cuarto orden ($M_4$) de Pébay para curtosis (*kurtosis*).
     pub pebay_m4: f64,
 
     // [Cache Line 1: Extrema, Temporal State & Log/Geometric Sufficient Stats — 64 Bytes]
+    /// Valor mínimo exacto registrado en el bloque.
     pub min_val: f64,
+    /// Valor máximo exacto registrado en el bloque.
     pub max_val: f64,
+    /// Valor de la primera observación cronológica del bloque.
     pub first_val: f64,
+    /// Valor de la última observación cronológica del bloque.
     pub last_val: f64,
+    /// Marca de tiempo (ms epoch UTC) de la primera observación del bloque.
     pub first_timestamp_ms: i64,
+    /// Marca de tiempo (ms epoch UTC) de la última observación del bloque.
     pub last_timestamp_ms: i64,
+    /// Estadístico suficiente $\sum \ln(x_i)$ para media geométrica y verosimilitud log-normal/Weibull.
     pub sum_ln_x: f64,
+    /// Estadístico suficiente $\sum (\ln x_i)^2$ para varianza geométrica.
     pub sum_ln_x_sq: f64,
 
     // [Cache Line 2: Industrial Reliability (Weibull / MTBF / Hazard) & Robust Stats — 64 Bytes]
+    /// Estadístico suficiente $\sum (1 / x_i)$ para el cálculo de la media armónica en $O(1)$.
     pub sum_reciprocal_x: f64,
+    /// Estadístico suficiente $\sum x_i \ln(x_i)$ para entropía y ajuste de Weibull.
     pub sum_x_ln_x: f64,
+    /// Parámetro de forma ($\beta$) de la distribución de Weibull estimado por máxima verosimilitud (MLE).
     pub weibull_beta_mle: f32,
+    /// Parámetro de escala o vida característica ($\eta$) de Weibull estimado por máxima verosimilitud (MLE).
     pub weibull_eta_mle: f32,
+    /// Número de observaciones censuradas por la derecha (activos aún operativos sin fallo).
     pub censored_count: u64,
+    /// Suma total de tiempo de exposición acumulado en observaciones censuradas por la derecha.
     pub censored_exposure_sum: f64,
+    /// Mediana muestral ($P_{50}$) utilizada como centro robusto para la desviación absoluta mediana (MAD).
     pub mad_median: f64,
+    /// Desviación absoluta mediana ($\text{MAD} = \text{mediana}(|x_i - P_{50}|)$).
     pub mad_abs_deviation: f64,
+    /// Rango intercuartílico ($\text{IQR} = P_{75} - P_{25}$).
     pub iqr_spread: f64,
 
     // [Cache Line 3: Time-Series Econometrics, Autocorrelation (ACF) & Drift — 64 Bytes]
+    /// Producto cruzado centrado de retardo 1: $\sum (x_t - \bar{x})(x_{t-1} - \bar{x})$.
     pub sum_lag1_cross_prod: f64,
+    /// Producto cruzado centrado de retardo 2: $\sum (x_t - \bar{x})(x_{t-2} - \bar{x})$.
     pub sum_lag2_cross_prod: f64,
+    /// Suma de cuadrados de primeras diferencias: $\sum (x_t - x_{t-1})^2$ para el estadístico Durbin-Watson.
     pub sum_diff1_sq: f64,
+    /// Numerador centrado de regresión temporal OLS: $\sum (t_i - \bar{t})(x_i - \bar{x})$.
     pub sum_time_centered_prod: f64,
+    /// Denominador centrado de regresión temporal OLS: $\sum (t_i - \bar{t})^2$.
     pub sum_time_centered_sq: f64,
+    /// Estado final de la media móvil exponencial rápida ($\alpha = 0.25$).
     pub ema_fast_state: f64,
+    /// Estado final de la media móvil exponencial lenta ($\alpha = 0.05$).
     pub ema_slow_state: f64,
+    /// Suma acumulada positiva máxima (CUSUM superior) para detección de cambios de régimen.
     pub cusum_pos_max: f32,
+    /// Suma acumulada negativa mínima (CUSUM inferior) para detección de caídas de régimen.
     pub cusum_neg_min: f32,
 
     // [Cache Line 4: IoT Spectral Analysis (FFT / Goertzel / PSD / RMS / Crest) — 64 Bytes]
+    /// Valor eficaz o raíz cuadrática media ($\text{RMS} = \sqrt{\frac{1}{n}\sum x_i^2}$) de la señal.
     pub signal_rms: f64,
+    /// Factor de cresta ($\text{Peak} / \text{RMS}$) para detección de impactos mecánicos.
     pub crest_factor: f32,
+    /// Entropía espectral de Shannon normalizada en el intervalo `` `[0, 1]` ``.
     pub spectral_entropy: f32,
+    /// Frecuencia dominante en hercios (Hz) identificada mediante análisis espectral DFT/Goertzel.
     pub dominant_freq_hz: f32,
+    /// Potencia espectral asociada a la frecuencia dominante.
     pub dominant_freq_power: f32,
+    /// Energía distribuida en 8 sub-bandas de densidad espectral de potencia (PSD).
     pub psd_bands_energy: [f32; 8],
+    /// Tasa de cruces por cero respecto a la media muestral.
     pub zero_crossing_rate: f64,
 
     // [Cache Lines 5 & 6: 16 Extreme Tail Quantiles & Trimmed Mean — 128 Bytes]
+    /// Arreglo de 15 cuantiles de cola extrema ($P_{0.1}$ a $P_{99.99}$) más la media recortada al 5% en la posición 15.
     pub quantile_sketch_16: [f64; 16],
 
     // [Cache Line 7: HyperLogLog++ Distinct Registers (48B), Mini-Bloom & Checksum — 64 Bytes]
+    /// 48 registros HyperLogLog++ de 8 bits para estimación de cardinalidad `COUNT(DISTINCT)` en $O(1)$.
     #[serde(with = "serde_arrays_48")]
     pub hll_registers: [u8; 48],
+    /// Filtro mini-Bloom de 64 bits para descarte rápido de pertenencia puntual.
     pub bloom_mini_64: u64,
+    /// Suma de verificación SplitMix64/CRC64 de integridad de la sinopsis.
     pub synopsis_crc64: u64,
 }
 
@@ -499,7 +560,7 @@ impl Default for MbfHyperSynopsis512 {
 }
 
 impl MbfHyperSynopsis512 {
-    /// Projects this 512-byte hyper-synopsis down to the compact 64-byte `NumericBlockSynopsis` (§4.6.1).
+    /// Proyecta esta hipersinopsis de 512 bytes hacia el formato compacto `NumericBlockSynopsis` de 64 bytes.
     pub fn to_numeric_block_synopsis(&self, kll_sketch_offset: u64) -> NumericBlockSynopsis {
         NumericBlockSynopsis {
             valid_count: self.valid_count.min(u64::from(u32::MAX)) as u32,
@@ -514,12 +575,12 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Zero-copy 512-byte representation (`bytemuck::bytes_of`).
+    /// Vista binaria de copia cero de 512 bytes (`bytemuck::bytes_of`).
     pub fn as_bytes(&self) -> &[u8] {
         bytemuck::bytes_of(self)
     }
 
-    /// Encodes a slice of `MbfHyperSynopsis512` records into a 64-byte aligned Zone 5 binary buffer.
+    /// Codifica una rebanada de registros `MbfHyperSynopsis512` en un búfer binario de la Zona 5 alineado a 64 bytes.
     pub fn encode_zone_binary_slice(synopses: &[Self]) -> Vec<u8> {
         let mut buf = Vec::with_capacity(64 + synopses.len() * 512);
         buf.extend_from_slice(&MBF_ZONE5_MAGIC);
@@ -532,7 +593,7 @@ impl MbfHyperSynopsis512 {
         buf
     }
 
-    /// Decodes a 64-byte aligned Zone 5 binary buffer into a `Vec<MbfHyperSynopsis512>`.
+    /// Decodifica un búfer binario de la Zona 5 alineado a 64 bytes en un `Vec<MbfHyperSynopsis512>`.
     pub fn decode_zone_binary_slice(bytes: &[u8]) -> DomainResult<Vec<Self>> {
         if bytes.len() < 64 {
             return Err(DomainError::mbf(
@@ -566,8 +627,8 @@ impl MbfHyperSynopsis512 {
         Ok(out)
     }
 
-    /// Builds a complete 512-byte mathematical synopsis from a slice of `(timestamp_ms, value)` observations,
-    /// optional right-censored exposure times (`censored_exposures`), and sample rate `sample_rate_hz`.
+    /// Construye una hipersinopsis matemática completa de 512 bytes a partir de una rebanada de observaciones `(timestamp_ms, value)`,
+    /// tiempos opcionales de exposición censurados por la derecha (`censored_exposures`) y frecuencia de muestreo `sample_rate_hz`.
     pub fn from_observations(
         observations: &[(i64, f64)],
         null_count: u64,
@@ -744,7 +805,7 @@ impl MbfHyperSynopsis512 {
         syn
     }
 
-    /// Merges two `MbfHyperSynopsis512` blocks in $O(1)$ using Pébay's arbitrary-order parallel formulas!
+    /// Fusiona dos bloques `MbfHyperSynopsis512` en tiempo $O(1)$ mediante las fórmulas paralelas de orden arbitrario de Pébay.
     pub fn merge(&self, other: &Self) -> Self {
         if self.valid_count == 0 {
             return *other;
@@ -820,6 +881,7 @@ impl MbfHyperSynopsis512 {
 
     // ── O(1) Mathematical & Statistical Functions from Synopsis ───────────────
 
+    /// Calcula la varianza muestral $s^2 = M_2 / (n - 1)$ en tiempo $O(1)$.
     #[inline]
     pub fn sample_variance(&self) -> f64 {
         if self.valid_count <= 1 {
@@ -829,11 +891,13 @@ impl MbfHyperSynopsis512 {
         }
     }
 
+    /// Calcula la desviación estándar muestral $s = \sqrt{s^2}$ en tiempo $O(1)$.
     #[inline]
     pub fn std_dev(&self) -> f64 {
         self.sample_variance().sqrt()
     }
 
+    /// Calcula el coeficiente de variación adimensional $\text{CV} = s / |\bar{x}|$ en tiempo $O(1)$.
     #[inline]
     pub fn coeff_of_variation(&self) -> f64 {
         if self.pebay_mean_m1.abs() < 1e-12 {
@@ -843,7 +907,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Exact Skewness ($\gamma_1 = \frac{\sqrt{n} M_3}{M_2^{3/2}}$) in $O(1)$.
+    /// Calcula el coeficiente de asimetría de Fisher ($\gamma_1 = \frac{\sqrt{n} M_3}{M_2^{3/2}}$) en tiempo $O(1)$.
     #[inline]
     pub fn skewness(&self) -> f64 {
         if self.valid_count < 3 || self.pebay_m2 < 1e-15 {
@@ -853,7 +917,7 @@ impl MbfHyperSynopsis512 {
         (n.sqrt() * self.pebay_m3) / self.pebay_m2.powf(1.5)
     }
 
-    /// Exact Excess Kurtosis ($\gamma_2 = \frac{n M_4}{M_2^2} - 3$) in $O(1)$.
+    /// Calcula el exceso de curtosis ($\gamma_2 = \frac{n M_4}{M_2^2} - 3$) en tiempo $O(1)$.
     #[inline]
     pub fn excess_kurtosis(&self) -> f64 {
         if self.valid_count < 4 || self.pebay_m2 < 1e-15 {
@@ -863,7 +927,7 @@ impl MbfHyperSynopsis512 {
         (n * self.pebay_m4) / (self.pebay_m2 * self.pebay_m2) - 3.0
     }
 
-    /// Jarque-Bera Normality Test Statistic ($JB = \frac{n}{6}(\gamma_1^2 + \frac{\gamma_2^2}{4})$) in $O(1)$.
+    /// Calcula el estadístico de normalidad de Jarque-Bera ($JB = \frac{n}{6}(\gamma_1^2 + \frac{\gamma_2^2}{4})$) en tiempo $O(1)$.
     #[inline]
     pub fn jarque_bera_stat(&self) -> f64 {
         if self.valid_count < 4 {
@@ -874,6 +938,7 @@ impl MbfHyperSynopsis512 {
         ((self.valid_count as f64) / 6.0) * (s * s + 0.25 * k * k)
     }
 
+    /// Calcula la media geométrica $\exp\left(\frac{1}{n}\sum \ln x_i\right)$ en tiempo $O(1)$.
     #[inline]
     pub fn geometric_mean(&self) -> f64 {
         if self.valid_count == 0 {
@@ -883,6 +948,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
+    /// Calcula la media armónica $\frac{n}{\sum (1/x_i)}$ en tiempo $O(1)$.
     #[inline]
     pub fn harmonic_mean(&self) -> f64 {
         if self.valid_count == 0 || self.sum_reciprocal_x.abs() < 1e-15 {
@@ -892,7 +958,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Lag-1 Serial Autocorrelation $\rho(1)$ in $O(1)$.
+    /// Calcula la autocorrelación serial de retardo 1 $\rho(1)$ en tiempo $O(1)$.
     #[inline]
     pub fn acf_lag1(&self) -> f64 {
         if self.pebay_m2 < 1e-15 {
@@ -902,7 +968,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Durbin-Watson Autocorrelation Statistic ($DW = \frac{\sum (e_t - e_{t-1})^2}{M_2} \in [0, 4]$) in $O(1)$.
+    /// Calcula el estadístico de autocorrelación de Durbin-Watson ($DW = \frac{\sum (e_t - e_{t-1})^2}{M_2}$ en `` `[0, 4]` ``) en tiempo $O(1)$.
     #[inline]
     pub fn durbin_watson(&self) -> f64 {
         if self.pebay_m2 < 1e-15 {
@@ -912,7 +978,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// OLS Temporal Drift Slope ($\beta_1 = \frac{\sum (t_i - \mu_t)(x_i - \mu_x)}{\sum (t_i - \mu_t)^2}$) in $O(1)$.
+    /// Calcula la pendiente de deriva temporal por mínimos cuadrados ordinarios ($\beta_1 = \frac{\sum (t_i - \mu_t)(x_i - \mu_x)}{\sum (t_i - \mu_t)^2}$) en tiempo $O(1)$.
     #[inline]
     pub fn temporal_drift_slope(&self) -> f64 {
         if self.sum_time_centered_sq < 1e-15 {
@@ -922,7 +988,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Weibull Survival Probability $R(t) = \exp(-(t/\eta)^\beta)$ and Instantaneous Hazard Rate $h(t)$ at mission time `t`.
+    /// Calcula la probabilidad de supervivencia de Weibull $R(t) = \exp(-(t/\eta)^\beta)$ y la tasa de riesgo instantáneo $h(t)$ en el tiempo de misión `t`.
     #[inline]
     pub fn weibull_survival_and_hazard(&self, t: f64) -> (f64, f64) {
         let beta = f64::from(self.weibull_beta_mle).max(1e-6);
@@ -936,7 +1002,7 @@ impl MbfHyperSynopsis512 {
         (survival, hazard)
     }
 
-    /// Barlow-Proschan Optimal Age-Replacement Renewal Interval $T_{\text{opt}} = \eta \left(\frac{C_{\text{planned}}}{C_{\text{unplanned}}(\beta - 1)}\right)^{1/\beta}$.
+    /// Calcula el intervalo óptimo de renovación preventiva por edad de Barlow-Proschan $T_{\text{opt}} = \eta \left(\frac{C_{\text{planned}}}{C_{\text{unplanned}}(\beta - 1)}\right)^{1/\beta}$.
     #[inline]
     pub fn optimal_renewal_interval(
         &self,
@@ -956,7 +1022,7 @@ impl MbfHyperSynopsis512 {
         Some(eta * factor.powf(1.0 / beta))
     }
 
-    /// Estimates `COUNT(DISTINCT)` using the 48-register HyperLogLog++ sketch.
+    /// Estima la cardinalidad `COUNT(DISTINCT)` usando el boceto HyperLogLog++ de 48 registros con corrección de rango pequeño LinearCounting.
     pub fn estimate_distinct_count(&self) -> u64 {
         if self.valid_count == 0 {
             return 0;

@@ -1,7 +1,9 @@
-//! OLTP executor — coordinates compile, execute, hydrate and cast.
+//! Ejecutor de consultas sobre el motor EAV / `.mbf` (`OltpExecutor`).
 //!
-//! Ejecutor que coordina EAV y Aegis.
-//! Orquesta: compile → execute_native_plan → hydrate (con cache + streaming filters) → sort → output cast.
+//! Orquesta el ciclo completo de lectura: compilación a `NativeQueryPlan` -> ejecución
+//! de índices -> hidratación concurrente con caché selectiva (`OltpEntityHydrator`) ->
+//! filtrado en streaming -> ordenamiento -> paginación -> proyección `OutputCast` y
+//! superposición de estado en vivo (`RowOverlay`).
 
 use serde_json::{json, Value};
 use tracing::{debug, info, warn};
@@ -29,9 +31,11 @@ use crate::eav::reader::query::EavQueryExecutor;
 pub trait RowOverlay: Send + Sync {
     /// Entidad cuyas filas retoca.
     fn entity(&self) -> &str;
+    /// Superpone en el lugar los atributos en vivo sobre las filas hidratadas del `tenant_id`.
     async fn apply(&self, tenant_id: &str, rows: &mut [Value]);
 }
 
+/// Ejecutor principal de consultas transaccionales y analíticas sobre el motor EAV / `.mbf`.
 #[derive(Clone)]
 pub struct OltpExecutor {
     query_executor: EavQueryExecutor,
@@ -40,6 +44,7 @@ pub struct OltpExecutor {
 }
 
 impl OltpExecutor {
+    /// Construye un nuevo `OltpExecutor` a partir del ejecutor de índices y del lector de entidades.
     pub fn new(query_executor: EavQueryExecutor, pull_reader: EavReader) -> Self {
         Self {
             query_executor,
@@ -79,6 +84,7 @@ impl OltpExecutor {
         self.overlays.iter().map(|o| o.entity()).collect()
     }
 
+    /// Retorna una referencia al lector `EavReader` subyacente para operaciones de hidratación puntual.
     pub fn pull_reader(&self) -> &EavReader {
         &self.pull_reader
     }
@@ -383,8 +389,7 @@ impl OltpExecutor {
             None
         } else {
             let mut ext = select.clone();
-            ext.push("entity/type".to_string());
-            ext.push("entity_type".to_string());
+            ext.push(crate::eav::writer::system_attrs::TYPE_NAME.to_string());
             select_extended = ext;
             sel_ref_ext = select_extended
                 .iter()
@@ -408,21 +413,18 @@ impl OltpExecutor {
                     );
                     let row = entity_map_to_json(map);
                     let row_entity_type = row
-                        .get("entity/type")
-                        .or_else(|| row.get("entity_type"))
+                        .get(crate::eav::writer::system_attrs::TYPE_NAME)
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
                     if entity_type.is_empty() || row_entity_type == entity_type {
                         let mut final_row = row;
                         if !sel_ref.is_empty() && sel_ref[0] != "*" {
-                            if !select.iter().any(|s| s == "entity/type") {
+                            if !select
+                                .iter()
+                                .any(|s| s == crate::eav::writer::system_attrs::TYPE_NAME)
+                            {
                                 if let Some(obj) = final_row.as_object_mut() {
-                                    obj.remove("entity/type");
-                                }
-                            }
-                            if !select.iter().any(|s| s == "entity_type") {
-                                if let Some(obj) = final_row.as_object_mut() {
-                                    obj.remove("entity_type");
+                                    obj.remove(crate::eav::writer::system_attrs::TYPE_NAME);
                                 }
                             }
                         }
@@ -460,6 +462,9 @@ impl OltpExecutor {
         Ok(Value::Array(rows))
     }
 
+    /// Ejecuta una consulta expresada en el contrato binario FlatBuffers (`AnalyticsRequestT`),
+    /// incluyendo resolución de rutas con punto (`dotpath`), calentamiento selectivo de caché,
+    /// filtrado en streaming, agregación, comparaciones temporales, relaciones e inyección jerárquica.
     pub async fn run_oltp_query_fbs(
         &self,
         tenant_id: &str,
@@ -917,7 +922,7 @@ fn search_ulid_in_node(node: &Value) -> Option<String> {
     if arr.len() >= 3 {
         let op = arr[0].as_str().unwrap_or("");
         let field = arr[1].as_str().unwrap_or("");
-        if op == "=" && (field == "entity/ulid" || field == "entity/id") {
+        if op == "=" && field == crate::eav::writer::system_attrs::ULID_NAME {
             return arr[2].as_str().map(|s| s.to_string());
         }
         if op == "and" || op == "or" {
@@ -1094,11 +1099,10 @@ fn extract_attrs_from_filter_node(
 
 /// Campos de infraestructura: nunca llegan a la resolución de atributos ni a
 /// los filtros de negocio.
-const INFRASTRUCTURE_FIELDS: [&str; 5] = [
-    "tenant_id",
-    "entity_type",
-    "entity/type",
-    "entity/ulid",
+const INFRASTRUCTURE_FIELDS: [&str; 4] = [
+    crate::eav::writer::system_attrs::TENANT_NAME,
+    crate::eav::writer::system_attrs::TYPE_NAME,
+    crate::eav::writer::system_attrs::ULID_NAME,
     "id",
 ];
 
@@ -1426,8 +1430,7 @@ fn row_passes_filters(
 ) -> bool {
     // ── Strict Entity Type Filter ────────────────────
     let row_entity_type = row
-        .get("entity/type")
-        .or_else(|| row.get("entity_type"))
+        .get(crate::eav::writer::system_attrs::TYPE_NAME)
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let target_entity = entity.unwrap_or("");

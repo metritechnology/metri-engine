@@ -1,30 +1,32 @@
-//! Envelope — metri-contracts v1.0 event envelope, producer side.
+//! Sobre de evento del contrato `metri-contracts` v1.0 (lado productor).
 //!
-//! envelope — el sobre del contrato metri-contracts v1.0, lado productor.
+//! Espejo en Rust de `metri-schedulers/internal/event/envelope.go`. Los nombres de
+//! campo constituyen el contrato de interoperabilidad verificado en `golden_test.rs`.
 //!
-//! Espejo Rust de `metri-schedulers/internal/event/envelope.go`. Los nombres de
-//! campo SON el contrato: un rename aquí rompe el parseo del Hub en producción
-//! (el sobre cae a DLQ). Por eso cada campo tiene fixture dorado y el test de
-//! candado (golden_test.rs) compara por igualdad exacta.
-//!
-//! Fail-closed: `from_attributes` rechaza el sobre sin job_id / tenant_id / ulid
-//! / campos de trigger — reintentar no lo arregla, así que el publicador lo
-//! trata como Poison (ver application::ports::PublishError).
+//! Política fail-closed: `DomainEnvelope::from_attributes` rechaza cualquier sobre sin
+//! `job_id`, `tenant_id`, `ulid` o campos obligatorios de disparador, clasificándolo
+//! como `EnvelopeError::Poison` (no reintentable).
 
 use super::delta::Delta;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Versión canónica del esquema del sobre de eventos `metri-contracts`.
 pub const SCHEMA_VERSION: &str = "1.0";
 
+/// Tipo de operación del ciclo de vida de un `scheduled_job`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduledJobOp {
+    /// Creación de una nueva tarea programada (`created`).
     Created,
+    /// Actualización de atributos de una tarea programada existente (`updated`).
     Updated,
+    /// Eliminación o baja lógica de una tarea programada (`deleted`).
     Deleted,
 }
 
 impl ScheduledJobOp {
+    /// Representación textual en minúsculas según el contrato (`"created"`, `"updated"`, `"deleted"`).
     pub fn as_str(&self) -> &'static str {
         match self {
             ScheduledJobOp::Created => "created",
@@ -33,10 +35,12 @@ impl ScheduledJobOp {
         }
     }
 
+    /// Retorna el `detail-type` canónico para enrutamiento en el bus de eventos (`system.scheduled_job.<op>`).
     pub fn detail_type(&self) -> String {
         format!("system.scheduled_job.{}", self.as_str())
     }
 
+    /// Parsea la operación desde el verbo del canal transaccional o el literal del contrato.
     pub fn parse(s: &str) -> Result<Self, EnvelopeError> {
         match s {
             "CREATE" | "created" => Ok(ScheduledJobOp::Created),
@@ -50,6 +54,7 @@ impl ScheduledJobOp {
     }
 }
 
+/// Error de construcción o validación del sobre de evento de dominio.
 #[derive(Debug, thiserror::Error)]
 pub enum EnvelopeError {
     /// El sobre viola el contrato: reintentar no lo arregla (DLQ).
@@ -62,29 +67,47 @@ pub enum EnvelopeError {
 /// Serializa exactamente a los fixtures de `metri-contracts/golden/`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DomainEnvelope {
+    /// Versión del esquema del contrato de eventos (`"1.0"`).
     pub schema_version: String,
+    /// Operación ejecutada sobre la tarea programada (`"created"`, `"updated"`, `"deleted"`).
     pub op: String,
+    /// Identificador único de la entidad `scheduled_job`.
     pub job_id: String,
+    /// Identificador del tenant propietario de la tarea programada.
     pub tenant_id: String,
+    /// Identificador ULID monotónico de la mutación para ordenamiento causal en el ledger.
     pub ulid: String,
+    /// Tipo de disparador (`"CRON"`, `"EXACT_TIME"`, `"TELEMETRY"`).
     pub trigger_type: String,
+    /// Expresión de programación o condición de disparo (ej. expresión cron o regla de telemetría).
     pub trigger_expression: String,
+    /// Zona horaria IANA opcional para evaluación de expresiones temporales (ej. `"America/Bogota"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iana_timezone: Option<String>,
+    /// Tipo de acción a ejecutar al dispararse la tarea (`"RPC_CALL"`, `"DISPATCH_NOTIFICATION"`, `"WEBHOOK"`, `"EDA_BROADCAST"`).
     pub action_type: String,
+    /// Objeto JSON con la carga útil que se entregará al ejecutor de la acción.
     pub action_payload: Value,
+    /// Hash determinista de idempotencia de la definición del trabajo.
     pub idempotency_hash: String,
+    /// Identificador del usuario o actor del sistema que creó la tarea programada.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
+    /// Identificador del webhook destino cuando `action_type` es `"WEBHOOK"`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_webhook_id: Option<String>,
+    /// Estado operativo actual de la tarea (`"PENDING"`, `"ACTIVE"`, `"SUSPENDED"`, `"COMPLETED"`, `"FAILED"`).
     pub status: String,
+    /// Identificador de correlación distribuida para trazabilidad extremo a extremo.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<String>,
+    /// Identificador de la entidad o evento causante que originó esta mutación.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<String>,
+    /// Cabecera W3C Trace Context (`traceparent`) para propagación OpenTelemetry.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub traceparent: Option<String>,
+    /// Mapa diferencial de atributos modificados (`before`/`after`) en operaciones de actualización.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delta: Option<Delta>,
 }
@@ -96,12 +119,19 @@ pub struct DomainEnvelope {
 /// del canal) o como string JSON (así lo coacciona el validador Códice) — se
 /// normaliza a objeto.
 pub struct ScheduledJobEventInput<'a> {
+    /// Operación del ciclo de vida ejecutada sobre el `scheduled_job`.
     pub op: ScheduledJobOp,
+    /// Identificador de la entidad `scheduled_job`.
     pub entity_id: &'a str,
+    /// Identificador del tenant propietario.
     pub tenant_id: &'a str,
+    /// Identificador ULID de la transacción o mutación.
     pub mutation_ulid: &'a str,
+    /// Mapa de atributos de la entidad en representación JSON.
     pub attributes: &'a serde_json::Map<String, Value>,
+    /// Diferencial opcional de atributos modificados en la transacción.
     pub delta: Option<Delta>,
+    /// Identificador opcional de la entidad o evento causante.
     pub causation_id: Option<String>,
 }
 
@@ -115,6 +145,7 @@ const ACTION_TYPES: [&str; 4] = [
 const JOB_STATUSES: [&str; 5] = ["PENDING", "ACTIVE", "SUSPENDED", "COMPLETED", "FAILED"];
 
 impl DomainEnvelope {
+    /// Construye y valida bajo política fail-closed un `DomainEnvelope` a partir de los atributos de la mutación.
     pub fn from_attributes(input: ScheduledJobEventInput<'_>) -> Result<Self, EnvelopeError> {
         let attrs = input.attributes;
         let poison = |code: &str, field: &str| {
@@ -198,7 +229,8 @@ impl DomainEnvelope {
         format!("system.scheduled_job.{}", self.op)
     }
 
-    #[allow(clippy::expect_used)] // invariante allowlisted (PLAN_PATRON_RESULT.md R7)
+    /// Serializa el sobre de dominio a un `serde_json::Value` listo para inyectar en el campo `detail` del bus.
+    #[allow(clippy::expect_used)]
     pub fn to_detail(&self) -> Value {
         serde_json::to_value(self).expect("DomainEnvelope es serializable por construcción")
     }

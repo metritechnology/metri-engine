@@ -1,11 +1,7 @@
-//! Facade over the cedar-policy engine.
+//! Fachada sobre el motor oficial `cedar-policy` y caché de políticas compiladas al arranque.
 //!
-//! Fachada sobre el motor cedar-policy.
-//!
-//! El PDP de Cedar puro: políticas compiladas + entidades + request →
-//! decisión. Pierde los diagnósticos al colapsar a bool — aceptado: los
-//! handlers reportan el DENY canónico; si algún día se necesita el motivo
-//! exacto, devolver Decision aquí y propagar.
+//! Evalúa políticas compiladas (`PolicySet`), entidades (`Entities`) y solicitud (`Request`)
+//! para emitir una decisión booleana (`Allow` / `Deny`) registrando diagnósticos en trazas.
 
 use tracing::{info, warn};
 
@@ -13,6 +9,7 @@ use cedar_policy::{Authorizer, Decision, Entities, PolicySet, Request};
 
 use crate::domain::errors::DomainError;
 
+/// Envoltorio sobre `cedar_policy::Authorizer` para evaluación determinista de políticas ABAC.
 pub struct CedarAuthorizer {
     authorizer: Authorizer,
 }
@@ -24,12 +21,14 @@ impl Default for CedarAuthorizer {
 }
 
 impl CedarAuthorizer {
+    /// Construye una nueva instancia sin estado del evaluador `CedarAuthorizer`.
     pub fn new() -> Self {
         Self {
             authorizer: Authorizer::new(),
         }
     }
 
+    /// Evalúa si la solicitud `request` está autorizada bajo el conjunto de políticas y entidades dado.
     pub fn is_authorized(
         &self,
         policies: &PolicySet,

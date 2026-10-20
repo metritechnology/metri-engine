@@ -1,11 +1,7 @@
-//! Test support — one-shot Codice initialization for pure writer tests.
+//! Soporte de pruebas — inicialización única (*one-shot*) del Códice para pruebas unitarias puras del escritor EAV.
 //!
-//! Inicialización del Códice para tests puros.
-//!
-//! Los módulos nuevos del writer (outbox, datom_plan) son puros, pero validan
-//! contra el registry global; estos tests necesitan config/models cargado una
-//! sola vez por proceso. Los tests de integración (tests/writer_tests.rs) tienen
-//! su propia copia local — no se tocan.
+//! Los módulos puros del escritor (`outbox`, `datom_plan`) validan contra el registro global
+//! del Códice; esta utilidad garantiza que `config/models` se cargue una sola vez por proceso de prueba.
 
 /// Dos cuidados, ya aprendidos en saga_tests: `Once` serializa nuestros tests,
 /// y `catch_unwind` DENTRO del `Once` tolera la carrera con otros módulos de

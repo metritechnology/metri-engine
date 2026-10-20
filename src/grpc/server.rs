@@ -1,7 +1,8 @@
-//! Tonic gRPC server bootstrap for AWS Lambda.
+//! Raíz de composición e inicializador del servidor gRPC Tonic/Tonic-Web (`start_lambda_grpc_server`).
 //!
-//! Inicializador del Servidor gRPC Tonic
-//! Configura el servidor HTTP/2 y los interceptores para AWS Lambda.
+//! Construye los adaptadores de almacenamiento MBF, cachés Zero-Trust, canales de escritura,
+//! interceptores WAF/Auth y servicios gRPC (`MetriService`, `MoiraRoutingService`, `QuotaService`,
+//! `AgentConfigService` y reflexión), gestionando el apagado elegante (`SIGINT`/`SIGTERM`).
 
 use http::Method;
 use std::net::SocketAddr;
@@ -16,6 +17,7 @@ use super::pb::quota_service_server::QuotaServiceServer;
 use super::service::MetriGrpcService;
 use crate::domain::errors::{DomainError, ErrorCode};
 
+/// Inicializa todas las dependencias del motor y arranca el servidor HTTP/2 y gRPC-Web.
 pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
     let port = std::env::var("GRPC_PORT").unwrap_or_else(|_| "9090".to_string());
     let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().map_err(|e| {

@@ -1,4 +1,4 @@
-//! Tests for `aegis::temporal_bridge`.
+//! Pruebas unitarias del puente de tipos temporales Protobuf/FlatBuffers (`aegis::temporal_bridge`).
 use crate::aegis::temporal_bridge::*;
 use crate::grpc::pb::TimeFrameContext;
 

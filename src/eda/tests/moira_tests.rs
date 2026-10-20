@@ -1,4 +1,4 @@
-//! Tests for `eda::moira`.
+//! Pruebas unitarias y de concurrencia para el drenador de Outbox `eda::moira`.
 use super::*;
 use crate::domain::protocols::SqsMessage;
 use crate::eav::writer::TransactResult;

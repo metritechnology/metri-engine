@@ -1,11 +1,8 @@
-//! Stochastic Base36 code generator.
+//! Generador estocástico de códigos alfanuméricos en Base36.
 //!
-//! codice/base36.rs — Generador estocástico Base36.
-//! En el stack anterior: SecureRandom singleton + repeated lazy-seq.
-//! En Rust:    rand::thread_rng() (CSPRNG equivalente a SecureRandom).
-//!
-//! Zero-Drop Policy: mismas garantías de unicidad y no-predictibilidad.
-//! P(colisión con length=7) < 1/36^7 ≈ 1 en 78.000 millones.
+//! Utiliza `rand::thread_rng()` (CSPRNG ChaCha20 local al hilo de ejecución)
+//! para emitir códigos cortos no predecibles con baja probabilidad de colisión:
+//! para `length = 7`, $P(\text{colisión}) < 1 / 36^7 \approx 1.27 \times 10^{-11}$.
 
 use rand::Rng;
 

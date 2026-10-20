@@ -1,8 +1,7 @@
-//! RPC bodies of the MetriGrpcService, split by domain.
+//! Implementación de los manejadores RPC de `MetriGrpcService`, organizados por dominio funcional.
 //!
-//! `grpc/service.rs` conserva la raíz de dependencias (`ServiceDeps`), el
-//! struct y el `impl` del trait gRPC como delegación pura; aquí vive el
-//! cuerpo de cada operación.
+//! `grpc/service.rs` conserva la estructura `ServiceDeps`, `MetriGrpcService` y la delegación
+//! del trait `MetriService`; en este submódulo reside la lógica de negocio de cada operación.
 
 pub(crate) mod authz;
 pub(crate) mod bulk;

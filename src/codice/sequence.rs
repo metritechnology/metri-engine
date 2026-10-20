@@ -1,21 +1,14 @@
-//! ACID sequential code generator with scope resolution.
+//! Generador de códigos secuenciales ACID con resolución jerárquica de ámbito.
 //!
-//! Generador secuencial ACID con scope resolution.
-//!
-//! # Origin
-//! En el stack anterior: Datahike unique:identity + UPSERT para ACID.
-//! En Rust:    DynamoDB ADD atómico sobre el contador.
-//!
-//! Zero-Drop Policy: replica next!, build_sequence_code, format_code,
-//! scope resolution (exact / nearest_registered / global fallback).
+//! Implementa incremento atómico sobre el registro de secuencias y resolución de ámbito
+//! (`exact`, `nearest_registered` y caída al contador global del tenant).
 //!
 //! # Política de numeración del tenant
-//! La config de formateo (prefix/padding/scope_resolution) del JSON del
-//! Códice es el DEFAULT estático: la fila GLOBAL del contador
-//! (`{tenant}:{field}_seq`, escrita SOLO por el RPC de configuración —
-//! grpc/handlers/sequence_config.rs) manda sobre ella al mintear. Los
-//! contadores por ubicación solo guardan el valor; la política es una
-//! por tenant.
+//! La configuración de formateo (`prefix`, `padding`, `scope_resolution`) del JSON del
+//! Códice constituye el valor por defecto estático: la fila global del contador
+//! (`{tenant}:{field}_seq`, administrada por el RPC de configuración en
+//! `grpc/handlers/sequence_config.rs`) prevalece sobre ella al emitir nuevos códigos.
+//! Los contadores por ubicación solo almacenan el valor actual; la política es única por tenant.
 
 use tracing::info;
 
@@ -30,20 +23,27 @@ const SEQ_SUFFIX: &str = "_seq";
 /// Equivale al mapa `:auto_generate` del JSON del Códice.
 #[derive(Debug, Clone)]
 pub struct SeqAttrConfig {
+    /// Nombre canónico del atributo secuencial dentro del modelo de entidad.
     pub name: String,
+    /// Prefijo literal antepuesto al número secuencial formateado (ej. `"WO-"`).
     pub prefix: String,
+    /// Ancho mínimo de dígitos con relleno de ceros a la izquierda.
     pub padding: usize,
+    /// Estrategia de resolución de ámbito para seleccionar el contador activo.
     pub scope_resolution: ScopeResolution,
 }
 
 /// Estrategia de resolución de scope.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScopeResolution {
+    /// Usa exclusivamente el contador del ámbito exacto o cae al contador global si no tiene actividad.
     Exact,
+    /// Hereda el contador del primer ámbito ancestro con actividad registrada antes de caer al global.
     NearestRegistered,
 }
 
 impl ScopeResolution {
+    /// Parsea la estrategia de resolución de ámbito desde su representación textual en JSON o almacenamiento.
     pub fn from_str(s: &str) -> Self {
         match s {
             "nearest_registered" => ScopeResolution::NearestRegistered,
@@ -64,8 +64,11 @@ impl ScopeResolution {
 /// `None` = ese aspecto cae al default estático del Códice.
 #[derive(Debug, Clone, Default)]
 pub struct SequencePolicy {
+    /// Prefijo personalizado por el tenant que sobreescribe el prefijo por defecto del Códice.
     pub prefix: Option<String>,
+    /// Ancho de relleno de ceros personalizado por el tenant.
     pub padding: Option<usize>,
+    /// Estrategia de resolución de ámbito personalizada por el tenant.
     pub scope_resolution: Option<ScopeResolution>,
 }
 

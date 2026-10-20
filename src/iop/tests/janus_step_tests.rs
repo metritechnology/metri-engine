@@ -1,4 +1,4 @@
-//! Tests for `iop::janus_step`.
+//! Pruebas unitarias de `iop::janus_step` (`JanusRouterStep`).
 use super::*;
 use crate::iop::core::IopContext;
 use crate::janus_router::router::JanusRouter;

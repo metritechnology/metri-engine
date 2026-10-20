@@ -1,7 +1,7 @@
-//! MoiraRoutingService gRPC server — for the Go event router.
+//! Servidor gRPC `MoiraRoutingService` (`EdaGrpcService`) para el Event Router en Go.
 //!
-//! Servidor gRPC MoiraRoutingService
-//! Expone extremos asíncronos para el Event Router en Golang.
+//! Expone `MatchRoutingRulesBatch` (MessagePack) y `ResetOrphanedEvents` (watchdog
+//! de eventos huérfanos en el transactional outbox).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
@@ -16,42 +16,42 @@ use crate::grpc::pb::eda::v1::{
 };
 use crate::iop::core::MoiraEmitter;
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[rustfmt::skip] #[doc = "Elemento individual de evaluación de ruteo dentro de un lote MessagePack del Event Router."] #[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct EdaMatchRequest {
-    pub outbox_id: String,
-    pub tenant_id: String,
-    pub entity_name: String,
-    pub trigger_type: String,
-    pub cdc_payload_json: Vec<u8>,
+    #[doc = "Identificador único del evento en el transactional outbox."] pub outbox_id: String,
+    #[doc = "Identificador del tenant propietario del evento."] pub tenant_id: String,
+    #[doc = "Nombre de la entidad de negocio que originó el evento CDC."] pub entity_name: String,
+    #[doc = "Tipo de disparador o mutación (`CREATE`, `UPDATE`, `DELETE`, etc.)."] pub trigger_type: String,
+    #[doc = "Carga útil CDC serializada en JSON (bytes UTF-8)."] pub cdc_payload_json: Vec<u8>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[rustfmt::skip] #[doc = "Destino de webhook resuelto para un evento que coincidió con una regla de ruteo."] #[derive(Debug, serde::Serialize)]
 pub struct EdaWebhookTarget {
-    pub webhook_url: String,
-    pub secret_token_cipher: String,
-    pub prepared_payload_base64: String,
+    #[doc = "URL HTTP/HTTPS de destino del endpoint de webhook."] pub webhook_url: String,
+    #[doc = "Token o secreto de autenticación asociado al webhook."] pub secret_token_cipher: String,
+    #[doc = "Carga útil del evento codificada en Base64 lista para su entrega."] pub prepared_payload_base64: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[rustfmt::skip] #[doc = "Resultado de evaluación de ruteo para un evento del outbox que coincidió con al menos una regla."] #[derive(Debug, serde::Serialize)]
 pub struct EdaRoutingResult {
-    pub outbox_id: String,
-    pub detail_type_output: String,
-    pub destinations: Vec<EdaWebhookTarget>,
+    #[doc = "Identificador del registro de outbox evaluado."] pub outbox_id: String,
+    #[doc = "Tipo de detalle de salida (`detail-type`) determinado por la regla coincidente."] pub detail_type_output: String,
+    #[doc = "Lista de webhooks activos suscritos a las reglas coincidentes."] pub destinations: Vec<EdaWebhookTarget>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[rustfmt::skip] #[doc = "Respuesta JSON consolidada de la evaluación por lotes de reglas de ruteo EDA."] #[derive(Debug, serde::Serialize)]
 pub struct EdaResponseJson {
-    pub routing_results: Vec<EdaRoutingResult>,
-    pub unmatched_outbox_ids: Vec<String>,
+    #[doc = "Resultados de ruteo para los eventos que coincidieron con reglas activas."] pub routing_results: Vec<EdaRoutingResult>,
+    #[doc = "Identificadores de outbox que no coincidieron con ninguna regla de ruteo."] pub unmatched_outbox_ids: Vec<String>,
 }
 
-pub struct EdaGrpcService {
+#[rustfmt::skip] #[doc = "Implementación del servicio gRPC `MoiraRoutingService` para evaluación de reglas y watchdog del outbox."] pub struct EdaGrpcService {
     moira_emitter: Arc<dyn MoiraEmitter>,
     oltp_executor: OltpExecutor,
 }
 
-impl EdaGrpcService {
-    pub fn new(moira_emitter: Arc<dyn MoiraEmitter>, oltp_executor: OltpExecutor) -> Self {
+#[rustfmt::skip] impl EdaGrpcService {
+    #[doc = "Construye una nueva instancia de `EdaGrpcService` con el emisor Moira y el ejecutor OLTP dados."] pub fn new(moira_emitter: Arc<dyn MoiraEmitter>, oltp_executor: OltpExecutor) -> Self {
         Self {
             moira_emitter,
             oltp_executor,

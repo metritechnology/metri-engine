@@ -1,13 +1,8 @@
-//! Bridge from proto/FBS time types to the canonical temporal module.
+//! Puente de traducción entre los tipos temporales Protobuf/FlatBuffers y el módulo `temporal` canónico.
 //!
-//! aegis/temporal_bridge.rs
-//! Puente entre los tipos proto/FBS del gRPC y el módulo temporal canónico.
-//!
-//! SRP: traducir TimeFrameContext (proto gRPC) → temporal::TimeFrameCtx,
-//! y exponer resolve_for_proto / resolve_for_fbs como API unificada.
-//!
-//! Todos los consumidores de Aegis (OLTP executor, SQL compiler, router)
-//! deben pasar por este bridge en lugar de interpretar los enums proto directamente.
+//! Traduce `TimeFrameContext` (gRPC Protobuf o FlatBuffers) a `TimeFrameCtx` y expone
+//! `resolve_proto_time_frame` y `resolve_fbs_time_frame` como puntos de entrada unificados
+//! para los compiladores y ejecutores de Aegis.
 
 use crate::temporal::core::TimeRange;
 use crate::temporal::time_frame::{resolve_time_frame, TimeFrameCtx, TimeFrameType};

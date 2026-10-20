@@ -1,8 +1,8 @@
-//! Principal graph — role and group hierarchy expansion.
+//! Grafo de principal: consulta OLTP (`step2`), expansión de jerarquías y consolidación (`step3`).
 //!
-//! grafo de principal (fase 2).
-//! step2 (consulta OLTP), step3 (consolidación), expansión de jerarquías
-//! y ensamblado del grafo completo de roles/grupos/vecinos.
+//! Ensambla el grafo completo de roles, grupos de usuarios (en BFS por olas paralelas)
+//! y perímetros jerárquicos (`locations` y `assets`) para producir un `PrincipalData`
+//! consolidado y cacheable.
 
 use std::collections::HashSet;
 
@@ -78,6 +78,8 @@ fn ensure_not_suspended(status: &str, user_id: &str) -> Result<(), DomainError> 
     Ok(())
 }
 
+/// Paso 2 del pipeline Cedar: consulta el principal en caché o lo ensambla desde el motor OLTP,
+/// verificando que el usuario exista y no se encuentre en estado `SUSPENDED`.
 pub async fn step2_query_oltp(
     eav_reader: &dyn EntityReader,
     tenant_id: &str,
@@ -179,6 +181,8 @@ fn intersect_or_inherit(role: HashSet<String>, group: HashSet<String>) -> Vec<St
     }
 }
 
+/// Paso 3 del pipeline Cedar: expande las jerarquías de ubicaciones y activos e interseca
+/// los perímetros de cada rol con los perímetros acumulados de los grupos del usuario.
 pub async fn step3_consolidate(
     eav_reader: &dyn EntityReader,
     tenant_id: &str,
@@ -322,6 +326,8 @@ async fn pull_role_map(
     Ok(role_map)
 }
 
+/// Ensambla el grafo completo del principal (`PrincipalData`) hidratando concurrentemente
+/// sus roles, grants, jerarquía recursiva de grupos y restricciones horarias.
 pub async fn assemble_principal_graph(
     eav_reader: &dyn EntityReader,
     tenant_id: &str,

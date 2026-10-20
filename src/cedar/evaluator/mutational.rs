@@ -1,8 +1,8 @@
-//! Mutational path — real Cedar evaluation per boundary.
+//! Camino mutacional del PDP Cedar: evaluación real sobre `cedar-policy` por cada frontera de rol.
 //!
-//! Camino mutacional (PDP).
-//! CREATE/UPDATE/DELETE/UPSERT: evaluación Cedar real por cada boundary del
-//! principal — basta con que UNA política permita.
+//! Para acciones de escritura (`CREATE`, `UPDATE`, `DELETE`, `UPSERT`), construye las
+//! entidades `User` y `MetriResource` y evalúa el `PolicySet` de cada rol del principal
+//! (bastando con que al menos un rol autorice la operación).
 
 use cedar_policy::{Context, EntityUid, Request};
 

@@ -1,7 +1,8 @@
-//! DTO translators — protobuf messages to domain structures.
+//! Traductores bidireccionales entre mensajes Protobuf (`prost`) y tipos de dominio / FlatBuffers.
 //!
-//! Traductores DTO ↔ Domain
-//! Convierte mensajes protobuf gRPC a estructuras internas JSON/Domain.
+//! Convierte `QueryRequest` al mapa fuertemente tipado `fbs::AnalyticsRequestT` (FlatBuffers Object API)
+//! y ofrece funciones puras de conversión entre `prost_types::Struct` / `prost_types::Value` y
+//! `serde_json::Value`.
 
 use crate::domain::errors::DomainError;
 use crate::grpc::pb::QueryRequest;
@@ -349,6 +350,7 @@ pub fn struct_to_value(s: prost_types::Struct) -> Value {
     Value::Object(map)
 }
 
+/// Convierte un `prost_types::Value` de Protobuf a su equivalente `serde_json::Value`.
 pub fn value_to_json(v: prost_types::Value) -> Value {
     use prost_types::value::Kind;
     match v.kind {
@@ -368,6 +370,7 @@ pub fn value_to_json(v: prost_types::Value) -> Value {
     }
 }
 
+/// Convierte un objeto `serde_json::Value` a un `prost_types::Struct` de Protobuf.
 pub fn value_to_struct(v: &Value) -> prost_types::Struct {
     let mut fields = std::collections::BTreeMap::new();
     if let Some(obj) = v.as_object() {
@@ -378,6 +381,7 @@ pub fn value_to_struct(v: &Value) -> prost_types::Struct {
     prost_types::Struct { fields }
 }
 
+/// Convierte un `serde_json::Value` arbitrario a un `prost_types::Value` de Protobuf.
 pub fn json_to_value(v: &Value) -> prost_types::Value {
     use prost_types::value::Kind;
     match v {

@@ -1,7 +1,7 @@
-//! Formula engine errors and the DomainError bridge.
+//! Catálogo de errores tipados del motor de fórmulas y puente hacia `DomainError`.
 //!
-//! Errores específicos del motor de fórmulas.
-//! SRP: Solo define tipos de error y el bridge a DomainError.
+//! Define `FormulaError` y su correspondencia 1:1 con los códigos `FML_001`..`FML_013`
+//! del catálogo canónico de errores del motor.
 
 use crate::domain::errors::{DomainError, ErrorCode};
 
@@ -11,19 +11,36 @@ use crate::domain::errors::{DomainError, ErrorCode};
 pub enum FormulaError {
     // ─── Errores de Lexer/Parser (validación estática) ───
     /// FML_001: Token no reconocido en la posición indicada.
-    UnexpectedToken { position: usize, found: String },
+    UnexpectedToken {
+        /// Índice de byte en la cadena de la fórmula donde ocurrió el error.
+        position: usize,
+        /// Fragmento o carácter inesperado encontrado.
+        found: String,
+    },
     /// FML_002: Paréntesis abierto sin cerrar o viceversa.
-    UnbalancedParentheses { position: usize },
+    UnbalancedParentheses {
+        /// Posición aproximada del paréntesis desbalanceado.
+        position: usize,
+    },
     /// FML_003: Función no registrada en el catálogo.
-    UnknownFunction { name: String },
+    UnknownFunction {
+        /// Nombre de la función desconocida invocada.
+        name: String,
+    },
     /// FML_004: Aridad incorrecta (esperada vs recibida).
     ArityMismatch {
+        /// Nombre canónico de la función evaluada.
         function: String,
+        /// Número de argumentos esperados por la firma de la función.
         expected: usize,
+        /// Número de argumentos efectivamente provistos en la llamada.
         got: usize,
     },
-    /// FML_007: Inyección SQL detectada (solo OLAP path).
-    SqlInjectionDetected { fragment: String },
+    /// FML_007: Patrón de inyección o palabra clave prohibida detectada en la expresión.
+    SqlInjectionDetected {
+        /// Fragmento o palabra clave bloqueada por el validador de seguridad.
+        fragment: String,
+    },
     /// FML_013: Fórmula vacía.
     EmptyFormula,
 
@@ -31,19 +48,47 @@ pub enum FormulaError {
     /// FML_005: División por cero.
     DivisionByZero,
     /// FML_006: Dominio matemático inválido (ej: SQRT(-1), LOG(0)).
-    MathDomainError { function: String, detail: String },
+    MathDomainError {
+        /// Nombre de la función u operador donde ocurrió el error de dominio.
+        function: String,
+        /// Descripción detallada de la violación de dominio matemático.
+        detail: String,
+    },
     /// FML_012: Variable no encontrada en el row/contexto.
-    UnresolvedVariable { name: String },
+    UnresolvedVariable {
+        /// Nombre de la variable que no pudo resolverse en el contexto actual.
+        name: String,
+    },
 
     // ─── Errores de Límites ───
     /// FML_008: Fórmula excede longitud máxima.
-    FormulaTooLong { length: usize, max: usize },
+    FormulaTooLong {
+        /// Longitud en bytes de la fórmula recibida.
+        length: usize,
+        /// Longitud máxima permitida por el sandbox (`4096`).
+        max: usize,
+    },
     /// FML_009: Profundidad de paréntesis excede límite.
-    NestingTooDeep { depth: usize, max: usize },
+    NestingTooDeep {
+        /// Profundidad de anidamiento de paréntesis alcanzada.
+        depth: usize,
+        /// Profundidad máxima permitida (`32`).
+        max: usize,
+    },
     /// FML_010: Número de tokens excede límite.
-    TooManyTokens { count: usize, max: usize },
+    TooManyTokens {
+        /// Cantidad de tokens contabilizados.
+        count: usize,
+        /// Límite máximo de tokens permitido (`512`).
+        max: usize,
+    },
     /// FML_011: Funciones anidadas exceden límite.
-    FunctionNestingTooDeep { depth: usize, max: usize },
+    FunctionNestingTooDeep {
+        /// Profundidad de anidamiento de llamadas a funciones alcanzada.
+        depth: usize,
+        /// Profundidad máxima de funciones permitida (`16`).
+        max: usize,
+    },
 }
 
 impl std::fmt::Display for FormulaError {

@@ -1,12 +1,10 @@
-//! cedar — the Zero-Trust PDP over cedar-policy (ADR-002).
+//! Punto de decisión de políticas Zero-Trust (`cedar`) sobre `cedar-policy` (ADR-003).
 //!
-//! cedar — PDP Zero-Trust sobre cedar-policy (ADR-002).
-//!
-//! Estructura: `authn` (tokens HMAC + step1), `pipeline` (composición de pasos
-//! y fachadas intercept/get_principal_data), `principal_graph` (step2/step3),
-//! `evaluator` (PDP step4), `engine` (fachada cedar-policy), `rules` (reglas
-//! de sistema), `cache` (principals e invalidación), `ports` (contratos DI),
-//! `request`/`resource_hydrator` (transporte y hidratación ABAC), `types`.
+//! Estructura: `authn` (tokens HMAC + `step1`), `pipeline` (composición de pasos
+//! y fachadas `intercept` / `get_principal_data`), `principal_graph` (`step2` / `step3`),
+//! `evaluator` (PDP `step4`), `engine` (fachada `cedar-policy`), `rules` (reglas
+//! de sistema), `cache` (principals, sesiones e invalidación), `ports` (contratos DI),
+//! `request` / `resource_hydrator` (transporte e hidratación ABAC) y `types`.
 //!
 //! La API pública del módulo se re-exporta en la raíz: los consumidores hacen
 //! `use crate::cedar::{intercept, PrincipalData, ...}`.

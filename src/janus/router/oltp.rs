@@ -1,4 +1,4 @@
-//! OLTP channel execution — native EAV plan execution and casting.
+//! Ejecución del canal de lectura OLTP/HTAP sobre `.mbf` — compilación AST, caché, ejecución y `OutputCast`.
 use crate::aegis::oltp::executor::OltpExecutor;
 use crate::codice::global as codice_global;
 use crate::janus::aggregator::apply_output_cast_fbs;
@@ -12,6 +12,7 @@ use crate::janus::router::{CedarCtx, QueryChunk, QueryExecCtx};
 use serde_json::{json, Value};
 use tracing::{error, info};
 
+/// Ejecuta un sub-query sobre el canal OLTP/HTAP (compilación AST FlatBuffers, lookup de caché, ejecución nativa y post-procesamiento).
 pub async fn execute_oltp_query(
     query_key: &str,
     query_map: &AnalyticsRequestT,

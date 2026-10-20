@@ -1,4 +1,4 @@
-//! Tests for `domain::action_type`.
+//! Pruebas unitarias de derivación de `ActionType` (`domain::audit::action_type`).
 use super::*;
 
 #[test]

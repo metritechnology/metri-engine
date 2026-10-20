@@ -1,4 +1,4 @@
-//! Tests for `iop::cedar_step`.
+//! Pruebas unitarias de `iop::cedar_step` (`CedarAuthorizerStep`).
 use super::*;
 use std::sync::Arc;
 

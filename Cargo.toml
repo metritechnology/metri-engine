@@ -117,6 +117,7 @@ proptest = "1.11.0"
 # está prohibido por `check_clean_code.py` y `tests/architecture_solid_guard.rs`.
 [lints.rust]
 unsafe_code = "deny"
+missing_docs = "deny"
 
 [lints.rustdoc]
 broken_intra_doc_links = "deny"

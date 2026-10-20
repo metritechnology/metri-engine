@@ -1,12 +1,7 @@
-//! Step 5 — optimal EAV index selection.
+//! Selección del índice EAV óptimo (`plan_selector` — Paso 5 del Read Path).
 //!
-//! Paso 5: Selección del índice EAV óptimo
-//!
-//! # Origin
-//! Blueprint: JANUS - Rust.md §I.2 Paso 5 — Plan Selection
-//!
-//! Analiza el AST IR compilado y selecciona el QueryPlan más eficiente:
-//! Prioridad: PointLookup > AvetSingleFilter > AvetIntersection > FtsSearch > AevtScan
+//! Analiza el AST IR compilado y selecciona el `EavQueryPlan` más eficiente:
+//! Prioridad: `PointLookup` > `AvetSingleFilter` > `AvetIntersection` > `FtsSearch` > `AevtScan`.
 
 use serde_json::Value;
 use tracing::debug;
@@ -14,39 +9,57 @@ use tracing::debug;
 use crate::eav::types::datom::DatomValue;
 
 /// Plan de ejecución seleccionado por el Plan Selector.
-/// Equivale al enum QueryPlan del blueprint §I.2 Paso 5.
 #[derive(Debug, Clone)]
 pub enum EavQueryPlan {
-    /// GET por ULID explícito → Main Table EAVT (1 Query, mínimo costo)
-    PointLookup { entity_id: String },
+    /// GET por ULID explícito → índice primario EAVT (1 lectura puntual, mínimo costo).
+    PointLookup {
+        /// Identificador ULID de la entidad buscada.
+        entity_id: String,
+    },
 
-    /// WHERE attr = value (1 filtro indexado) → GSI-AVET
+    /// `WHERE attr = value` (1 filtro indexado) → índice AVET.
     AvetSingleFilter {
+        /// Nombre del atributo indexado.
         attr_name: String,
+        /// Valor tipado a buscar en el índice AVET.
         value: DatomValue,
     },
 
-    /// WHERE attr1 = v1 AND attr2 = v2 → 2+ AVET en paralelo + intersección HashSet
-    AvetIntersection { filters: Vec<(String, DatomValue)> },
+    /// `WHERE attr1 = v1 AND attr2 = v2` → 2+ consultas AVET en paralelo + intersección `HashSet`.
+    AvetIntersection {
+        /// Pares `(attr_name, valor)` que deben satisfacerse simultáneamente.
+        filters: Vec<(String, DatomValue)>,
+    },
 
-    /// Búsqueda fuzzy FTS → GSI-FTS trigram + EAVT reconstituir
-    FtsSearch { term: String },
+    /// Búsqueda difusa / texto completo → índice FTS de trigramas + reconstitución EAVT.
+    FtsSearch {
+        /// Término de búsqueda de texto libre.
+        term: String,
+    },
 
-    /// Scan por tipo de entidad (sin filtros de valor) → GSI-AEVT
-    /// shard: None = sin sharding, Some(N) = shard total
+    /// Escaneo por tipo de entidad (sin filtros de igualdad indexados) → índice AEVT.
     AevtScan {
+        /// Nombre canónico del tipo de entidad a escanear.
         entity_type: String,
+        /// Número opcional de particiones (*shards*) para escaneo paralelo.
         shard_total: Option<u8>,
     },
 
-    /// Reverse reference lookup → GSI-VAET
+    /// Búsqueda de referencias inversas → índice VAET.
     VaetLookup {
+        /// Identificador de la entidad destino referenciada.
         ref_entity_id: String,
+        /// Nombre opcional del atributo de tipo referencia (`Ref`).
         attr_name: Option<String>,
     },
 
-    /// Time-travel as-of un TX_ID → EAVT con SK ≤ T
-    AsOfSnapshot { entity_id: String, as_of_tx: u64 },
+    /// Lectura histórica *time-travel* (`as-of` un `tx_id`) → EAVT con corte `tx <= as_of_tx`.
+    AsOfSnapshot {
+        /// Identificador de la entidad a reconstruir en el pasado.
+        entity_id: String,
+        /// Identificador de transacción máximo (inclusive) del corte histórico.
+        as_of_tx: u64,
+    },
 }
 
 /// Selecciona el plan de ejecución EAV más eficiente a partir del AST IR.
@@ -141,7 +154,7 @@ fn search_ulid_in_node(node: &Value) -> Option<String> {
         if arr.len() >= 3 {
             let op = arr[0].as_str().unwrap_or("");
             let field = arr[1].as_str().unwrap_or("");
-            if op == "=" && (field == "entity/ulid" || field == "entity/id") {
+            if op == "=" && field == crate::eav::writer::system_attrs::ULID_NAME {
                 return arr[2].as_str().map(|s| s.to_string());
             }
             // Recursión para AND/OR
@@ -333,8 +346,7 @@ fn extract_indexed_filters_fbs(ast_ir: &fbs::AnalyticsRequestT) -> Vec<(String, 
                 if crit.op_ref.0 == fbs::FilterOperator::EQ.0 {
                     let raw_attr = crit.field.clone().unwrap_or_default();
                     if raw_attr.starts_with("entity/")
-                        || raw_attr == "tenant_id"
-                        || raw_attr == "entity_type"
+                        || raw_attr == crate::eav::writer::system_attrs::TENANT_NAME
                         || raw_attr.contains('.')
                     {
                         continue; // Skip intrinsic and dot-path fields for AVET indexing

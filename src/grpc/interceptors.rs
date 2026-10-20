@@ -1,17 +1,21 @@
-//! gRPC interceptors — WAF limits, HMAC auth, Cedar fail-closed.
+//! Interceptores gRPC de borde: límites WAF y autenticación HMAC fail-closed.
 //!
-//! WAF + Auth gRPC middleware
-//! Intercepta peticiones para asegurar Zero-Trust y límites WAF.
+//! Verifica en tiempo constante la firma de cada token `mk_` antes de alcanzar los handlers
+//! e inyecta `AuthenticatedSession` en las extensiones de la petición.
 
 use tonic::{Request, Status};
 use tracing::debug;
 
 use crate::cedar::authn::HmacTokenVerifier;
 
+/// Sesión autenticada extraída del token HMAC e inyectada en las extensiones gRPC (`Request::extensions`).
 #[derive(Clone, Debug)]
 pub struct AuthenticatedSession {
+    /// Identificador del tenant autenticado en el token.
     pub tenant_id: String,
+    /// Identificador del usuario autenticado en el token.
     pub user_id: String,
+    /// Identificador único del token (`jti`).
     pub jti: String,
 }
 

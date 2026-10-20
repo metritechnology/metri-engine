@@ -1,8 +1,7 @@
-//! Principal grants expansion — the plain domain:action set.
+//! Expansión pura de grants del principal al conjunto plano `dominio:acción`.
 //!
-//! Expansión de grants del principal.
-//! Funciones puras: el JSON de grants de los boundaries se convierte en el
-//! conjunto plano `dominio:acción` que consume la evaluación Cedar.
+//! Transforma las definiciones JSON de permisos en los `RoleBoundary` (incluyendo
+//! comodines `*` de dominio y acción) en claves planas evaluables por las políticas Cedar.
 
 use std::collections::HashSet;
 

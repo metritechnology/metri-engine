@@ -1,16 +1,8 @@
-//! HMAC token authentication (mk_ format) in constant time.
+//! Autenticación de tokens HMAC (formato `mk_`) en tiempo constante y extracción de sesión (`step1`).
 //!
-//! Autenticación de tokens HMAC (formato mk_).
-//!
-//! UNA implementación de formato + firma + comparación en tiempo constante.
-//! Antes había tres copias que derivaban por separado (el camino Cedar leía el
-//! secreto de la variable de entorno cruda, el interceptor gRPC usaba
-//! engine_config con tolerancia de reloj, y el session store guardaba el
-//! suyo) — la fuente única es ahora la configuración del arranque.
-//!
-//! El guard fail-closed que exige un secreto fuerte en producción vive en
-//! `domain::config::resolve_hmac_secret` y se aplica UNA vez en `server.rs`;
-//! aquí no hay segunda validación de entorno por petición.
+//! Implementación única de formato, verificación de firma HMAC-SHA256 en tiempo constante
+//! y control de expiración. La fuente única del secreto es la configuración de arranque
+//! validada de forma fail-closed en `domain::config::resolve_hmac_secret`.
 
 use std::sync::OnceLock;
 
@@ -36,13 +28,18 @@ pub struct HmacTokenVerifier {
 /// Claims verificados de un token mk_.
 #[derive(Debug, Clone)]
 pub struct VerifiedToken {
+    /// Identificador de la organización o inquilino (`tid` en el payload del token).
     pub tenant_id: String,
+    /// Identificador del usuario autenticado (`uid` en el payload del token).
     pub user_id: String,
+    /// Identificador único del token (`jti`) utilizado para revocación en lista negra.
     pub jti: String,
+    /// Marca temporal de expiración en segundos Unix (`exp`).
     pub exp: i64,
 }
 
 impl HmacTokenVerifier {
+    /// Construye un verificador de tokens `mk_` con la clave secreta proporcionada.
     pub fn new(secret: impl Into<Vec<u8>>) -> Self {
         HmacTokenVerifier {
             secret: secret.into(),
@@ -131,6 +128,8 @@ pub fn verify_hmac_token_local_in_step(raw_token: &str) -> Option<Session> {
 
 // --- Public Helper Interceptor Methods ---
 
+/// Paso 1 del pipeline Cedar: extrae el token de la petición, verifica su firma si es `mk_`
+/// y recupera la sesión activa (no revocada) desde el almacén de sesiones (`ISessionStore`).
 pub async fn step1_extract_token(
     auth: &AuthRequest<'_>,
     valkey_store: &dyn ISessionStore,

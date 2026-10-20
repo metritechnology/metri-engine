@@ -1,5 +1,4 @@
-//! Tests for `cedar::rules.rs`.
-// cedar/tests/rules.rs — Reglas de sistema, ventana horaria y dominios maestros.
+//! Pruebas unitarias de `cedar::rules`: reglas de sistema, ventana horaria y dominios maestros.
 
 use crate::cedar::evaluator::step4_analytical;
 use crate::cedar::rules::{step3b_validate_time_window, SystemSecurityRules};

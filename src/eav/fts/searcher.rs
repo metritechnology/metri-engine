@@ -1,6 +1,5 @@
-//! Domain-agnostic full-text search via trigram intersection, romance/double phonetics, alphanumeric code normalization, and Damerau-Levenshtein post-filtering.
-//!
-//! Blueprint: Metri EAV §V.2 & 09_CODICE_METADATA_AND_FUZZY_MATH_ENGINE.md §5
+//! Motor de búsqueda de texto completo (FTS) agnóstico al dominio mediante intersección de trigramas,
+//! fonética romance/doble, normalización de códigos alfanuméricos y post-filtrado Damerau-Levenshtein sobre la Zona 5B (`.mbf`).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{OnceLock, RwLock};
@@ -10,11 +9,13 @@ use crate::domain::errors::DomainError;
 use crate::eav::fts::trigram::generate_trigrams;
 use crate::mbf::zones::hybrid_search::{IndexedEntityDocument, MbfHybridSearchIndex};
 
-/// Score de un resultado de búsqueda FTS.
+/// Resultado individual de una búsqueda de texto completo (FTS) con su puntaje combinado.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FtsResult {
+    /// Identificador único de la entidad coincidente.
     pub entity_id: String,
-    pub score: f32, // combined Zone 5B RRF + trigram + phonetic + Damerau-Levenshtein similarity score
+    /// Puntaje de similitud combinado (Zona 5B RRF, trigramas, fonética y distancia Damerau-Levenshtein).
+    pub score: f32,
 }
 
 #[derive(Default)]
@@ -30,7 +31,7 @@ fn fts_corpus() -> &'static RwLock<HashMap<String, TenantFtsState>> {
     IN_MEMORY_FTS_CORPUS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-/// Registers or updates an entity text document in the local FTS corpus and Zone 5B `MbfHybridSearchIndex` for `tenant_id`.
+/// Registra o actualiza el documento textual de una entidad en el corpus FTS local y en el índice `MbfHybridSearchIndex` (Zona 5B) del `tenant_id`.
 pub fn register_fts_document(tenant_id: &str, entity_id: &str, text: &str) {
     let trimmed = text.trim();
     if trimmed.is_empty() {
@@ -77,7 +78,7 @@ pub fn register_fts_document(tenant_id: &str, entity_id: &str, text: &str) {
     }
 }
 
-/// Updates an entity's WGS-84 latitude or longitude in the tenant's Zone 5B spatial index (§5.1 Layer 6).
+/// Actualiza el eje de latitud o longitud WGS-84 de una entidad en el índice espacial de la Zona 5B del tenant.
 pub fn register_fts_entity_coordinate_axis(
     tenant_id: &str,
     entity_id: &str,
@@ -149,7 +150,7 @@ pub fn register_fts_entity_coordinate_axis(
     }
 }
 
-/// Attaches a semantic vector embedding (`f32` slice) to an entity in the tenant's Zone 5B `RaBitQ` vector index (§5.1 Layer 5).
+/// Asocia un vector de incrustación semántica (`Vec<f32>`) a una entidad dentro del índice vectorial `RaBitQ` de la Zona 5B del tenant.
 pub fn register_fts_entity_embedding(tenant_id: &str, entity_id: &str, embedding: Vec<f32>) {
     if embedding.is_empty() {
         return;
@@ -186,7 +187,7 @@ pub fn register_fts_entity_embedding(tenant_id: &str, entity_id: &str, embedding
     }
 }
 
-/// Registers a declarative synonym equivalence group in the tenant's Zone 5B `SynonymThesaurus` (§5.1 Layer 4).
+/// Registra un grupo declarativo de equivalencia de sinónimos en el `SynonymThesaurus` de la Zona 5B del tenant.
 pub fn register_tenant_synonym_group(tenant_id: &str, group: &[&str]) {
     if group.len() < 2 {
         return;
@@ -203,7 +204,7 @@ pub fn register_tenant_synonym_group(tenant_id: &str, group: &[&str]) {
     }
 }
 
-/// Executes a WGS-84 Haversine geofence query over the tenant's live Zone 5B index (§5.1 Layer 6).
+/// Ejecuta una consulta espacial de geocerca circular Haversine (WGS-84) sobre el índice activo de la Zona 5B del tenant.
 pub fn fts_search_geofence_meters(
     tenant_id: &str,
     center_lat: f64,
@@ -222,7 +223,7 @@ pub fn fts_search_geofence_meters(
         .unwrap_or_default()
 }
 
-/// Serializes the tenant's Zone 5B `MbfHybridSearchIndex` into 64-byte aligned binary bytes (`"MBFZ5BHS"`) for `.mbf.idx` mirror files.
+/// Serializa el índice `MbfHybridSearchIndex` (Zona 5B) del tenant en un bloque binario alineado a 64 bytes (`"MBFZ5BHS"`) para archivos espejo `.mbf.idx`.
 pub fn export_tenant_zone5b_bytes(tenant_id: &str) -> Vec<u8> {
     fts_corpus()
         .read()
@@ -231,8 +232,8 @@ pub fn export_tenant_zone5b_bytes(tenant_id: &str) -> Vec<u8> {
         .unwrap_or_default()
 }
 
-/// Serializes a compact single-entity Zone 5B `MbfHybridSearchIndex` (`"MBFZ5BHS"`) for per-entity `<entity_id>.mbf.idx` files,
-/// avoiding $O(N^2)$ full-tenant index duplication across individual entity index files.
+/// Serializa un índice compacto `MbfHybridSearchIndex` (Zona 5B, `"MBFZ5BHS"`) de una única entidad para archivos `<entity_id>.mbf.idx`,
+/// evitando la duplicación cuadrática del índice completo del tenant en cada archivo individual.
 pub fn export_single_entity_zone5b_bytes(
     tenant_id: &str,
     entity_id: &str,
@@ -269,8 +270,8 @@ pub fn export_single_entity_zone5b_bytes(
     single_idx.encode_zone_binary()
 }
 
-/// Canonicalizes alphanumeric codes by stripping non-alphanumeric separators (`-`, `_`, `/`, `.`, spaces)
-/// and normalizing optical/human homoglyphs (`O` -> `0`, `I`/`l` -> `1`) per mixed alphanumeric token (§5.3.B).
+/// Canonicaliza códigos alfanuméricos eliminando separadores no alfanuméricos (`-`, `_`, `/`, `.`, espacios)
+/// y normalizando homóglifos ópticos/humanos (`O` -> `0`, `I`/`l` -> `1`) en tokens alfanuméricos mixtos.
 pub fn canonicalize_alphanumeric_code(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     let any_digit_in_raw = raw.chars().any(|c| c.is_ascii_digit());
@@ -303,7 +304,7 @@ pub fn canonicalize_alphanumeric_code(raw: &str) -> String {
     out
 }
 
-/// Executes trigram intersection + romance phonetic + alphanumeric code + Damerau-Levenshtein scoring over `(entity_id, text)` candidates.
+/// Ejecuta la clasificación por intersección de trigramas, fonética romance, código alfanumérico y distancia Damerau-Levenshtein sobre pares `(entity_id, texto)`.
 pub fn fts_search_candidates(
     term: &str,
     candidates: &[(String, String)],
@@ -445,9 +446,7 @@ pub async fn fts_search_entity_ids(
     Ok(out)
 }
 
-/// Calcula la distancia Damerau-Levenshtein entre dos strings.
-/// Usado para post-filtrar candidatos del FTS.
-/// [Blueprint: §V.2 — "Post-filter: Damerau-Levenshtein distance ≤ 1"]
+/// Calcula la distancia de edición Damerau-Levenshtein (inserción, eliminación, sustitución y transposición adyacente) entre dos cadenas.
 pub fn damerau_levenshtein(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();

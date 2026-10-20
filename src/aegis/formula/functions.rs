@@ -1,8 +1,7 @@
-//! Extensible trait for formula functions.
+//! Contrato extensible `FormulaFunction` e implementaciones del catálogo estándar de funciones.
 //!
-//! Trait extensible para funciones de fórmula.
-//! OCP: Para agregar una nueva función, solo se crea un nuevo struct
-//! que implemente FormulaFunction y se registra.
+//! Sigue el principio Abierto/Cerrado (OCP): para incorporar una nueva función matemática
+//! o lógica basta con implementar `FormulaFunction` y registrarla en `FunctionRegistry`.
 
 /// Contrato que toda función de fórmula debe implementar.
 pub trait FormulaFunction: Send + Sync {
@@ -19,6 +18,7 @@ pub trait FormulaFunction: Send + Sync {
 
 // ── Implementaciones concretas (cada una en su propio bloque OCP) ───────────
 
+/// Función `ABS(x)`: retorna el valor absoluto $|x|$ de un argumento numérico.
 pub struct AbsFunction;
 impl FormulaFunction for AbsFunction {
     fn name(&self) -> &'static str {
@@ -32,6 +32,7 @@ impl FormulaFunction for AbsFunction {
     }
 }
 
+/// Función variádica `ROUND(x [, decimals])`: redondea `x` a `decimals` posiciones decimales (por defecto `0`).
 pub struct RoundFunction;
 impl FormulaFunction for RoundFunction {
     fn name(&self) -> &'static str {
@@ -48,6 +49,7 @@ impl FormulaFunction for RoundFunction {
     }
 }
 
+/// Función `CEIL(x)`: redondea `x` hacia arriba al entero más cercano ($\lceil x \rceil$).
 pub struct CeilFunction;
 impl FormulaFunction for CeilFunction {
     fn name(&self) -> &'static str {
@@ -61,6 +63,7 @@ impl FormulaFunction for CeilFunction {
     }
 }
 
+/// Función `FLOOR(x)`: redondea `x` hacia abajo al entero más cercano ($\lfloor x \rfloor$).
 pub struct FloorFunction;
 impl FormulaFunction for FloorFunction {
     fn name(&self) -> &'static str {
@@ -74,6 +77,7 @@ impl FormulaFunction for FloorFunction {
     }
 }
 
+/// Función `POWER(base, exp)`: eleva `base` a la potencia `exp` ($base^{exp}$).
 pub struct PowerFunction;
 impl FormulaFunction for PowerFunction {
     fn name(&self) -> &'static str {
@@ -89,6 +93,7 @@ impl FormulaFunction for PowerFunction {
     }
 }
 
+/// Función `SQRT(x)`: calcula la raíz cuadrada $\sqrt{x}$ (retorna `None` si $x < 0$).
 pub struct SqrtFunction;
 impl FormulaFunction for SqrtFunction {
     fn name(&self) -> &'static str {
@@ -107,6 +112,7 @@ impl FormulaFunction for SqrtFunction {
     }
 }
 
+/// Función `LOG(x)`: calcula el logaritmo natural $\ln(x)$ (retorna `None` si $x \le 0$).
 pub struct LogFunction;
 impl FormulaFunction for LogFunction {
     fn name(&self) -> &'static str {
@@ -125,6 +131,7 @@ impl FormulaFunction for LogFunction {
     }
 }
 
+/// Función `LOG10(x)`: calcula el logaritmo en base 10 $\log_{10}(x)$ (retorna `None` si $x \le 0$).
 pub struct Log10Function;
 impl FormulaFunction for Log10Function {
     fn name(&self) -> &'static str {
@@ -143,6 +150,7 @@ impl FormulaFunction for Log10Function {
     }
 }
 
+/// Función `MOD(x, y)`: calcula el residuo de dividir `x` entre `y` (retorna `None` si $y = 0$).
 pub struct ModFunction;
 impl FormulaFunction for ModFunction {
     fn name(&self) -> &'static str {
@@ -162,6 +170,7 @@ impl FormulaFunction for ModFunction {
     }
 }
 
+/// Función `SIGN(x)`: retorna `1.0` si $x > 0$, `-1.0` si $x < 0$, `0.0` si $x = 0$ y `NaN` si `x` es `NaN`.
 pub struct SignFunction;
 impl FormulaFunction for SignFunction {
     fn name(&self) -> &'static str {
@@ -186,6 +195,7 @@ impl FormulaFunction for SignFunction {
     }
 }
 
+/// Función `NULLIF(x, y)`: retorna `None` (`NaN` en la pila) si $x = y$, o `Some(x)` en caso contrario.
 pub struct NullifFunction;
 impl FormulaFunction for NullifFunction {
     fn name(&self) -> &'static str {
@@ -205,6 +215,7 @@ impl FormulaFunction for NullifFunction {
     }
 }
 
+/// Función variádica `COALESCE(a, b, ...)`: retorna el primer argumento que no sea `NaN`.
 pub struct CoalesceFunction;
 impl FormulaFunction for CoalesceFunction {
     fn name(&self) -> &'static str {
@@ -218,6 +229,7 @@ impl FormulaFunction for CoalesceFunction {
     }
 }
 
+/// Función condicional `IF(cond, then_val, else_val)`: retorna `then_val` si `cond != 0.0`, o `else_val` si es `0.0`.
 pub struct IfFunction;
 impl FormulaFunction for IfFunction {
     fn name(&self) -> &'static str {
@@ -234,6 +246,7 @@ impl FormulaFunction for IfFunction {
     }
 }
 
+/// Función variádica `GREATEST(a, b, ...)`: retorna el valor máximo entre todos los argumentos provistos.
 pub struct GreatestFunction;
 impl FormulaFunction for GreatestFunction {
     fn name(&self) -> &'static str {
@@ -250,6 +263,7 @@ impl FormulaFunction for GreatestFunction {
     }
 }
 
+/// Función variádica `LEAST(a, b, ...)`: retorna el valor mínimo entre todos los argumentos provistos.
 pub struct LeastFunction;
 impl FormulaFunction for LeastFunction {
     fn name(&self) -> &'static str {
@@ -266,6 +280,7 @@ impl FormulaFunction for LeastFunction {
     }
 }
 
+/// Función `CLAMP(x, min, max)`: restringe el valor `x` al intervalo cerrado `[min, max]`.
 pub struct ClampFunction;
 impl FormulaFunction for ClampFunction {
     fn name(&self) -> &'static str {

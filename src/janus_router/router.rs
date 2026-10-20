@@ -1,15 +1,12 @@
-//! JanusRouter — write-path entry, invoked only by the IOP.
+//! Enrutador de escritura (`JanusRouter`) — punto de entrada del Write Path invocado por el IOP.
 //!
-//! JanusRouter — Write Path del Metri Engine.
-//! Invocado exclusivamente por el IOP, después de Cedar + Quota.
-//!
-//! Pipeline interno (6 pasos):
-//! 1. load-schema  (Códice O(1))
-//! 2. validate-payload (validator Rust)
-//! 3. Pre-checks: write_path_locked, is_system_seeded
-//! 4. Resolve engine (.mbf unificado)
-//! 5. Enriquecer ctx — tenant_id inyectado (NUNCA del cliente)
-//! 6. Despachar al canal del registry
+//! Ejecuta el pipeline interno de 6 pasos tras la autorización Cedar y la reserva de cuota:
+//! 1. Carga del modelo desde el Códice (`O(1)`).
+//! 2. Validación de la entidad y del payload.
+//! 3. Verificación de candados de escritura (`write_path_locked`, `is_system_seeded`).
+//! 4. Resolución del `EngineChannel` asociado a la entidad.
+//! 5. Enriquecimiento del `IopContext` inyectando el `tenant_id` verificado del sistema.
+//! 6. Despacho al canal registrado en `channel_registry`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,6 +24,7 @@ use crate::janus::validator;
 /// Canal de escritura para una entidad sobre el motor transaccional/columnar `.mbf`.
 #[async_trait::async_trait]
 pub trait IWriteChannel: Send + Sync {
+    /// Ejecuta la mutación descrita en `ctx` sobre el canal de almacenamiento correspondiente.
     async fn route(&self, ctx: IopContext) -> Result<Value, DomainError>;
 }
 
@@ -38,6 +36,7 @@ pub struct JanusRouter {
 }
 
 impl JanusRouter {
+    /// Construye un `JanusRouter` con el registro de canales de escritura por `EngineChannel`.
     pub fn new(channel_registry: HashMap<EngineChannel, Arc<dyn IWriteChannel>>) -> Self {
         info!(
             "[JanusRouter] Router activo | canales: {:?}",

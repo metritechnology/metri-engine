@@ -1,4 +1,4 @@
-//! Tests for `quota::reservations`.
+//! Pruebas unitarias y de concurrencia de `quota::reservations`.
 use super::*;
 
 fn reserva(id: &str, estimated: i64, expires_at: i64) -> Reservation {

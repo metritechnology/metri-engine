@@ -57,7 +57,7 @@ check: ## cargo check rápido
 ci: ## Espejo local del CI (rust.yml): fmt, audits, cargo doc, gate clippy y tests
 	cargo fmt --check
 	python3 scripts/docs/gen_reference.py --check
-	python3 scripts/dev/check_docs.py
+	python3 scripts/dev/check_docs.py --strict
 	python3 scripts/dev/check_result_pattern.py --strict
 	python3 scripts/dev/check_clean_code.py
 	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --lib

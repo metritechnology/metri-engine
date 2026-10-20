@@ -1,4 +1,4 @@
-//! Metri Vortex (.mbf) unified HTAP binary storage and execution engine.
+//! Motor binario unificado de almacenamiento y ejecución HTAP Metri Vortex (`.mbf`).
 
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
@@ -11,27 +11,34 @@ use crate::domain::protocols::{
     DomainResult, IClock, IMbfObjectStore, MbfConditionalGet, MbfObjectPayload,
 };
 
+/// Especificación binaria de cabeceras, pies de página, directorio de columnas, sellos criptográficos y evolución de esquema.
 pub mod format;
+/// Motor de almacenamiento S3 + NVMe `/tmp` y almacén de estado indexado en memoria (`MbfStorageClient`).
 pub mod storage;
+/// Coordinador de transacciones ACID sin bloqueos sobre S3 (Group Commit, 8 celdas por dominio y Auto-Rebase conmutativo).
 pub mod tx;
+/// Las 8 zonas físicas especializadas del formato binario `.mbf`.
 pub mod zones;
 
-/// Deterministic clock for testing fiscal locks, DST transitions, and time-series windows without sleeping.
+/// Reloj determinista para pruebas de cierres fiscales, transiciones de horario de verano (DST) y ventanas de series temporales sin esperas reales.
 pub struct DeterministicClock {
     current_ms: AtomicI64,
 }
 
 impl DeterministicClock {
+    /// Crea un reloj determinista inicializado en `initial_epoch_ms` (milisegundos desde la época Unix).
     pub fn new(initial_epoch_ms: i64) -> Self {
         Self {
             current_ms: AtomicI64::new(initial_epoch_ms),
         }
     }
 
+    /// Avanza el reloj atómicamente en `delta_ms` milisegundos y retorna el nuevo instante.
     pub fn advance_ms(&self, delta_ms: i64) -> i64 {
         self.current_ms.fetch_add(delta_ms, Ordering::SeqCst) + delta_ms
     }
 
+    /// Fija el valor del reloj atómicamente en `new_epoch_ms` milisegundos.
     pub fn set_ms(&self, new_epoch_ms: i64) {
         self.current_ms.store(new_epoch_ms, Ordering::SeqCst);
     }
@@ -43,25 +50,31 @@ impl IClock for DeterministicClock {
     }
 }
 
-/// In-memory S3-compatible object store with fault injection (`HTTP 412`, `HTTP 304`, byte-range reads, and telemetry counters).
+/// Almacén de objetos compatible con S3 en memoria con inyección de fallos (`HTTP 412`, `HTTP 304`, lecturas por rango de bytes y contadores de telemetría).
 #[derive(Default)]
 pub struct InMemoryChaosS3Store {
     objects: RwLock<HashMap<String, MbfObjectPayload>>,
     injected_winners: RwLock<HashMap<String, Vec<u8>>>,
+    /// Contador atómico de lecturas completas (`GET`) ejecutadas.
     pub gets_count: AtomicU64,
+    /// Contador atómico de escrituras (`PUT`) exitosas.
     pub puts_count: AtomicU64,
+    /// Contador atómico de lecturas parciales por rango de bytes (`Range GET`).
     pub range_gets_count: AtomicU64,
+    /// Contador atómico de aciertos condicionales `HTTP 304 Not Modified`.
     pub not_modified_304_hits: AtomicU64,
+    /// Contador atómico de conflictos de precondición `HTTP 412 Precondition Failed`.
     pub conflict_412_count: AtomicU64,
 }
 
 impl InMemoryChaosS3Store {
+    /// Crea una nueva instancia vacía de `InMemoryChaosS3Store`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Programs the store to simulate a concurrent Lambda instance winning the next `put_if_match` on `key`,
-    /// overwriting `key` with `winner_bytes` and returning `MbfCasConflict001` (`HTTP 412`) to the caller.
+    /// Programa el almacén para simular que una instancia concurrente ganó el siguiente `put_if_match` sobre `key`,
+    /// sobrescribiendo `key` con `winner_bytes` y retornando `ErrorCode::MbfCasConflict001` (`HTTP 412`) al invocador.
     pub fn inject_concurrent_winner_on_next_put(&self, key: &str, winner_bytes: Vec<u8>) {
         if let Ok(mut guard) = self.injected_winners.write() {
             guard.insert(key.to_string(), winner_bytes);

@@ -1,12 +1,7 @@
-//! Pure (request, result) to ActionType derivation for the audit log.
+//! Derivación pura de `(request, result)` hacia `ActionType` para el registro de auditoría.
 //!
-//! derive-action-type (fn pura).
-//!
-//! # Origin
-//! En el stack anterior: (defn derive-action-type [request result] ...)
-//!
-//! Mapea (request, result) → ActionType para el audit_log OLAP.
-//! Dominio puro: sin I/O, sin efectos secundarios.
+//! Clasifica el resultado de una transacción o consulta sin realizar operaciones de E/S
+//! ni producir efectos secundarios.
 
 /// Tipo de acción para el audit_log OLAP.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,12 +1,8 @@
-//! The single DomainError to tonic::Status translation (R6).
+//! Traducción canónica única `DomainError` → `tonic::Status` (regla R6).
 //!
-//! Traducción única `DomainError` → `tonic::Status` (R6).
-//!
-//! Este `From` es el ÚNICO sitio del crate que convierte un error de dominio a
-//! estado gRPC: consulta `ErrorCatalog` con el `canonical_code` y toma de allí
-//! `grpc_status`. Los handlers devuelven `?` hasta el borde y aquí se traduce.
-//! Prohibido el mapeo manual disperso (`Status::invalid_argument(...)`) para
-//! errores que ya son `DomainError` — PLAN_PATRON_RESULT.md §2, regla R6.
+//! Esta implementación de `From<DomainError> for Status` es el único punto del crate
+//! que convierte un error de dominio a código de estado gRPC consultando `ErrorCatalog`
+//! mediante `canonical_code`. Los handlers propagan errores con `?` hasta la frontera.
 
 use crate::domain::error_catalog;
 use crate::domain::errors::DomainError;

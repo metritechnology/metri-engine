@@ -1,23 +1,22 @@
-//! Variable resolution trait for formula contexts.
+//! Resolución de variables para contextos de evaluación de fórmulas.
 //!
-//! Trait para resolución de variables.
-//! LSP: OltpVariableResolver y OlapVariableResolver son intercambiables.
-//! DIP: evaluator.rs depende de este trait, NO de implementaciones concretas.
+//! Define el contrato `VariableResolver` (LSP / DIP) que permite a `FormulaEvaluator`
+//! resolver identificadores numéricos sin acoplarse a la estructura física de la fila.
 
-/// Contrato para resolver el valor de una variable en el contexto de una fórmula.
-/// Abstrae la diferencia entre OLAP (columna SQL) y OLTP (row JSON).
+/// Contrato para resolver el valor numérico de una variable en el contexto de una fórmula.
 pub trait VariableResolver: Send + Sync {
     /// Resuelve una variable a su valor numérico.
     /// Retorna None si la variable no existe o no es numérica.
     fn resolve(&self, var_name: &str) -> Option<f64>;
 }
 
-/// Resolución OLTP: busca en un row JSON con dual-lookup namespace-aware.
+/// Resolvedor de variables sobre filas JSON en memoria con búsqueda dual (con y sin namespace).
 pub struct OltpVariableResolver<'a> {
     row: &'a serde_json::Map<String, serde_json::Value>,
 }
 
 impl<'a> OltpVariableResolver<'a> {
+    /// Construye un resolvedor vinculado al mapa de atributos de una fila JSON.
     pub fn new(row: &'a serde_json::Map<String, serde_json::Value>) -> Self {
         Self { row }
     }
@@ -33,14 +32,14 @@ impl<'a> VariableResolver for OltpVariableResolver<'a> {
     }
 }
 
-/// Resolución OLAP: transforma variable namespace → nombre de columna SQL.
+/// Normalizador de nombres de atributos con namespace hacia identificadores planos de columna.
 pub struct OlapVariableResolver;
 
 impl OlapVariableResolver {
     /// Transforma "asset/health_score" → "health_score"
     /// Transforma "asset/health-score" → "health_score"
     pub fn resolve_to_sql_column(var_name: &str) -> String {
-        if var_name == "tenant/id" || var_name == "entity/tenant-id" {
+        if var_name == crate::eav::writer::system_attrs::TENANT_NAME {
             return "_tenant".to_string();
         }
         let base = var_name.split('/').next_back().unwrap_or(var_name);

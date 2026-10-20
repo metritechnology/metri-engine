@@ -1,13 +1,8 @@
-//! TenantGuard — multitenant isolation at the EAV layer.
+//! Guardia de aislamiento multi-tenant (`TenantGuard`) en la capa de almacenamiento EAV.
 //!
-//! Aislamiento multitenant en la capa EAV.
-//!
-//! # Origin
-//! En el stack anterior: Pool Model gate para Datahike + schema verification.
-//! En Rust:    TenantGuard valida que todo I/O tenga tenant_id en el PK.
-//!
-//! Zero-Drop Policy: replicas query_with_tenant, transact_with_tenant!,
-//! y el chequeo de schema (adapt: en EAV, el "schema" es el CodeRegistry).
+//! Valida que toda operación de lectura o escritura incluya un `tenant_id` no vacío,
+//! bloquea el uso de `SYSTEM_TENANT_ID` salvo en contextos explícitamente autorizados y
+//! construye la clave de partición canónica `T#<tenant_id>#E#<entity_id>`.
 
 use crate::codice::CodeRegistry;
 use crate::domain::errors::{DomainError, ErrorCode};
@@ -23,12 +18,14 @@ pub struct TenantGuard {
 }
 
 impl TenantGuard {
+    /// Construye un `TenantGuard` estándar que rechaza operaciones sobre el tenant `SYSTEM`.
     pub fn new() -> Self {
         TenantGuard {
             allowed_system_ops: false,
         }
     }
 
+    /// Construye un `TenantGuard` que permite operaciones administrativas bajo `SYSTEM_TENANT_ID`.
     pub fn with_system_ops() -> Self {
         TenantGuard {
             allowed_system_ops: true,

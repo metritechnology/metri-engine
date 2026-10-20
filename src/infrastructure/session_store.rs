@@ -1,13 +1,8 @@
-//! HmacTokenStore — ISessionStore implementation.
+//! Almacén de sesiones Zero-Trust (`HmacTokenStore`) que implementa `ISessionStore`.
 //!
-//! HMACTokenStore.
-//!
-//! # Origin
-//! En el stack anterior: (defrecord HMACTokenStore [secret ddb-client table-name])
-//! En Rust:    struct HmacTokenStore — implementa ISessionStore
-//!
-//! Zero-Drop Policy: replica verify_signature con constant-time comparison,
-//! blacklist check en DynamoDB, revocación y des-revocación.
+//! Combina la verificación criptográfica local en tiempo constante (`HmacTokenVerifier`)
+//! con la consulta de lista negra de tokens revocados (`REVOKED#<jti>`) sobre el motor
+//! de almacenamiento MBF/DynamoDB.
 
 use std::sync::Arc;
 

@@ -1,9 +1,11 @@
-//! OLTP compiler and executor over the EAV engine.
+//! Compilador y ejecutor transaccional/analítico en memoria sobre el motor EAV / `.mbf`.
 //!
-//! Pipeline en memoria: `compiler` traduce el AST IR a un plan físico del
-//! motor EAV; `executor` orquesta compile → execute → `hydrator` (con
-//! cache) → `filter`/`aggregation` → `comparison`/`hierarchy` → `caster`.
-//! [`channel`] implementa `IWriteChannel` para escrituras OLTP.
+//! Pipeline de lectura y escritura:
+//! - `compiler`: Traduce el AST IR (`Value` o FlatBuffers `AnalyticsRequestT`) a un `NativeQueryPlan`.
+//! - `executor`: Orquesta la compilación, ejecución de índices, hidratación con caché (`hydrator`),
+//!   filtrado en streaming (`filter`), agregación (`aggregation`), comparaciones (`comparison`),
+//!   jerarquías (`hierarchy`) y proyección de salida (`caster`).
+//! - `channel`: Implementa el puerto `IWriteChannel` para transacciones de escritura ACID sobre EAV / `.mbf`.
 pub mod aggregation; // Agregación completa: 14 funciones + FilterNode + derive_columns
 pub(crate) mod caster;
 pub mod channel;

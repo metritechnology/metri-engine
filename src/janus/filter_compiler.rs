@@ -1,7 +1,4 @@
-//! FilterNode compiler — client filters to AST IR nodes.
-//!
-//! Compilador de FilterNode -> nodos AST IR.
-//! transforma árboles de filtros del cliente en nodos del AST IR inmutable.
+//! Compilador de `FilterNode` del cliente hacia nodos inmutables del AST IR.
 
 use serde_json::{json, Value};
 
@@ -153,6 +150,7 @@ fn compile_group(group: &Value, entity: &str) -> Result<Value, DomainError> {
     }
 }
 
+/// Compila recursivamente un nodo de filtro (`criteria` o `group`) hacia su representación AST IR.
 pub fn compile_node(node: &Value, entity: &str) -> Result<Value, DomainError> {
     if let Some(criteria) = node.get("criteria") {
         compile_criteria(criteria, entity)
@@ -163,6 +161,7 @@ pub fn compile_node(node: &Value, entity: &str) -> Result<Value, DomainError> {
     }
 }
 
+/// Compila una tajada de nodos de filtro del cliente hacia un vector de expresiones AST IR.
 pub fn compile_filters(filters: &[Value], entity: &str) -> Result<Vec<Value>, DomainError> {
     let mut ast_nodes = Vec::new();
     for filter in filters {

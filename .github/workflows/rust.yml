@@ -44,12 +44,9 @@ jobs:
       - name: Unit tests
         run: cargo test --lib
 
-      - name: Referencia desactualizada (docs/reference)
+      - name: Referencia desactualizada (docs/05-referencia)
         run: python3 scripts/docs/gen_reference.py --check
 
-      # PLAN_PATRON_RESULT.md — Fase 5 (cierre estricto): el auditor corre en
-      # modo --strict: cero violaciones de patrón Result y catálogo perfecto.
-      # La cerradura de compilación es el deny de clippy en lib.rs/main.rs.
       - name: Patrón Result — auditoría estricta (cero violaciones)
         run: python3 scripts/dev/check_result_pattern.py --strict
 
@@ -59,10 +56,8 @@ jobs:
       - name: Guardián de Arquitectura Hexagonal y SOLID (tests/architecture_solid_guard.rs)
         run: cargo test --test architecture_solid_guard
 
-      # PLAN_DOCUMENTACION.md — Fase 0: ratchet de cabeceras //! (§2.7).
-      # Corre en modo ratchet (no --strict) hasta cerrar la Fase 5.
-      - name: Documentación — auditor de cabeceras (ratchet)
-        run: python3 scripts/dev/check_docs.py
+      - name: Documentación — auditoría estricta de cobertura 100% (src/ y docs/)
+        run: python3 scripts/dev/check_docs.py --strict
 
       - name: Documentación — cargo doc (sin enlaces intra-doc rotos)
         env:

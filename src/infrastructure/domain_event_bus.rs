@@ -1,13 +1,9 @@
-//! Domain event bus adapters — EventBridge real and outbox.
+//! Adaptadores del bus de eventos de dominio (`application::ports::DomainEventPublisher`).
 //!
-//! domain_event_bus — adaptadores del puerto application::ports::DomainEventPublisher.
-//!
-//! Dos implementaciones, una misma frontera:
-//! - ContractEventPublisher: EventBridge real (producción).
-//! - NoopEventPublisher: tests y composition roots sin AWS.
-//!
-//! El adaptador conoce EventBridge; el canal OLTP sólo conoce el trait. Cambiar
-//! de bus — o publicar vía outbox — no toca el write path.
+//! Provee implementaciones intercambiables detrás de una misma frontera hexagonal:
+//! - `ContractEventPublisher`: publica sobres validados hacia AWS EventBridge (`IEventBus`).
+//! - `NoopEventPublisher`: implementación nula para pruebas unitarias y entornos sin AWS.
+//! - `DetachedEventBridgePublisher`: adaptador asíncrono fire-and-forget sobre `tokio::spawn`.
 
 use std::sync::Arc;
 
@@ -17,6 +13,7 @@ use serde_json::Value;
 use crate::application::ports::{DomainEventPublisher, PublishError};
 use crate::domain::protocols::IEventBus;
 
+/// Publicador de eventos de dominio que valida el contrato y delega el envío a `IEventBus`.
 pub struct ContractEventPublisher {
     bus: Arc<dyn IEventBus>,
     bus_name: String,
@@ -24,6 +21,7 @@ pub struct ContractEventPublisher {
 }
 
 impl ContractEventPublisher {
+    /// Construye un publicador de eventos de contrato asociado al bus indicado.
     pub fn new(bus: Arc<dyn IEventBus>, bus_name: impl Into<String>) -> Self {
         Self {
             bus,
@@ -49,6 +47,7 @@ impl DomainEventPublisher for ContractEventPublisher {
     }
 }
 
+/// Publicador de eventos sin operación (No-Op) para pruebas y raíces de composición locales.
 pub struct NoopEventPublisher;
 
 #[async_trait]

@@ -1,4 +1,8 @@
-//! S3 exports — query results as CSV with presigned download URLs.
+//! Exportación de resultados analíticos a Amazon S3 en formato CSV con URLs prefirmadas.
+//!
+//! Implementa el puerto `IExportStorage` en dos variantes:
+//! - `S3ExportStorage`: serializa filas a CSV en memoria, sube el objeto a S3 y firma un enlace temporal.
+//! - `StubExportStorage`: devuelve URLs simuladas para desarrollo local (`S3_MODE=stub`).
 use async_trait::async_trait;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::Client as S3Client;
@@ -11,12 +15,14 @@ use crate::domain::protocols::IExportStorage;
 
 // ── Real S3 Exporter ──────────────────────────────────────────────────────────
 
+/// Adaptador de almacenamiento en Amazon S3 para exportación de consultas masivas a CSV.
 pub struct S3ExportStorage {
     client: S3Client,
     bucket: String,
 }
 
 impl S3ExportStorage {
+    /// Inicializa el cliente S3 con las credenciales del entorno apuntando al bucket especificado.
     pub async fn new(bucket: String) -> Self {
         let config = aws_config::load_from_env().await;
         let client = S3Client::new(&config);
@@ -144,6 +150,7 @@ impl IExportStorage for S3ExportStorage {
 
 // ── Stub Exporter (Local Dev) ──────────────────────────────────────────────────
 
+/// Emulador local de exportación CSV que genera URLs simuladas sin contactar a AWS S3.
 pub struct StubExportStorage;
 
 impl Default for StubExportStorage {
@@ -153,6 +160,7 @@ impl Default for StubExportStorage {
 }
 
 impl StubExportStorage {
+    /// Crea una nueva instancia del exportador simulado para desarrollo local.
     pub fn new() -> Self {
         info!("[StubExportStorage] Stub storage active (local mock URLs)");
         StubExportStorage

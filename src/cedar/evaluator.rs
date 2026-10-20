@@ -1,12 +1,9 @@
-//! Cedar PDP decision routing — mutational vs analytical.
+//! Enrutador de decisiones del PDP Cedar (`step4_evaluate_cedar`): mutacional vs analítico.
 //!
-//! PDP Cedar: enrutamiento de decisiones.
-//!
-//! La entrada única es `step4_evaluate_cedar`: atajo system-bff y, según la
-//! acción, camino mutacional (mutational.rs — motor Cedar real) o analítico
-//! (analytical.rs — boundaries por dominio). Los grants viven en grants.rs, y
-//! el registro de acciones y la base de entidades precompilada en
-//! action_registry.rs / entities_builder.rs.
+//! La entrada única es `step4_evaluate_cedar`, que aplica el atajo de cuenta de servicio
+//! `usr_system_bff` y dirige la evaluación según la naturaleza de la acción hacia el
+//! camino mutacional (`mutational.rs`, motor Cedar completo) o analítico (`analytical.rs`,
+//! síntesis de perímetros y alcances por dominio).
 
 mod action_registry;
 mod analytical;
@@ -34,6 +31,11 @@ use crate::cedar::ports::PolicyStore;
 use crate::cedar::types::PrincipalData;
 use crate::domain::errors::DomainError;
 
+/// Paso 4 del pipeline Cedar: evalúa la autorización ABAC para el principal, acción y recurso dados.
+///
+/// Para acciones mutacionales devuelve un objeto vacío si una política permite la operación,
+/// y para acciones analíticas devuelve el diccionario de perímetros por dominio (`query_scope`,
+/// `permitted_locations`, `permitted_assets`).
 pub fn step4_evaluate_cedar(
     cedar_engine: &CedarAuthorizer,
     policy_cache: &dyn PolicyStore,

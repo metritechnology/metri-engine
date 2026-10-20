@@ -1,7 +1,4 @@
-//! MultiSeriesGroup fusion — asymptotic full outer join.
-//!
-//! Motor de fusión MultiSeriesGroup — Full Outer Join asintótico.
-//! realiza y fusiona resultados de sub-queries agrupados bajo un group-id.
+//! Motor de fusión `MultiSeriesGroup` (`multi_series`) — *Full Outer Join* asintótico de sub-queries.
 
 use serde_json::{Map, Value};
 use std::collections::hash_map::DefaultHasher;

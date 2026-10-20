@@ -1,4 +1,4 @@
-//! Tests for `janus::contract`.
+//! Pruebas de contrato e instantáneas (*snapshots*) para `janus`.
 use crate::aegis::oltp::compiler::compile_native_plan_fbs;
 use crate::janus::ast_compiler::compile_ast_fbs;
 use crate::janus::fbs;
@@ -389,7 +389,7 @@ fn test_tenant_ast_compilation() {
         domain_boundaries: serde_json::json!({}),
     };
     let compiled_sys = compile_ast_fbs(&req, &system_ctx, &schema).expect("Debe compilar");
-    // Verify that tenant_id is NOT in the filters (no tenant isolation filter for system tenant querying tenant)
+    // Verify that tenant/id is NOT in the filters (no tenant isolation filter for system tenant querying tenant)
     let sys_has_tenant_filter = compiled_sys
         .filters
         .as_ref()
@@ -397,7 +397,9 @@ fn test_tenant_ast_compilation() {
             filters.iter().any(|f| {
                 f.criteria
                     .as_ref()
-                    .map(|c| c.field.as_deref() == Some("tenant_id"))
+                    .map(|c| {
+                        c.field.as_deref() == Some(crate::eav::writer::system_attrs::TENANT_NAME)
+                    })
                     .unwrap_or(false)
             })
         })

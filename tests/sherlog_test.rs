@@ -1,3 +1,5 @@
+//! Suite de pruebas de integración para el módulo `sherlog` de captura y sanitización de fallos.
+
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 

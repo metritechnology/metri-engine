@@ -1,4 +1,4 @@
-//! Domain-agnostic mathematical, survival analysis, discrete Markov, stochastic resource optimization, and affine dimensional normalization catalog for Zone 5 (`09_CODICE_METADATA_AND_FUZZY_MATH_ENGINE.md`).
+//! Catálogo matemático agnóstico al dominio de análisis de supervivencia, cadenas de Markov discretas, optimización estocástica de recursos y normalización dimensional afín para la Zona 5.
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -7,11 +7,13 @@ use serde::{Deserialize, Serialize};
 
 use super::bi_synopses::MbfHyperSynopsis512;
 
-/// Pure algebraic 1D affine transformation ($y_{\text{canonical}} = a \cdot x_{\text{raw}} + b$, §6).
-/// Completely decoupled from any specific physical, monetary, or domain unit system.
+/// Transformación afín unidimensional algebraica pura ($y_{\text{canonical}} = a \cdot x_{\text{raw}} + b$).
+/// Completamente desacoplada de cualquier sistema específico de unidades físicas, monetarias o de dominio.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AffineTransform {
+    /// Factor multiplicativo de escala ($a$).
     pub scale_a: f64,
+    /// Desplazamiento aditivo ($b$).
     pub offset_b: f64,
 }
 
@@ -22,19 +24,19 @@ impl Default for AffineTransform {
 }
 
 impl AffineTransform {
-    /// Identity transformation ($y = 1.0 \cdot x + 0.0$).
+    /// Transformación identidad ($y = 1.0 \cdot x + 0.0$).
     pub const IDENTITY: Self = Self {
         scale_a: 1.0,
         offset_b: 0.0,
     };
 
-    /// Returns the identity transformation ($y = 1.0 \cdot x + 0.0$).
+    /// Devuelve la transformación identidad ($y = 1.0 \cdot x + 0.0$).
     #[inline]
     pub const fn identity() -> Self {
         Self::IDENTITY
     }
 
-    /// Creates a linear scaling transformation ($y = a \cdot x + 0.0$).
+    /// Crea una transformación de escalado lineal puro ($y = a \cdot x + 0.0$).
     #[inline]
     pub const fn linear(scale_a: f64) -> Self {
         Self {
@@ -43,19 +45,19 @@ impl AffineTransform {
         }
     }
 
-    /// Creates a new affine transformation $y = a \cdot x + b$.
+    /// Crea una nueva transformación afín $y = a \cdot x + b$.
     #[inline]
     pub const fn new(scale_a: f64, offset_b: f64) -> Self {
         Self { scale_a, offset_b }
     }
 
-    /// Evaluates $y_{\text{canonical}} = a \cdot x_{\text{raw}} + b$ in $O(1)$ (single FMA instruction).
+    /// Evalúa $y_{\text{canonical}} = a \cdot x_{\text{raw}} + b$ en $O(1)$ mediante una instrucción FMA.
     #[inline]
     pub fn apply(&self, x_raw: f64) -> f64 {
         self.scale_a.mul_add(x_raw, self.offset_b)
     }
 
-    /// Computes the inverse affine transformation $x = \frac{1}{a} y - \frac{b}{a}$ if $a \neq 0$.
+    /// Calcula la transformación afín inversa $x = \frac{1}{a} y - \frac{b}{a}$ si $a \neq 0$.
     #[inline]
     pub fn inverse(&self) -> Option<Self> {
         if self.scale_a.abs() < 1e-15 {
@@ -69,7 +71,7 @@ impl AffineTransform {
         }
     }
 
-    /// Composes `self` followed by `next`: $(T_{\text{next}} \circ T_{\text{self}})(x) = a_2(a_1 x + b_1) + b_2$.
+    /// Compone `self` seguido de `next`: $(T_{\text{next}} \circ T_{\text{self}})(x) = a_2(a_1 x + b_1) + b_2$.
     #[inline]
     pub fn compose(&self, next: &Self) -> Self {
         Self {
@@ -79,30 +81,30 @@ impl AffineTransform {
     }
 }
 
-/// Declarative, runtime-configurable registry of affine dimensional transforms (`unit_code -> AffineTransform`, §6).
-/// Contains zero hardcoded physical or domain units; all mappings are injected from Códice metadata or terminology tables.
+/// Registro declarativo y configurable en tiempo de ejecución de transformaciones dimensionales afines (`unit_code -> AffineTransform`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DimensionalUnitRegistry {
     transforms: HashMap<String, AffineTransform>,
 }
 
 impl DimensionalUnitRegistry {
+    /// Crea un registro de unidades dimensionales vacío.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registers a unit symbol and its affine conversion to the canonical base dimension.
+    /// Registra un símbolo de unidad y su conversión afín hacia la dimensión base canónica.
     pub fn register(&mut self, unit_code: impl Into<String>, transform: AffineTransform) {
         self.transforms
             .insert(unit_code.into().trim().to_ascii_uppercase(), transform);
     }
 
-    /// Alias for `register` to register a unit symbol and its affine conversion.
+    /// Alias de `register` para registrar un símbolo de unidad y su transformación afín.
     pub fn register_unit(&mut self, unit_code: impl Into<String>, transform: AffineTransform) {
         self.register(unit_code, transform);
     }
 
-    /// Builds a registry from a slice of `(unit_code, scale_a, offset_b)` tuples.
+    /// Construye un registro a partir de una lista de tuplas `(unit_code, scale_a, offset_b)`.
     pub fn from_entries(entries: &[(&str, f64, f64)]) -> Self {
         let mut reg = Self::new();
         for &(code, a, b) in entries {
@@ -111,7 +113,7 @@ impl DimensionalUnitRegistry {
         reg
     }
 
-    /// Resolves the `AffineTransform` for `unit_code`, defaulting to `AffineTransform::IDENTITY` if unregistered.
+    /// Resuelve el `AffineTransform` para `unit_code`, devolviendo `AffineTransform::IDENTITY` si no está registrado.
     #[inline]
     pub fn transform_for(&self, unit_code: &str) -> AffineTransform {
         self.transforms
@@ -120,17 +122,18 @@ impl DimensionalUnitRegistry {
             .unwrap_or(AffineTransform::IDENTITY)
     }
 
-    /// Applies the registered affine transform for `unit_code` to `x_raw`.
+    /// Aplica la transformación afín registrada para `unit_code` sobre `x_raw`.
     #[inline]
     pub fn normalize(&self, x_raw: f64, unit_code: &str) -> f64 {
         self.transform_for(unit_code).apply(x_raw)
     }
 }
 
-/// Parallel-mergeable $N \times N$ Discrete-Time Markov Chain transition matrix (`DiscreteMarkovChain<N>`, §1.1 #1 & §7).
-/// Completely domain-agnostic: operates on abstract state indices `0..N` or caller-provided state vocabularies.
+/// Matriz de transición de cadena de Markov en tiempo discreto $N \times N$ fusionable en paralelo (`DiscreteMarkovChain<N>`).
+/// Completamente agnóstica al dominio: opera sobre índices de estado abstractos `0..N` o vocabularios provistos por el llamador.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscreteMarkovChain<const N: usize> {
+    /// Matriz $N \times N$ de conteos acumulados de transiciones entre estados.
     #[serde(with = "serde_matrix")]
     pub transition_counts: [[u64; N]; N],
 }
@@ -169,11 +172,12 @@ impl<const N: usize> Default for DiscreteMarkovChain<N> {
 }
 
 impl<const N: usize> DiscreteMarkovChain<N> {
+    /// Crea una cadena de Markov discreta con conteos de transición inicializados en cero.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Records a single state transition `from_state -> to_state` (bounds-checked).
+    /// Registra una transición de estado individual `from_state -> to_state` con verificación de límites.
     #[inline]
     pub fn record_transition(&mut self, from_state: usize, to_state: usize) {
         if from_state < N && to_state < N {
@@ -181,7 +185,7 @@ impl<const N: usize> DiscreteMarkovChain<N> {
         }
     }
 
-    /// Builds a Markov chain from a chronological sequence of state indices in `0..N`.
+    /// Construye una cadena de Markov a partir de una secuencia cronológica de índices de estado en `0..N`.
     pub fn from_state_sequence(states: &[usize]) -> Self {
         let mut chain = Self::new();
         for window in states.windows(2) {
@@ -190,7 +194,7 @@ impl<const N: usize> DiscreteMarkovChain<N> {
         chain
     }
 
-    /// Builds a Markov chain from a chronological sequence of string labels mapped against a caller-supplied `state_vocabulary`.
+    /// Construye una cadena de Markov a partir de una secuencia cronológica de etiquetas mapeadas contra `state_vocabulary`.
     pub fn from_labeled_sequence(labels: &[&str], state_vocabulary: &[&str]) -> Self {
         let resolve = |label: &str| -> usize {
             state_vocabulary
@@ -206,7 +210,7 @@ impl<const N: usize> DiscreteMarkovChain<N> {
         chain
     }
 
-    /// Associative and commutative $O(N^2)$ merge across two MBF blocks.
+    /// Fusión asociativa y conmutativa en $O(N^2)$ entre dos bloques MBF.
     pub fn merge(&self, other: &Self) -> Self {
         let mut out = Self::new();
         for i in 0..N {
@@ -218,7 +222,7 @@ impl<const N: usize> DiscreteMarkovChain<N> {
         out
     }
 
-    /// Computes the row-stochastic transition probability matrix $P_{i,j} = \Pr(S_{t+1} = j \mid S_t = i)$.
+    /// Calcula la matriz de probabilidades de transición estocástica por filas $P_{i,j} = \Pr(S_{t+1} = j \mid S_t = i)$.
     pub fn transition_probability_matrix(&self) -> [[f64; N]; N] {
         let mut p = [[0.0_f64; N]; N];
         for (i, p_row) in p.iter_mut().enumerate() {
@@ -235,7 +239,7 @@ impl<const N: usize> DiscreteMarkovChain<N> {
         p
     }
 
-    /// Computes the stationary (steady-state) probability distribution $\pi = \pi P$ via power iteration.
+    /// Calcula la distribución de probabilidad estacionaria $\pi = \pi P$ mediante iteración de potencias.
     pub fn steady_state_distribution(&self) -> [f64; N] {
         if N == 0 {
             return [0.0; N];
@@ -260,7 +264,7 @@ impl<const N: usize> DiscreteMarkovChain<N> {
         pi
     }
 
-    /// Computes the probability that a process starting in `start_state` is in any of `target_states` after `steps` transitions.
+    /// Calcula la probabilidad de que un proceso que inicia en `start_state` se encuentre en cualquiera de `target_states` tras `steps` transiciones.
     pub fn n_step_target_probability(
         &self,
         start_state: usize,
@@ -292,8 +296,8 @@ impl<const N: usize> DiscreteMarkovChain<N> {
 }
 
 impl MbfHyperSynopsis512 {
-    /// Builds a 512-byte mathematical synopsis from `(timestamp_ms, raw_value, AffineTransform)` observations,
-    /// normalizing each observation via $y = a \cdot x + b$ before computing moments (§6).
+    /// Construye una sinopsis matemática de 512 bytes a partir de observaciones `(timestamp_ms, raw_value, AffineTransform)`,
+    /// normalizando cada lectura mediante $y = a \cdot x + b$ antes de calcular momentos.
     pub fn from_observations_with_transforms(
         observations: &[(i64, f64, AffineTransform)],
         null_count: u64,
@@ -307,8 +311,8 @@ impl MbfHyperSynopsis512 {
         Self::from_observations(&normalized, null_count, censored_exposures, sample_rate_hz)
     }
 
-    /// Builds a 512-byte mathematical synopsis from `(timestamp_ms, raw_value, unit_code)` observations
-    /// using a caller-provided declarative `DimensionalUnitRegistry` (§6).
+    /// Construye una sinopsis matemática de 512 bytes a partir de observaciones `(timestamp_ms, raw_value, unit_code)`
+    /// utilizando un `DimensionalUnitRegistry` declarativo.
     pub fn from_observations_with_registry(
         observations: &[(i64, f64, &str)],
         registry: &DimensionalUnitRegistry,
@@ -323,7 +327,7 @@ impl MbfHyperSynopsis512 {
         Self::from_observations(&normalized, null_count, censored_exposures, sample_rate_hz)
     }
 
-    /// Iglewicz & Hoaglin Modified Z-Score ($M_i = \frac{0.6745 |x - \text{Med}|}{\text{MAD}}$) in $O(1)$ (§7).
+    /// Calcula el puntaje Z modificado de Iglewicz y Hoaglin ($M_i = \frac{0.6745 |x - \text{Med}|}{\text{MAD}}$) en $O(1)$.
     #[inline]
     pub fn modified_z_score(&self, x: f64) -> f64 {
         let mad = self.mad_abs_deviation;
@@ -339,13 +343,13 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Evaluates whether `x` is a robust outlier according to the Códice `outlier_sigma_threshold` (default `3.5`).
+    /// Evalúa si `x` es un valor atípico robusto según el umbral `threshold` (por defecto `3.5`).
     #[inline]
     pub fn is_robust_outlier(&self, x: f64, threshold: f64) -> bool {
         self.modified_z_score(x) > threshold
     }
 
-    /// Returns Tukey's non-parametric boxplot outlier fences $(Q_1 - 1.5\,\text{IQR},\; Q_3 + 1.5\,\text{IQR})$ in $O(1)$ (§7).
+    /// Devuelve las vallas no paramétricas de valores atípicos de Tukey $(Q_1 - 1.5\,\text{IQR},\; Q_3 + 1.5\,\text{IQR})$ en $O(1)$.
     #[inline]
     pub fn tukey_iqr_fences(&self) -> (f64, f64) {
         let q1 = self.quantile_sketch_16[5];
@@ -354,13 +358,13 @@ impl MbfHyperSynopsis512 {
         (q1 - 1.5 * iqr, q3 + 1.5 * iqr)
     }
 
-    /// Returns the 5% Trimmed Mean ($\mu_{\text{trim}, 5\%}$) stored in `quantile_sketch_16[15]` in $O(1)$ (§7).
+    /// Devuelve la media recortada al 5% ($\mu_{\text{trim}, 5\%}$) almacenada en `quantile_sketch_16[15]` en $O(1)$.
     #[inline]
     pub fn trimmed_mean_5pct(&self) -> f64 {
         self.quantile_sketch_16[15]
     }
 
-    /// Evaluates any arbitrary quantile $p \in [0, 1]$ in $O(1)$ by piecewise-linear interpolation over the 15 probability knots.
+    /// Evalúa cualquier cuantil arbitrario $p$ en `` `[0, 1]` `` en $O(1)$ mediante interpolación lineal por tramos sobre los 15 nodos de probabilidad.
     pub fn quantile(&self, p: f64) -> f64 {
         if self.valid_count == 0 {
             return 0.0;
@@ -386,7 +390,7 @@ impl MbfHyperSynopsis512 {
         self.mad_median
     }
 
-    /// Returns the 3-Parameter Weibull estimates $(\beta, \eta, \gamma_{\text{location}})$ in $O(1)$ (§7).
+    /// Devuelve los estimadores Weibull de 3 parámetros $(\beta, \eta, \gamma_{\text{location}})$ en $O(1)$.
     #[inline]
     pub fn weibull_3p_params(&self) -> (f64, f64, f64) {
         let beta = f64::from(self.weibull_beta_mle).max(0.1);
@@ -401,7 +405,7 @@ impl MbfHyperSynopsis512 {
         (beta, eta, gamma_loc)
     }
 
-    /// Computes the right-censored Kaplan-Meier / Nelson-Aalen survival probability $\hat{S}(t)$ at exposure `t` in $O(1)$ (§7).
+    /// Calcula la probabilidad de supervivencia Kaplan-Meier / Nelson-Aalen con censura por la derecha $\hat{S}(t)$ en exposición `t` en $O(1)$.
     #[inline]
     pub fn kaplan_meier_survival(&self, t: f64) -> f64 {
         if t <= 0.0 || self.valid_count == 0 {
@@ -413,7 +417,7 @@ impl MbfHyperSynopsis512 {
         (weibull_s.powf(1.0 - 0.5 * censor_ratio)).clamp(0.0, 1.0)
     }
 
-    /// Computes the Weibull Mean Interarrival / Survival Time (`E[T] = eta * Gamma(1 + 1/beta)`) in $O(1)$ (§7).
+    /// Calcula el tiempo medio entre llegadas o de supervivencia Weibull ($\mathbb{E}(T) = \eta \cdot \Gamma(1 + 1/\beta)$) en $O(1)$.
     #[inline]
     pub fn mean_interarrival_time(&self) -> f64 {
         if self.valid_count == 0 {
@@ -424,7 +428,7 @@ impl MbfHyperSynopsis512 {
         eta * Self::gamma_lanczos(1.0 + 1.0 / beta)
     }
 
-    /// Computes Steady-State Renewal Availability $A = \frac{\mu_{\text{up}}}{\mu_{\text{up}} + \mu_{\text{down}}} \in [0, 1]$ in $O(1)$ (§7).
+    /// Calcula la disponibilidad estacionaria de renovación $A = \frac{\mu_{\text{up}}}{\mu_{\text{up}} + \mu_{\text{down}}}$ en `` `[0, 1]` `` en $O(1)$.
     #[inline]
     pub fn steady_state_availability(&self, restoration_synopsis: &Self) -> f64 {
         let up_mean = self
@@ -439,7 +443,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Lag-2 Serial Autocorrelation $\rho(2)$ in $O(1)$ (§7).
+    /// Calcula la autocorrelación serial de retardo 2 $\rho(2)$ en $O(1)$.
     #[inline]
     pub fn acf_lag2(&self) -> f64 {
         if self.pebay_m2 < 1e-15 {
@@ -449,7 +453,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Returns `(ema_fast, ema_slow, macd_divergence)` in $O(1)$ (§7).
+    /// Devuelve `(ema_fast, ema_slow, macd_divergence)` en $O(1)$.
     #[inline]
     pub fn macd_state(&self) -> (f64, f64, f64) {
         (
@@ -459,14 +463,14 @@ impl MbfHyperSynopsis512 {
         )
     }
 
-    /// Page's Two-Sided CUSUM regime shift detector in $O(1)$ (§7).
+    /// Detector bilateral de cambio de régimen CUSUM de Page en $O(1)$.
     #[inline]
     pub fn cusum_regime_change_detected(&self, threshold_h: f64) -> bool {
         f64::from(self.cusum_pos_max) > threshold_h
             || f64::from(self.cusum_neg_min).abs() > threshold_h
     }
 
-    /// Mann-Kendall / Studentized Temporal Drift $Z$-Statistic in $O(1)$ (§7).
+    /// Estadístico $Z$ de deriva temporal estudentizada / Mann-Kendall en $O(1)$.
     #[inline]
     pub fn mann_kendall_drift_z(&self) -> f64 {
         if self.valid_count < 3 || self.pebay_m2 < 1e-15 || self.sum_time_centered_sq < 1e-15 {
@@ -478,7 +482,7 @@ impl MbfHyperSynopsis512 {
         r_clamped * ((n - 2.0) / (1.0 - r_clamped * r_clamped)).sqrt()
     }
 
-    /// Exact Goertzel $O(N)$ narrow-band harmonic power detector for any target frequency `target_freq_hz` (§7).
+    /// Detector exacto de potencia armónica de banda estrecha de Goertzel en $O(N)$ para cualquier frecuencia objetivo `target_freq_hz`.
     pub fn goertzel_harmonic_power(
         observations: &[(i64, f64)],
         sample_rate_hz: f64,
@@ -503,9 +507,9 @@ impl MbfHyperSynopsis512 {
         (power / ((n * n) as f64)).max(0.0)
     }
 
-    // ── Stochastic Operations Research & Resource Buffer Optimization (§1.1 #4 & §7) ──
+    // ── Stochastic Operations Research & Resource Buffer Optimization ──
 
-    /// Convex Batch / Economic Lot Size Optimum ($Q^* = \sqrt{\frac{2 D K}{h}}$) in $O(1)$ (§7).
+    /// Tamaño óptimo de lote económico convexo ($Q^* = \sqrt{\frac{2 D K}{h}}$) en $O(1)$.
     #[inline]
     pub fn convex_lot_size_optimum(
         &self,
@@ -520,7 +524,7 @@ impl MbfHyperSynopsis512 {
         ((2.0 * total_demand_d * fixed_setup_cost_k) / holding_cost_rate_h).sqrt()
     }
 
-    /// Stochastic Safety Buffer under joint rate & delay uncertainty ($B = Z_\alpha \sqrt{\bar{L}\sigma_D^2 + \bar{D}^2\sigma_L^2}$) in $O(1)$ (§7).
+    /// Amortiguador de seguridad estocástico bajo incertidumbre conjunta de tasa y retardo ($B = Z_\alpha \sqrt{\bar{L}\sigma_D^2 + \bar{D}^2\sigma_L^2}$) en $O(1)$.
     #[inline]
     pub fn gaussian_safety_buffer(
         &self,
@@ -535,7 +539,7 @@ impl MbfHyperSynopsis512 {
         service_quantile_z.max(0.0) * (l_bar * sigma_d2 + d_bar * d_bar * sigma_l2).sqrt()
     }
 
-    /// Stochastic Replenishment Threshold Point ($T^* = \bar{D}\bar{L} + B$) in $O(1)$ (§7).
+    /// Punto umbral estocástico de reabastecimiento ($T^* = \bar{D}\bar{L} + B$) en $O(1)$.
     #[inline]
     pub fn stochastic_threshold_point(
         &self,
@@ -548,7 +552,7 @@ impl MbfHyperSynopsis512 {
             + self.gaussian_safety_buffer(delay_mean, delay_std, service_quantile_z)
     }
 
-    /// Computes `(service_fill_rate_beta, tail_shortfall_probability)` in $O(1)$ given `current_level` and delay parameters (§7).
+    /// Calcula `(service_fill_rate_beta, tail_shortfall_probability)` en $O(1)$ dados `current_level` y los parámetros de retardo.
     pub fn service_fill_rate_and_tail_risk(
         &self,
         current_level: f64,
@@ -577,12 +581,12 @@ impl MbfHyperSynopsis512 {
         (fill_rate, tail_risk_prob)
     }
 
-    // ── Benford's Law First-Digit Chi-Squared Audit (§1.1 #3, §2.2 & §7) ──────
+    // ── Benford's Law First-Digit Chi-Squared Audit ──────
 
-    /// Critical $\chi^2$ threshold at $\alpha = 0.05$ with $\text{df} = 8$ ($\chi^2_{0.95, 8} = 15.51$, §7).
+    /// Umbral crítico $\chi^2$ con $\alpha = 0.05$ y $\text{df} = 8$ ($\chi^2_{0.95, 8} = 15.51$).
     pub const BENFORD_CRITICAL_CHI2_ALPHA_005: f64 = 15.51;
 
-    /// Extracts the leading non-zero base-10 digit $d \in \{1,\dots,9\}$ of any finite non-zero number $x$.
+    /// Extrae el primer dígito significativo en base 10 $d \in \{1,\dots,9\}$ de cualquier número finito no nulo $x$.
     #[inline]
     pub fn leading_base10_digit(x: f64) -> Option<usize> {
         let abs_x = x.abs();
@@ -599,7 +603,7 @@ impl MbfHyperSynopsis512 {
         }
     }
 
-    /// Computes the empirical first-digit relative frequencies $[f_1, \dots, f_9]$ and valid sample size $n$ (§7).
+    /// Calcula las frecuencias relativas empíricas del primer dígito $(f_1, \dots, f_9)$ y el tamaño de muestra válido $n$.
     pub fn benford_first_digit_frequencies(values: &[f64]) -> ([f64; 9], usize) {
         let mut counts = [0usize; 9];
         let mut total = 0usize;
@@ -619,8 +623,8 @@ impl MbfHyperSynopsis512 {
         (freqs, total)
     }
 
-    /// Computes Benford's Law First-Digit Chi-Squared statistic:
-    /// $\chi^2_{\text{Benford}} = n \sum_{d=1}^9 \frac{(f_d - \log_{10}(1 + 1/d))^2}{\log_{10}(1 + 1/d)}$ (§7).
+    /// Calcula el estadístico Chi-cuadrado del primer dígito de la Ley de Benford:
+    /// $\chi^2_{\text{Benford}} = n \sum_{d=1}^9 \frac{(f_d - \log_{10}(1 + 1/d))^2}{\log_{10}(1 + 1/d)}$.
     pub fn benford_chi_squared(values: &[f64]) -> f64 {
         let (freqs, n) = Self::benford_first_digit_frequencies(values);
         if n == 0 {
@@ -636,17 +640,17 @@ impl MbfHyperSynopsis512 {
         n_f * chi2
     }
 
-    /// Returns `true` when the sample conforms to Benford's Law ($\chi^2_{\text{Benford}} < \text{threshold}$, default `15.51` at $\alpha = 0.05$, §7).
+    /// Devuelve `true` cuando la muestra cumple la Ley de Benford ($\chi^2_{\text{Benford}} < \text{threshold}$, por defecto `15.51` con $\alpha = 0.05$).
     #[inline]
     pub fn passes_benford_audit(values: &[f64], critical_threshold: Option<f64>) -> bool {
         let threshold = critical_threshold.unwrap_or(Self::BENFORD_CRITICAL_CHI2_ALPHA_005);
         Self::benford_chi_squared(values) < threshold
     }
 
-    // ── Complete Survival & Renewal KPIs from Códice SurvivalAnalysisProfile (§4.1 & §4.2) ──
+    // ── Complete Survival & Renewal KPIs from Códice SurvivalAnalysisProfile ──
 
-    /// Evaluates all 7 analytical Survival & Renewal KPIs defined in Spec 09 §4.2 in $O(1)$
-    /// from an interarrival/lifetime synopsis (`self`) and a restoration/repair synopsis (`restoration_synopsis`).
+    /// Evalúa los indicadores analíticos de supervivencia y renovación en $O(1)$
+    /// a partir de una sinopsis de tiempos entre eventos (`self`) y una sinopsis de restauración (`restoration_synopsis`).
     pub fn evaluate_survival_renewal_kpis(
         &self,
         restoration_synopsis: &Self,
@@ -722,24 +726,35 @@ impl MbfHyperSynopsis512 {
     }
 }
 
-/// Complete $O(1)$ Survival & Renewal KPI evaluation output matching Spec 09 §4.2.
+/// Resultado completo en $O(1)$ de la evaluación de indicadores de supervivencia y renovación.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SurvivalRenewalKpis {
+    /// Tiempo medio de restauración o reparación (`MTTR`).
     pub mttr: f64,
+    /// Tiempo medio entre fallos (`MTBF`).
     pub mtbf: f64,
+    /// Tiempo medio hasta el fallo (`MTTF`).
     pub mttf: f64,
+    /// Porcentaje de disponibilidad estacionaria (`0.0..=100.0`).
     pub availability_pct: f64,
+    /// Parámetro de forma de Weibull ($\beta$).
     pub weibull_beta: f64,
+    /// Parámetro de escala característica de Weibull ($\eta$).
     pub weibull_eta: f64,
+    /// Parámetro de localización de umbral de Weibull ($\gamma$).
     pub weibull_gamma_loc: f64,
+    /// Confiabilidad paramétrica $R(t)$ evaluada en el tiempo de misión $t$.
     pub reliability_r_t: f64,
+    /// Tasa de riesgo instantánea $h(t)$ evaluada en el tiempo de misión $t$.
     pub hazard_rate_h_t: f64,
+    /// Supervivencia no paramétrica de Kaplan-Meier $\hat{S}(t)$ en el tiempo $t$.
     pub kaplan_meier_s_t: f64,
+    /// Intervalo óptimo de renovación preventiva según la regla de Age Replacement de Barlow-Proschan.
     pub optimal_renewal_interval: Option<f64>,
 }
 
 impl DimensionalUnitRegistry {
-    /// Builds a `DimensionalUnitRegistry` from Códice `AffineTransformSpec` mappings (`unit_code -> AffineTransformSpec`, §6).
+    /// Construye un `DimensionalUnitRegistry` a partir de especificaciones `AffineTransformSpec` del Códice (`unit_code -> AffineTransformSpec`).
     pub fn from_codice_specs<'a>(
         specs: impl IntoIterator<Item = (&'a str, &'a crate::codice::AffineTransformSpec)>,
     ) -> Self {

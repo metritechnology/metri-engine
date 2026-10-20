@@ -1,8 +1,9 @@
-//! FBS to domain translators for the read path.
+//! Traductores de contratos FlatBuffers (`AnalyticsRequestT`) a JSON canónico para el Read Path.
 use crate::codice::global as codice_global;
 use crate::janus::fbs::AnalyticsRequestT;
 use serde_json::{json, Value};
 
+/// Convierte un `FilterValueT` de FlatBuffers a su representación JSON guiada por el tipo del atributo en el Códice.
 pub fn fbs_filter_value_to_json(
     value: &crate::janus::fbs::FilterValueT,
     entity: &str,
@@ -61,6 +62,7 @@ pub fn fbs_filter_value_to_json(
     Value::Object(val_map)
 }
 
+/// Convierte recursivamente un nodo de filtro FlatBuffers (`FilterNodeT`) a su árbol JSON equivalente.
 pub fn fbs_filter_node_to_json(node: &crate::janus::fbs::FilterNodeT, entity: &str) -> Value {
     let mut map = serde_json::Map::new();
     if let Some(ref criteria) = node.criteria {
@@ -114,6 +116,7 @@ pub fn fbs_filter_node_to_json(node: &crate::janus::fbs::FilterNodeT, entity: &s
     Value::Object(map)
 }
 
+/// Serializa un `AnalyticsRequestT` completo de FlatBuffers a un objeto JSON determinista (usado en claves de caché y trazas).
 pub fn analytics_request_to_json(req: &AnalyticsRequestT) -> Value {
     let mut map = serde_json::Map::new();
     if let Some(ref tenant_id) = req.tenant_id {

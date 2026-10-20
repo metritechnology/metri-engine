@@ -1,7 +1,7 @@
-//! Audit interceptor protocol — fire-and-forget, absorbs its own errors.
+//! Protocolo del interceptor de auditoría — ejecución fire-and-forget con absorción de fallos propios.
 //!
-//! protocolo del AuditInterceptor.
-//! Se invoca SIEMPRE (`[:ok]` y `[:error]`) — nunca bloquea ni altera el result.
+//! Se invoca tanto en caminos de éxito (`Ok`) como de fallo (`Err`) sin bloquear
+//! ni alterar el resultado devuelto al llamador.
 
 use async_trait::async_trait;
 use serde_json::Value;

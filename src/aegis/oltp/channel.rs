@@ -1,7 +1,7 @@
-//! IWriteChannel implementation for the OLTP (EAV) engine.
+//! Implementación del canal de escritura `IWriteChannel` para el motor transaccional EAV / `.mbf`.
 //!
-//! src/aegis/oltp/channel.rs
-//! SRP: Implementación de IWriteChannel para el Motor OLTP (EAV).
+//! Valida el payload contra el modelo del Códice (`validator::validate_payload`) y delega
+//! la persistencia atómica de datoms e índices hacia `EavWriter::transact`.
 
 use serde_json::{json, Value};
 use tracing::{error, info};
@@ -13,11 +13,13 @@ use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
 use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
 
+/// Canal de escritura transaccional que conecta el pipeline IOP/Janus con `EavWriter`.
 pub struct OltpChannel {
     writer: EavWriter,
 }
 
 impl OltpChannel {
+    /// Construye un nuevo `OltpChannel` respaldado por el `EavWriter` provisto.
     pub fn new(writer: EavWriter) -> Self {
         Self { writer }
     }

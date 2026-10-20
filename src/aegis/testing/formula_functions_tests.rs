@@ -1,4 +1,4 @@
-//! Tests for `aegis::formula::functions`.
+//! Pruebas unitarias del catálogo estándar de funciones matemáticas y lógicas (`aegis::formula::functions`).
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 
 #[test]

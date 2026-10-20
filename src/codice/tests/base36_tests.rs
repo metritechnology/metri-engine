@@ -1,4 +1,4 @@
-//! Tests for `codice::base36`.
+//! Pruebas unitarias del generador estocástico Base36 (`codice::base36`).
 use super::*;
 use std::collections::HashSet;
 

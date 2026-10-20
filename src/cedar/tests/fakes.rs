@@ -1,5 +1,4 @@
-//! Tests for `cedar::fakes.rs`.
-// cedar/tests/fakes.rs — Lectores EAV en memoria para la suite.
+//! Dobles de prueba (`FakeEntityReader` y `FailingReader`) en memoria para la suite de `cedar`.
 //
 // Sin DynamoClient real, sin sembrar candados globales: los tests del grafo
 // y de pipeline seedean estos fakes directamente — paralelizables sin carreras.

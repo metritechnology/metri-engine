@@ -1,12 +1,8 @@
-//! CodeRegistry — loads, validates, hashes and compiles every JSON model.
+//! Registro en memoria (`CodeRegistry`) que carga, valida, firma y compila todos los modelos JSON del Códice.
 //!
-//! # Origin
-//! Equivalencia: CodeRegistry — carga, valida, hashea y compila todos los modelos JSON.
-//! En el stack anterior: Integrant ig/init-key :codice/registry + atom global
-//! En Rust:    `OnceLock<CodeRegistry>` — inmutable post-bootstrap, lookup O(1)
-//!
-//! Zero-Drop Policy: todos los guard de error (COD_001, COD_002, COD_003, COD_SCOPE_001)
-//! están replicados con exactamente la misma semántica.
+//! Se inicializa una única vez durante el arranque mediante `OnceLock<CodeRegistry>`,
+//! garantizando inmutabilidad posterior al arranque y consultas $O(1)$ por entidad o atributo.
+//! Aplica los candados de integridad `Cod001`, `Cod002`, `Cod003` y `CodScope001`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -20,23 +16,34 @@ use crate::domain::errors::{DomainError, ErrorCode};
 
 // ── Tipos de valor de los atributos ──────────────────────────────────────────
 
-/// Mapea 1:1 con los tipos JSON del Códice:
-/// "string" | "number" | "epoch" | "decimal" | "boolean" | "array" | "reference"
+/// Tipo de dato semántico de un atributo declarado en el modelo JSON del Códice.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AttrType {
+    /// Cadena de texto UTF-8.
     #[default]
     String,
+    #[doc = "Número entero con signo de 64 bits (`i64`)."]
     Number,
+    #[doc = "Marca de tiempo en milisegundos desde el epoch Unix (`i64`)."]
     Epoch,
+    #[doc = "Número de coma flotante o decimal cuantitativo (`f64`)."]
     Decimal,
+    #[doc = "Valor lógico booleano (`true` o `false`)."]
     Boolean,
+    #[doc = "Arreglo homogéneo de cadenas de texto (`Vec<String>`)."]
     Array,
+    #[doc = "Referencia por identificador hacia otra entidad del Códice (simple o múltiple)."]
     Reference,
+    #[doc = "Identificador único universal en representación textual."]
     Uuid,
+    #[doc = "Secuencia binaria cruda o vector denso de embeddings."]
     Bytes,
+    #[doc = "Enumeración gobernada por un catálogo de opciones (`options`)."]
     Enum,
+    #[doc = "Objeto o documento JSON arbitrario serializado."]
     Json,
+    #[doc = "Tipo no reconocido en la versión actual del esquema."]
     Unknown(String),
 }
 
@@ -68,6 +75,7 @@ impl From<&str> for AttrType {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EngineChannel {
+    /// Canal transaccional y analítico unificado sobre celdas `.mbf`.
     #[default]
     Oltp,
 }
@@ -88,54 +96,70 @@ pub use super::profiles::{
 /// Equivale al mapa de atributos en el JSON del Códice.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AttributeDescriptor {
+    #[doc = "Nombre técnico canónico del atributo en snake_case."]
     pub name: String,
+    #[doc = "Tipo de dato semántico del atributo."]
     pub attr_type: AttrType,
+    #[doc = "Etiqueta legible por defecto declarada en el modelo."]
     pub label: Option<String>,
+    #[doc = "Indica si el atributo es obligatorio al crear o actualizar la entidad."]
     pub required: bool,
-    pub unique: Option<String>, // "tenant" | "identity" | "value" | null
-    pub indexed: bool,          // genera item AVET
-    pub fts: bool,              // Full-text search index
-    pub is_dimension: bool,     // dimension para OLAP
-    pub is_metric: bool,        // métrica para OLAP
+    #[doc = "Ámbito de unicidad directa del atributo (`\"tenant\"`, `\"identity\"`, `\"value\"` o `None`)."]
+    pub unique: Option<String>,
+    #[doc = "Indica si el atributo genera proyección en el índice secundario de valores (AVET)."]
+    pub indexed: bool,
+    #[doc = "Indica si el atributo se indexa para búsqueda de texto completo y difusa (FTS)."]
+    pub fts: bool,
+    #[doc = "Indica si el atributo actúa como dimensión de agrupación analítica (`GROUP BY`)."]
+    pub is_dimension: bool,
+    #[doc = "Indica si el atributo es elegible como métrica de agregación analítica."]
+    pub is_metric: bool,
     /// Indica si el atributo es una medida cuantitativa (`is_measure: true` en `config/models/*.json`).
     #[serde(default)]
     pub is_measure: bool,
-    pub entity_ref: Option<String>, // referencia a otra entidad
-    pub options: Vec<String>,       // enum values
+    #[doc = "Nombre de la entidad destino cuando `attr_type` es `AttrType::Reference`."]
+    pub entity_ref: Option<String>,
+    #[doc = "Catálogo de valores permitidos o sugeridos cuando `attr_type` es `AttrType::Enum`."]
+    pub options: Vec<String>,
     /// Enum abierto (regla X-01): `options` documenta los valores
     /// canónicos/sugeridos y se expone como `enum_values` en el RPC Explore,
     /// pero el validador NO rechaza valores fuera de la lista.
     #[serde(default)]
     pub enum_open: bool,
+    #[doc = "Indica si este atributo de referencia define directamente el ámbito de secuenciación."]
     pub is_sequence_scope: bool,
+    #[doc = "Indica si el atributo resuelve su numeración secuencial a través del ámbito de la entidad."]
     pub is_sequence_scope_via: bool,
-    /// Marca PII — sanitizado en error_response (el stack anterior: :sensitive true).
+    #[doc = "Marca de información sensible (PII) para sanitización en trazas y respuestas de error."]
     pub sensitive: bool,
+    #[doc = "Configuración declarativa JSON para generación automática (`sequential` o `stochastic_base36`)."]
     pub auto_generate: Option<serde_json::Value>,
+    #[doc = "Expresión regular opcional que debe satisfacer el valor textual del atributo."]
     pub validation_regex: Option<String>,
+    #[doc = "Valor por defecto en representación textual cuando el atributo se omite."]
     pub default_value: Option<String>,
-    /// Función de agregación por defecto en rollups (`"sum"`, `"last_value"`, `"avg"`, §1.1 #4).
+    /// Función de agregación por defecto en rollups (`"sum"`, `"last_value"`, `"avg"`).
     #[serde(default)]
     pub default_rollup: Option<String>,
-    /// Subtipo semántico del atributo (`"currency"`, `"terminology"`, `"flat_map"`, §1.1 #4).
+    /// Subtipo semántico del atributo (`"currency"`, `"terminology"`, `"flat_map"`).
     #[serde(default)]
     pub subtype: Option<String>,
-    /// URI del sistema terminológico regulado (`"urn:api:system:uncefact"`, `"vcb_omniclass_t23"`, §1.1 & §6).
+    /// URI del sistema terminológico regulado (`"urn:api:system:uncefact"`, `"vcb_omniclass_t23"`).
     #[serde(default, alias = "terminologyUri")]
     pub terminology_uri: Option<String>,
-    /// Dimensiones del vector de embeddings (ej. `1024` en `document_chunk.semantic_embedding`, §1.1 #5).
+    /// Dimensiones del vector de embeddings (ej. `1024` en `document_chunk.semantic_embedding`).
     #[serde(default)]
     pub dimensions: Option<u32>,
-    /// Modelo generador de embeddings (ej. `"amazon.titan-embed-text-v2"`, §1.1 #5).
+    /// Modelo generador de embeddings (ej. `"amazon.titan-embed-text-v2"`).
     #[serde(default, alias = "model")]
     pub vector_model: Option<String>,
-    /// Atributos fuente para auto-generación de embeddings (ej. `["chunk_content"]`, §1.1 #5).
+    /// Atributos fuente para auto-generación de embeddings (ej. `["chunk_content"]`).
     #[serde(default)]
     pub auto_generate_from: Vec<String>,
-    /// Perfil matemático y estadístico avanzado para `MbfHyperSynopsis512` (§2.2).
+    /// Perfil matemático y estadístico avanzado para `MbfHyperSynopsis512`.
     #[serde(default)]
     pub math_profile: Option<MathProfile>,
-    /// Perfil de búsqueda difusa, fonética, BM25F y semántica para Zona 5B (§2.2).
+    /// Perfil de búsqueda difusa, fonética, BM25F y semántica para Zona 5B.
     #[serde(default)]
     pub fuzzy_profile: Option<FuzzySearchProfile>,
 }
@@ -161,7 +185,9 @@ impl From<&str> for ConstraintScope {
 /// Restricción declarada a nivel de entidad.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Constraint {
+    #[doc = "Tipo de restricción de integridad declarativa a evaluar."]
     pub kind: ConstraintKind,
+    #[doc = "Ámbito de aplicación de la restricción (`Tenant` o `Global`)."]
     pub scope: ConstraintScope,
     /// Atributos de la restricción, EN EL ORDEN DECLARADO.
     pub attributes: Vec<String>,
@@ -170,8 +196,10 @@ pub struct Constraint {
     pub when: Option<Vec<(String, String)>>,
 }
 
+/// Categoría de restricción de integridad declarada a nivel de entidad en el Códice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConstraintKind {
+    #[doc = "Unicidad simple o compuesta sobre la tupla de atributos en `attributes`."]
     Unique,
     /// Si todos los pares `when` se cumplen en la vista fusionada, los campos
     /// `attributes` son obligatorios.
@@ -189,19 +217,31 @@ pub enum ConstraintKind {
 /// Modelo completo de una entidad del Códice.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EntityModel {
+    #[doc = "Nombre técnico único de la entidad (ej. `\"work_order\"`, `\"asset\"`)."]
     pub entity: String,
+    #[doc = "Etiqueta legible por defecto de la entidad."]
     pub label: Option<String>,
+    #[doc = "Identificador del ícono asociado a la entidad para la interfaz de usuario."]
     pub icon: Option<String>,
+    #[doc = "Nombre del atributo que actúa como clave primaria lógica de negocio."]
     pub primary_key: Option<String>,
+    #[doc = "Lista de nombres de atributos habilitados para búsqueda de texto completo (FTS)."]
     pub fts_fields: Vec<String>,
+    #[doc = "Canal de ejecución asignado a la entidad en el motor."]
     pub engine: EngineChannel,
+    #[doc = "Catálogo ordenado de descriptores de atributos de la entidad."]
     pub attributes: Vec<AttributeDescriptor>,
+    #[doc = "Reglas declarativas de emisión de eventos asociadas al ciclo de vida de la entidad."]
     pub event_rules: Vec<serde_json::Value>,
+    #[doc = "Indica si las instancias de esta entidad pueden proveer ámbito de numeración secuencial."]
     pub is_sequence_scope_provider: bool,
+    /// Si es `true`, bloquea las mutaciones directas de cliente sobre esta entidad (`JnsLock001`).
     #[serde(default)]
     pub write_path_locked: bool,
+    /// Indica si la entidad pertenece al plano de control del sistema.
     #[serde(default)]
     pub is_system: bool,
+    /// Si es `true`, suprime la emisión de eventos de dominio (EDA) al mutar la entidad.
     #[serde(default)]
     pub disable_eda: bool,
     /// Mapa de proyección declarativa hacia `scheduled_job`.
@@ -210,13 +250,13 @@ pub struct EntityModel {
     /// Restricciones a nivel de entidad, declaradas en el JSON del modelo.
     #[serde(default)]
     pub constraints: Vec<Constraint>,
-    /// Perfil de análisis de supervivencia y procesos de renovación (§2.1).
+    /// Perfil de análisis de supervivencia y procesos de renovación.
     #[serde(default, alias = "reliability_profile")]
     pub survival_profile: Option<SurvivalAnalysisProfile>,
-    /// Perfil de matriz de co-momentos multivariados en Zona 6B (§2.1).
+    /// Perfil de matriz de co-momentos multivariados en Zona 6B.
     #[serde(default)]
     pub cross_covariance_matrix: Option<CrossCovarianceProfile>,
-    /// Perfil geoespacial Uber H3 + Morton + R-Tree MBR en Zona 5B (§2.1).
+    /// Perfil geoespacial Uber H3 + Morton + R-Tree MBR en Zona 5B.
     #[serde(default)]
     pub spatial_profile: Option<SpatialProfile>,
 }
@@ -224,13 +264,13 @@ pub struct EntityModel {
 /// Entrada del registry para una entidad.
 #[derive(Debug, Clone)]
 pub struct RegistryEntry {
+    #[doc = "Modelo compilado de la entidad con sus atributos, perfiles y restricciones."]
     pub model: EntityModel,
-    pub fingerprint: String, // SHA-256 hex — COD_003 collision detection
+    #[doc = "Huella SHA-256 en hexadecimal sobre nombre de entidad y atributos para detección de colisiones (`Cod003`)."]
+    pub fingerprint: String,
     /// SHA-256 del JSON completo del modelo (orden canónico). Lo usa la
-    /// caché del read path (§4.6 PLAN_CACHE_JANUS_DYNAMODB.md): un cambio
-    /// de modelo — label templates, tipos, no solo nombres de atributos —
-    /// rompe las claves de caché automáticamente. Costo por request: un
-    /// clone de String; se computa UNA vez en `build()`.
+    /// caché del camino de lectura: un cambio de modelo —plantillas de etiquetas,
+    /// tipos, no solo nombres de atributos— invalida las claves de caché automáticamente.
     pub cache_fingerprint: String,
 }
 
@@ -351,10 +391,6 @@ impl CodeRegistry {
         by_attr_id.insert(sys::UPDATED_AT_ID, sys::UPDATED_AT_NAME.to_string());
         by_attr_id.insert(sys::CREATED_BY_ID, sys::CREATED_BY_NAME.to_string());
         by_attr_id.insert(sys::UPDATED_BY_ID, sys::UPDATED_BY_NAME.to_string());
-        by_attr_id.insert(
-            crate::eav::types::datom::Datom::hash_attr_name("entity_type"),
-            "entity_type".to_string(),
-        );
 
         for file in &files {
             let raw = std::fs::read_to_string(file).map_err(|e| {
@@ -465,6 +501,7 @@ impl CodeRegistry {
             .map(|e| e.model.attributes.as_slice())
     }
 
+    /// Obtiene el descriptor de un atributo específico dentro del modelo de la entidad indicada.
     pub fn get_attribute(
         &self,
         entity_type: &str,
@@ -598,6 +635,7 @@ pub fn init_global(registry: CodeRegistry) {
     info!("Códice: registry global activo");
 }
 
+/// Retorna una referencia al registro global del Códice si ya fue inicializado, o `None`.
 pub fn global_opt() -> Option<&'static CodeRegistry> {
     REGISTRY.get()
 }

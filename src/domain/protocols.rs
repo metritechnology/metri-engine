@@ -1,14 +1,8 @@
-//! Domain ports — defprotocol equivalents as static Rust traits.
+//! Puertos del dominio — interfaces estáticas tipadas para inversión de dependencias (DIP).
 //!
-//! # Origin
-//! Equivalencia: ISessionStore, ISQSBus, IEventBus, ICedarContext,
-//! IASTCompiler, IAegisEngine, IMbfObjectStore
-//!
-//! En el stack anterior: defprotocol → interfaz dinámica (duck typing)
-//! En Rust:    trait → interfaz estática tipada
-//!
-//! Zero-Drop Policy: todos los métodos de cada defprotocol están presentes.
-//! Los contratos Railway [:ok ...] | [:error ...] se mapean a Result<T, DomainError>.
+//! Define los contratos formales (`ISessionStore`, `ISqsBus`, `IEventBus`, `ICedarContext`,
+//! `IAstCompiler`, `IAegisEngine`, `IExportStorage`, `IQueryCache`, `QueryCacheInvalidator`,
+//! `IMbfObjectStore`, `IClock`) implementados por la capa de infraestructura.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -18,30 +12,34 @@ use std::collections::HashMap;
 use crate::domain::errors::DomainError;
 
 // ── Tipo alias para resultados Railway-oriented ───────────────────────────────
+/// Alias estándar de resultado para operaciones de dominio bajo el patrón Railway (`Result<T, DomainError>`).
 pub type DomainResult<T> = Result<T, DomainError>;
 
 // ── Sesión / Token HMAC ───────────────────────────────────────────────────────
 
-/// Sesión verificada — resultado de get_session()
-/// Equivale al mapa {:tenant-id :user-id :jti :exp} de el stack anterior.
+/// Sesión verificada — resultado de `get_session()`.
 #[derive(Debug, Clone)]
 pub struct Session {
+    /// Identificador del tenant autenticado en la sesión.
     pub tenant_id: String,
+    /// Identificador del usuario o principal autenticado.
     pub user_id: String,
+    /// Identificador único del token (`jti`) para control de revocación.
     pub jti: String,
+    /// Instante de expiración de la sesión en segundos desde el epoch Unix.
     pub exp: i64,
 }
 
-/// ISessionStore — verifica tokens HMAC-SHA256 y gestiona blacklist.
+/// `ISessionStore` — verifica tokens HMAC-SHA256 y gestiona la lista de revocación.
 #[async_trait]
 pub trait ISessionStore: Send + Sync {
-    /// Verifica token `mk_...` → Session o None si inválido/expirado/revocado.
+    /// Verifica token `mk_...` → `Session` o `None` si es inválido, expirado o revocado.
     async fn get_session(&self, token: &str) -> DomainResult<Option<Session>>;
 
-    /// REVOCAR: añade el token a la blacklist DynamoDB.
+    /// Revoca un token añadiendo su `jti` a la lista de revocación con tiempo de vida (`ttl_seconds`).
     async fn revoke_session(&self, jti: &str, ttl_seconds: u64) -> DomainResult<()>;
 
-    /// Quita un jti de la blacklist (des-revocar). Idempotente.
+    /// Quita un `jti` de la lista de revocación (des-revocar). Operación idempotente.
     async fn unrevoke_session(&self, jti: &str) -> DomainResult<()>;
 }
 
@@ -50,12 +48,15 @@ pub trait ISessionStore: Send + Sync {
 /// Mensaje recibido del bus SQS.
 #[derive(Debug, Clone)]
 pub struct SqsMessage {
+    /// Identificador de recibo requerido para confirmar la eliminación del mensaje en la cola.
     pub receipt_handle: String,
+    /// Cuerpo serializado del mensaje recibido.
     pub body: String,
+    /// Identificador único del mensaje asignado por el bus de colas.
     pub message_id: String,
 }
 
-/// ISQSBus — bus de mensajes FIFO.
+/// `ISqsBus` — bus de mensajes FIFO.
 #[async_trait]
 pub trait ISqsBus: Send + Sync {
     /// Publica un mensaje en la cola FIFO.
@@ -70,10 +71,10 @@ pub trait ISqsBus: Send + Sync {
 
 // ── Event Bus (EventBridge) ───────────────────────────────────────────────────
 
-/// IEventBus — bus de eventos de dominio.
+/// `IEventBus` — bus de eventos de dominio.
 #[async_trait]
 pub trait IEventBus: Send + Sync {
-    /// Publica un evento de dominio. Retorna event_id.
+    /// Publica un evento de dominio. Retorna `event_id`.
     async fn put_event(
         &self,
         event_bus_name: &str,
@@ -85,17 +86,20 @@ pub trait IEventBus: Send + Sync {
 
 // ── Cedar Authorization Context ───────────────────────────────────────────────
 
-/// Contexto de autorización Cedar.
-/// Equivale al mapa {:tenant-id :user-id :roles :domain-boundaries} de el stack anterior.
+/// Contexto de autorización Cedar resuelto para una petición autenticada.
 #[derive(Debug, Clone)]
 pub struct CedarCtx {
+    /// Identificador del tenant validado para la operación.
     pub tenant_id: String,
+    /// Identificador del usuario o principal que ejecuta la petición.
     pub user_id: String,
+    /// Conjunto de roles asignados al principal dentro del tenant.
     pub roles: Vec<String>,
+    /// Fronteras de dominio ABAC y restricciones jerárquicas aplicables al principal.
     pub domain_boundaries: HashMap<String, Value>,
 }
 
-/// ICedarContext — autorización Zero-Trust.
+/// `ICedarContext` — autorización Zero-Trust.
 #[async_trait]
 pub trait ICedarContext: Send + Sync {
     /// Evalúa el request contra políticas Cedar.
@@ -104,34 +108,34 @@ pub trait ICedarContext: Send + Sync {
 
 // ── AST Compiler (Janus) ──────────────────────────────────────────────────────
 
-/// IASTCompiler — compilador puro de AST IR. Sin I/O. Sin estado.
+/// `IAstCompiler` — compilador puro de AST IR. Sin E/S ni estado mutable.
 pub trait IAstCompiler: Send + Sync {
-    /// Transforma descriptor gRPC + cedar-ctx → AST IR inmutable.
-    /// Invariante: ast_ir["where"] siempre incluye tenant_id filter.
+    /// Transforma descriptor gRPC + `CedarCtx` → AST IR inmutable.
+    /// Invariante: `ast_ir["where"]` siempre incluye el filtro de aislamiento `tenant_id`.
     fn compile_ast(&self, query_descriptor: &Value, cedar_ctx: &CedarCtx) -> DomainResult<Value>;
 }
 
 // ── Aegis Engine ──────────────────────────────────────────────────────────────
 
-/// Chunk de resultado analítico — item de la secuencia lazy.
-/// Equivale a cada [:ok chunk-map] del lazy-seq el stack anterior.
+/// Fragmento de resultado analítico emitido en el flujo de respuesta.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResultChunk {
+    /// Carga útil JSON con las filas o métricas del fragmento actual.
     pub data: Value,
+    /// Indica si este fragmento cierra la secuencia de resultados de la consulta.
     pub is_last: bool,
 }
 
-/// IAegisEngine — motor analítico unificado sobre AST IR (.mbf HTAP).
+/// `IAegisEngine` — motor analítico unificado sobre AST IR (`.mbf` HTAP).
 #[async_trait]
 pub trait IAegisEngine: Send + Sync {
-    /// Ejecuta el AST IR contra el motor correcto.
-    /// Retorna stream de chunks (equivalente a lazy-seq el stack anterior).
+    /// Ejecuta el AST IR contra el motor analítico y retorna la secuencia de fragmentos de resultado.
     async fn transmute(&self, ast_ir: Value) -> DomainResult<Vec<ResultChunk>>;
 }
 
 // ── Export Storage (S3) ──────────────────────────────────────────────────────
 
-/// IExportStorage — exportación de datos a almacenamiento externo (S3 / stub).
+/// `IExportStorage` — exportación de datos a almacenamiento externo (S3 / stub).
 #[async_trait]
 pub trait IExportStorage: Send + Sync {
     /// Genera la URL firmada para la descarga temporal de un archivo exportado.
@@ -151,11 +155,15 @@ pub trait IExportStorage: Send + Sync {
 /// el almacenamiento subyacente sobre su atributo y jamás participa en la decisión de servir.
 #[derive(Debug, Clone)]
 pub struct CacheEntry {
+    /// Carga útil JSON de la respuesta de consulta almacenada en caché.
     pub payload: serde_json::Value,
+    /// Identificador del tenant propietario de la entrada (candado anti-fuga entre tenants).
     pub tenant_id: String,
+    /// Instante de expiración lógico en segundos desde el epoch Unix.
     pub expires_at: i64,
     /// Sello de generación del tenant al escribir (invalidación por escritura).
     pub generation: Option<u64>,
+    /// Marca de tiempo en milisegundos epoch en que se almacenó la entrada.
     pub stored_at_ms: i64,
 }
 
@@ -163,15 +171,17 @@ pub struct CacheEntry {
 /// ser observable como error de query.
 #[derive(Debug, Clone)]
 pub struct CachePut {
+    /// Identificador del tenant propietario de la consulta cacheada.
     pub tenant_id: String,
     /// PK completo: `QC#v1#<sha256>`.
     pub key: String,
+    /// Carga útil JSON del resultado de consulta a almacenar.
     pub payload: serde_json::Value,
     /// TTL efectivo en segundos (jitter ya aplicado por el llamador).
     pub ttl_secs: u64,
 }
 
-/// IQueryCache — caché KV de resultados de consulta del read path.
+/// `IQueryCache` — caché KV de resultados de consulta del read path.
 /// Implementaciones: adaptador MBF en `infrastructure`, Null Object y
 /// fakes en `janus::cache` / tests.
 #[async_trait]
@@ -184,7 +194,7 @@ pub trait IQueryCache: Send + Sync {
     async fn put(&self, entry: &CachePut) -> DomainResult<()>;
 }
 
-/// QueryCacheInvalidator — invalidación lógica tras escritura (ISP: el write
+/// `QueryCacheInvalidator` — invalidación lógica tras escritura (ISP: el write
 /// path solo necesita esto, no lectura/escritura de entradas).
 #[async_trait]
 pub trait QueryCacheInvalidator: Send + Sync {
@@ -198,7 +208,9 @@ pub trait QueryCacheInvalidator: Send + Sync {
 /// Payload de un objeto `.mbf` recuperado con su ETag de versión atómica.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MbfObjectPayload {
+    /// Contenido binario completo del archivo o celda `.mbf`.
     pub bytes: Vec<u8>,
+    /// Etiqueta de entidad (`ETag`) de versión para control de concurrencia optimista CAS.
     pub etag: String,
 }
 

@@ -1,4 +1,4 @@
-//! Tests for `iop::sherlog`.
+//! Pruebas unitarias de `iop::sherlog` (despacho y persistencia de fallos de dominio).
 use super::*;
 use crate::domain::errors::{DomainError, ErrorCode};
 use std::sync::Mutex;

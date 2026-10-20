@@ -1,4 +1,4 @@
-//! Unified Metri Vortex (.mbf) S3 & NVMe storage engine and indexed state store.
+//! Motor de almacenamiento unificado Metri Vortex (`.mbf`) sobre S3 y caché NVMe local con índices BTree en memoria.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -15,15 +15,17 @@ use crate::domain::protocols::{
     DomainResult, IMbfObjectStore, MbfConditionalGet, MbfObjectPayload,
 };
 
-/// Binary payload wrapper for `.mbf` attribute values and composite sort keys.
+/// Envoltorio de carga útil binaria para valores de atributos y claves de ordenación compuestas `.mbf`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Blob(Vec<u8>);
 
 impl Blob {
+    /// Crea un nuevo `Blob` a partir de un contenedor convertible a `Vec<u8>`.
     pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
         Self(bytes.into())
     }
 
+    /// Consume el `Blob` y devuelve el vector de bytes subyacente.
     pub fn into_inner(self) -> Vec<u8> {
         self.0
     }
@@ -35,17 +37,23 @@ impl AsRef<[u8]> for Blob {
     }
 }
 
-/// Typed attribute value stored inside a Metri Vortex (`.mbf`) record.
+/// Valor de atributo tipado almacenado dentro de un registro Metri Vortex (`.mbf`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AttributeValue {
+    /// Cadena de texto UTF-8.
     S(String),
+    /// Representación textual exacta de un valor numérico.
     N(String),
+    /// Secuencia binaria opaca (`Blob`).
     B(Blob),
+    /// Valor booleano.
     Bool(bool),
+    /// Marcador de valor nulo.
     Null(bool),
 }
 
 impl AttributeValue {
+    /// Extrae una referencia a la cadena si la variante es `AttributeValue::S`.
     pub fn as_s(&self) -> Result<&String, ()> {
         match self {
             AttributeValue::S(s) => Ok(s),
@@ -53,6 +61,7 @@ impl AttributeValue {
         }
     }
 
+    /// Extrae una referencia a la representación numérica si la variante es `AttributeValue::N`.
     pub fn as_n(&self) -> Result<&String, ()> {
         match self {
             AttributeValue::N(n) => Ok(n),
@@ -60,6 +69,7 @@ impl AttributeValue {
         }
     }
 
+    /// Extrae una referencia al `Blob` binario si la variante es `AttributeValue::B`.
     pub fn as_b(&self) -> Result<&Blob, ()> {
         match self {
             AttributeValue::B(b) => Ok(b),
@@ -67,6 +77,7 @@ impl AttributeValue {
         }
     }
 
+    /// Extrae una referencia al booleano si la variante es `AttributeValue::Bool`.
     pub fn as_bool(&self) -> Result<&bool, ()> {
         match self {
             AttributeValue::Bool(b) => Ok(b),
@@ -75,7 +86,7 @@ impl AttributeValue {
     }
 }
 
-/// Extracts `&str` from an `AttributeValue::S`.
+/// Extrae un `&str` desde un `AttributeValue::S`.
 pub fn av_string(v: &AttributeValue) -> Option<&str> {
     match v {
         AttributeValue::S(s) => Some(s.as_str()),
@@ -83,7 +94,7 @@ pub fn av_string(v: &AttributeValue) -> Option<&str> {
     }
 }
 
-/// Extracts `&[u8]` from an `AttributeValue::B`.
+/// Extrae un `&[u8]` desde un `AttributeValue::B`.
 pub fn av_bytes(v: &AttributeValue) -> Option<&[u8]> {
     match v {
         AttributeValue::B(b) => Some(b.as_ref()),
@@ -91,7 +102,7 @@ pub fn av_bytes(v: &AttributeValue) -> Option<&[u8]> {
     }
 }
 
-/// Extracts the numeric string from an `AttributeValue::N`.
+/// Extrae la cadena numérica desde un `AttributeValue::N`.
 pub fn av_number(v: &AttributeValue) -> Option<&str> {
     match v {
         AttributeValue::N(n) => Some(n.as_str()),
@@ -99,26 +110,32 @@ pub fn av_number(v: &AttributeValue) -> Option<&str> {
     }
 }
 
-/// Conditional write operation for `.mbf` ACID transactions.
+/// Operación de escritura condicional para transacciones ACID `.mbf`.
 #[derive(Debug, Clone)]
 pub struct Put {
+    /// Nombre del espacio de nombres o partición `.mbf` de destino.
     pub table_name: String,
+    /// Mapa de atributos del registro a escribir.
     pub item: HashMap<String, AttributeValue>,
+    /// Expresión de precondición opcional evaluada antes de confirmar la escritura.
     pub condition_expression: Option<String>,
+    /// Valores de sustitución asociados a la expresión condicional.
     pub expression_attribute_values: HashMap<String, AttributeValue>,
 }
 
 impl Put {
+    /// Crea un constructor fluido `PutBuilder`.
     pub fn builder() -> PutBuilder {
         PutBuilder::default()
     }
 
+    /// Devuelve una referencia al mapa de atributos del registro.
     pub fn item(&self) -> &HashMap<String, AttributeValue> {
         &self.item
     }
 }
 
-/// Builder for [`Put`].
+/// Constructor fluido para `Put`.
 #[derive(Debug, Default, Clone)]
 pub struct PutBuilder {
     table_name: Option<String>,
@@ -128,21 +145,25 @@ pub struct PutBuilder {
 }
 
 impl PutBuilder {
+    /// Define el nombre de la partición o tabla `.mbf` de destino.
     pub fn table_name(mut self, table_name: impl Into<String>) -> Self {
         self.table_name = Some(table_name.into());
         self
     }
 
+    /// Define el mapa completo de atributos a insertar.
     pub fn set_item(mut self, item: Option<HashMap<String, AttributeValue>>) -> Self {
         self.item = item;
         self
     }
 
+    /// Define la expresión condicional de escritura.
     pub fn condition_expression(mut self, expr: impl Into<String>) -> Self {
         self.condition_expression = Some(expr.into());
         self
     }
 
+    /// Registra un par clave-valor para la evaluación de la condición.
     pub fn expression_attribute_values(
         mut self,
         key: impl Into<String>,
@@ -152,6 +173,7 @@ impl PutBuilder {
         self
     }
 
+    /// Construye la operación `Put` validando que el mapa `item` esté presente.
     pub fn build(self) -> Result<Put, DomainError> {
         let item = self
             .item
@@ -165,63 +187,72 @@ impl PutBuilder {
     }
 }
 
-/// Atomic item inside a `.mbf` transaction batch.
+/// Elemento individual dentro de un lote transaccional ACID `.mbf`.
 #[derive(Debug, Clone)]
 pub struct TransactWriteItem {
+    /// Operación `Put` contenida en este elemento transaccional.
     pub put: Option<Put>,
 }
 
 impl TransactWriteItem {
+    /// Crea un constructor fluido `TransactWriteItemBuilder`.
     pub fn builder() -> TransactWriteItemBuilder {
         TransactWriteItemBuilder::default()
     }
 
+    /// Devuelve una referencia a la operación `Put` interna si existe.
     pub fn put(&self) -> Option<&Put> {
         self.put.as_ref()
     }
 }
 
-/// Builder for [`TransactWriteItem`].
+/// Constructor fluido para `TransactWriteItem`.
 #[derive(Debug, Default, Clone)]
 pub struct TransactWriteItemBuilder {
     put: Option<Put>,
 }
 
 impl TransactWriteItemBuilder {
+    /// Asigna la operación `Put` al elemento transaccional.
     pub fn put(mut self, put: Put) -> Self {
         self.put = Some(put);
         self
     }
 
+    /// Construye la instancia final de `TransactWriteItem`.
     pub fn build(self) -> TransactWriteItem {
         TransactWriteItem { put: self.put }
     }
 }
 
-/// Batch put request for FTS trigram indexing.
+/// Solicitud de escritura por lotes para indexación de trigramas FTS.
 #[derive(Debug, Clone)]
 pub struct PutRequest {
+    /// Mapa de atributos del ítem a escribir en lote.
     pub item: HashMap<String, AttributeValue>,
 }
 
 impl PutRequest {
+    /// Crea un constructor fluido `PutRequestBuilder`.
     pub fn builder() -> PutRequestBuilder {
         PutRequestBuilder::default()
     }
 }
 
-/// Builder for [`PutRequest`].
+/// Constructor fluido para `PutRequest`.
 #[derive(Debug, Default, Clone)]
 pub struct PutRequestBuilder {
     item: Option<HashMap<String, AttributeValue>>,
 }
 
 impl PutRequestBuilder {
+    /// Establece el mapa de atributos de la solicitud.
     pub fn set_item(mut self, item: Option<HashMap<String, AttributeValue>>) -> Self {
         self.item = item;
         self
     }
 
+    /// Construye el `PutRequest` verificando la presencia del mapa `item`.
     pub fn build(self) -> Result<PutRequest, DomainError> {
         let item = self
             .item
@@ -230,30 +261,34 @@ impl PutRequestBuilder {
     }
 }
 
-/// Batch write request wrapper for `.mbf` FTS trigram indexing.
+/// Envoltorio de solicitud de escritura en lote para indexación FTS en `.mbf`.
 #[derive(Debug, Clone)]
 pub struct WriteRequest {
+    /// Solicitud `PutRequest` asociada a la operación en lote.
     pub put_request: Option<PutRequest>,
 }
 
 impl WriteRequest {
+    /// Crea un constructor fluido `WriteRequestBuilder`.
     pub fn builder() -> WriteRequestBuilder {
         WriteRequestBuilder::default()
     }
 }
 
-/// Builder for [`WriteRequest`].
+/// Constructor fluido para `WriteRequest`.
 #[derive(Debug, Default, Clone)]
 pub struct WriteRequestBuilder {
     put_request: Option<PutRequest>,
 }
 
 impl WriteRequestBuilder {
+    /// Asigna el `PutRequest` al envoltorio de escritura en lote.
     pub fn put_request(mut self, req: PutRequest) -> Self {
         self.put_request = Some(req);
         self
     }
 
+    /// Construye la instancia final de `WriteRequest`.
     pub fn build(self) -> WriteRequest {
         WriteRequest {
             put_request: self.put_request,
@@ -261,7 +296,7 @@ impl WriteRequestBuilder {
     }
 }
 
-/// Production S3 + `/tmp/mbf_cache` NVMe object store for `.mbf` files.
+/// Almacén de objetos de producción sobre Amazon S3 con caché NVMe local en `/tmp/mbf_cache` para archivos `.mbf`.
 pub struct S3MbfObjectStore {
     s3_client: aws_sdk_s3::Client,
     bucket: String,
@@ -270,6 +305,7 @@ pub struct S3MbfObjectStore {
 }
 
 impl S3MbfObjectStore {
+    /// Inicializa un nuevo almacén de objetos S3 para el bucket indicado y prepara el directorio de caché NVMe.
     pub async fn new(bucket: impl Into<String>) -> Self {
         let region_provider =
             aws_config::meta::region::RegionProviderChain::default_provider().or_else("us-east-1");
@@ -299,6 +335,7 @@ impl S3MbfObjectStore {
         }
     }
 
+    /// Devuelve el prefijo raíz configurado para las claves en S3.
     pub fn prefix(&self) -> &str {
         &self.prefix
     }
@@ -315,7 +352,7 @@ impl S3MbfObjectStore {
         hex::encode(&digest[0..16])
     }
 
-    /// Writes a binary `.mbf` object directly to S3 and mirrors it to `/tmp/mbf_cache`.
+    /// Escribe un objeto binario `.mbf` directamente en S3 y lo replica en la caché local `/tmp/mbf_cache`.
     pub async fn put_raw_mbf(&self, key: &str, bytes: Vec<u8>) -> DomainResult<String> {
         let local_path = self.local_cache_path(key);
         let _ = std::fs::write(&local_path, &bytes);
@@ -347,7 +384,7 @@ impl S3MbfObjectStore {
         }
     }
 
-    /// Fetches a `.mbf` binary from S3 if its ETag differs from `known_s3_etag`.
+    /// Descarga un archivo binario `.mbf` desde S3 únicamente si su ETag difiere de `known_s3_etag`.
     pub async fn fetch_partition_if_changed(
         &self,
         key: &str,
@@ -401,8 +438,8 @@ impl S3MbfObjectStore {
             .join(format!("{safe_name}__range_{start}_{end}.slice"))
     }
 
-    /// Enforces the 450 MB `/tmp/mbf_cache` NVMe budget (`05_SERVERLESS_LAMBDA_AND_S3_INFRASTRUCTURE.md` §3),
-    /// evicting oldest immutable `.slice` files first while preserving active `HOT_HEAD` and `.mbf.idx` mirrors.
+    /// Aplica el presupuesto máximo de caché NVMe en `/tmp/mbf_cache`,
+    /// desalojando primero los archivos `.slice` inmutables más antiguos (LRU) mientras preserva `HOT_HEAD` y `.mbf.idx`.
     pub fn enforce_nvme_cache_budget(&self, max_budget_bytes: u64) -> usize {
         let Ok(entries) = std::fs::read_dir(&self.cache_dir) else {
             return 0;
@@ -448,7 +485,7 @@ impl S3MbfObjectStore {
     }
 }
 
-/// Default 450 MB `/tmp/mbf_cache` NVMe budget inside AWS Lambda's free 512 MB ephemeral storage.
+/// Presupuesto por defecto de 450 MB para la caché NVMe en `/tmp/mbf_cache`.
 pub const MBF_NVME_CACHE_BUDGET_BYTES: u64 = 450 * 1024 * 1024;
 
 #[async_trait]
@@ -619,19 +656,24 @@ impl IMbfObjectStore for S3MbfObjectStore {
     }
 }
 
-/// Composite key `(PK, SK_bytes)` inside a `.mbf` partition store.
+/// Clave primaria compuesta `(PK, SK_bytes)` dentro de una partición `.mbf`.
 type PrimaryKey = (String, Vec<u8>);
 
-/// Native secondary index selector for `.mbf` partitions.
+/// Selector de índice secundario BTree nativo para particiones `.mbf`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MbfSecondaryIndex {
+    /// Índice primario `EAVT` ordenado por `(PK, SK)`.
     PrimaryEavt,
+    /// Índice secundario `AEVT` ordenado por atributo `(ap, as)`.
     Aevt,
+    /// Índice secundario `AVET` ordenado por atributo-valor `(vp, vs)`.
     Avet,
+    /// Índice secundario `VAET` de referencias inversas `(rp, rs)`.
     Vaet,
 }
 
 impl MbfSecondaryIndex {
+    /// Resuelve el selector de índice secundario a partir del nombre lógico del índice.
     pub fn from_index_name(name: Option<&str>) -> Self {
         match name {
             Some("GSI-AEVT") | Some("AEVT") => Self::Aevt,
@@ -642,16 +684,21 @@ impl MbfSecondaryIndex {
     }
 }
 
-/// Typed write precondition replacing raw DynamoDB expression evaluation.
+/// Precondición tipada de escritura transaccional evaluada de forma nativa en memoria.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MbfWriteCondition {
+    /// Escritura incondicional.
     Unconditional,
+    /// Exige que la tupla `(PK, SK)` no exista previamente en el log append-only.
     AppendOnlyLogUnique,
+    /// Exige que la clave de reclamo único `PK` no exista previamente.
     UniqueClaimKey,
+    /// Exige que la clave única no exista o pertenezca a la misma entidad (`:self`).
     UniqueEntitySelfOrUnclaimed,
 }
 
 impl MbfWriteCondition {
+    /// Analiza una expresión condicional textual y la convierte en una variante tipada `MbfWriteCondition`.
     pub fn parse(expr: Option<&str>) -> Self {
         match expr.map(str::trim) {
             Some("attribute_not_exists(PK) AND attribute_not_exists(SK)") => {
@@ -994,17 +1041,21 @@ fn read_item_map_compact(
     Ok(item)
 }
 
-/// Pure binary wire snapshot of a `.mbf` partition (Zero-JSON).
+/// Instantánea binaria pura en tránsito de una partición `.mbf` (cero JSON).
 #[derive(Debug, Default, Clone)]
 pub struct MbfPartitionWireSnapshot {
+    /// Identificador monótono de época de la partición.
     pub epoch_id: u64,
+    /// Colección ordenada de registros `(PrimaryKey, atributos)`.
     pub items: Vec<(PrimaryKey, HashMap<String, AttributeValue>)>,
+    /// Estado actual de los contadores de cuota por `(tenant_id, quota_id)`.
     pub quota_counters: Vec<((String, String), i64)>,
+    /// Registro de claves de idempotencia de cuotas aplicadas.
     pub quota_idem: Vec<((String, String), (String, i64))>,
 }
 
 impl MbfPartitionWireSnapshot {
-    /// Encodes the partition snapshot into a 64-byte aligned binary payload (`"MBFPART2"` + delta-PK + compact bitflag map + LZ4).
+    /// Codifica la instantánea de partición en un bloque binario alineado a 64 bytes (`"MBFPART2"` + delta-PK + mapa compacto de bitflags + LZ4).
     pub fn encode_binary(&self) -> Vec<u8> {
         let mut raw = Vec::with_capacity(128 + self.items.len() * 48);
         raw.extend_from_slice(&self.epoch_id.to_le_bytes());
@@ -1044,7 +1095,7 @@ impl MbfPartitionWireSnapshot {
         out
     }
 
-    /// Decodes a 64-byte aligned binary payload produced by [`Self::encode_binary`] (supports both `MBFPART1` and `MBFPART2`).
+    /// Decodifica una carga útil binaria alineada a 64 bytes producida por `Self::encode_binary` (soporta `MBFPART1` y `MBFPART2`).
     pub fn decode_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 16 {
             return Err(DomainError::mbf(
@@ -1177,18 +1228,23 @@ impl MbfPartitionWireSnapshot {
     }
 }
 
-/// Pure binary wire snapshot of a single entity (`metri-engine/tenants/<tenant>/entities/<type>/<id>.mbf`).
+/// Instantánea binaria pura de una entidad individual (`metri-engine/tenants/<tenant>/entities/<type>/<id>.mbf`).
 #[derive(Debug, Clone)]
 pub struct MbfEntityWireSnapshot {
+    /// Identificador del inquilino propietario.
     pub tenant_id: String,
+    /// Nombre canónico del tipo de entidad.
     pub entity_type: String,
+    /// Identificador único de la entidad.
     pub entity_id: String,
+    /// Época de almacenamiento en que se generó la instantánea.
     pub epoch_id: u64,
+    /// Lista ordenada de datoms `(SK_bytes, atributos)` de la entidad.
     pub datoms: Vec<(Vec<u8>, HashMap<String, AttributeValue>)>,
 }
 
 impl MbfEntityWireSnapshot {
-    /// Encodes a single entity's datoms into a 64-byte aligned binary payload (`"MBFENTZ2"` + compact bitflag map + LZ4).
+    /// Codifica los datoms de una entidad individual en un bloque binario alineado a 64 bytes (`"MBFENTZ2"` + mapa compacto + LZ4).
     pub fn encode_binary(&self) -> Vec<u8> {
         let mut raw = Vec::with_capacity(64 + self.datoms.len() * 36);
         write_str_binary(&mut raw, &self.tenant_id);
@@ -1210,7 +1266,7 @@ impl MbfEntityWireSnapshot {
         out
     }
 
-    /// Decodes a binary entity snapshot produced by [`Self::encode_binary`] (supports both `MBFENTZ1` and `MBFENTZ2`).
+    /// Decodifica una instantánea binaria de entidad producida por `Self::encode_binary` (soporta `MBFENTZ1` y `MBFENTZ2`).
     pub fn decode_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 16 {
             return Err(DomainError::mbf(
@@ -1282,8 +1338,8 @@ impl MbfEntityWireSnapshot {
     }
 }
 
-/// Encodes any binary payload slice into a spec-compliant 64-byte aligned `.mbf` file (§3 & §4 of `03_MBF_BINARY_FORMAT_SPEC.md`):
-/// `[MbfHeader (64B, "METRIBIN") | MbfTenantCryptoSeal (64B) | 64B-aligned Payload | MbfDirectoryIndex (64B-aligned) | MbfFooterTrailer (64B, "MBFFOOTR")]`.
+/// Empaqueta una carga útil binaria en un archivo `.mbf` completo alineado a 64 bytes:
+/// `MbfHeader` (64B, `"METRIBIN"`), `MbfTenantCryptoSeal` (64B), carga útil alineada a 64B, `MbfDirectoryIndex` y `MbfFooterTrailer` (64B, `"MBFFOOTR"`).
 pub fn encode_mbf_envelope(
     cell_id: u32,
     row_count: u64,
@@ -1370,7 +1426,7 @@ pub fn encode_mbf_envelope(
     Ok(buf)
 }
 
-/// Validates and decodes a `.mbf` binary file produced by [`encode_mbf_envelope`].
+/// Valida y decodifica un archivo binario `.mbf` producido por `encode_mbf_envelope`.
 pub fn decode_mbf_envelope(
     file_bytes: &[u8],
 ) -> DomainResult<(crate::mbf::format::MbfHeader, &[u8])> {
@@ -1431,7 +1487,7 @@ pub fn decode_mbf_envelope(
     Ok((header, &file_bytes[128..payload_end]))
 }
 
-/// Encodes a spec-compliant `.mbf.idx` index mirror file (§9.2 of `03_MBF_BINARY_FORMAT_SPEC.md`, magic `"MBFINDEX"`).
+/// Codifica un archivo espejo de índice `.mbf.idx` (magic `"MBFINDEX"`) con Zona 5 y Zona 5B.
 pub fn encode_mbf_idx_mirror(
     cell_id: u8,
     epoch_id: u64,
@@ -1566,11 +1622,10 @@ impl MbfPartitionStore {
                         {
                             let is_system_attr = attr_name_opt
                                 .map(|attr_name| {
-                                    attr_name == "entity_type"
-                                        || attr_name == "entity/type"
-                                        || attr_name == "entity/ulid"
-                                        || attr_name == "entity/id"
-                                        || attr_name == "tenant/id"
+                                    attr_name == crate::eav::writer::system_attrs::TYPE_NAME
+                                        || attr_name == crate::eav::writer::system_attrs::ULID_NAME
+                                        || attr_name
+                                            == crate::eav::writer::system_attrs::TENANT_NAME
                                         || attr_name.starts_with("meta/")
                                         || attr_name == "payload"
                                         || attr_name == "event_type"
@@ -1798,17 +1853,19 @@ fn extract_index_key(
     Some((pk, sk))
 }
 
-/// Unified `.mbf` storage client replacing legacy `DynamoClient`.
+/// Cliente unificado de almacenamiento `.mbf` con persistencia en S3 e índices BTree en memoria.
 #[derive(Clone)]
 pub struct MbfStorageClient {
+    /// Nombre del espacio de nombres o partición `.mbf` predeterminada.
     pub default_table: String,
     s3_store: Option<Arc<S3MbfObjectStore>>,
 }
 
-/// Type alias preserving compatibility across internal modules.
+/// Alias de tipo del cliente de almacenamiento `.mbf` preservado por compatibilidad con módulos internos.
 pub type DynamoClient = MbfStorageClient;
 
 impl MbfStorageClient {
+    /// Inicializa un cliente de almacenamiento `.mbf` conectado a S3 o en memoria según el entorno configurado.
     pub async fn new(default_table: &str) -> Self {
         let s3_mode = std::env::var("S3_MODE").unwrap_or_default();
         let maybe_bucket = std::env::var("MBF_S3_BUCKET")
@@ -1844,6 +1901,7 @@ impl MbfStorageClient {
         client
     }
 
+    /// Crea una instancia del cliente `.mbf` puramente en memoria para pruebas unitarias y de integración.
     pub fn new_stub() -> Self {
         Self {
             default_table: "metri-mbf-local".to_string(),
@@ -1851,6 +1909,7 @@ impl MbfStorageClient {
         }
     }
 
+    /// Ejecuta una verificación rápida de disponibilidad del motor de almacenamiento.
     pub async fn health_check(&self) -> bool {
         true
     }
@@ -1859,12 +1918,12 @@ impl MbfStorageClient {
         format!("{}/vortex/{table}.mbf", s3.prefix())
     }
 
-    /// Public helper for read paths (`EavQueryExecutor` / `EavReader`) to ensure S3 ETag freshness before serving cached scans.
+    /// Asegura la frescura del ETag de la partición en S3 antes de servir lecturas o escaneos en caché.
     pub async fn sync_if_needed(&self, table: &str) -> Result<(), DomainError> {
         self.sync_from_s3(table, false).await
     }
 
-    /// Starts a deferred S3 bulk ingestion scope so N concurrent row mutations execute in memory and flush once at the end.
+    /// Inicia un ámbito de ingesta masiva diferida hacia S3 para consolidar múltiples mutaciones en un único volcado.
     pub async fn begin_bulk_s3_batch(&self, table: &str) -> Result<(), DomainError> {
         if self.s3_store.is_none() {
             return Ok(());
@@ -1879,7 +1938,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
-    /// Ends a deferred S3 bulk ingestion scope and flushes the consolidated `.mbf` vortex and entity files to S3.
+    /// Finaliza el ámbito de ingesta masiva diferida y vuelca la partición `.mbf` y archivos por entidad a S3.
     pub async fn finish_bulk_s3_batch(&self, table: &str) -> Result<(), DomainError> {
         if self.s3_store.is_none() {
             return Ok(());
@@ -1898,7 +1957,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
-    /// Synchronizes the in-memory `.mbf` partition store with S3 if a remote container committed newer state.
+    /// Sincroniza el almacén de partición `.mbf` en memoria con S3 si una instancia remota confirmó estado más reciente.
     async fn sync_from_s3(&self, table: &str, force: bool) -> Result<(), DomainError> {
         if self.s3_store.is_none() {
             return Ok(());
@@ -1975,7 +2034,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
-    /// Flushes the updated `.mbf` binary partition and per-entity `.mbf` / `.mbf.idx` files to S3 (`s3://<bucket>/<prefix>/...`).
+    /// Vuelca la partición binaria `.mbf` actualizada y los archivos `.mbf` / `.mbf.idx` por entidad hacia S3.
     async fn flush_to_s3(
         &self,
         table: &str,
@@ -2177,6 +2236,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
+    /// Inserta o reemplaza un registro individual en la partición `.mbf` e indexa sus claves secundarias.
     pub async fn put_item(
         &self,
         table: &str,
@@ -2200,6 +2260,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
+    /// Recupera un registro por su clave primaria `(PK, SK)` desde la partición `.mbf`.
     pub async fn get_item(
         &self,
         table: &str,
@@ -2215,6 +2276,7 @@ impl MbfStorageClient {
         Ok(guard.items.get(&(pk.to_string(), sk_vec)).cloned())
     }
 
+    /// Consulta el identificador del actor asociado a una transacción `tx_id` en el registro de auditoría del inquilino.
     pub async fn get_tx_actor(&self, table: &str, tenant_id: &str, tx_id: u64) -> Option<String> {
         let pk = format!("T#{tenant_id}#TX");
         let sk = tx_id.to_be_bytes();
@@ -2222,6 +2284,7 @@ impl MbfStorageClient {
         item.get("actor").and_then(av_string).map(str::to_string)
     }
 
+    /// Elimina un registro por su clave primaria `(PK, SK)` y limpia sus entradas en los índices secundarios.
     pub async fn delete_item(
         &self,
         table: &str,
@@ -2241,6 +2304,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
+    /// Ejecuta un lote transaccional ACID validando precondiciones tipadas antes de confirmar en memoria y S3.
     pub async fn transact_write(&self, items: Vec<TransactWriteItem>) -> Result<(), DomainError> {
         if items.is_empty() {
             return Ok(());
@@ -2270,10 +2334,6 @@ impl MbfStorageClient {
                 Vec::with_capacity(items.len());
             let mut seen_keys = std::collections::HashSet::new();
             let mut touched: Vec<(String, String, String)> = Vec::new();
-            let entity_type_attr_suffix = format!(
-                "#A#{}",
-                crate::eav::types::datom::Datom::hash_attr_name("entity_type")
-            );
 
             for tx_item in items {
                 let Some(put) = tx_item.put else {
@@ -2336,7 +2396,7 @@ impl MbfStorageClient {
                     }
                 }
 
-                // Track touched entities from TX log items or entity_type / entity/type datoms
+                // Track touched entities from TX log items or entity/type datoms
                 if key.0.starts_with("T#") && key.0.ends_with("#TX") && key.0.len() > 5 {
                     let tid = key.0[2..key.0.len() - 3].to_string();
                     if let (Some(et), Some(eid)) = (
@@ -2346,10 +2406,8 @@ impl MbfStorageClient {
                         touched.push((tid, et.to_string(), eid.to_string()));
                     }
                 } else if let Some(ap) = put.item.get("ap").and_then(av_string) {
-                    let is_entity_type_datom = ap.contains("#A#entity_type#")
-                        || ap.ends_with("#A#entity_type")
-                        || ap.ends_with("#A#entity/type")
-                        || ap.ends_with(&entity_type_attr_suffix);
+                    let is_entity_type_datom =
+                        ap.contains("#A#entity/type#") || ap.ends_with("#A#entity/type");
                     if is_entity_type_datom {
                         if let Some(et) = put.item.get("v").and_then(av_string) {
                             if let Some(rest) = key.0.strip_prefix("T#") {
@@ -2382,6 +2440,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
+    /// Inserta un lote de solicitudes `WriteRequest` en la partición `.mbf` (utilizado para indexación de trigramas FTS).
     pub async fn batch_write_item(
         &self,
         table: &str,
@@ -2408,6 +2467,7 @@ impl MbfStorageClient {
         Ok(())
     }
 
+    /// Ejecuta una consulta por rango $O(\log N)$ sobre el índice primario `EAVT` o secundario (`AEVT`, `AVET`, `VAET`).
     #[allow(clippy::too_many_arguments)]
     pub async fn query(
         &self,
@@ -2520,6 +2580,7 @@ impl MbfStorageClient {
         Ok(results)
     }
 
+    /// Incrementa de forma atómica el contador de una secuencia de negocio y persiste el nuevo valor.
     pub async fn sequence_increment(
         &self,
         table: &str,
@@ -2565,6 +2626,7 @@ impl MbfStorageClient {
         Ok(next_val)
     }
 
+    /// Inserta o actualiza la configuración y el valor actual de una secuencia de negocio.
     #[allow(clippy::too_many_arguments)]
     pub async fn sequence_config_upsert(
         &self,
@@ -2641,6 +2703,7 @@ impl MbfStorageClient {
         Ok(updated)
     }
 
+    /// Establece de forma monótona el valor actual de una secuencia con ámbito (`scoped_code`).
     pub async fn sequence_scoped_set(
         &self,
         table: &str,
@@ -2693,6 +2756,7 @@ impl MbfStorageClient {
         Ok(updated)
     }
 
+    /// Escanea registros de la partición aplicando filtrado opcional por prefijo de `PK` e inquilino (`:t`).
     pub async fn scan_with_filter(
         &self,
         table: &str,
@@ -2737,6 +2801,7 @@ impl MbfStorageClient {
 
     // ── Native MBF Quota Ledger Operations ──────────────────────────────────
 
+    /// Lee en lote los valores actuales de múltiples contadores de cuota de un inquilino.
     pub async fn quota_read_many(
         &self,
         table: &str,
@@ -2760,6 +2825,7 @@ impl MbfStorageClient {
         Ok(out)
     }
 
+    /// Intenta debitar `amount` unidades de una cuota si el consumo actual es menor que `max_limit`.
     pub async fn quota_try_debit(
         &self,
         table: &str,
@@ -2791,6 +2857,7 @@ impl MbfStorageClient {
         Ok((allowed, val))
     }
 
+    /// Ajusta el contador de una cuota aplicando un delta firmado truncado a cero como mínimo.
     pub async fn quota_settle(
         &self,
         table: &str,
@@ -2814,6 +2881,7 @@ impl MbfStorageClient {
         Ok(next)
     }
 
+    /// Aplica un ajuste de cuota de forma idempotente garantizando ejecución única por `idem_key`.
     pub async fn quota_settle_once(
         &self,
         table: &str,

@@ -1,4 +1,4 @@
-//! Zone 4 penny-exact fixed-point accounting, FixedDecimal128, FIFO/LIFO/WAC/FEFO batch valuation, multi-currency FX table, straight-line amortization, and SHA-256 Merkle chain.
+//! Zona 4 del formato MBF: contabilidad exacta en punto fijo (`FixedDecimal128`), valoración de lotes (`FIFO`, `LIFO`, `WAC`, `FEFO`), tabla cambiaria multimoneda, amortización lineal y cadena Merkle SHA-256.
 
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
@@ -11,8 +11,9 @@ use crate::mbf::format::pad_to_64;
 
 const ZONE4_MAGIC: [u8; 8] = *b"MBFZ4FIN";
 
-/// Canonical fixed-point decimal (`i128`, `#[repr(transparent)]`, §4.5.1).
-/// Eliminates all IEEE 754 floating-point drift in financial and accounting ledgers.
+/// Decimal canónico en punto fijo de 128 bits (`i128`, `#[repr(transparent)]`).
+///
+/// Elimina toda deriva de punto flotante IEEE 754 en libros contables y financieros.
 #[repr(transparent)]
 #[derive(
     Debug,
@@ -32,43 +33,50 @@ const ZONE4_MAGIC: [u8; 8] = *b"MBFZ4FIN";
 pub struct FixedDecimal128(pub i128);
 
 impl FixedDecimal128 {
+    /// Factor de escala base ($10^4$, equivalente a puntos básicos / diezmilésimas).
     pub const SCALE: i128 = 10_000;
+    /// Factor de escala en microunidades ($10^6$).
     pub const MICRO_SCALE: i128 = 1_000_000;
+    /// Constante aditiva neutra (`0.0000`).
     pub const ZERO: Self = Self(0);
 
+    /// Construye un `FixedDecimal128` directamente a partir del valor entero ya escalado por `SCALE`.
     #[inline]
     pub const fn from_scaled(raw_scaled: i128) -> Self {
         Self(raw_scaled)
     }
 
+    /// Construye un `FixedDecimal128` a partir de unidades enteras sin fracción.
     #[inline]
     pub const fn from_whole(units: i64) -> Self {
         Self((units as i128) * Self::SCALE)
     }
 
-    /// Creates a `FixedDecimal128` from micro-units ($10^{-6}$, §4.5.1) using Banker's Rounding.
+    /// Crea un `FixedDecimal128` a partir de microunidades ($10^{-6}$) aplicando redondeo bancario (*Banker's Rounding*).
     #[inline]
     pub fn from_micro_units(micro_units: i128) -> Self {
         Self::div_bankers_raw(micro_units, 100)
     }
 
-    /// Converts this value into canonical micro-units ($10^{-6}$, §4.5.1).
+    /// Convierte este valor a microunidades canónicas ($10^{-6}$).
     #[inline]
     pub const fn to_micro_units(self) -> i128 {
         self.0 * 100
     }
 
-    /// Creates a `FixedDecimal128` from integer units and basis points (`10^-4`).
+    /// Crea un `FixedDecimal128` combinando unidades enteras y puntos básicos (`10^-4`).
     #[inline]
     pub const fn from_units_and_bps(units: i64, bps: i64) -> Self {
         Self((units as i128) * Self::SCALE + (bps as i128))
     }
 
+    /// Convierte el decimal en punto fijo a `f64` para visualización o telemetría analítica.
     #[inline]
     pub fn to_f64(self) -> f64 {
         (self.0 as f64) / (Self::SCALE as f64)
     }
 
+    /// Suma verificada de dos valores `FixedDecimal128`, devolviendo error en caso de desbordamiento.
     #[inline]
     pub fn checked_add(self, rhs: Self) -> DomainResult<Self> {
         self.0.checked_add(rhs.0).map(Self).ok_or_else(|| {
@@ -79,6 +87,7 @@ impl FixedDecimal128 {
         })
     }
 
+    /// Resta verificada de dos valores `FixedDecimal128`, devolviendo error en caso de desbordamiento.
     #[inline]
     pub fn checked_sub(self, rhs: Self) -> DomainResult<Self> {
         self.0.checked_sub(rhs.0).map(Self).ok_or_else(|| {
@@ -89,12 +98,12 @@ impl FixedDecimal128 {
         })
     }
 
-    /// Multiplies two `FixedDecimal128` numbers and divides by `SCALE` using IEEE 754-2008 Banker's Rounding (*Round Half-to-Even*).
+    /// Multiplica dos números `FixedDecimal128` y divide por `SCALE` usando redondeo bancario IEEE 754-2008 (*Round Half-to-Even*).
     pub fn mul_bankers(self, rhs: Self) -> Self {
         Self::div_bankers_raw(self.0 * rhs.0, Self::SCALE)
     }
 
-    /// Divides `self` by `divisor` using IEEE 754-2008 Banker's Rounding (*Round Half-to-Even*).
+    /// Divide `self` entre `divisor` usando redondeo bancario IEEE 754-2008 (*Round Half-to-Even*).
     pub fn div_bankers(self, divisor: Self) -> DomainResult<Self> {
         if divisor.0 == 0 {
             return Err(DomainError::mbf(
@@ -128,7 +137,7 @@ impl FixedDecimal128 {
         }
     }
 
-    /// Distributes `total` across `weights` using Hamilton's Largest Remainder Method so $\sum c_i \equiv \text{total}$ bit-exactly.
+    /// Distribuye `total` entre los pesos `weights` mediante el método de mayores restos de Hamilton de modo que $\sum c_i \equiv \text{total}$ de forma exacta bit a bit.
     pub fn allocate_hamilton(total: Self, weights: &[u64]) -> DomainResult<Vec<Self>> {
         let weight_sum: u128 = weights.iter().map(|&w| u128::from(w)).sum();
         if weight_sum == 0 {
@@ -165,19 +174,22 @@ impl FixedDecimal128 {
     }
 }
 
-/// Fenwick Tree / Prefix Sum array over `FixedDecimal128` for $O(\log N)$ updates and $O(1)$ range cash-flow queries (§4.5.2).
+/// Árbol de Fenwick (arreglo de sumas prefijas indexado en binario) sobre `FixedDecimal128` para actualizaciones en $O(\log N)$ y consultas de flujo de caja por rango.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FenwickPrefixSum128 {
+    /// Arreglo interno 1-indexado que almacena las sumas parciales del árbol de Fenwick.
     pub tree: Vec<i128>,
 }
 
 impl FenwickPrefixSum128 {
+    /// Crea un árbol de Fenwick vacío con capacidad para `len` elementos.
     pub fn with_capacity(len: usize) -> Self {
         Self {
             tree: vec![0; len + 1],
         }
     }
 
+    /// Construye un árbol de Fenwick inicializado a partir de una rebanada de valores `FixedDecimal128`.
     pub fn from_slice(values: &[FixedDecimal128]) -> Self {
         let mut fw = Self::with_capacity(values.len());
         for (i, v) in values.iter().enumerate() {
@@ -186,7 +198,7 @@ impl FenwickPrefixSum128 {
         fw
     }
 
-    /// Adds `delta` at 0-based index `idx` in $O(\log N)$.
+    /// Suma `delta` en el índice base cero `idx` en tiempo $O(\log N)$.
     pub fn add_at(&mut self, idx: usize, delta: FixedDecimal128) {
         let mut i = idx + 1;
         while i < self.tree.len() {
@@ -195,7 +207,7 @@ impl FenwickPrefixSum128 {
         }
     }
 
-    /// Prefix sum $[0..=idx]$ in $O(\log N)$.
+    /// Calcula la suma prefija en el rango inclusivo `` `[0..=idx]` `` en tiempo $O(\log N)$.
     pub fn prefix_sum(&self, idx: usize) -> FixedDecimal128 {
         let mut i = (idx + 1).min(self.tree.len().saturating_sub(1));
         let mut sum: i128 = 0;
@@ -206,7 +218,7 @@ impl FenwickPrefixSum128 {
         FixedDecimal128(sum)
     }
 
-    /// Range sum $[start..=end]$ in $O(\log N)$.
+    /// Calcula la suma acumulada en el rango inclusivo `` `[start..=end]` `` en tiempo $O(\log N)$.
     pub fn range_sum(&self, start: usize, end: usize) -> FixedDecimal128 {
         if start > end {
             return FixedDecimal128::ZERO;
@@ -219,62 +231,86 @@ impl FenwickPrefixSum128 {
         }
     }
 
+    /// Devuelve la rebanada subyacente de enteros `i128` del árbol de Fenwick.
     pub fn as_raw_slice(&self) -> &[i128] {
         &self.tree
     }
 }
 
-/// Batch cost valuation method (`FIFO`, `LIFO`, `WAC`/`PMP`, `FEFO`).
+/// Método de valoración de costos de inventario y lotes (`FIFO`, `LIFO`, `WAC`/`PMP`, `FEFO`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValuationMethod {
+    /// Primero en entrar, primero en salir (*First-In, First-Out*).
     Fifo,
+    /// Último en entrar, primero en salir (*Last-In, First-Out*).
     Lifo,
+    /// Costo promedio ponderado (*Weighted Average Cost* / PMP).
     Wac,
+    /// Primero en vencer, primero en salir (*First-Expired, First-Out*).
     Fefo,
 }
 
-/// 32-byte aligned active batch layer for resource/lot valuation (`#[repr(C, align(32))]`, §4.5.4).
+/// Capa activa de lote alineada a 32 bytes para valoración de recursos e inventario (`#[repr(C, align(32))]`).
 #[repr(C, align(32))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct ActiveBatchLayer {
+    /// Identificador numérico único del lote recibido.
     pub batch_id: u32,
+    /// Identificador de fila del recurso o ítem de inventario asociado.
     pub resource_row_id: u32,
+    /// Marca de tiempo de recepción del lote en milisegundos epoch UTC.
     pub received_ms: i64,
+    /// Marca de tiempo de caducidad del lote en milisegundos epoch UTC (para valoración `FEFO`).
     pub expiry_ms: i64,
+    /// Cantidad remanente disponible en el lote, escalada por `FixedDecimal128::SCALE`.
     pub remaining_qty_scaled: i64,
 }
 
-/// 64-byte aligned block checkpoint for `default_rollup: "last_value"` (`balance_after`, `running_average_cost`, §4.5.3).
+/// Punto de control financiero de bloque alineado a 64 bytes para agregaciones `last_value` (`balance_after`, `running_average_cost`).
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Pod, Zeroable, Serialize, Deserialize)]
 pub struct FinancialBlockCheckpoint {
+    /// Cantidad total de cierre al finalizar el bloque o movimiento.
     pub closing_qty: FixedDecimal128,
+    /// Valor contable total en libros al cierre del movimiento.
     pub closing_book_value: FixedDecimal128,
+    /// Costo unitario promedio ponderado (`WAC`) vigente tras el movimiento.
     pub running_wac_unit_cost: FixedDecimal128,
+    /// Marca de tiempo en milisegundos epoch UTC del cierre del bloque o movimiento.
     pub block_end_epoch_ms: i64,
+    /// Campo reservado para mantener la alineación exacta a 64 bytes.
     pub reserved: i64,
 }
 
-/// 64-byte aligned Cryptographic Double-Entry Audit Header (`#[repr(C, align(64))]`, §4.5.6).
+/// Cabecera criptográfica de auditoría de partida doble alineada a 64 bytes (`#[repr(C, align(64))]`).
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Pod, Zeroable, Serialize, Deserialize)]
 pub struct LedgerAuditHeader {
+    /// Hash SHA-256 del bloque o asiento contable inmediatamente anterior en la cadena.
     pub prev_block_sha256: [u8; 32],
+    /// Raíz Merkle / resumen SHA-256 resultante tras sellar el asiento actual.
     pub block_merkle_root: [u8; 32],
 }
 
-/// Domain-agnostic Fixed-Point Double-Entry & Batch Valuation Ledger with SHA-256 Merkle Chain and Fiscal Lock (§4.5).
+/// Libro mayor financiero en punto fijo de partida doble y valoración de lotes con cadena Merkle SHA-256 y bloqueo fiscal.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FinancialLedgerZone {
+    /// Marca de tiempo en milisegundos epoch UTC hasta la cual el período fiscal se encuentra cerrado e inmutable.
     pub fiscal_lock_epoch_ms: i64,
+    /// Capas de lotes activas acompañadas de su costo unitario en moneda base `(layer, unit_cost_base)`.
     pub batches: Vec<(ActiveBatchLayer, FixedDecimal128)>, // (layer, unit_cost_base)
+    /// Historial cronológico de puntos de control financieros para consultas `last_value` en $O(\log B)$.
     pub checkpoints: Vec<FinancialBlockCheckpoint>,
+    /// Cadena secuencial de cabeceras de auditoría criptográfica SHA-256.
     pub audit_headers: Vec<LedgerAuditHeader>,
+    /// Hash SHA-256 en la punta actual de la cadena Merkle del libro mayor.
     pub merkle_chain_tip: [u8; 32],
+    /// Tabla de tasas de cambio desde códigos de moneda origen hacia la moneda funcional base del libro.
     pub fx_rates_to_base: HashMap<String, FixedDecimal128>,
 }
 
 impl FinancialLedgerZone {
+    /// Crea una nueva instancia de `FinancialLedgerZone` con la marca de bloqueo fiscal indicada.
     pub fn new(fiscal_lock_epoch_ms: i64) -> Self {
         Self {
             fiscal_lock_epoch_ms,
@@ -286,7 +322,7 @@ impl FinancialLedgerZone {
         }
     }
 
-    /// Registers a conversion rate from `currency_code` into the ledger's functional base currency.
+    /// Registra una tasa de conversión desde `currency_code` hacia la moneda funcional base del libro mayor.
     pub fn set_exchange_rate(
         &mut self,
         currency_code: impl Into<String>,
@@ -296,7 +332,7 @@ impl FinancialLedgerZone {
             .insert(currency_code.into(), rate_to_base);
     }
 
-    /// Validates a double-entry accounting journal ($\sum \text{Debits} == \sum \text{Credits}$) and seals it into the SHA-256 Merkle chain.
+    /// Valida un asiento contable de partida doble ($\sum \text{Débitos} == \sum \text{Créditos}$) y lo sella en la cadena Merkle SHA-256.
     pub fn record_journal_entry(
         &mut self,
         tx_epoch_ms: i64,
@@ -335,7 +371,7 @@ impl FinancialLedgerZone {
         Ok(self.merkle_chain_tip)
     }
 
-    /// Converts an amount from `currency` into the ledger's functional base currency using the configured FX table.
+    /// Convierte un importe desde `currency` hacia la moneda funcional base del libro mayor usando la tabla cambiaria configurada.
     pub fn convert_to_base_currency(
         &self,
         amount: FixedDecimal128,
@@ -354,7 +390,7 @@ impl FinancialLedgerZone {
         Ok(amount.mul_bankers(rate))
     }
 
-    /// Receives a batch layer and updates the `last_value` `FinancialBlockCheckpoint`.
+    /// Recibe una nueva capa de lote y actualiza el punto de control `FinancialBlockCheckpoint` para consultas `last_value`.
     pub fn receive_batch(
         &mut self,
         batch_id: u32,
@@ -385,8 +421,8 @@ impl FinancialLedgerZone {
         Ok(cp)
     }
 
-    /// Issues (consumes) `issue_qty` under the chosen `ValuationMethod` (`FIFO`, `LIFO`, `WAC`, `FEFO`),
-    /// returning `(cogs_cost_base, updated_checkpoint)`.
+    /// Consume o despacha `issue_qty` unidades bajo el método `ValuationMethod` elegido (`FIFO`, `LIFO`, `WAC`, `FEFO`),
+    /// devolviendo `(cogs_cost_base, updated_checkpoint)`.
     pub fn issue_inventory(
         &mut self,
         tx_epoch_ms: i64,
@@ -449,7 +485,7 @@ impl FinancialLedgerZone {
         Ok((total_cogs, new_cp))
     }
 
-    /// Resolves `default_rollup: "last_value"` as of `target_epoch_ms` in $O(\log B)$ via binary search over checkpoints.
+    /// Resuelve la agregación `last_value` al corte `target_epoch_ms` en tiempo $O(\log B)$ mediante búsqueda binaria sobre los puntos de control.
     pub fn last_value_as_of(&self, target_epoch_ms: i64) -> Option<FinancialBlockCheckpoint> {
         let idx = self
             .checkpoints
@@ -461,7 +497,7 @@ impl FinancialLedgerZone {
         }
     }
 
-    /// Computes proportional straight-line / usage-based amortization ($\frac{\text{Cost} - \text{Salvage}}{\text{TotalCapacity}} \times \text{ConsumedUnits}$) using Banker's Rounding.
+    /// Calcula la amortización lineal proporcional al uso ($\frac{\text{Cost} - \text{Salvage}}{\text{TotalCapacity}} \times \text{ConsumedUnits}$) aplicando redondeo bancario.
     pub fn compute_straight_line_amortization(
         acquisition_cost: FixedDecimal128,
         salvage_value: FixedDecimal128,
@@ -505,8 +541,8 @@ impl FinancialLedgerZone {
         })
     }
 
-    /// Encodes Zone 4 into a 64-byte aligned binary slab (§4.5):
-    /// `[Magic "MBFZ4FIN" (8B) | fiscal_lock_epoch_ms | merkle_chain_tip | ActiveBatchLayers (32B) | FinancialBlockCheckpoints (64B) | LedgerAuditHeaders (64B) | EmbeddedFxMatrix | Padding 64B]`.
+    /// Codifica la Zona 4 en un bloque binario alineado a 64 bytes:
+    /// `` `[Magic "MBFZ4FIN" (8B) | fiscal_lock_epoch_ms | merkle_chain_tip | ActiveBatchLayers (32B) | FinancialBlockCheckpoints (64B) | LedgerAuditHeaders (64B) | EmbeddedFxMatrix | Padding 64B]` ``.
     pub fn encode_zone_binary(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(&ZONE4_MAGIC);
@@ -548,7 +584,7 @@ impl FinancialLedgerZone {
         buf
     }
 
-    /// Decodes a Zone 4 `FinancialLedgerZone` from its 64-byte aligned binary slab.
+    /// Decodifica una instancia de `FinancialLedgerZone` de la Zona 4 a partir de su bloque binario alineado a 64 bytes.
     pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 48 || bytes[0..8] != ZONE4_MAGIC {
             return Err(DomainError::mbf(

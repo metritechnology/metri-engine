@@ -1,64 +1,91 @@
-//! TimeFrame resolution — named windows to epoch ranges.
+//! Resolución de ventanas temporales nombradas (`TimeFrameContext`) a rangos epoch.
 //!
-//! Resuelve TimeFrameContext → {start_ts, end_ts} epoch-segundos.
-//!
-//! # Origin
-//! SSOT — reemplaza metres.aegis.time-frame en el stack anterior.
-//!
-//! CORRECCIONES vs la implementación anterior:
-//! 1. CUSTOM_RANGE: el proto envía epoch-MILISEGUNDOS → se convierte con ms_to_s
-//! 2. Todos los shifts usan shift_by_calendar (chrono) — bisiesto-safe, DST-aware
-//! 3. ALL_TIME retorna {start_ts: None, end_ts: None} de forma explícita
-//! 4. Tipo no reconocido retorna None (loggeable upstream)
-//!
-//! 29 tipos soportados (28 relativos + CUSTOM_RANGE).
+//! Traduce las 29 variantes del contrato `TimeFrameContext` a un `TimeRange` expresado
+//! en segundos epoch (`{start_ts, end_ts}`):
+//! 1. `CustomRange`: Convierte los límites en milisegundos epoch del contrato gRPC a segundos mediante `ms_to_s`.
+//! 2. Desplazamientos relativos: Calculados con `shift_by_calendar` (`chrono`), seguros en años bisiestos y transiciones DST.
+//! 3. `AllTime`: Retorna `{start_ts: None, end_ts: None}` indicando ausencia de recorte temporal.
+//! 4. `Unspecified`: Retorna `None` para que el llamador omita o registre el filtro no reconocido.
 
 use crate::temporal::core::{self as t, ms_to_s, shift_by_calendar, CalUnit, TimeRange};
 
-/// Representa un TimeFrameContext del proto (campos renombrados a snake_case Rust).
+/// Contexto de ventana temporal normalizado desde el mensaje Protobuf `TimeFrameContext`.
 #[derive(Debug, Clone)]
 pub struct TimeFrameCtx {
+    /// Tipo de ventana temporal solicitada.
     pub tf_type: TimeFrameType,
+    /// Parámetro numérico `N` para ventanas relativas parametrizadas (ej. `LastNDays`).
     pub n_value: i64,
-    /// start_ts en epoch-MILISEGUNDOS (como define el proto)
+    /// Marca de inicio explícita en milisegundos epoch (usada en `CustomRange`).
     pub start_ts_ms: i64,
-    /// end_ts en epoch-MILISEGUNDOS
+    /// Marca de fin explícita en milisegundos epoch (usada en `CustomRange`).
     pub end_ts_ms: i64,
+    /// Identificador IANA de zona horaria (ej. `"UTC"`, `"America/Bogota"`).
     pub timezone: String,
 }
 
-/// Mapeo del enum TimeFrameContext.TimeFilterType del proto.
+/// Enumeración de las 29 ventanas temporales soportadas por el contrato `TimeFrameContext.TimeFilterType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeFrameType {
+    /// Rango personalizado delimitado por `start_ts_ms` y `end_ts_ms`.
     CustomRange,
+    /// Día actual completo en la zona horaria solicitada (`[00:00 hoy, 00:00 mañana]`).
     Today,
+    /// Día calendario anterior completo (`[00:00 ayer, 00:00 hoy]`).
     Yesterday,
+    /// Día calendario siguiente completo (`[00:00 mañana, 00:00 pasado mañana]`).
     Tomorrow,
+    /// Últimos `N` minutos hasta el instante actual.
     LastNMinutes,
+    /// Últimas `N` horas hasta el instante actual.
     LastNHours,
+    /// Últimos `N` días desde la medianoche de hace `N` días hasta el instante actual.
     LastNDays,
+    /// Próximos `N` días a partir del instante actual.
     NextNDays,
+    /// Semana ISO actual desde el lunes a las `00:00` hasta el instante actual.
     ThisWeek,
+    /// Semana ISO anterior completa (lunes a lunes).
     LastWeek,
+    /// Próxima semana ISO completa (lunes a lunes).
     NextWeek,
+    /// Últimas `N` semanas ISO hasta el instante actual.
     LastNWeeks,
+    /// Próximas `N` semanas a partir del instante actual.
     NextNWeeks,
+    /// Acumulado de la semana actual hasta la fecha (`WTD`).
     WeekToDate,
+    /// Mes calendario actual desde el día 1 a las `00:00` hasta el instante actual.
     ThisMonth,
+    /// Mes calendario anterior completo.
     LastMonth,
+    /// Próximo mes calendario completo.
     NextMonth,
+    /// Últimos `N` meses calendario hasta el instante actual.
     LastNMonths,
+    /// Próximos `N` meses calendario a partir del instante actual.
     NextNMonths,
+    /// Acumulado del mes actual hasta la fecha (`MTD`).
     MonthToDate,
+    /// Trimestre calendario actual desde su primer día a las `00:00` hasta el instante actual.
     ThisQuarter,
+    /// Trimestre calendario anterior completo.
     LastQuarter,
+    /// Últimos `N` trimestres calendario hasta el instante actual.
     LastNQuarters,
+    /// Acumulado del trimestre actual hasta la fecha (`QTD`).
     QuarterToDate,
+    /// Año calendario actual desde el 1 de enero a las `00:00` hasta el instante actual.
     ThisYear,
+    /// Año calendario anterior completo.
     LastYear,
+    /// Últimos `N` años calendario hasta el instante actual.
     LastNYears,
+    /// Acumulado del año actual hasta la fecha (`YTD`).
     YearToDate,
+    /// Historial completo sin cota inferior ni superior (`start_ts: None, end_ts: None`).
     AllTime,
+    /// Tipo de ventana no especificado o fuera de rango.
     Unspecified,
 }
 

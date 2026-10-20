@@ -1,7 +1,7 @@
 name: Deploy producción
 
 # Despliegue a producción vía SAM (reemplaza el deploy manual con AWS CLI:
-# `make deploy`). Estrategia (docs/guides/despliegue.md):
+# `make deploy`). Estrategia (docs/02-guias/03-despliegue-aws-y-ci-cd.md):
 #
 #   push a main ──► build (tests + sam build, artefacto inmutable)
 #                ──► deploy (gate humano del environment "production"

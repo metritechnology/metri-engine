@@ -1,8 +1,9 @@
-//! Formula security validation — what the sandbox rejects.
+//! Validación de seguridad y sandbox estático para el motor de fórmulas.
 //!
-//! Validación de seguridad para fórmulas.
-//! SRP: Solo valida. No parsea, no evalúa, no compila.
+//! Bloquea palabras clave reservadas, comentarios maliciosos y llamadas a funciones
+//! no registradas antes de construir el flujo de evaluación.
 
+use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -28,12 +29,11 @@ static SQL_KEYWORD_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(&pattern).unwrap()
 });
 
-/// Valida que la fórmula no contenga fragmentos SQL peligrosos.
+/// Valida que la fórmula no contenga fragmentos ni palabras clave prohibidas por el sandbox.
 ///
-/// Usa **word-boundary matching** (`\bSELECT\b`) para keywords SQL,
-/// evitando falsos positivos en atributos como `selection_count` o `updated_from`.
-/// Los patrones literales (`--`, `/*`, `*/`, `;`) se buscan por substring directo.
-use crate::aegis::formula::errors::FormulaError;
+/// Usa **word-boundary matching** (`\bSELECT\b`) para palabras reservadas, evitando falsos
+/// positivos en atributos legítimos como `selection_count` o `updated_from`. Los patrones
+/// literales (`--`, `/*`, `*/`, `;`) se verifican por subcadena directa.
 pub fn validate_formula(formula: &str) -> Result<(), FormulaError> {
     let upper = formula.to_uppercase();
 

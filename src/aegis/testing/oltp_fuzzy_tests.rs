@@ -1,4 +1,4 @@
-//! Tests for `aegis::oltp::fuzzy`.
+//! Pruebas unitarias de coincidencia difusa, fonética y códigos alfanuméricos (`aegis::oltp::fuzzy`).
 use crate::aegis::oltp::fuzzy::*;
 
 #[test]

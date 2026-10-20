@@ -1,29 +1,27 @@
-//! Delta — the before/after of a mutation in the event contract.
-//!
-//! delta — el antes/después de una mutación, como parte del contrato de eventos.
+//! Diferencial de atributos (`Delta`) — el antes y el después de una mutación en el contrato de eventos.
 //!
 //! Dos consumidores dependen de su semántica:
-//! - el ledger del Hub (§10.3): sin ulid no ordena, pero sin delta correcto
-//! reprovisiona de más;
-//! - el guard de bitácora (§10.4): una mutación que SÓLO tocó campos de
-//! bitácora debe descartarse, o cada disparo del ejecutor crearía una
-//! trampa duplicada.
+//! - El ledger del Hub: requiere el diferencial exacto para evitar reprovisionamientos innecesarios.
+//! - El filtro de bitácora: descarta mutaciones que solo modificaron campos operativos del ejecutor
+//!   (`last_run_at`, `run_count`, `last_error`), evitando ciclos de reprovisión infinitos.
 //!
-//! La semántica de `is_bookkeeping_only` es un espejo deliberado de
-//! `internal/event/delta.go` en metri-schedulers. Cambiarla aquí sin cambiarla
-//! allá rompe el candado de golden_test.rs — a propósito.
+//! La función `is_bookkeeping_only` mantiene paridad estricta con `internal/event/delta.go`
+//! en `metri-schedulers`, verificada mediante `golden_test.rs`.
 
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// BTreeMap, no HashMap: el orden de las llaves en el JSON publicado debe ser
+/// `BTreeMap`, no `HashMap`: el orden de las llaves en el JSON publicado debe ser
 /// determinista para que los fixtures dorados comparen por igualdad.
 pub type Delta = BTreeMap<String, DeltaEntry>;
 
+/// Par de valores previo (`before`) y posterior (`after`) de un atributo modificado en una mutación.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeltaEntry {
+    /// Valor activo del atributo antes de la mutación (`None` si el atributo no existía).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<Value>,
+    /// Valor nuevo del atributo después de la mutación (`None` si fue retraído).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<Value>,
 }

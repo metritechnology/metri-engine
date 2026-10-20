@@ -1,4 +1,4 @@
-//! Zone 3 high-frequency time-series bitpacked Delta-of-Delta compression, Chimp128 + LZ4 frames, affine dimensional normalization, and multi-resolution pyramids (1m, 1h, 1d).
+//! Compresión de series temporales de alta frecuencia de la Zona 3 mediante empaquetado de bits Delta-of-Delta, tramas Chimp128 + LZ4, normalización dimensional afín y pirámides multirresolución (`1m`, `1h`, `1d`).
 
 use serde::{Deserialize, Serialize};
 
@@ -9,39 +9,56 @@ use crate::mbf::zones::fuzzy_math_catalog::AffineTransform;
 
 const ZONE3_MAGIC: [u8; 8] = *b"MBFZ3IOT";
 
-/// Pre-aggregated rollup bucket `(bucket_ms, count, sum_canonical, min_canonical, max_canonical, first_canonical, last_canonical)` (§4.4.3).
+/// Cubeta de agregación precalculada `(bucket_ms, count, sum_canonical, min_canonical, max_canonical, first_canonical, last_canonical)`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PyramidRollupBucket {
+    /// Marca de tiempo de inicio de la ventana en milisegundos UTC.
     pub bucket_ms: i64,
+    /// Cantidad de lecturas contenidas en la cubeta.
     pub count: u64,
+    /// Suma acumulada de valores normalizados a la escala canónica.
     pub sum_si: f64,
+    /// Valor mínimo observado en la escala canónica.
     pub min_si: f64,
+    /// Valor máximo observado en la escala canónica.
     pub max_si: f64,
+    /// Primer valor cronológico observado en la cubeta.
     pub first_si: f64,
+    /// Último valor cronológico observado en la cubeta.
     pub last_si: f64,
 }
 
-/// Delta-of-Delta + Chimp128 XOR + LZ4 compressed time-series stream for any high-frequency metric (§4.4).
+/// Flujo de serie temporal comprimido con Delta-of-Delta + Chimp128 XOR + LZ4 para métricas de alta frecuencia en la Zona 3.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Chimp128SeriesBlock {
+    /// Identificador de fila de la entidad o sujeto emisor.
     pub subject_row_id: u32,
+    /// Identificador numérico del atributo de métrica.
     pub metric_attr_id: u16,
+    /// Código simbólico de la métrica registrada.
     pub metric_code: String,
+    /// Cantidad total de muestras almacenadas en el bloque.
     pub count: usize,
+    /// Marca de tiempo base ($t_0$) en milisegundos UTC.
     pub base_timestamp_ms: i64,
+    /// Primer delta temporal ($\Delta_1 = t_1 - t_0$) en milisegundos.
     pub first_delta_ms: i64,
+    /// Secuencia de segundas diferencias temporales ($\Delta^2_i = \Delta_i - \Delta_{i-1}$).
     pub delta_of_deltas_ms: Vec<i64>,
+    /// Representación IEEE-754 en bits de la primera lectura canónica ($v_0$).
     pub base_value_bits: u64,
+    /// Residuos XOR sucesivos entre lecturas IEEE-754 consecutivas.
     pub xor_residuals: Vec<u64>,
-    /// Pre-aggregated 1-minute rollup buckets (`1m`, §4.4.3).
+    /// Cubetas preagregadas con resolución de 1 minuto (`1m`).
     pub minute_pyramid: Vec<PyramidRollupBucket>,
-    /// Pre-aggregated hourly rollup buckets `(hour_bucket_ms, count, sum_canonical, min_canonical, max_canonical, last_canonical)`.
+    /// Cubetas preagregadas con resolución de 1 hora `(hour_bucket_ms, count, sum_canonical, min_canonical, max_canonical, last_canonical)`.
     pub hourly_pyramid: Vec<(i64, u64, f64, f64, f64, f64)>,
-    /// Pre-aggregated daily rollup buckets (`1d`, §4.4.3).
+    /// Cubetas preagregadas con resolución de 1 día (`1d`).
     pub daily_pyramid: Vec<PyramidRollupBucket>,
 }
 
 impl Chimp128SeriesBlock {
+    /// Crea un nuevo bloque de serie temporal `Chimp128SeriesBlock` para el sujeto y código de métrica indicados.
     pub fn new(subject_row_id: u32, metric_code: impl Into<String>) -> Self {
         Self {
             subject_row_id,
@@ -59,8 +76,8 @@ impl Chimp128SeriesBlock {
         }
     }
 
-    /// Appends a sample `(timestamp_ms, raw_value, affine_transform)`, automatically normalizing to canonical scale ($y = a \cdot x + b$),
-    /// compressing via Delta-of-Delta + XOR residuals, and updating the 1m, 1h, and 1d pyramids.
+    /// Añade una muestra `(timestamp_ms, raw_value, affine_transform)`, normalizándola a escala canónica ($y = a \cdot x + b$),
+    /// comprimiéndola mediante Delta-of-Delta + residuos XOR y actualizando las pirámides `1m`, `1h` y `1d`.
     pub fn push_reading(&mut self, timestamp_ms: i64, raw_value: f64, transform: AffineTransform) {
         let canonical_val = transform.apply(raw_value);
         let val_bits = canonical_val.to_bits();
@@ -162,7 +179,7 @@ impl Chimp128SeriesBlock {
         });
     }
 
-    /// Decompresses all `(timestamp_ms, canonical_value)` readings losslessly.
+    /// Descomprime sin pérdida todas las lecturas `(timestamp_ms, canonical_value)`.
     pub fn decompress_all(&self) -> Vec<(i64, f64)> {
         if self.count == 0 {
             return Vec::new();
@@ -188,7 +205,7 @@ impl Chimp128SeriesBlock {
         out
     }
 
-    /// Returns the fraction of periodic readings whose Delta-of-Delta is 0 (1-bit compression rate).
+    /// Devuelve la fracción de lecturas periódicas cuyo Delta-of-Delta es `0` (tasa de compresión de 1 bit por marca de tiempo).
     pub fn zero_delta_of_delta_ratio(&self) -> f64 {
         if self.delta_of_deltas_ms.is_empty() {
             return 1.0;
@@ -201,8 +218,8 @@ impl Chimp128SeriesBlock {
         zeros as f64 / self.delta_of_deltas_ms.len() as f64
     }
 
-    /// Packs `delta_of_deltas_ms` at the bit level (§4.4.1):
-    /// Each $\Delta^2_i == 0$ takes exactly **1 bit (`0`)**; non-zero takes bit `1` followed by 64-bit signed delta.
+    /// Empaqueta `delta_of_deltas_ms` a nivel de bits:
+    /// cada $\Delta^2_i == 0$ ocupa exactamente 1 bit (`0`); los valores no nulos ocupan el bit `1` seguido del delta firmado de 64 bits.
     pub fn pack_delta_of_deltas_bitstream(&self) -> Vec<u8> {
         let n = self.delta_of_deltas_ms.len();
         let bitmap_bytes = n.div_ceil(8);
@@ -249,8 +266,7 @@ impl Chimp128SeriesBlock {
         Ok(out)
     }
 
-    /// Encodes Zone 3 into a 64-byte aligned binary slab (§4.4):
-    /// `[Magic "MBFZ3IOT" (8B) | Header | Bitpacked Delta-of-Delta Timestamps | LZ4-compressed Chimp128 XOR Stream | 1m/1h/1d Pyramids | Padding 64B]`.
+    /// Codifica la Zona 3 en un bloque binario alineado a 64 bytes con cabecera `"MBFZ3IOT"`, marcas de tiempo Delta-of-Delta, flujo Chimp128 + LZ4 y pirámides `1m`/`1h`/`1d`.
     pub fn encode_zone_binary(&self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.extend_from_slice(&ZONE3_MAGIC);
@@ -338,7 +354,7 @@ impl Chimp128SeriesBlock {
         Ok(out)
     }
 
-    /// Decodes a Zone 3 `Chimp128SeriesBlock` from its 64-byte aligned binary slab.
+    /// Decodifica un bloque `Chimp128SeriesBlock` de la Zona 3 a partir de su representación binaria alineada a 64 bytes.
     pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 16 || bytes[0..8] != ZONE3_MAGIC {
             return Err(DomainError::mbf(

@@ -1,4 +1,4 @@
-//! Lock-free 3-tier S3 ACID transaction coordinator: Group Commit, 8-Cell Domain Sharding, Commutative Auto-Rebase, and Hilbert Compaction.
+//! Coordinador de transacciones ACID de 3 niveles sin bloqueos sobre S3: Group Commit, particionamiento en 8 celdas por dominio (`DomainCellRouter`), Auto-Rebase conmutativo y compactación Hilbert.
 
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
@@ -13,19 +13,23 @@ use crate::mbf::format::{
 };
 use xxhash_rust::xxh64::xxh64;
 
-/// 32-byte aligned Read/Write Conflict Signature (`#[repr(C, align(32))]`) stored in each delta frame.
-/// Enables `< 150 µs` automatic rebase when two Lambda instances collide with `HTTP 412 Precondition Failed`.
+/// Firma de conflicto de lectura/escritura alineada a 32 bytes (`#[repr(C, align(32))]`) almacenada en cada trama delta.
+/// Permite ejecutar *Auto-Rebase* automático en `< 150 µs` cuando dos instancias colisionan con `HTTP 412 Precondition Failed`.
 #[repr(C, align(32))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Pod, Zeroable)]
 pub struct TxConflictSignature {
+    /// Época base (`epoch_id`) sobre la cual se planificó la transacción.
     pub base_epoch_id: u64,
+    /// Nueva época (`epoch_id`) asignada al confirmar la trama delta.
     pub new_epoch_id: u64,
+    /// Filtro de Bloom de 64 bits del conjunto de claves leídas (`read-set`).
     pub read_set_bloom: u64,
+    /// Filtro de Bloom de 64 bits del conjunto de claves escritas (`write-set`).
     pub write_set_bloom: u64,
 }
 
 impl TxConflictSignature {
-    /// Builds a 64-bit Bloom signature for the read keys and write keys touched by a transaction.
+    /// Construye una firma de Bloom de 64 bits para las claves de lectura y escritura tocadas por una transacción.
     pub fn from_keys(
         base_epoch_id: u64,
         new_epoch_id: u64,
@@ -40,8 +44,8 @@ impl TxConflictSignature {
         }
     }
 
-    /// Returns true if `self` (incoming transaction) has a genuine Serializable Snapshot Isolation (SSI) conflict
-    /// with `concurrent_winner`. If false, `self` can be safely auto-rebased onto `concurrent_winner`!
+    /// Retorna `true` si `self` (transacción entrante) presenta un conflicto genuino de aislamiento de instantánea serializable (SSI)
+    /// frente a `concurrent_winner`. Si retorna `false`, la transacción puede rebasarse automáticamente de forma segura.
     #[inline]
     pub fn conflicts_with(&self, concurrent_winner: &TxConflictSignature) -> bool {
         let rw_conflict = (self.read_set_bloom & concurrent_winner.write_set_bloom) != 0;
@@ -61,14 +65,14 @@ impl TxConflictSignature {
     }
 }
 
-/// Deterministic 8-Cell Topology Sharding router (`HOT_HEAD_c0..c7.mbf`).
-/// Completely domain-agnostic: routes entities based on their declarative Códice structural/mathematical profiles or deterministic consistent hashing.
+/// Enrutador determinista de particionamiento topológico en 8 celdas (`HOT_HEAD_c0..c7.mbf`).
+/// Agnóstico al dominio: clasifica las entidades según sus perfiles estructurales y matemáticos del Códice o mediante hash consistente.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DomainCellRouter;
 
 impl DomainCellRouter {
-    /// Classifies a Códice `EntityModel` into one of the 8 isolated `HOT_HEAD` cells (`0..=7`)
-    /// based purely on its structural and mathematical capabilities (zero hardcoded entity names).
+    /// Clasifica un `EntityModel` del Códice en una de las 8 celdas aisladas `HOT_HEAD` (`0..=7`)
+    /// en función de sus capacidades estructurales y matemáticas declaradas.
     pub fn classify_model_topology(model: &crate::codice::EntityModel, partition_hint: &str) -> u8 {
         let has_spectral_stream = model.attributes.iter().any(|a| {
             a.math_profile
@@ -124,8 +128,8 @@ impl DomainCellRouter {
         (xxh64(model.entity.as_bytes(), 0x4D42_465F_4345_4C4C) % 6) as u8
     }
 
-    /// Maps any entity type to its isolated `HOT_HEAD` cell (`0..=7`) using the global Códice registry
-    /// if initialized, or deterministic `xxh64` consistent hashing otherwise.
+    /// Asigna cualquier tipo de entidad a su celda aislada `HOT_HEAD` (`0..=7`) consultando el registro global del Códice
+    /// si está inicializado, o aplicando hash consistente `xxh64` en caso contrario.
     pub fn resolve_cell_id(entity_type: &str, partition_hint: &str) -> u8 {
         if let Some(reg) = crate::codice::registry::global_opt() {
             if let Some(model) = reg.get_model(entity_type) {
@@ -135,21 +139,24 @@ impl DomainCellRouter {
         (xxh64(entity_type.as_bytes(), 0x4D42_465F_4345_4C4C) % 6) as u8
     }
 
+    /// Construye la clave canónica en S3 para el archivo manifiesto `HOT_HEAD_c<cell_id>.mbf` de un tenant.
     pub fn s3_hot_head_key(tenant_id: &str, cell_id: u8) -> String {
         format!("tenants/{tenant_id}/head/HOT_HEAD_c{cell_id}.mbf")
     }
 }
 
-/// Committed delta frame inside a `HOT_HEAD_c<k>.mbf` object.
+/// Trama delta confirmada dentro de un objeto `HOT_HEAD_c<k>.mbf`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommittedDeltaFrame {
+    /// Firma de conflicto SSI de 32 bytes de la transacción.
     pub signature: TxConflictSignature,
+    /// Carga útil serializada de la trama delta (comprimida con LZ4 y enmascarada en binario al persistirse en disco).
     pub payload_json: String,
 }
 
 impl CommittedDeltaFrame {
-    /// Encodes a slice of `CommittedDeltaFrame` records into a spec-compliant 64-byte aligned `HOT_HEAD_c<k>.mbf` binary buffer.
-    /// Starts with `MbfHeader` (`"METRIBIN"`), stores 32B `TxConflictSignature` + XOR/LZ4 binary frame payloads, and ends with `MbfFooterTrailer` (`"MBFFOOTR"`).
+    /// Codifica una secuencia de `CommittedDeltaFrame` en un búfer binario `HOT_HEAD_c<k>.mbf` alineado a 64 bytes.
+    /// Inicia con `MbfHeader` (`"METRIBIN"`), almacena `TxConflictSignature` de 32B más cargas comprimidas LZ4 y cierra con `MbfFooterTrailer` (`"MBFFOOTR"`).
     pub fn encode_hot_head_binary(tenant_id: &str, cell_id: u8, frames: &[Self]) -> Vec<u8> {
         let last_epoch = frames.last().map_or(0, |f| f.signature.new_epoch_id);
         let tenant_hash = xxh64(tenant_id.as_bytes(), 0x4D45_5452_4932_3032);
@@ -199,7 +206,7 @@ impl CommittedDeltaFrame {
         buf
     }
 
-    /// Decodes a `HOT_HEAD_c<k>.mbf` binary buffer back into `Vec<CommittedDeltaFrame>`.
+    /// Decodifica un búfer binario `HOT_HEAD_c<k>.mbf` reconstruyendo la lista de `CommittedDeltaFrame`.
     pub fn decode_hot_head_binary(bytes: &[u8]) -> DomainResult<Vec<Self>> {
         if bytes.len() < 128 || bytes.len() % 64 != 0 {
             return Err(DomainError::mbf(
@@ -286,15 +293,18 @@ impl CommittedDeltaFrame {
     }
 }
 
-/// 3-Tier High-Concurrency ACID Write Coordinator over `IMbfObjectStore`.
+/// Coordinador de escritura ACID de alta concurrencia en 3 niveles sobre `IMbfObjectStore`.
 pub struct MbfWriteCoordinator<S: IMbfObjectStore> {
     store: Arc<S>,
     in_flight_coalesce_lock: Mutex<()>,
+    /// Contador atómico de transacciones confirmadas exitosamente.
     pub total_commits: std::sync::atomic::AtomicU64,
+    /// Contador atómico de transacciones rebasadas automáticamente tras un conflicto `HTTP 412` con conjuntos disjuntos.
     pub total_auto_rebases: std::sync::atomic::AtomicU64,
 }
 
 impl<S: IMbfObjectStore> MbfWriteCoordinator<S> {
+    /// Crea un nuevo `MbfWriteCoordinator` respaldado por el almacén de objetos `store`.
     pub fn new(store: Arc<S>) -> Self {
         Self {
             store,
@@ -304,7 +314,7 @@ impl<S: IMbfObjectStore> MbfWriteCoordinator<S> {
         }
     }
 
-    /// Commits a transaction to its domain cell with automatic `CommutativeDeltaAutoRebase` on `HTTP 412`.
+    /// Confirma una transacción en su celda de dominio ejecutando *Auto-Rebase* conmutativo automático ante colisiones `HTTP 412`.
     pub async fn commit_transaction(
         &self,
         tenant_id: &str,
@@ -395,8 +405,8 @@ impl<S: IMbfObjectStore> MbfWriteCoordinator<S> {
         ))
     }
 
-    /// Computes a 64-bit 3D Hilbert/Z-Order Space-Filling Curve coordinate `(d0, d1, d2)`
-    /// for self-healing multidimensional block clustering during compaction.
+    /// Calcula una coordenada de curva de llenado de espacio 3D Hilbert/Z-Order de 64 bits `(d0, d1, d2)`
+    /// para el agrupamiento multidimensional durante la compactación de bloques.
     pub fn hilbert_cluster_key_3d(d0: u32, d1: u32, d2: u32) -> u64 {
         let x = u64::from(d0 & 0x1F_FFFF);
         let y = u64::from(d1 & 0x1F_FFFF);

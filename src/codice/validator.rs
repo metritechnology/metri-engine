@@ -1,10 +1,8 @@
-//! Structural and semantic payload validator against Codice models.
+//! Validador estructural y semántico de payloads JSON frente a los modelos del Códice.
 //!
-//! src/codice/validator.rs
-//! Validador estructural y semántico de payloads JSON contra los modelos Códice.
-//!
-//! # Origin
-//! Reemplaza la funcionalidad de `el stack anterior.clj` y `api.clj` (`validate-payload`) de el stack anterior.
+//! Verifica la presencia de atributos requeridos, membresía en catálogos `enum`
+//! (respetando la directiva `enum_open`), expresiones regulares de formato y
+//! compatibilidad de tipos para proyectar cada campo a su representación `DatomValue`.
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -135,6 +133,7 @@ pub fn validate_payload(
     Ok(attrs)
 }
 
+/// Convierte un valor JSON crudo a su representación tipada `DatomValue` según el `AttrType` del Códice.
 pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValue, DomainError> {
     match attr_type {
         AttrType::String | AttrType::Enum => val

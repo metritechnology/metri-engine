@@ -1,11 +1,4 @@
-//! CedarAuthorizer as an IOP step.
-//!
-//! IopStep wrapper para CedarAuthorizer.
-//!
-//! # Origin
-//! En el stack anterior: Paso 1 del pipeline — :iop/cedar-authorizer
-//!
-//! Conecta con cedar-policy real y realiza evaluación Zero-Trust.
+//! Paso 1 del pipeline IOP (`CedarAuthorizerStep`) — evaluación ABAC Zero-Trust con `cedar-policy`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,6 +24,7 @@ pub struct CedarAuthorizerStep {
 }
 
 impl CedarAuthorizerStep {
+    /// Construye un nuevo `CedarAuthorizerStep` cargando las políticas Cedar estáticas y los adaptadores de sesión y lectura EAV.
     pub fn new(
         valkey_store: Arc<dyn ISessionStore>,
         eav_reader: EavReader,

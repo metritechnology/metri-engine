@@ -1,4 +1,4 @@
-//! Comprehensive 100% coverage test suite for Aegis VIZ caster (`caster.rs`), aggregations (`aggregation.rs`), hierarchy (`hierarchy.rs`), label templates (`label_template.rs`), and AST IR (`ast_ir.rs`).
+//! Suite exhaustiva de pruebas para proyectores de visualización (`caster.rs`), agregaciones, jerarquías, plantillas y AST IR (`ast_ir.rs`).
 
 use serde_json::{json, Value};
 

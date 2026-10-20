@@ -1,25 +1,33 @@
-//! Authorization request DTO and transport adapter.
+//! DTO de petición de autorización (`AuthRequest`) y adaptador de transporte desde `tonic`.
 //!
-//! DTO de petición de autorización y adapter de transporte.
-//!
-//! El core de Cedar no conoce tonic: solo necesita estas cabeceras. El adapter
-//! `from_tonic` vive aquí (capa de transporte del módulo); los tests construyen
-//! el DTO directamente, sin requests sintéticos.
+//! El núcleo de Cedar no acopla con `tonic`: opera únicamente sobre este DTO de cabeceras.
+//! El constructor `from_tonic` extrae los metadatos HTTP/2 en la frontera de transporte,
+//! mientras que las pruebas construyen `AuthRequest` directamente.
 
+/// DTO agnóstico de transporte con las cabeceras requeridas para autenticar y autorizar una petición.
 pub struct AuthRequest<'a> {
+    /// Valor de la cabecera `authorization` (por ejemplo, `Bearer mk_...`).
     pub authorization: Option<&'a str>,
+    /// Valor de la cabecera alternativa de sesión `sid`.
     pub sid: Option<&'a str>,
+    /// Acción solicitada en la cabecera `x-metri-action`.
     pub action: Option<&'a str>,
+    /// Tipo de entidad objetivo indicado en `x-metri-entity-type`.
     pub entity_type: Option<&'a str>,
+    /// Identificador de la entidad objetivo indicado en `x-metri-entity-id`.
     pub entity_id: Option<&'a str>,
+    /// Lista de dominios separados por coma en `x-metri-domains`.
     pub domains: Option<&'a str>,
-    /// Cabeceras del bypass de desarrollo (decidido en la raíz de composición).
+    /// Cabecera `test-tenant` empleada únicamente cuando el bypass de desarrollo está activo.
     pub dev_test_tenant: Option<&'a str>,
+    /// Cabecera `test-user` empleada únicamente cuando el bypass de desarrollo está activo.
     pub dev_test_user: Option<&'a str>,
+    /// Cabecera `test-roles` empleada únicamente cuando el bypass de desarrollo está activo.
     pub dev_test_roles: Option<&'a str>,
 }
 
 impl<'a> AuthRequest<'a> {
+    /// Extrae las cabeceras de autenticación y autorización desde un `tonic::Request<T>`.
     pub fn from_tonic<T>(req: &'a tonic::Request<T>) -> Self {
         let header = |name: &str| req.metadata().get(name).and_then(|v| v.to_str().ok());
         AuthRequest {

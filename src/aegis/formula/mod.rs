@@ -1,13 +1,12 @@
-//! Formula engine — the sandboxed expression language.
+//! Motor de evaluación de fórmulas matemáticas sandboxeado de Aegis.
 //!
-//! Motor de Fórmulas (§05.05)
-//!
-//! Arquitectura SOLID:
-//! `[S]` token, lexer, parser, evaluator, resolver, security, errors — SRP
-//! `[O]` FormulaFunction trait + FunctionRegistry — OCP
-//! `[L]` VariableResolver trait: Oltp/Olap intercambiables — LSP
-//! `[I]` FormulaEvaluator ≠ FormulaCompiler ≠ FormulaValidator — ISP
-//! `[D]` evaluator → VariableResolver trait, FormulaFunction trait — DIP
+//! Implementa un pipeline determinista (`lexer` -> `parser` -> `resolver` -> `evaluator`)
+//! alineado con los principios SOLID:
+//! - `[S]` Responsabilidad única en `token`, `lexer`, `parser`, `evaluator`, `resolver`, `security` y `errors`.
+//! - `[O]` Extensibilidad abierta/cerrada mediante el trait `FormulaFunction` y `FunctionRegistry`.
+//! - `[L]` Sustitución de Liskov en implementaciones del trait `VariableResolver`.
+//! - `[I]` Segregación de interfaces entre validación, parseo y evaluación RPN.
+//! - `[D]` Inversión de dependencias en `FormulaEvaluator` hacia `VariableResolver` y `FunctionRegistry`.
 
 pub mod errors;
 pub mod evaluator;

@@ -1,2 +1,2 @@
-//! Audit infrastructure — the fire-and-forget interceptor implementation.
+//! Infraestructura de auditoría: implementación del interceptor asíncrono fire-and-forget.
 pub mod interceptor;

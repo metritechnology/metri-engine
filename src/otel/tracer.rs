@@ -1,8 +1,8 @@
-//! OpenTelemetry tracer wrapper.
+//! Envoltorio de trazabilidad OpenTelemetry para `metri-engine`.
 //!
-//! wrapper OTel para Metri Engine.
-//! FASE 1: usa tracing puro para structured logging.
-//! FASE 2: integrar opentelemetry-otlp completo con exportador a X-Ray/Grafana.
+//! En Fase 1 opera sobre `tracing` puro emitiendo registros estructurados JSON
+//! compatibles con AWS CloudWatch. En Fase 2 conecta el exportador `opentelemetry-otlp`
+//! hacia AWS X-Ray y Grafana Tempo sin alterar los puntos de instrumentación del motor.
 
 use opentelemetry::trace::TraceContextExt;
 use tracing::Span;

@@ -1,7 +1,6 @@
-//! Test suite entry point for `cedar::mod.rs`.
-// cedar/tests — Suite del módulo cedar, dividida por área.
+//! Punto de entrada de la suite de pruebas unitarias del módulo `cedar`.
 //
-// Cada submodule agrupa los tests de su módulo de producción; los lectores
+// Cada submódulo agrupa los tests de su módulo de producción; los lectores
 // EAV en memoria compartidos viven en `fakes`.
 
 mod authn;

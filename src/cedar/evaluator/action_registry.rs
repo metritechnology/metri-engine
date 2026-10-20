@@ -1,16 +1,7 @@
-//! Cedar action registry — derived from cedar-schema.json.
+//! Registro de acciones y grupos de acciones Cedar derivado de `cedar-schema.json`.
 //!
-//! Registro de acciones Cedar.
-//!
-//! La acción → grupo y la base de entidades de acciones se DERIVAN de
-//! cedar-schema.json (una sola fuente de datos): añadir una acción al schema
-//! ya no exige tocar Rust. La base se compila UNA vez por proceso (OnceLock);
-//! por petición solo se ensamblan User y Resource encima (entities_builder).
-//!
-//! Divergencia conservada a propósito: el schema pone `GET` en el grupo
-//! mutacional, pero el enrutador (`is_mutational_action`) la trata como
-//! analítica desde siempre — cambiar el enrutamiento de GET es una decisión
-//! de producto, no de este refactor.
+//! Compila el esquema y la base de entidades de acción una sola vez por proceso (`OnceLock`),
+//! de modo que por petición únicamente se ensamblen las entidades `User` y `MetriResource`.
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -18,6 +9,7 @@ use std::sync::OnceLock;
 
 use cedar_policy::{Entities, Schema};
 
+/// Contenido fuente de `config/policies/cedar-schema.json` embebido en tiempo de compilación.
 pub const CEDAR_SCHEMA_SRC: &str = include_str!("../../../config/policies/cedar-schema.json");
 
 /// Esquema Cedar del proceso — compilado una sola vez.

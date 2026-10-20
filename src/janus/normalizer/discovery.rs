@@ -1,7 +1,8 @@
-//! Normalizer for Discovery requests.
+//! Normalizador de respuestas para solicitudes de descubrimiento de esquemas (`Discovery`).
 use crate::janus::normalizer::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 
+/// Estrategia de normalización para respuestas de descubrimiento del catálogo Códice.
 pub struct DiscoveryNormalizer;
 
 impl NormalizerStrategy for DiscoveryNormalizer {

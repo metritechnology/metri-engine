@@ -1,10 +1,11 @@
-//! Normalizer for Query requests.
+//! Normalizador de respuestas para consultas analíticas y de visualización (`QueryNormalizer`).
 use crate::janus::normalizer::helpers::{
     derive_semantic_label, infer_viz_type, new_query_id, safe_double,
 };
 use crate::janus::normalizer::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 
+/// Estrategia de normalización para respuestas de consulta (metadatos, paginación, enlaces HATEOAS e inteligencia VIZ).
 pub struct QueryNormalizer;
 
 impl NormalizerStrategy for QueryNormalizer {
@@ -17,13 +18,13 @@ impl NormalizerStrategy for QueryNormalizer {
     }
 }
 
-/// Garantiza :metadata en un chunk de QueryResponse.
+/// Garantiza `:metadata` en un chunk de `QueryResponse`.
 ///
 /// `body.cache` (insertado por el router cuando la caché está activa) se
 /// consume aquí: sus campos pasan a `metadata.cache_hits`/`cache_ttl_seconds`
 /// — los campos ya reservados en el contrato proto — y la clave de
 /// transporte desaparece del body final. Único punto que escribe el metadata
-/// de caché (DRY, §8.1 de PLAN_CACHE_JANUS_DYNAMODB.md).
+/// de caché (DRY).
 fn ensure_metadata(body: &mut Value) {
     let Some(obj) = body.as_object_mut() else {
         return;

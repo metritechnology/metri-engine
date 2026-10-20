@@ -1,7 +1,4 @@
-//! Trigram and romance phonetic index builder for `.mbf` full-text search (Zone 5B).
-//!
-//! Índice Trigram y Fonético para Full-Text Search sobre `.mbf`.
-//! Blueprint: Metri EAV §V & `09_CODICE_METADATA_AND_FUZZY_MATH_ENGINE.md` §5
+//! Constructor del índice de trigramas y claves fonéticas romance para búsqueda de texto completo sobre `.mbf` (Zona 5B).
 
 use crate::codice::registry::AttributeDescriptor;
 use crate::eav::types::datom::Datom;

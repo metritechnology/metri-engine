@@ -1,5 +1,4 @@
-//! Tests for `cedar::evaluator.rs`.
-// cedar/tests/evaluator.rs — PDP Cedar: aislamiento por compañía, grants y CSV.
+//! Pruebas unitarias de `cedar::evaluator`: aislamiento por compañía, grants y exportación CSV.
 
 use crate::cedar::engine::CedarAuthorizer;
 use crate::cedar::evaluator::{step4_analytical, step4_mutational};

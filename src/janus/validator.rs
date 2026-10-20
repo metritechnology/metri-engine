@@ -1,13 +1,7 @@
-//! AST IR contract validator.
+//! Validador estructural y semántico de contratos del AST IR (`validator`).
 //!
-//! Validador de contratos del AST IR.
-//!
-//! # Origin
-//! En el stack anterior: el stack anterior Registry cargado desde resources/schema/janus-ast-ir.edn.
-//! En Rust: validación estructural con serde_json + reglas semánticas.
-//!
-//! "Defensa Inquebrantable": cualquier payload que viole el contrato
-//! es rechazado antes de llegar al motor EAV.
+//! "Defensa Inquebrantable": cualquier payload que viole el contrato es rechazado
+//! antes de llegar al motor EAV.
 
 use serde_json::Value;
 
@@ -123,17 +117,12 @@ pub fn validate_transaction_request(payload: &Value) -> Result<(), DomainError> 
     })?;
 
     // tenant_id obligatorio
-    let tenant_id = obj
-        .get("tenant_id")
-        .or_else(|| obj.get("tenant-id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let tenant_id = obj.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("");
     validate_tenant(tenant_id)?;
 
     // entity_type obligatorio
     let entity_type = obj
         .get("entity_type")
-        .or_else(|| obj.get("entity-type"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
     validate_entity_type(entity_type)?;

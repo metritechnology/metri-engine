@@ -1,7 +1,9 @@
-//! gRPC composition root — dependency wiring for the services.
+//! Semilla de arranque (`bootstrap`) del tenant maestro y cuentas de sistema.
 //!
-//! Construye las dependencias concretas (cliente DynamoDB, canales de
-//! escritura, registry del Códice) y las inyecta en los servicios gRPC.
+//! Verifica de forma idempotente si el almacén OLTP carece de usuarios en el tenant
+//! `system` y, cuando las variables `METRI_BOOTSTRAP_MASTER_*` están presentes,
+//! crea el tenant `system`, los roles `role_super_master` y `system-bff`, y los
+//! usuarios `usr_master` y `usr_system_bff`, limpiando después los secretos de memoria.
 use crate::aegis::oltp::executor::OltpExecutor;
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::janus_router::router::IWriteChannel;

@@ -1,6 +1,4 @@
-//! Reaper of reservations nobody reconciled.
-//!
-//! Quien recoge las reservas que nadie concilió.
+//! Recolector periódico de reservas de cuota vencidas (`sweeper`).
 //!
 //! Sustituye al recolector que vivía dentro de `QuotaServiceImpl` recorriendo su
 //! propio `HashMap`. La diferencia no es de forma: aquel solo veía las reservas
@@ -57,6 +55,7 @@ pub struct SweepReport {
 }
 
 impl SweepReport {
+    /// Devuelve el total de reservas inspeccionadas en la vuelta de barrido.
     pub fn touched(&self) -> usize {
         self.refunded + self.abandoned + self.skipped + self.failed
     }
@@ -182,6 +181,7 @@ pub fn spawn(store: Arc<dyn ReservationStore>, counter: Arc<dyn QuotaCounter>) {
     spawn_with_period(store, counter, SWEEP_PERIOD);
 }
 
+/// Lanza el barrido periódico con un intervalo personalizado `period`.
 pub fn spawn_with_period(
     store: Arc<dyn ReservationStore>,
     counter: Arc<dyn QuotaCounter>,

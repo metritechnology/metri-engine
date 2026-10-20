@@ -1,65 +1,63 @@
-//! metri-engine — the data engine of the metri CMMS/BI platform.
+//! `metri-engine` — Motor de datos HTAP unificado de la plataforma Metri (CMMS / BI / IoT).
 //!
-//! Motor de datos 100 % Rust de la plataforma metri: una única Lambda ARM64
-//! (`provided.al2023`) que expone un servidor gRPC (Tonic) y unifica en un
-//! solo proceso el canal transaccional y el analítico sobre **Metri Vortex (`.mbf`)**:
+//! Motor de datos 100 % Rust desplegado como una única función AWS Lambda ARM64
+//! (`provided.al2023`, binario `bootstrap`) que expone un servidor gRPC (Tonic) y
+//! unifica en un solo proceso el canal transaccional ACID y el canal analítico
+//! vectorizado sobre **Metri Vortex (`.mbf`)**:
 //!
 //! - **HTAP Unificado (`.mbf`)** — almacenamiento binario columnar y transaccional
-//!   sobre S3 con caché NVMe en `/tmp` y `MbfStorageClient` en memoria, con datoms
-//!   inmutables (EAVT/AEVT/AVET/VAET), transacciones ACID, full-text search y
-//!   ejecución analítica vectorizada sin compilación SQL ni motores externos.
-//! - **Seguridad** — autorización ABAC embebida (Cedar), aislamiento por
-//!   tenant fail-closed, cifrado por tenant (AES-256-GCM + HKDF) y censura
-//!   zero-trust del tenant maestro.
-//! - **Cuotas** — ledger atómico por tenant con reservas para consumo de IA.
+//!   sobre Amazon S3 con caché NVMe en `/tmp` y `MbfStorageClient` en memoria, con datoms
+//!   inmutables (EAVT/AEVT/AVET/VAET), transacciones ACID por escritura condicional (`ETag`),
+//!   búsqueda híbrida (trigramas, difusa y vectorial) y ejecución analítica vectorizada
+//!   sin compilación SQL ni motores externos.
+//! - **Seguridad Zero-Trust** — autorización ABAC embebida (Cedar Policy), aislamiento por
+//!   tenant fail-closed (`TenantGuard`), autenticación HMAC en tiempo constante y censura
+//!   del tenant maestro (`system`).
+//! - **Cuotas Atómicas** — libro mayor (`QuotaLedger`) con autoridad atómica por tenant y
+//!   reservas de consumo para agentes de IA.
 //!
-//! # Architecture
+//! # Arquitectura General
 //!
 //! ```text
 //!   clientes gRPC (metri-app · system-bff · Metri Q Assistant)
-//!        │  interceptors: HMAC · sesión · Cedar (fail-closed)
-//!        ├─ janus ──────── read path ───▶ aegis (mbf/oltp) ──▶ eav / mbf (S3 + NVMe)
-//!        ├─ janus_router ─ write path ──▶ eav (transact) ───▶ mbf · outbox ▶ eda
+//!        │  interceptores: HMAC · sesión · Cedar (fail-closed)
+//!        ├─ janus ──────── read path ───▶ aegis (mbf/oltp/formula) ──▶ eav / mbf (S3 + NVMe)
+//!        ├─ janus_router ─ write path ──▶ eav (transact) ────────────▶ mbf · outbox ▶ eda
 //!        └─ iop ────────── ingesta ─────▶ cedar → quota → janus_router
 //!              codice (esquemas SSOT) · quota (ledger) · infrastructure (AWS)
 //! ```
 //!
-//! # Modules
+//! # Mapa de Módulos
 //!
 //! | Módulo | Rol |
 //! |---|---|
-//! | [`mbf`] | Motor binario HTAP unificado Metri Vortex (`.mbf`): formato columnar, cifrado, S3 CAS y storage en memoria |
-//! | [`janus`] | Read path: queries → AST IR en FlatBuffers, agregaciones, multi-series, FTS |
-//! | [`janus_router`] | Write path: routing transaccional `.mbf`, sagas (`scheduled_job`), ULIDs monotónicos |
-//! | [`aegis`] | Ejecutores `.mbf`/OLTP sobre AST IR + motor de fórmulas sandboxeado |
+//! | [`mbf`] | Motor binario HTAP unificado Metri Vortex (`.mbf`): formato de 64B, 8 zonas físicas, transacciones MVCC/CAS y almacenamiento |
+//! | [`janus`] | Camino de lectura (Read Path): normalización, validación, selección de plan, compilación a AST IR en FlatBuffers y agregación |
+//! | [`janus_router`] | Camino de escritura (Write Path): enrutamiento transaccional `.mbf`, sagas declarativas (`scheduled_job`) y ULIDs monotónicos |
+//! | [`aegis`] | Ejecutores `.mbf` y OLTP sobre AST IR + motor de fórmulas matemáticas sandboxeado |
 //! | [`eav`] | Motor de datoms inmutables sobre `.mbf`: `types`, `reader`, `writer` y `fts` |
-//! | [`codice`] | Registro SSOT de los modelos JSON (`config/models/`) |
-//! | [`cedar`] | Autorización ABAC (Cedar Policy), cache de principals |
-//! | [`quota`] | Cuotas atómicas por tenant: ledger, reservas IA, sweeper |
-//! | [`iop`] | Pipeline de ingesta por pasos: Cedar → Quota → Janus |
-//! | [`eda`] | Eventos: outbox, fault detection (`sherlog`), routing EventBridge/SQS |
+//! | [`codice`] | Registro SSOT de los 60 modelos JSON (`config/models/`): coerción, validación, perfiles matemáticos y secuencias |
+//! | [`cedar`] | Autorización ABAC Zero-Trust (Cedar Policy), grafo de principal y cachés de sesión |
+//! | [`quota`] | Cuotas atómicas por tenant: resolución, libro mayor (`QuotaLedger`), reservas IA y `sweeper` |
+//! | [`iop`] | Pipeline de orquestación de ingesta por pasos: Cedar → Quota → Janus |
+//! | [`eda`] | Arquitectura orientada a eventos: drenaje de outbox y reglas de ruteo (`moira`) |
 //! | [`grpc`] | Servidor gRPC/Tonic-Web (`MetriService`, `MoiraRoutingService`, `QuotaService`, `AgentConfigService`) |
-//! | [`temporal`] | Primitivas temporales timezone-aware |
-//! | [`infrastructure`] | Adaptadores AWS SDK (S3, SQS, EventBridge), sesiones HMAC y auditoría |
-//! | [`application`] | Puertos de aplicación (DIP) |
-//! | [`domain`] | Errores canónicos, eventos de dominio, protocolos |
-//! | [`otel`] | Trazas OpenTelemetry (OTLP) |
+//! | [`temporal`] | Primitivas temporales canónicas conscientes de zona horaria (`chrono-tz`) |
+//! | [`infrastructure`] | Adaptadores AWS SDK (S3, SQS, EventBridge), sesiones HMAC, `TenantGuard` y auditoría |
+//! | [`application`] | Puertos de aplicación (Principio de Inversión de Dependencias — DIP) |
+//! | [`domain`] | Errores canónicos (`DomainError`/`ErrorCatalog`), eventos de dominio y protocolos |
+//! | [`otel`] | Trazas distribuidas OpenTelemetry (OTLP) |
 //!
-//! # Origin
+//! # Documentación Unificada
 //!
-//! Evolución nativa en Rust hacia el motor binario unificado `.mbf`.
-//! Índice de la documentación de referencia generada en `docs/reference/`.
-//!
-//! # Documentation
-//!
-//! `cargo doc --no-deps` genera la referencia completa y `cargo test --doc`
-//! ejecuta los ejemplos.
+//! El índice maestro de la documentación arquitectónica, guías, componentes y referencia
+//! vive en `docs/README.md` y la referencia autogenerada en `docs/05-referencia/`.
+//! `cargo doc --no-deps` genera la referencia de API del crate y `cargo test --doc`
+//! verifica los ejemplos.
 
-// Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
-// unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
-// invariantes documentadas en scripts/dev/result_pattern_allowlist.json, cada
-// una con su #[allow] y comentario. Bajo cfg(test) se desactiva: los tests
-// usan unwrap/expect libremente.
+// Cerradura final del patrón Result: prohibido unwrap/expect/panic en código
+// no-test. Los únicos sitios permitidos son las invariantes documentadas en
+// scripts/dev/result_pattern_allowlist.json. Bajo cfg(test) se desactiva.
 #![cfg_attr(
     not(test),
     deny(

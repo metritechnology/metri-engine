@@ -1,7 +1,9 @@
-//! Moira emitter — async event dispatch decoupling the write path.
+//! Emisor Moira (`MoiraEmitterImpl`) — despacho asíncrono de eventos Outbox que desacopla el Write Path.
 //!
-//! MoiraEmitterImpl
-//! Transmite eventos asíncronos para desacoplar procesos del Write Path.
+//! Drena eventos `outbox_event` en estado `PENDING` o `FAILED` elegibles, realiza el reclamo
+//! transaccional a `PROCESSING`, los publica en SQS FIFO con deduplicación determinista y
+//! gestiona confirmaciones (`DELIVERED`), reintentos con *backoff* exponencial y recuperación
+//! de eventos huérfanos.
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -18,8 +20,10 @@ use crate::eav::types::datom::DatomValue;
 use crate::eav::writer::{EavWriter, TransactOp, TransactPayload};
 use crate::iop::core::{IopContext, MoiraEmitter};
 
+/// Puerto de lectura puntual EAV para recuperar atributos vigentes de una entidad `outbox_event`.
 #[async_trait]
 pub trait EavPullReader: Send + Sync {
+    /// Recupera el mapa de atributos hidratados de una entidad para un `tenant_id` y `entity_id`.
     async fn pull(
         &self,
         tenant_id: &str,
@@ -28,16 +32,20 @@ pub trait EavPullReader: Send + Sync {
     ) -> Result<HashMap<String, DatomValue>, DomainError>;
 }
 
+/// Puerto de escritura transaccional EAV para transicionar estados de `outbox_event`.
 #[async_trait]
 pub trait EavTransacter: Send + Sync {
+    /// Ejecuta una transacción ACID con el `TransactPayload` proporcionado.
     async fn transact(
         &self,
         payload: TransactPayload,
     ) -> Result<crate::eav::writer::TransactResult, DomainError>;
 }
 
+/// Puerto de consulta OLTP para listar eventos `outbox_event` por estado y ventana temporal.
 #[async_trait]
 pub trait OltpQueryRunner: Send + Sync {
+    /// Ejecuta una consulta OLTP expresada como AST IR JSON dentro del ámbito del `tenant_id`.
     async fn run_oltp_query(&self, tenant_id: &str, ast_ir: &Value) -> Result<Value, DomainError>;
 }
 
@@ -70,6 +78,7 @@ impl OltpQueryRunner for OltpExecutor {
     }
 }
 
+/// Implementación productiva del drenador de Transactional Outbox hacia SQS FIFO.
 pub struct MoiraEmitterImpl<R = Arc<EavReader>, W = Arc<EavWriter>, O = OltpExecutor> {
     eav_reader: R,
     eav_writer: W,
@@ -83,6 +92,7 @@ where
     W: EavTransacter,
     O: OltpQueryRunner,
 {
+    /// Construye una nueva instancia de `MoiraEmitterImpl` con sus adaptadores EAV, OLTP y SQS.
     pub fn new(eav_reader: R, eav_writer: W, sqs_bus: Arc<dyn ISqsBus>, oltp_executor: O) -> Self {
         Self {
             eav_reader,

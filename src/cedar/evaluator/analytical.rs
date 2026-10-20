@@ -1,11 +1,8 @@
-//! Analytical path — grants as per-domain boundaries.
+//! Camino analítico del PDP Cedar: traducción de grants a perímetros por dominio.
 //!
-//! Camino analítico (PDP).
-//! Consultas: sin motor Cedar — los grants del principal se traducen a
-//! boundaries por dominio (`query_scope` + perímetros), que los handlers
-//! aplican como FLS. Auto-autorización acotada a dominios de sistema para
-//! dejar pasar el intercept: el chequeo de servicio (SystemSecurityRules)
-//! impone el PermissionDenied con el mensaje canónico.
+//! Convierte los grants de los roles del principal en fronteras de consulta (`query_scope`,
+//! `permitted_locations`, `permitted_assets`) por cada dominio solicitado, que los handlers
+//! aplican como filtros de fila y columna (RLS/FLS).
 
 use crate::cedar::evaluator::grants::grant_allows_action;
 use crate::cedar::rules::is_master_tenant;

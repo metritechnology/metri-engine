@@ -1,30 +1,41 @@
-//! Datom and DatomValue — the atomic unit of the EAV system.
-//!
-//! # Origin
-//! [NUEVO — reemplaza: src/metri/infrastructure/datahike.clj]
-//! src/eav/types/datom.rs
-//! Struct Datom + enum DatomValue — unidad atómica del sistema EAV.
-//! Diseñado según Metri EAV - OLPT.md §I
+//! Definición de `Datom` y `DatomValue` — la unidad atómica inmutable del modelo EAV sobre `.mbf`.
 
 use crate::eav::types::value_type::ValueType;
 use serde::{Deserialize, Serialize};
 
-/// Valor tipado de un Datom.
-/// Mapea 1:1 con los 12 tipos del sistema EAV (ValueType).
+/// Valor tipado de un `Datom`.
+/// Mapea de forma biunívoca con los 12 tipos de valor del sistema EAV (`ValueType`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DatomValue {
+    /// Marcador de valor nulo o retracción lógica.
     Null,
+    /// Valor lógico booleano (`true` o `false`).
     Bool(bool),
+    /// Entero con signo de 64 bits (`i64`).
     Long(i64),
+    /// Número en punto flotante de doble precisión IEEE 754 (`f64`).
     Double(f64),
+    /// Cadena de texto UTF-8.
     Str(String),
+    /// Identificador universal único (UUID o ULID en representación textual).
     Uuid(String),
-    Ref(u64), // entity_id de la entidad referenciada
+    /// Referencia numérica (`u64`) hacia otra entidad del grafo.
+    Ref(u64),
+    /// Colección ordenada de cadenas de texto (`Vec<String>`).
     Array(Vec<String>),
+    /// Secuencia opaca de bytes binarios (`Vec<u8>`).
     Bytes(Vec<u8>),
+    /// Entero de alta precisión con signo de 128 bits (`i128`), usado en contadores y secuencias.
     BigInt(i128),
-    Instant(i64), // epoch ms
-    Geo { lat: f64, lon: f64 },
+    /// Marca de tiempo en milisegundos desde la época Unix (`i64`).
+    Instant(i64),
+    /// Coordenada geográfica WGS-84 compuesta por latitud y longitud.
+    Geo {
+        /// Latitud en grados decimales WGS-84 (`[-90.0, 90.0]`).
+        lat: f64,
+        /// Longitud en grados decimales WGS-84 (`[-180.0, 180.0]`).
+        lon: f64,
+    },
 }
 
 impl DatomValue {
@@ -140,11 +151,11 @@ impl Datom {
     }
 
     /// Genera el Partition Key para el índice secundario AEVT (por tipo de entidad/atributo).
-    /// Formato: "T#<tenant_id>#A#<attr_name>" (o segmentado por tipo si es entity_type)
+    /// Formato: "T#<tenant_id>#A#<attr_name>" (o segmentado por tipo si es entity/type)
     pub fn aevt_pk(&self) -> String {
-        if self.attr_name == "entity_type" {
+        if self.attr_name == crate::eav::writer::system_attrs::TYPE_NAME {
             if let DatomValue::Str(val) = &self.value {
-                return format!("T#{}#A#entity_type#{}", self.tenant_id, val);
+                return format!("T#{}#A#{}#{}", self.tenant_id, self.attr_name, val);
             }
         }
         format!("T#{}#A#{}", self.tenant_id, self.attr_name)
@@ -195,5 +206,15 @@ mod tests {
             1000,
         );
         assert_eq!(ref_datom.vaet_pk(), Some("T#tenant-1#V#42".to_string()));
+
+        let type_datom = Datom::assert(
+            "tenant-1",
+            "entity-123",
+            crate::eav::writer::system_attrs::TYPE_NAME,
+            crate::eav::writer::system_attrs::TYPE_ID,
+            DatomValue::Str("asset".to_string()),
+            1000,
+        );
+        assert_eq!(type_datom.aevt_pk(), "T#tenant-1#A#entity/type#asset");
     }
 }

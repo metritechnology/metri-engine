@@ -1,17 +1,11 @@
-//! OLTPChannel — ACID channel via the EAV engine.
+//! Canal OLTP (`OltpChannel`) — escritura transaccional ACID sobre el motor EAV `.mbf`.
 //!
-//! OLTPChannel — Canal ACID vía EAV (DynamoDB).
-//!
-//! # Origin
-//! Responsabilidades (igual que OLTPChannel el stack anterior):
-//! 1. Validar payload contra el Códice → HashMap<attr, DatomValue>
-//! 2. Enriquecer con auto-generados (ULID, meta/created_at, meta/updated_at)
-//! 3. Coerción de tipos numéricos (epoch/number strings → DatomValue correcto)
-//! 4. TX ACID via EavWriter (entidad principal)
-//! 5. Soporte de BULK: procesamiento de N registros con cortocircuito en error
-//!
-//! Reemplaza d/transact de Datahike con TransactWriteItems DynamoDB.
-//! Sin imports directos de negocio — todo llega en IopContext o inyectado.
+//! Responsabilidades:
+//! 1. Validar el payload contra el Códice → `HashMap<String, DatomValue>`.
+//! 2. Enriquecer con atributos autogenerados (ULID, `meta/created_at`, `meta/updated_at`).
+//! 3. Coerción de tipos escalares, referencias y vectores hacia `DatomValue`.
+//! 4. Ejecución de la transacción ACID vía `EavWriter` (incluyendo proyecciones Saga y Outbox).
+//! 5. Soporte de `BulkIngest`: procesamiento en bloque con cortocircuito determinista en error.
 
 use std::collections::HashMap;
 
@@ -32,16 +26,16 @@ use crate::janus_router::ulid;
 
 // ── OltpChannel ───────────────────────────────────────────────────────────────
 
-/// Canal de escritura ACID via EAV/DynamoDB.
+/// Canal de escritura transaccional ACID respaldado por `EavWriter` sobre almacenamiento `.mbf`.
 pub struct OltpChannel {
     writer: EavWriter,
-    /// Puerto de eventos del contrato metri-contracts (DIP). `new` compone el
-    /// adaptador EventBridge detached; `new_with_publisher` permite fakes en
-    /// tests y un futuro publisher por outbox sin tocar este canal.
+    /// Puerto de eventos del contrato `DomainEventPublisher` (DIP). `new` compone el
+    /// adaptador EventBridge desacoplado; `new_with_publisher` permite dobles de prueba.
     event_publisher: std::sync::Arc<dyn crate::application::ports::DomainEventPublisher>,
 }
 
 impl OltpChannel {
+    /// Crea un canal OLTP con el publicador de eventos de dominio por defecto (`DetachedEventBridgePublisher`).
     pub fn new(writer: EavWriter) -> Self {
         info!("[OltpChannel] Canal OLTP EAV activo");
         Self {
@@ -52,6 +46,7 @@ impl OltpChannel {
         }
     }
 
+    /// Crea un canal OLTP inyectando un publicador de eventos explícito (para pruebas o adaptadores personalizados).
     pub fn new_with_publisher(
         writer: EavWriter,
         event_publisher: std::sync::Arc<dyn crate::application::ports::DomainEventPublisher>,

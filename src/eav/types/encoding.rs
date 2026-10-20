@@ -1,15 +1,9 @@
-//! Binary sort-key builders for the four EAV indexes.
+//! Constructores y decodificadores de Sort Keys (`SK`) binarios para los cuatro índices EAV (`EAVT`, `AEVT`, `AVET`, `VAET`) sobre `.mbf`.
 //!
-//! # Origin
-//! [NUEVO — sin equivalente directo en el stack anterior]
-//! src/eav/types/encoding.rs
-//! Builders de Sort Key binario para los 4 índices EAV.
-//! Diseñado según Metri EAV - OLPT.md §II.3 y §II.4
-//!
-//! El SK binario garantiza:
-//! 1. memcmp-compatible ordering — DynamoDB ordena por bytes nativos
-//! 2. Zero-deserialization para range queries (begins_with, BETWEEN)
-//! 3. Todos los tipos numéricos son comparables correctamente
+//! El `SK` binario garantiza:
+//! 1. Ordenamiento lexicográfico compatible con `memcmp` en memoria y bloques `.mbf`.
+//! 2. Cero deserialización en consultas por prefijo o rango (`begins_with`, `BETWEEN`).
+//! 3. Preservación del orden numérico real en enteros con signo (`i64`, `i128`) y flotantes IEEE 754 (`f64`).
 
 use crate::eav::types::datom::DatomValue;
 
@@ -21,6 +15,8 @@ use crate::eav::types::datom::DatomValue;
 // Esto permite: "Dame todos los datoms del atributo X de la entidad Y en orden cronológico"
 // con un solo Query + ScanIndexForward=true.
 
+/// Construye el Sort Key (`SK`) binario de 11 bytes fijos para el índice primario `EAVT`:
+/// `[attr_id: u16 big-endian][tx_id: u64 big-endian][op: u8]`.
 pub fn build_eavt_sk(attr_id: u16, tx_id: u64, op: bool) -> Vec<u8> {
     let mut buf = Vec::with_capacity(11);
     buf.extend_from_slice(&attr_id.to_be_bytes()); // 2 bytes
@@ -29,12 +25,11 @@ pub fn build_eavt_sk(attr_id: u16, tx_id: u64, op: bool) -> Vec<u8> {
     buf
 }
 
-/// Decodifica el SK binario canónico producido por [`build_eavt_sk`]:
-/// `[attr_id: u16 | tx_id: u64 | op: u8]`.
+/// Decodifica el `SK` binario canónico de 11 bytes producido por `build_eavt_sk`:
+/// `(attr_id, tx_id, op)`.
 ///
-/// Retorna `None` si la longitud no es la canónica (11 bytes) — el llamador
-/// decide si saltar el ítem (`continue`) o descartar la página. Sin `unwrap`:
-/// la decodificación es total (PLAN_PATRON_RESULT.md, regla R2).
+/// Retorna `None` si la longitud del slice no es exactamente 11 bytes, garantizando
+/// decodificación total libre de pánicos.
 pub fn decode_eavt_sk(sk: &[u8]) -> Option<(u16, u64, bool)> {
     if sk.len() != 11 {
         return None;
@@ -44,14 +39,12 @@ pub fn decode_eavt_sk(sk: &[u8]) -> Option<(u16, u64, bool)> {
     Some((attr_id, tx_id, sk[10] != 0))
 }
 
-/// Prefijo de SK para buscar todos los datoms de un atributo específico.
-/// Usado en Query: SK begins_with [attr_id: 2B]
+/// Prefijo de `SK` de 2 bytes (`attr_id` en big-endian) para consultar todos los datoms de un atributo específico en `EAVT`.
 pub fn eavt_sk_attr_prefix(attr_id: u16) -> Vec<u8> {
     attr_id.to_be_bytes().to_vec()
 }
 
-/// SK para buscar la versión de un atributo as-of un tx_id.
-/// Usado en Query: SK <= `[attr_id][tx_id][0xFF]`, ScanIndexForward=false, Limit=1
+/// Construye la cota superior de `SK` para consultar el estado histórico de un atributo en un corte temporal `as_of_tx`.
 pub fn eavt_sk_as_of(attr_id: u16, as_of_tx: u64) -> Vec<u8> {
     build_eavt_sk(attr_id, as_of_tx, true)
 }
@@ -62,6 +55,7 @@ pub fn eavt_sk_as_of(attr_id: u16, as_of_tx: u64) -> Vec<u8> {
 //
 // Permite: "Dame todos los entity_ids que tienen el atributo X (AEVT scan por tipo)"
 
+/// Construye el Sort Key (`SK`) binario para el índice secundario `AEVT`, prefijando la longitud del `entity_id` y el `tx_id` en big-endian.
 pub fn build_aevt_sk(entity_id: &str, tx_id: u64) -> Vec<u8> {
     let eid_bytes = entity_id.as_bytes();
     let mut buf = Vec::with_capacity(eid_bytes.len() + 9);
@@ -175,6 +169,8 @@ pub fn avet_sk_prefix(value: &DatomValue) -> Vec<u8> {
 //
 // Permite: "Dame todos los entities que referencian a este entity_id (grafo inverso)"
 
+/// Construye el Sort Key (`SK`) binario para el índice inverso de referencias `VAET`:
+/// `[attr_id: u16 big-endian][source_entity_id: UTF-8]`.
 pub fn build_vaet_sk(attr_id: u16, source_entity_id: &str) -> Vec<u8> {
     let eid_bytes = source_entity_id.as_bytes();
     let mut buf = Vec::with_capacity(2 + eid_bytes.len());

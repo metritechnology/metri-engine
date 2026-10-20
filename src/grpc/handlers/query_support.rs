@@ -1,4 +1,4 @@
-//! Query support — proto/FBS filter translation and shared helpers.
+//! Soporte de consultas: traducción de filtros JSON a FlatBuffers/Protobuf, enmascaramiento FLS y ensamblado de `QueryResponse`.
 // Handlers del MetriGrpcService — fase 2: service.rs delega, aquí vive el cuerpo.
 
 use crate::grpc::translator;

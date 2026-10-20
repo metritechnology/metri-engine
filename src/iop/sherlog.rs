@@ -1,6 +1,4 @@
-//! Sherlog — the EDA fault pipeline.
-//!
-//! Módulo Sherlog — Pipeline EDA de Errores (Módulo V).
+//! Módulo Sherlog (`sherlog`) — pipeline EDA de gestión, persistencia y notificación de fallos de dominio.
 //!
 //! # Origin
 //! En el stack anterior: IFaultNotifier protocol + EventBridgeNotifier + process-fault!
@@ -28,9 +26,13 @@ use aws_sdk_eventbridge::types::PutEventsRequestEntry;
 /// Nivel de severidad del fallo de dominio.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FaultSeverity {
+    /// Evento informativo; solo se registra en logs sin disparar alertas externas.
     Info,
+    /// Advertencia operativa; se persiste como `domain_fault` y notifica al bus de eventos.
     Warning,
+    /// Error de ejecución o validación de negocio que requiere trazabilidad en el Fault Bus.
     Error,
+    /// Fallo crítico de plataforma con máxima prioridad de alerta.
     Fatal,
 }
 
@@ -73,6 +75,7 @@ pub struct EventBridgeNotifier {
 }
 
 impl EventBridgeNotifier {
+    /// Construye e inicializa un `EventBridgeNotifier` apuntando al bus de eventos especificado.
     pub async fn new(bus_name: impl Into<String>) -> Self {
         let bus_name = bus_name.into();
         let region_provider =

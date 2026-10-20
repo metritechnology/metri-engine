@@ -1,12 +1,8 @@
-//! Auto-generated attribute injector — sequences and random Base36 codes.
+//! Inyector de atributos autogenerados (secuencias ACID y códigos Base36 aleatorios).
 //!
-//! Inyector de atributos auto-generados.
-//!
-//! # Origin
-//! En el stack anterior: (inject! db-conn tenant-guard schema tenant-id payload)
-//! con reducción Railway sobre atributos :auto_generate.
-//! En Rust:    inject() — función pura excepto por los efectos de I/O
-//! de sequence/next (DynamoDB) y base36/generate (CSPRNG).
+//! Evalúa los descriptores con configuración `auto_generate` dentro del `EntityModel`
+//! y enriquece el payload de entrada antes de la persistencia transaccional,
+//! respetando valores preexistentes e integrando la política de numeración del tenant.
 
 use serde_json::{Map, Value};
 
@@ -19,7 +15,14 @@ use crate::mbf::storage::DynamoClient;
 /// Estrategia de auto-generación de un atributo.
 #[derive(Debug, Clone)]
 pub enum AutoGenStrategy {
-    StochasticBase36 { prefix: String, length: usize },
+    /// Generación estocástica en alfabeto Base36 con prefijo fijo y longitud de sufijo aleatorio.
+    StochasticBase36 {
+        /// Prefijo literal antepuesto al código aleatorio generado (ej. `"A-"`).
+        prefix: String,
+        /// Cantidad de caracteres Base36 aleatorios a generar tras el prefijo.
+        length: usize,
+    },
+    /// Numeración secuencial atómica gobernada por contador ACID y ámbito.
     Sequential(SeqAttrConfig),
 }
 
@@ -81,11 +84,13 @@ fn find_scope_field(model: &EntityModel) -> Option<&str> {
 
 /// Contexto del ámbito de secuenciación, resuelto por el canal OLTP (que sí
 /// tiene lectura EAV): el `tag` de la ubicación propia —el segmento del
-/// número, 'L-K92MXA'— y la cadena de ubicaciones ancestro, de la más
+/// número, `'L-K92MXA'`— y la cadena de ubicaciones ancestro, de la más
 /// cercana a la raíz, para heredar el contador (`nearest_registered`).
 #[derive(Debug, Clone, Default)]
 pub struct ScopeContext {
+    /// Etiqueta o código de segmento de la ubicación propia que se interpola en el código formateado.
     pub segment: Option<String>,
+    /// Lista ordenada de identificadores de ámbitos ancestro desde el padre inmediato hasta la raíz.
     pub ancestors: Vec<String>,
 }
 

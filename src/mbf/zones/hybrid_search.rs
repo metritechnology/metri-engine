@@ -1,4 +1,4 @@
-//! Zone 5B domain-agnostic 6-layer hybrid search engine: Levenshtein automaton, SymSpell O(1), N-gram BM25F, romance & double phonetic Metaphone, RaBitQ vector search, and H3 spatial index.
+//! Zona 5B del formato MBF: motor de búsqueda híbrida multimodal de 6 capas (autómata de Levenshtein, SymSpell $O(1)$, N-gramas BM25F, fonética romance y Double Metaphone, búsqueda vectorial RaBitQ e índice espacial H3).
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -8,22 +8,24 @@ use crate::domain::protocols::DomainResult;
 use crate::eav::fts::searcher::damerau_levenshtein;
 use crate::mbf::format::{pad_to_64, read_len_prefixed_str, write_len_prefixed_str};
 
-/// Zone 5B binary magic (`"MBFZ5BHS"`).
+/// Bytes mágicos de la Zona 5B (`"MBFZ5BHS"`).
 pub const MBF_ZONE5B_MAGIC: [u8; 8] = *b"MBFZ5BHS";
 
-/// Declarative, domain-agnostic synonym thesaurus (`SynonymThesaurus`, §5.1 Layer 4).
-/// Contains zero hardcoded domain words in the engine; equivalence sets are injected from Códice terminology or runtime configuration.
+/// Tesauro declarativo de sinónimos agnóstico al dominio (`SynonymThesaurus`, Capa 4).
+///
+/// No contiene vocabulario de negocio acoplado en el motor; los grupos de equivalencia se inyectan desde los recursos terminológicos del Códice o la configuración en tiempo de ejecución.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SynonymThesaurus {
     equivalences: HashMap<String, Vec<String>>,
 }
 
 impl SynonymThesaurus {
+    /// Crea un tesauro de sinónimos vacío.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Registers a symmetric equivalence group of terms (all terms in `group` expand to one another).
+    /// Registra un grupo de equivalencia simétrica de términos (todos los términos en `group` se expanden mutuamente entre sí).
     pub fn register_equivalence_group(&mut self, group: &[&str]) {
         let normalized: Vec<String> = group
             .iter()
@@ -40,7 +42,7 @@ impl SynonymThesaurus {
         }
     }
 
-    /// Builds a `SynonymThesaurus` from a slice of equivalence groups.
+    /// Construye un `SynonymThesaurus` a partir de una lista de grupos de equivalencia.
     pub fn from_groups(groups: &[&[&str]]) -> Self {
         let mut th = Self::new();
         for g in groups {
@@ -49,35 +51,45 @@ impl SynonymThesaurus {
         th
     }
 
-    /// Expands `token` using the registered equivalence groups, returning an empty slice if no synonyms are registered.
+    /// Expande `token` usando los grupos de equivalencia registrados, devolviendo una rebanada vacía si no tiene sinónimos asociados.
     pub fn expand(&self, token: &str) -> &[String] {
         let key = MbfHybridSearchIndex::strip_accents_and_lower(token);
         self.equivalences.get(&key).map_or(&[], Vec::as_slice)
     }
 }
 
-/// Weighted multi-field document indexed in Zone 5B, driven by Códice `FuzzySearchProfile` `bm25_field_boost` weights.
+/// Documento multicampo ponderado indexado en la Zona 5B, gobernado por los pesos `bm25_field_boost` de `FuzzySearchProfile` del Códice.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexedEntityDocument {
+    /// Identificador único de la entidad documentada.
     pub entity_id: String,
+    /// Identificador numérico de fila dentro del bloque MBF.
     pub row_id: u32,
+    /// Código o referencia alfanumérica de la entidad.
     pub code: String,
+    /// Título o nombre principal de la entidad.
     pub title: String,
+    /// Descripción textual detallada o cuerpo documental.
     pub description: String,
+    /// Vector de incrustación semántica (*embedding*) opcional en precisión simple (`f32`).
     pub embedding: Option<Vec<f32>>,
+    /// Coordenadas geográficas WGS-84 opcionales `(latitud, longitud)` en grados decimales.
     pub coordinates_wgs84: Option<(f64, f64)>, // (latitude, longitude)
 }
 
-/// 1-bit Asymmetric Quantized Vector (`RaBitQ` compact representation) for hardware `count_ones` popcnt similarity.
+/// Vector cuantizado asimétrico de 1 bit (`RaBitQ`) para similitud angular acelerada por hardware mediante `count_ones` (`POPCNT`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RaBitQVector {
+    /// Palabras de 64 bits que empaquetan los signos cuantizados de cada dimensión del vector.
     pub packed_bits: Vec<u64>,
+    /// Norma euclidiana original ($\ell_2$) del vector antes de cuantizar.
     pub norm: f32,
+    /// Dimensionalidad exacta del vector original.
     pub dimension: usize,
 }
 
 impl RaBitQVector {
-    /// Quantizes a high-dimensional float vector (e.g. 1024-d embedding) into packed 64-bit words.
+    /// Cuantiza un vector de punto flotante de alta dimensionalidad en palabras empaquetadas de 64 bits.
     pub fn from_f32_slice(vec: &[f32]) -> Self {
         let mut sum_sq = 0.0_f32;
         for &v in vec {
@@ -98,7 +110,7 @@ impl RaBitQVector {
         }
     }
 
-    /// Computes angular similarity in $[0, 1]$ using hardware `count_ones()` (`VPOPCNTQ` / `CNT` SIMD).
+    /// Calcula la similitud angular en el intervalo `` `[0, 1]` `` usando `count_ones()` por hardware (`VPOPCNTQ` / `CNT` SIMD).
     pub fn angular_similarity(&self, other: &Self) -> f32 {
         if self.dimension == 0 || self.dimension != other.dimension {
             return 0.0;
@@ -112,14 +124,17 @@ impl RaBitQVector {
     }
 }
 
-/// Layer 1 Deterministic Levenshtein Automaton (`LevenshteinAutomatonDfa`, $k \in \{1, 2\}$, §5.1 Layer 1).
+/// Autómata determinista de Levenshtein de Capa 1 (`LevenshteinAutomatonDfa`, $k \in \{1, 2\}$).
 #[derive(Debug, Clone)]
 pub struct LevenshteinAutomatonDfa {
+    /// Término de consulta normalizado en minúsculas ASCII.
     pub query: String,
+    /// Distancia máxima de edición Damerau-Levenshtein permitida ($k$).
     pub max_edits: usize,
 }
 
 impl LevenshteinAutomatonDfa {
+    /// Construye un nuevo autómata de Levenshtein para `query` con tolerancia máxima `max_edits`.
     pub fn new(query: &str, max_edits: usize) -> Self {
         Self {
             query: query.to_ascii_lowercase(),
@@ -127,7 +142,7 @@ impl LevenshteinAutomatonDfa {
         }
     }
 
-    /// Evaluates the automaton against `candidate`, returning `Some(distance)` if $d(\text{query}, \text{candidate}) \le k$.
+    /// Evalúa el autómata frente a `candidate`, devolviendo `Some(distance)` si $d(\text{query}, \text{candidate}) \le k$.
     pub fn accepts(&self, candidate: &str) -> Option<usize> {
         let len_diff = self.query.len().abs_diff(candidate.len());
         if len_diff > self.max_edits {
@@ -142,19 +157,22 @@ impl LevenshteinAutomatonDfa {
     }
 }
 
-/// Layer 5 Flattened HNSW Graph (`HnswFlatGraph`, §5.1 Layer 5) over `RaBitQ` 1-bit quantized vectors.
+/// Grafo HNSW aplanado de Capa 5 (`HnswFlatGraph`) sobre vectores cuantizados de 1 bit `RaBitQ`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HnswFlatGraph {
+    /// Nodos indexados representados como pares `(row_id, vector_rabitq)`.
     pub nodes: Vec<(u32, RaBitQVector)>,
+    /// Listas de adyacencia de proximidad en el grafo de mundo pequeño por `row_id`.
     pub adjacency: HashMap<u32, Vec<u32>>,
 }
 
 impl HnswFlatGraph {
+    /// Crea un grafo HNSW aplanado vacío.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Inserts a document vector into the flattened small-world proximity graph.
+    /// Inserta el vector de un documento en el grafo aplanado de proximidad de mundo pequeño.
     pub fn insert(&mut self, row_id: u32, vec: &[f32]) {
         let qv = RaBitQVector::from_f32_slice(vec);
         let mut neighbors: Vec<(u32, f32)> = self
@@ -174,7 +192,7 @@ impl HnswFlatGraph {
         self.nodes.push((row_id, qv));
     }
 
-    /// Searches the flattened HNSW graph for top-$K$ approximate nearest neighbors using `count_ones` popcnt similarity.
+    /// Busca en el grafo HNSW aplanado los $K$ vecinos más cercanos aproximados mediante similitud `count_ones`.
     pub fn search_knn(&self, query_vec: &[f32], k: usize) -> Vec<(u32, f32)> {
         let qv = RaBitQVector::from_f32_slice(query_vec);
         let mut scored: Vec<(u32, f32)> = self
@@ -188,42 +206,52 @@ impl HnswFlatGraph {
     }
 }
 
-/// Search result ranked by Reciprocal Rank Fusion (RRF) + BM25F + Fuzzy/Phonetic/Vector match.
+/// Resultado de búsqueda clasificado mediante Reciprocal Rank Fusion (RRF), BM25F y coincidencia difusa/fonética/vectorial.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HybridSearchHit {
+    /// Identificador único de la entidad coincidente.
     pub entity_id: String,
+    /// Identificador numérico de fila dentro del bloque MBF.
     pub row_id: u32,
+    /// Puntaje combinado total tras la fusión multimodal.
     pub total_score: f64,
+    /// Componente de relevancia léxica multicampo BM25F.
     pub lexical_bm25f_score: f64,
+    /// Bonificación acumulada por coincidencia difusa (SymSpell/Levenshtein), fonética y de N-gramas.
     pub fuzzy_phonetic_bonus: f64,
+    /// Similitud vectorial híbrida (`RaBitQ` + coseno exacto) en `` `[0, 1]` ``.
     pub vector_similarity: f64,
 }
 
-/// Zone 5B 6-Layer Multimodal Hybrid Search Index (100% domain-agnostic).
+/// Índice de búsqueda híbrida multimodal de 6 capas de la Zona 5B (100% agnóstico al dominio).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MbfHybridSearchIndex {
+    /// Colección de documentos de entidad indexados en el bloque.
     pub docs: Vec<IndexedEntityDocument>,
-    /// Layer 1: Sorted vocabulary lexicon `term -> Vec<row_id>`
+    /// Capa 1: Léxico de vocabulario `term -> Vec<row_id>`.
     pub fst_lexicon: HashMap<String, Vec<u32>>,
-    /// Layer 2: SymSpell Symmetric Delete dictionary (`deleted_variant -> Vec<canonical_term>`) for O(1) typo lookup
+    /// Capa 2: Diccionario de borrados simétricos SymSpell (`deleted_variant -> Vec<canonical_term>`) para resolución de erratas en $O(1)$.
     pub symspell_deletes: HashMap<String, Vec<String>>,
-    /// Layer 3: 2-gram and 3-gram substring index (`ngram -> Vec<row_id>`)
+    /// Capa 3: Índice de subcadenas de 2-gramas y 3-gramas (`ngram -> Vec<row_id>`).
     pub ngram_bitmaps: HashMap<String, Vec<u32>>,
-    /// Layer 4: Bilingual Romance + Double Metaphone Phonetic Index (`phonetic_code -> Vec<row_id>`)
+    /// Capa 4: Índice fonético bilingüe Romance + Double Metaphone (`phonetic_code -> Vec<row_id>`).
     pub phonetic_index: HashMap<String, Vec<u32>>,
-    /// Layer 4B: Declarative Synonym Thesaurus injected from Códice terminology (zero hardcoded domain terms)
+    /// Capa 4B: Tesauro declarativo de sinónimos inyectado desde la terminología del Códice.
     pub thesaurus: SynonymThesaurus,
-    /// Configurable BM25F field boost weights `[code_boost, title_boost, description_boost]` driven by Códice `FuzzySearchProfile`
+    /// Pesos configurables de impulso por campo BM25F `` `[code_boost, title_boost, description_boost]` `` gobernados por `FuzzySearchProfile`.
     pub bm25_field_boosts: [f64; 3],
-    /// Layer 5: RaBitQ quantized vectors for sub-millisecond popcnt similarity
+    /// Capa 5: Vectores cuantizados `RaBitQ` para similitud `popcnt` sub-milisegundo.
     pub rabitq_vectors: HashMap<u32, RaBitQVector>,
-    /// Layer 6: Spatiotemporal Morton Z-Order + Bounding Box `[min_lat, min_lon, max_lat, max_lon]`
+    /// Capa 6: Caja delimitadora mínima espacial `` `[min_lat, min_lon, max_lat, max_lon]` ``.
     pub spatial_mbr: [f64; 4],
+    /// Índice espacial de celdas jerárquicas Morton Z-Order / H3 (`cell_id -> Vec<row_id>`).
     pub spatial_morton_cells: HashMap<u64, Vec<u32>>,
+    /// Longitud media de documento en caracteres para normalización BM25F.
     pub avg_doc_len: f64,
 }
 
 impl MbfHybridSearchIndex {
+    /// Crea un nuevo índice de búsqueda híbrida multimodal vacío con pesos BM25F predeterminados.
     pub fn new() -> Self {
         Self {
             spatial_mbr: [
@@ -237,19 +265,19 @@ impl MbfHybridSearchIndex {
         }
     }
 
-    /// Attaches a declarative `SynonymThesaurus` loaded from a Códice terminology resource.
+    /// Adjunta un `SynonymThesaurus` declarativo cargado desde un recurso terminológico del Códice.
     pub fn with_thesaurus(mut self, thesaurus: SynonymThesaurus) -> Self {
         self.thesaurus = thesaurus;
         self
     }
 
-    /// Sets custom BM25F field boosts `[code_boost, title_boost, description_boost]` from Códice `FuzzySearchProfile`.
+    /// Configura pesos personalizados de impulso por campo BM25F `` `[code_boost, title_boost, description_boost]` `` desde `FuzzySearchProfile`.
     pub fn with_field_boosts(mut self, boosts: [f64; 3]) -> Self {
         self.bm25_field_boosts = boosts;
         self
     }
 
-    /// Indexes an entity document across all 6 search layers simultaneously.
+    /// Indexa un documento de entidad simultáneamente a través de las 6 capas de búsqueda.
     pub fn index_document(&mut self, doc: IndexedEntityDocument) {
         let row_id = doc.row_id;
         let combined_text = format!("{} {} {}", doc.code, doc.title, doc.description);
@@ -337,8 +365,8 @@ impl MbfHybridSearchIndex {
         self.avg_doc_len = (total_len as f64) / (self.docs.len().max(1) as f64);
     }
 
-    /// Executes a 6-Layer Hybrid Search combining Exact BM25F, SymSpell O(1), Levenshtein DFA ($k \le 2$),
-    /// Romance & Double Metaphone Phonetics, Declarative Synonym Thesaurus Expansion, N-Gram Substrings, and RaBitQ Vector Similarity via Reciprocal Rank Fusion (RRF).
+    /// Ejecuta una búsqueda híbrida de 6 capas combinando BM25F exacto, SymSpell $O(1)$, autómata de Levenshtein ($k \le 2$),
+    /// fonética Romance y Double Metaphone, expansión declarativa de sinónimos, subcadenas de N-gramas y similitud vectorial RaBitQ.
     pub fn search_hybrid(
         &self,
         query_text: &str,
@@ -496,7 +524,7 @@ impl MbfHybridSearchIndex {
         hits
     }
 
-    /// Computes Reciprocal Rank Fusion ($\text{Score}_{\text{RRF}}(d) = \frac{w_{\text{lex}}}{60 + \text{rank}_{\text{BM25F}}(d)} + \frac{w_{\text{vec}}}{60 + \text{rank}_{\text{Vector}}(d)}$, §5.2).
+    /// Calcula el puntaje Reciprocal Rank Fusion ($\text{Score}_{\text{RRF}}(d) = \frac{w_{\text{lex}}}{60 + \text{rank}_{\text{BM25F}}(d)} + \frac{w_{\text{vec}}}{60 + \text{rank}_{\text{Vector}}(d)}$).
     #[inline]
     pub fn compute_rrf_score(
         rank_lexical: Option<usize>,
@@ -509,12 +537,12 @@ impl MbfHybridSearchIndex {
         lex_term + vec_term
     }
 
-    /// Layer 4: Canonicalizes alphanumeric codes (`"REF-6205 / 2RS"` -> `"REF62052RS"`, §5.3.B).
+    /// Capa 4: Canonicaliza códigos alfanuméricos (`"REF-6205 / 2RS"` -> `"REF62052RS"`).
     pub fn canonicalize_alphanumeric_code(raw: &str) -> String {
         crate::eav::fts::searcher::canonicalize_alphanumeric_code(raw)
     }
 
-    /// Layer 4: Double Metaphone encoder for Germanic/English technical terms (§5.1 Layer 4).
+    /// Capa 4: Codificador fonético Double Metaphone para términos técnicos germánicos/anglosajones.
     pub fn encode_double_metaphone(word: &str) -> (String, String) {
         let lower = Self::strip_accents_and_lower(word);
         let primary = lower
@@ -538,7 +566,7 @@ impl MbfHybridSearchIndex {
         (code_p, code_s)
     }
 
-    /// Layer 6: Filters documents within `radius_meters` of `(center_lat, center_lon)` using R-Tree MBR + Haversine formula.
+    /// Capa 6: Filtra los documentos dentro de un radio `radius_meters` respecto a `(center_lat, center_lon)` usando la fórmula de Haversine.
     pub fn search_within_geofence_meters(
         &self,
         center_lat: f64,
@@ -558,7 +586,7 @@ impl MbfHybridSearchIndex {
         matches
     }
 
-    /// Layer 6: Encodes WGS-84 `(lat_deg, lon_deg)` into a hierarchical Uber H3 cell ID at `resolution` (e.g. `[7, 9, 11, 13]`, §5.1 Layer 6 & §7).
+    /// Capa 6: Codifica coordenadas WGS-84 `(lat_deg, lon_deg)` en un identificador jerárquico de celda H3 en la resolución `resolution` (p. ej. `` `[7, 9, 11, 13]` ``).
     pub fn encode_h3_cell(lat_deg: f64, lon_deg: f64, resolution: u8) -> u64 {
         let res = resolution.clamp(1, 15);
         let morton = Self::encode_spatial_cell_h3_morton(lat_deg, lon_deg);
@@ -567,7 +595,7 @@ impl MbfHybridSearchIndex {
         0x0800_0000_0000_0000u64 | (u64::from(res) << 52) | (cell_bits & 0x000F_FFFF_FFFF_FFFF)
     }
 
-    /// Layer 6: Spatial DBSCAN density clustering (`cluster_spatial_dbscan`) over indexed entities (§7).
+    /// Capa 6: Agrupamiento espacial por densidad DBSCAN (`cluster_spatial_dbscan`) sobre las entidades georreferenciadas.
     pub fn cluster_spatial_dbscan(&self, eps_meters: f64, min_points: usize) -> Vec<Vec<String>> {
         let pts: Vec<(usize, &str, f64, f64)> = self
             .docs
@@ -631,8 +659,9 @@ impl MbfHybridSearchIndex {
         clusters
     }
 
-    /// Encodes a word using the domain-agnostic Romance Phonetic Algorithm (`RomancePhonetic` + `DoubleMetaphone`).
-    /// Normalizes Romance/Hispanic and bilingual phonetic equivalences (`b`==`v`, `c`/`s`/`z`, `ll`/`y`, silent `h`, `ch`/`sh`->`x`, nasal clusters).
+    /// Codifica una palabra usando el algoritmo fonético romance agnóstico al dominio (`RomancePhonetic` + `DoubleMetaphone`).
+    ///
+    /// Normaliza equivalencias fonéticas romances/hispánicas y bilingües (`b`==`v`, `c`/`s`/`z`, `ll`/`y`, `h` muda, `ch`/`sh`->`x` y grupos nasales).
     pub fn encode_romance_phonetic(word: &str) -> String {
         let clean = Self::strip_accents_and_lower(word)
             .replace("sh", "x")
@@ -665,7 +694,7 @@ impl MbfHybridSearchIndex {
         out
     }
 
-    /// Computes Haversine great-circle distance in meters between two WGS-84 coordinates.
+    /// Calcula la distancia ortodrómica de Haversine en metros entre dos coordenadas WGS-84.
     pub fn haversine_meters(lat1_deg: f64, lon1_deg: f64, lat2_deg: f64, lon2_deg: f64) -> f64 {
         let r_earth_m = 6_371_000.0_f64;
         let d_lat = (lat2_deg - lat1_deg).to_radians();
@@ -678,7 +707,7 @@ impl MbfHybridSearchIndex {
         r_earth_m * c
     }
 
-    /// Encodes WGS-84 `(lat, lon)` into a 64-bit Morton Z-Order / H3-like hierarchical spatial cell ID.
+    /// Codifica coordenadas WGS-84 `(lat, lon)` en un identificador de celda espacial jerárquica Morton Z-Order / H3 de 64 bits.
     pub fn encode_spatial_cell_h3_morton(lat_deg: f64, lon_deg: f64) -> u64 {
         let norm_lat = (((lat_deg + 90.0) / 180.0).clamp(0.0, 1.0) * 65_535.0) as u32;
         let norm_lon = (((lon_deg + 180.0) / 360.0).clamp(0.0, 1.0) * 65_535.0) as u32;
@@ -809,8 +838,9 @@ impl MbfHybridSearchIndex {
         out
     }
 
-    /// Encodes Zone 5B into a 64-byte aligned binary buffer (`"MBFZ5BHS"`).
-    /// Stores the spatial MBR, document records, embeddings, coordinates, and sorted FST lexicon + phonetic postings.
+    /// Codifica la Zona 5B en un búfer binario alineado a 64 bytes (`"MBFZ5BHS"`).
+    ///
+    /// Almacena la caja delimitadora espacial (MBR), los documentos de entidad, incrustaciones vectoriales, coordenadas y el léxico FST ordenado.
     pub fn encode_zone_binary(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(256 + self.docs.len() * 128);
         buf.extend_from_slice(&MBF_ZONE5B_MAGIC);
@@ -863,7 +893,7 @@ impl MbfHybridSearchIndex {
         buf
     }
 
-    /// Decodes a 64-byte aligned Zone 5B binary buffer (`"MBFZ5BHS"`) back into `MbfHybridSearchIndex`.
+    /// Decodifica un búfer binario de la Zona 5B alineado a 64 bytes (`"MBFZ5BHS"`) reconstruyendo `MbfHybridSearchIndex`.
     pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 56 {
             return Err(DomainError::mbf(

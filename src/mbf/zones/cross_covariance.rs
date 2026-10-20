@@ -1,4 +1,4 @@
-//! Zone 6B multivariate cross-covariance matrix for O(1) Pearson correlation, multiple OLS regression, PCA, and Mahalanobis distance.
+//! Matriz de covarianza cruzada multivariante de la Zona 6B para correlación de Pearson en $O(1)$, regresión OLS múltiple, PCA y distancia de Mahalanobis.
 #![allow(clippy::needless_range_loop)]
 
 use serde::{Deserialize, Serialize};
@@ -7,20 +7,24 @@ use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::DomainResult;
 use crate::mbf::format::pad_to_64;
 
-/// Zone 6B binary magic (`"MBFZ6BCV"`).
+/// Bytes mágicos binarios de la Zona 6B (`"MBFZ6BCV"`).
 pub const MBF_ZONE6B_MAGIC: [u8; 8] = *b"MBFZ6BCV";
 
-/// Parallel-mergeable multivariate co-moment matrix ($M \times M$) stored in Zone 6B of `.mbf`.
+/// Matriz de co-momentos multivariantes ($M \times M$) fusionable en paralelo almacenada en la Zona 6B de `.mbf`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MbfCrossCovarianceMatrix {
+    /// Dimensión $M$ de variables numéricas rastreadas.
     pub dimension: usize,
+    /// Número total de observaciones multivariantes acumuladas.
     pub count: u64,
+    /// Vector de medias muestrales $\mu_i$ para cada dimensión.
     pub means: Vec<f64>,
-    /// Flattened $M \times M$ symmetric matrix of centered co-moments $C_{i,j} = \sum_{k=1}^n (x_{i,k} - \mu_i)(x_{j,k} - \mu_j)$.
+    /// Matriz simétrica aplanada $M \times M$ de co-momentos centrados $C_{i,j} = \sum_{k=1}^n (x_{i,k} - \mu_i)(x_{j,k} - \mu_j)$.
     pub co_moments: Vec<f64>,
 }
 
 impl MbfCrossCovarianceMatrix {
+    /// Crea una matriz de covarianza cruzada vacía de dimensión `dimension`.
     pub fn new(dimension: usize) -> Self {
         Self {
             dimension,
@@ -30,7 +34,7 @@ impl MbfCrossCovarianceMatrix {
         }
     }
 
-    /// Encodes Zone 6B into a 64-byte aligned binary buffer storing `dimension`, `count`, `means`, and upper-triangular co-moments.
+    /// Codifica la Zona 6B en un búfer binario alineado a 64 bytes con `dimension`, `count`, `means` y la triangular superior de co-momentos.
     pub fn encode_zone_binary(&self) -> Vec<u8> {
         let m = self.dimension;
         let upper_len = m * (m + 1) / 2;
@@ -52,7 +56,7 @@ impl MbfCrossCovarianceMatrix {
         buf
     }
 
-    /// Decodes a 64-byte aligned Zone 6B binary buffer back into `MbfCrossCovarianceMatrix`.
+    /// Decodifica un búfer binario de la Zona 6B alineado a 64 bytes en una instancia de `MbfCrossCovarianceMatrix`.
     pub fn decode_zone_binary(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 24 {
             return Err(DomainError::mbf(
@@ -109,7 +113,7 @@ impl MbfCrossCovarianceMatrix {
         })
     }
 
-    /// Updates the $M \times M$ co-moment matrix with a single multivariate observation row in $O(M^2)$.
+    /// Actualiza la matriz de co-momentos $M \times M$ con una observación multivariante en $O(M^2)$.
     pub fn push_row(&mut self, row: &[f64]) {
         if row.len() != self.dimension {
             return;
@@ -137,7 +141,7 @@ impl MbfCrossCovarianceMatrix {
         }
     }
 
-    /// Merges two `MbfCrossCovarianceMatrix` blocks in $O(M^2)$ without scanning underlying rows!
+    /// Fusiona dos bloques `MbfCrossCovarianceMatrix` en $O(M^2)$ sin reescanear las filas originales.
     pub fn merge(&self, other: &Self) -> Self {
         if self.count == 0 {
             return other.clone();
@@ -168,7 +172,7 @@ impl MbfCrossCovarianceMatrix {
         out
     }
 
-    /// Returns the full $M \times M$ Pearson Correlation Matrix $R_{i,j} \in [-1, 1]$ in $O(1)$.
+    /// Calcula la matriz completa $M \times M$ de correlación de Pearson $R_{i,j}$ en `` `[-1, 1]` `` en $O(1)$.
     pub fn pearson_correlation_matrix(&self) -> Vec<Vec<f64>> {
         let m = self.dimension;
         let mut r = vec![vec![0.0; m]; m];
@@ -189,8 +193,8 @@ impl MbfCrossCovarianceMatrix {
         r
     }
 
-    /// Returns the $M \times M$ Spearman Rank Correlation Matrix $\rho_S \in [-1, 1]$ in $O(1)$ using Kruskal's analytical identity
-    /// $\rho_S = \frac{6}{\pi} \arcsin(R_{i,j} / 2)$ from the pre-aggregated co-moment matrix (§7).
+    /// Calcula la matriz $M \times M$ de correlación por rangos de Spearman $\rho_S$ en `` `[-1, 1]` `` en $O(1)$ mediante la identidad analítica de Kruskal
+    /// $\rho_S = \frac{6}{\pi} \arcsin(R_{i,j} / 2)$ a partir de la matriz de co-momentos preagregada.
     pub fn spearman_correlation_matrix(&self) -> Vec<Vec<f64>> {
         let pearson = self.pearson_correlation_matrix();
         let m = self.dimension;
@@ -208,7 +212,7 @@ impl MbfCrossCovarianceMatrix {
         s
     }
 
-    /// Computes the exact empirical Spearman Rank Correlation Matrix from a slice of multivariate observations by rank-transforming each column into a `MbfCrossCovarianceMatrix`.
+    /// Calcula la matriz empírica exacta de correlación de Spearman transformando cada columna en rangos sobre una `MbfCrossCovarianceMatrix`.
     pub fn spearman_from_rows(rows: &[Vec<f64>]) -> Vec<Vec<f64>> {
         if rows.is_empty() {
             return Vec::new();
@@ -234,8 +238,8 @@ impl MbfCrossCovarianceMatrix {
         mat.pearson_correlation_matrix()
     }
 
-    /// Computes the exact Bivariate Pearson Correlation $r_{XY} = \frac{C_{XY}}{\sqrt{M_{2,X} M_{2,Y}}} \in [-1, 1]$ in $O(1)$
-    /// directly from pre-aggregated co-moments (`04_ALGORITHMS_AND_PAPERS.md` §2.2).
+    /// Calcula la correlación bivariante exacta de Pearson $r_{XY} = \frac{C_{XY}}{\sqrt{M_{2,X} M_{2,Y}}}$ en `` `[-1, 1]` `` en $O(1)$
+    /// directamente a partir de los co-momentos preagregados.
     #[inline]
     pub fn bivariate_correlation(&self, idx_x: usize, idx_y: usize) -> f64 {
         let m = self.dimension;
@@ -255,9 +259,9 @@ impl MbfCrossCovarianceMatrix {
         }
     }
 
-    /// Solves Simple Bivariate Ordinary Least Squares (`LINEAR_REGRESSION`, $y = m x + b$) in $O(1)$ (`04_ALGORITHMS_AND_PAPERS.md` §2.2):
+    /// Resuelve la regresión lineal simple por mínimos cuadrados ordinarios ($y = m x + b$) en $O(1)$:
     /// $$m = \frac{C_{XY}}{M_{2,X}}, \qquad b = \mu_Y - m \cdot \mu_X$$
-    /// Returns `Some((slope_m, intercept_b, r_xy))`.
+    /// Devuelve `Some((slope_m, intercept_b, r_xy))`.
     #[inline]
     pub fn simple_linear_regression(&self, idx_x: usize, idx_y: usize) -> Option<(f64, f64, f64)> {
         let m = self.dimension;
@@ -275,10 +279,9 @@ impl MbfCrossCovarianceMatrix {
         Some((slope_m, intercept_b, r_xy))
     }
 
-    /// Solves Multiple Linear Regression (OLS) directly from the pre-aggregated co-moment matrix in $O(M^3)$
-    /// via Cholesky $L L^T$ decomposition (§4.3 #2) without reading a single data row!
-    /// Predicts target column `target_idx` from `predictor_indices`.
-    /// Returns `(intercept_beta0, slopes_beta, r_squared)`.
+    /// Resuelve la regresión lineal múltiple (OLS) directamente desde la matriz de co-momentos en $O(M^3)$
+    /// mediante descomposición de Cholesky $L L^T$ sin leer filas de datos.
+    /// Predice la columna `target_idx` a partir de `predictor_indices` y devuelve `(intercept_beta0, slopes_beta, r_squared)`.
     pub fn solve_multiple_ols(
         &self,
         predictor_indices: &[usize],
@@ -322,7 +325,7 @@ impl MbfCrossCovarianceMatrix {
         Some((beta0, betas, r2))
     }
 
-    /// Solves a symmetric positive-definite linear system $A \beta = b$ using Cholesky $L L^T$ decomposition (§4.3 #2 & §7).
+    /// Resuelve un sistema lineal simétrico definido positivo $A \beta = b$ mediante descomposición de Cholesky $L L^T$.
     pub fn solve_cholesky(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
         let n = b.len();
         if n == 0 || a.len() != n {
@@ -367,7 +370,7 @@ impl MbfCrossCovarianceMatrix {
         Some(x)
     }
 
-    /// Extracts the First Principal Component (`PC1` eigenvector and explained variance ratio) via Power Iteration.
+    /// Extrae el primer componente principal (`PC1`, autovector y proporción de varianza explicada) mediante iteración de potencias.
     pub fn first_principal_component(&self) -> (Vec<f64>, f64) {
         let m = self.dimension;
         if m == 0 || self.count < 2 {
@@ -409,7 +412,7 @@ impl MbfCrossCovarianceMatrix {
         (v, explained_ratio)
     }
 
-    /// Computes the Multivariate Mahalanobis Distance $D_M(x) = \sqrt{(x - \mu)^T \Sigma^{-1} (x - \mu)}$ for anomaly detection.
+    /// Calcula la distancia multivariante de Mahalanobis $D_M(x) = \sqrt{(x - \mu)^T \Sigma^{-1} (x - \mu)}$ para detección de anomalías.
     pub fn mahalanobis_distance(&self, point: &[f64]) -> Option<f64> {
         let m = self.dimension;
         if point.len() != m || self.count <= (m as u64) {

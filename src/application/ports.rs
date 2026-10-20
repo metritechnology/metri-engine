@@ -1,14 +1,13 @@
-//! Outbound ports — the error contract decides retries vs DLQ.
+//! Puertos de salida de la aplicación — el contrato de error gobierna reintentos frente a DLQ.
 //!
-//! ports — puertos de salida de la aplicación.
-//!
-//! El error es parte del contrato: `retryable()` es lo que decide reintentos
-//! (outbox sweeper) versus DLQ. Clasificar todo como reintentable — el defecto
-//! fácil — sólo consigue envenenar la cola con mensajes que nadie puede leer.
+//! El tipo de error forma parte del contrato arquitectónico: `PublishError::retryable`
+//! determina si el evento se encola para reintento con backoff exponencial (outbox sweeper)
+//! o si se descarta hacia la cola de mensajes fallidos (DLQ).
 
 use async_trait::async_trait;
 use serde_json::Value;
 
+/// Clasificación de errores de publicación de eventos de dominio según su recuperabilidad.
 #[derive(Debug, thiserror::Error)]
 pub enum PublishError {
     /// Fallo de infraestructura: el sweeper del outbox reintenta con backoff.
@@ -20,17 +19,19 @@ pub enum PublishError {
 }
 
 impl PublishError {
+    /// Indica si el fallo es transitorio y admite reintento automático mediante el outbox.
     pub fn retryable(&self) -> bool {
         matches!(self, PublishError::Transient(_))
     }
 }
 
 /// Puerto de publicación de eventos de dominio del contrato
-/// metri-contracts (system.scheduled_job.* y familia).
+/// `metri-contracts` (`system.scheduled_job.*` y familia).
 ///
-/// Los adaptadores concretos viven en infrastructure/domain_event_bus.rs.
+/// Los adaptadores concretos viven en `infrastructure/domain_event_bus.rs`.
 #[async_trait]
 pub trait DomainEventPublisher: Send + Sync {
+    /// Publica un evento de dominio tipado hacia el bus de eventos configurado.
     async fn publish(&self, detail_type: &str, detail: &Value) -> Result<(), PublishError>;
 }
 

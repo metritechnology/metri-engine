@@ -1,10 +1,10 @@
-//! Application ports — consumer-bounded traits (DIP).
+//! Casos de uso y puertos de salida de la capa de aplicación (DIP).
 //!
-//! application — casos de uso y puertos de la aplicación.
-//!
-//! DIP: lo que aquí se define son TRAITS delimitados por la necesidad del
-//! consumidor. Las implementaciones concretas (EventBridge, outbox, DynamoDB)
-//! viven en infrastructure/ y se cablean en los composition roots
-//! (grpc/bootstrap.rs, grpc/server.rs). Los tests componen fakes sin AWS.
+//! Siguiendo el Principio de Inversión de Dependencias (DIP), este módulo define
+//! traits delimitados por la necesidad del consumidor de dominio/aplicación.
+//! Las implementaciones concretas (EventBridge, outbox transaccional, almacenamiento `.mbf`)
+//! residen en `infrastructure/` y se inyectan en las raíces de composición
+//! (`grpc/bootstrap.rs`, `grpc/server.rs`). Las pruebas unitarias componen dobles en memoria sin red.
 
+/// Puertos de salida para publicación de eventos de dominio con contrato de reintentos.
 pub mod ports;

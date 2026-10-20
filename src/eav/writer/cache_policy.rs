@@ -1,32 +1,28 @@
-//! Read-cache invalidation after commit.
+//! Invalidación de las cachés de lectura (`EAV_CACHE` y `AEVT_SCAN_CACHE`) tras confirmar una transacción.
 //!
-//! Invalidación de las caches de lectura tras el commit.
+//! Las cachés viven en el lector (`EAV_CACHE` por entidad, `AEVT_SCAN_CACHE` por
+//! `tenant + tipo`); el escritor conoce qué entidades mutaron (incluida la entidad
+//! madre y las entidades proyectadas de saga) y coordina su invalidación en un
+//! único punto.
 //!
-//! Las caches viven en el lector (EAV_CACHE por entidad, AEVT_SCAN_CACHE por
-//! tenant+tipo); el escritor sólo sabe QUÉ entidades cambió. Este módulo hace
-//! esa traducción en un solo punto — incluidas las entidades proyectadas de
-//! saga, que antes no se invalidaban y podían quedar invisibles tras un scan
-//! cacheado de su tipo.
-//!
-//! La ruta bulk difiere la invalidación al final del lote (una sola
-//! invalidación AEVT en vez de una por fila): `CachePolicy::Deferred` aquí y
-//! `invalidate_aevt_scan` desde el canal.
+//! La ruta masiva (`bulk`) difiere la invalidación al final del lote mediante
+//! `CachePolicy::Deferred` e `invalidate_aevt_scan`.
 
-/// Cuándo invalida el escritor las caches de lectura.
+/// Política que determina cuándo invalida el escritor las cachés de lectura.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CachePolicy {
-    /// Invalidar al terminar la transacción — el camino normal.
+    /// Invalidar inmediatamente al finalizar la transacción (camino estándar).
     #[default]
     Immediate,
-    /// No invalidar aquí: el caller (route_bulk) lo hace UNA vez al final del
-    /// lote completo — evita N `RwLock::write()` por fila [OPTIMIZATION: 10x Bulk].
+    /// No invalidar por fila; el llamador (`route_bulk`) invalida una sola vez al finalizar el lote completo.
     Deferred,
 }
 
-/// Una entidad escrita en la transacción, para invalidar su fila y el scan
-/// de su tipo. La madre y cada proyección aportan la suya.
+/// Referencia a una entidad escrita dentro de la transacción para invalidar su entrada puntual y el escaneo de su tipo.
 pub struct WrittenEntity<'a> {
+    /// Identificador único de la entidad mutada.
     pub entity_id: &'a str,
+    /// Tipo o modelo de la entidad mutada en el Códice.
     pub entity_type: &'a str,
 }
 

@@ -1,6 +1,4 @@
-//! Atomic counter with ceiling, backed by MbfStorageClient (.mbf engine).
-//!
-//! Contador atómico con techo respaldado por MbfStorageClient (.mbf).
+//! Contador atómico con techo (`QuotaLedger`) respaldado por `MbfStorageClient` (motor `.mbf`).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,10 +12,18 @@ use crate::infrastructure::dynamodb::DynamoClient;
 #[derive(Debug, Clone, PartialEq)]
 pub enum DebitOutcome {
     /// Debitado. `new_usage` es el valor autoritativo tras el incremento.
-    Debited { new_usage: i64 },
+    Debited {
+        /// Consumo acumulado autoritativo tras aplicar el débito.
+        new_usage: i64,
+    },
     /// El techo lo impidió. `current_usage` es el valor real en el momento del
     /// rechazo, no la lectura previa de quien llamó.
-    Exhausted { current_usage: i64, limit: i64 },
+    Exhausted {
+        /// Consumo acumulado real en el instante del rechazo.
+        current_usage: i64,
+        /// Techo máximo permitido para la cuota evaluada.
+        limit: i64,
+    },
 }
 
 /// Qué pasó al aplicar un ajuste con clave de idempotencia.
@@ -36,8 +42,10 @@ pub struct QuotaLedger {
     table: String,
 }
 
+/// Contrato de contador atómico de cuotas con verificación de techo y conciliación idempotente.
 #[async_trait::async_trait]
 pub trait QuotaCounter: Send + Sync {
+    /// Intenta debitar `amount` unidades si el consumo resultante no supera `max_limit`.
     async fn try_debit(
         &self,
         tenant_id: &str,
@@ -47,9 +55,11 @@ pub trait QuotaCounter: Send + Sync {
         seed: i64,
     ) -> Result<DebitOutcome, DomainError>;
 
+    /// Aplica un ajuste con signo `delta` al contador y devuelve el nuevo consumo acumulado.
     async fn settle(&self, tenant_id: &str, quota_id: &str, delta: i64)
         -> Result<i64, DomainError>;
 
+    /// Aplica un ajuste `delta` de forma idempotente garantizada por `idem_key`.
     async fn settle_once(
         &self,
         tenant_id: &str,
@@ -58,12 +68,14 @@ pub trait QuotaCounter: Send + Sync {
         idem_key: &str,
     ) -> Result<SettleOutcome, DomainError>;
 
+    /// Lee en lote el consumo actual de múltiples identificadores de cuota para un tenant.
     async fn read_many(
         &self,
         tenant_id: &str,
         quota_ids: &[String],
     ) -> Result<HashMap<String, i64>, DomainError>;
 
+    /// Libera `amount` unidades previamente debitadas (compensación por fallo posterior).
     async fn release(
         &self,
         tenant_id: &str,
@@ -75,6 +87,7 @@ pub trait QuotaCounter: Send + Sync {
 }
 
 impl QuotaLedger {
+    /// Construye un nuevo `QuotaLedger` respaldado por el cliente de almacenamiento y tabla dados.
     pub fn new(ddb: Arc<DynamoClient>, table: impl Into<String>) -> Self {
         QuotaLedger {
             ddb,

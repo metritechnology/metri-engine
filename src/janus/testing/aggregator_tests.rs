@@ -1,4 +1,4 @@
-//! Tests for `janus::aggregator`.
+//! Pruebas unitarias para `janus::aggregator`.
 use crate::janus::aggregator::apply_output_cast;
 use serde_json::json;
 

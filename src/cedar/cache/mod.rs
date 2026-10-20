@@ -1,6 +1,4 @@
-//! Authorizer caches — principals, sessions and invalidation.
-//!
-//! cedar/cache — Cachés del autorizador.
+//! Cachés en memoria del autorizador Cedar: principals consolidados, sesiones e invalidación.
 
 pub mod invalidation;
 pub mod principal;

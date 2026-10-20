@@ -1,4 +1,4 @@
-//! Tests for `codice::sequence`.
+//! Pruebas unitarias del generador de secuencias ACID (`codice::sequence`).
 use super::*;
 
 #[test]

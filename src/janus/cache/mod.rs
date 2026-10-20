@@ -1,16 +1,14 @@
-//! janus::cache — read-through cache frontend for the Janus query layer.
+//! Frontend de caché read-through para la capa de consultas de Janus (`janus::cache`).
 //!
-//! PLAN_CACHE_JANUS_DYNAMODB.md §4.2. El frontend posee la POLÍTICA (modos
-//! Off|Shadow|Ddb, gates de bypass, rings de medición); el backend posee el
-//! ALMACENAMIENTO (puerto `IQueryCache`). El modo shadow es responsabilidad
-//! de este frontend a propósito: registra el hit rate candidato y devuelve
-//! SIEMPRE miss, así la respuesta al cliente es byte-idéntica al modo `off`
-//! por construcción.
+//! El frontend posee la **política** (modos `Off` | `Shadow` | `Ddb`, compuertas de bypass y
+//! anillos de medición); el backend posee el **almacenamiento** (puerto `IQueryCache`).
+//! El modo `Shadow` registra el *hit rate* candidato y devuelve siempre `Miss`, manteniendo
+//! la respuesta byte-idéntica al modo `Off`.
 //!
-//! Doble política de fallo (§2 del plan): fail-open en disponibilidad —
-//! cualquier error de backend degrada a bypass con `warn!` y la query nunca
-//! falla por la caché; fail-closed en corrección — entrada vencida, de otro
-//! tenant o con generación invalidada NUNCA se sirve.
+//! Doble política de fallo:
+//! - *Fail-open* en disponibilidad: cualquier error de backend degrada a bypass con `warn!`.
+//! - *Fail-closed* en corrección: una entrada vencida, de otro tenant o con generación
+//!   invalidada nunca se sirve.
 
 #[cfg(test)]
 mod cache_tests;
@@ -36,34 +34,44 @@ pub enum CacheMode {
     /// "el engine levanta sin AWS").
     Off,
     /// Medición: calcula claves y registra hit rate candidato SIN tocar
-    /// DynamoDB (cero RCU/WCU). Límite inferior del hit rate distribuido.
+    /// el almacenamiento (cero I/O). Límite inferior del hit rate distribuido.
     Shadow,
-    /// Caché activa contra la tabla DynamoDB dedicada.
+    /// Caché activa contra el adaptador de almacenamiento configurado.
     Ddb,
 }
 
 /// Canal del read path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheChannel {
+    /// Canal transaccional e indexado OLTP.
     Oltp,
+    /// Canal analítico y de agregación OLAP.
     Olap,
 }
 
 /// Encendido por canal (`QUERY_CACHE_CHANNELS`).
 #[derive(Debug, Clone, Copy)]
 pub struct ChannelFlags {
+    /// Indica si la caché está habilitada para el canal OLTP.
     pub oltp: bool,
+    /// Indica si la caché está habilitada para el canal OLAP.
     pub olap: bool,
 }
 
-/// Política resuelta UNA vez en la raíz de composición (ADR-004).
+/// Política resuelta UNA vez en la raíz de composición.
 #[derive(Debug, Clone)]
 pub struct QueryCachePolicy {
+    /// Modo operativo activo de la caché (`Off`, `Shadow` o `Ddb`).
     pub mode: CacheMode,
+    /// Banderas de activación por canal (`oltp`, `olap`).
     pub channels: ChannelFlags,
+    /// Tiempo de vida base en segundos para entradas del canal OLTP.
     pub ttl_oltp_secs: u64,
+    /// Tiempo de vida base en segundos para entradas del canal OLAP.
     pub ttl_olap_secs: u64,
+    /// Amplitud máxima de jitter aleatorio en segundos sumado al TTL base.
     pub ttl_jitter_secs: u64,
+    /// Tamaño máximo en bytes permitido para almacenar una entrada en caché.
     pub max_item_bytes: usize,
     /// `None` = sin restricción; `Some(lista)` = canary de producción (G0).
     pub tenant_allowlist: Option<Vec<String>>,
@@ -191,12 +199,19 @@ fn parse_env_u64(name: &str, default: u64) -> DomainResult<u64> {
 /// Motivo de bypass — nunca viaja en la respuesta, solo en el span (§7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BypassReason {
+    /// La caché se encuentra en modo `CacheMode::Off`.
     ModeOff,
+    /// El tenant no está incluido en la lista blanca (`tenant_allowlist`).
     TenantNotAllowlisted,
+    /// La solicitud pide `explain_plan = true` (diagnóstico sin ejecución).
     ExplainPlan,
+    /// La entidad tiene un `RowOverlay` dinámico registrado (como `domain_quota`).
     OverlayEntity,
+    /// La consulta recorre el camino histórico o de auditoría (`as_of`).
     HistoryPath,
+    /// El canal (`Oltp` u `Olap`) está deshabilitado en `ChannelFlags`.
     ChannelDisabled,
+    /// El payload de la clave superó el límite `max_item_bytes`.
     Oversize,
 }
 
@@ -204,18 +219,28 @@ pub enum BypassReason {
 #[derive(Debug)]
 pub enum LookupOutcome {
     /// Entrada fresca, del tenant correcto y con generación válida.
-    Hit { entry: CacheEntry },
+    Hit {
+        /// Entrada recuperada y validada desde la caché.
+        entry: CacheEntry,
+    },
     /// Ejecutar y poblar (en Shadow: siempre, tras registrar).
     Miss,
     /// No elegible: ejecutar sin poblar.
-    Bypass { reason: BypassReason },
+    Bypass {
+        /// Causa específica por la cual se omitió la caché.
+        reason: BypassReason,
+    },
 }
 
 /// Datos de la query necesarios para los gates (§7). Puros y prestados.
 pub struct CacheCandidate<'a> {
+    /// Canal de lectura evaluado (`Oltp` u `Olap`).
     pub channel: CacheChannel,
+    /// Identificador del tenant propietario de la consulta.
     pub tenant_id: &'a str,
+    /// Nombre canónico de la entidad consultada.
     pub entity: &'a str,
+    /// Indica si la petición solicita únicamente el plan de ejecución (`explain_plan`).
     pub explain_plan: bool,
     /// La entidad tiene un `RowOverlay` registrado — su valor de verdad NO
     /// vive en el log de datoms y se muta en lectura (G2).
@@ -358,6 +383,7 @@ impl QueryCacheFrontend {
         self
     }
 
+    /// Devuelve el modo de operación configurado (`Off`, `Shadow` o `Ddb`).
     pub fn mode(&self) -> CacheMode {
         self.policy.mode
     }

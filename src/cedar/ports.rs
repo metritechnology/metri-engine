@@ -1,10 +1,9 @@
-//! Authorizer ports (DIP) — the core consumes traits.
+//! Puertos del autorizador Cedar (Inversión de Dependencias — DIP).
 //!
-//! Puertos del autorizador Cedar (DIP).
-//! El core de autorización no conoce DynamoClient ni el detalle del executor
-//! EAV: consume los puertos de este archivo. Los adaptadores concretos
-//! (`EavReader`, el `HashMap` de PolicySets) los provee la raíz de composición,
-//! y los tests pueden sustituirlos por fakes en memoria.
+//! El núcleo de autorización no conoce `DynamoClient` ni los detalles internos del ejecutor
+//! EAV: consume los traits definidos en este archivo. Los adaptadores concretos
+//! (`EavReader`, `InMemoryPrincipalCache`, `BroadcastBus` y `HashMap<String, PolicySet>`)
+//! los inyecta la raíz de composición y los tests los sustituyen por dobles en memoria.
 
 use std::collections::HashMap;
 
@@ -24,6 +23,7 @@ use crate::eav::types::datom::DatomValue;
 /// concurrentes (`tokio::spawn`) sin acoplar al tipo concreto.
 #[async_trait]
 pub trait EntityReader: Send + Sync {
+    /// Recupera el mapa de atributos vigentes de una entidad en el tenant indicado.
     async fn pull(
         &self,
         tenant_id: &str,
@@ -31,6 +31,7 @@ pub trait EntityReader: Send + Sync {
         attrs: Option<&[&str]>,
     ) -> Result<EntityMap, DomainError>;
 
+    /// Obtiene los identificadores de las entidades hijas cuyo atributo `attr_name` coincide con `value`.
     async fn children_with_attr(
         &self,
         tenant_id: &str,
@@ -38,6 +39,7 @@ pub trait EntityReader: Send + Sync {
         value: &DatomValue,
     ) -> Result<Vec<String>, DomainError>;
 
+    /// Crea un clon en caja (`Box<dyn EntityReader>`) apto para tareas asíncronas concurrentes.
     fn clone_reader(&self) -> Box<dyn EntityReader>;
 }
 
@@ -79,13 +81,17 @@ impl EntityReader for EavReader {
 /// Redis/Valkey) deciden expiración y expulsión.
 #[async_trait]
 pub trait PrincipalCache: Send + Sync {
+    /// Consulta el principal consolidado en caché para el `user_id` dado, si existe y sigue vigente.
     async fn lookup_principal(&self, user_id: &str) -> Option<crate::cedar::types::PrincipalData>;
+    /// Almacena o actualiza el principal consolidado asociado al `user_id`.
     async fn store_principal(
         &self,
         user_id: &str,
         principal: crate::cedar::types::PrincipalData,
     ) -> Result<(), DomainError>;
+    /// Expulsa de la caché la entrada correspondiente al `user_id` indicado.
     async fn evict_user(&self, user_id: &str) -> Result<(), DomainError>;
+    /// Expulsa de la caché a todos los usuarios que posean el rol `role_id`.
     async fn evict_by_role(&self, role_id: &str) -> Result<(), DomainError>;
 }
 
@@ -95,6 +101,7 @@ pub trait PrincipalCache: Send + Sync {
 pub trait InvalidationBus: Send + Sync {
     /// Publica un mensaje; no falla si no hay suscriptores.
     fn publish(&self, msg: crate::cedar::types::InvalidationMsg);
+    /// Crea un receptor suscrito al flujo de mensajes de invalidación.
     fn subscribe(&self) -> tokio::sync::broadcast::Receiver<crate::cedar::types::InvalidationMsg>;
 }
 
@@ -105,7 +112,9 @@ pub trait InvalidationBus: Send + Sync {
 /// recurso, cualquiera. Los factores de fallback ("admin", "tenant-admin")
 /// son decisión del evaluador, no del almacenamiento.
 pub trait PolicyStore: Send + Sync {
+    /// Devuelve el `PolicySet` compilado asociado al identificador de rol indicado.
     fn policy_for(&self, role_id: &str) -> Option<&PolicySet>;
+    /// Devuelve cualquier `PolicySet` compilado disponible como respaldo.
     fn any_policy(&self) -> Option<&PolicySet>;
 }
 

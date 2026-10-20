@@ -1,7 +1,8 @@
-//! Infix-to-RPN parser (shunting-yard).
+//! Analizador sintáctico (`parser`) de notación infija a notación polaca inversa (`RPN`).
 //!
-//! Convierte tokens infix a cola RPN (Reverse Polish Notation).
-//! SRP: Solo reordena tokens. No tokeniza, no evalúa, no compila a SQL.
+//! Implementa el algoritmo *Shunting-Yard* de Dijkstra para reordenar los tokens según
+//! precedencia y asociatividad de operadores, calculando la aridad efectiva de cada
+//! función y validando las cotas de seguridad de anidamiento.
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;

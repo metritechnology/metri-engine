@@ -1,18 +1,11 @@
-//! In-memory aggregation — the 14 contract functions + FilterNode.
+//! Motor de agregación estadística en memoria con soporte de predicados por métrica (`FilterNode`).
 //!
-//! Agregación in-memory con FilterNode support.
+//! Implementa las 14 funciones del contrato `AggregationFunction` de FlatBuffers:
+//! `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `PERCENTILE_90`, `PERCENTILE_95`,
+//! `PERCENTILE_99`, `STD_DEV`, `VARIANCE`, `CORRELATION`, `LINEAR_REGRESSION` y `LOGISTIC_REGRESSION`.
 //!
-//! Implementa los 14 AggregationFunction del contrato FBS:
-//! COUNT SUM AVG MIN MAX MEDIAN PERCENTILE_90/95/99
-//! STD_DEV VARIANCE CORRELATION LINEAR_REGRESSION LOGISTIC_REGRESSION
-//!
-//! Filtered Aggregation (MetricDefinition.filter):
-//! Si la métrica tiene un FilterNode, solo los rows que pasan el predicado
-//! in-memory contribuyen al cómputo.
-//!
-//! API pública:
-//! apply_metrics_fbs(rows, metrics) → Value (JSON object {:alias value})
-//! eval_filter_node(row, node)      → bool
+//! Si una métrica define un `FilterNode` (`FILTER (WHERE ...)`), únicamente las filas que
+//! satisfacen dicho predicado en memoria participan en el cálculo estadístico.
 
 use serde_json::Value;
 use tracing::warn;
@@ -83,10 +76,13 @@ fn regr_slope(xs: &[f64], ys: &[f64]) -> Option<f64> {
 
 // ── Estrategias de Agregación (OCP) ───────────────────────────────────────────
 
+/// Contrato de estrategia de agregación numérica univariada o bivariada (OCP).
 pub trait AggregationStrategy: Send + Sync {
+    /// Computa el estadístico sobre la serie primaria `vals` y la serie secundaria opcional `sec_vals`.
     fn compute(&self, vals: &[f64], sec_vals: &[f64]) -> f64;
 }
 
+/// Estrategia de conteo de elementos válidos (`COUNT`).
 pub struct CountStrategy;
 impl AggregationStrategy for CountStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
@@ -94,6 +90,7 @@ impl AggregationStrategy for CountStrategy {
     }
 }
 
+/// Estrategia de suma aritmética (`SUM`).
 pub struct SumStrategy;
 impl AggregationStrategy for SumStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
@@ -101,6 +98,7 @@ impl AggregationStrategy for SumStrategy {
     }
 }
 
+/// Estrategia de media aritmética (`AVG`).
 pub struct AvgStrategy;
 impl AggregationStrategy for AvgStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
@@ -108,6 +106,7 @@ impl AggregationStrategy for AvgStrategy {
     }
 }
 
+/// Estrategia de valor mínimo (`MIN`).
 pub struct MinStrategy;
 impl AggregationStrategy for MinStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
@@ -117,6 +116,7 @@ impl AggregationStrategy for MinStrategy {
     }
 }
 
+/// Estrategia de valor máximo (`MAX`).
 pub struct MaxStrategy;
 impl AggregationStrategy for MaxStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
@@ -126,7 +126,9 @@ impl AggregationStrategy for MaxStrategy {
     }
 }
 
+/// Estrategia de percentil por rango más cercano (`MEDIAN`, `PERCENTILE_90`, `PERCENTILE_95`, `PERCENTILE_99`).
 pub struct PercentileStrategy {
+    /// Cuantil objetivo en el intervalo `[0.0, 1.0]` (ej. `0.5` para mediana, `0.95` para P95).
     pub p: f64,
 }
 impl AggregationStrategy for PercentileStrategy {
@@ -137,6 +139,7 @@ impl AggregationStrategy for PercentileStrategy {
     }
 }
 
+/// Estrategia de desviación estándar muestral con corrección de Bessel (`STD_DEV`).
 pub struct StdDevStrategy;
 impl AggregationStrategy for StdDevStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
@@ -144,6 +147,7 @@ impl AggregationStrategy for StdDevStrategy {
     }
 }
 
+/// Estrategia de varianza muestral con corrección de Bessel $N - 1$ (`VARIANCE`).
 pub struct VarianceStrategy;
 impl AggregationStrategy for VarianceStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {
@@ -151,6 +155,7 @@ impl AggregationStrategy for VarianceStrategy {
     }
 }
 
+/// Estrategia de coeficiente de correlación lineal de Pearson $r$ entre dos series (`CORRELATION`).
 pub struct CorrelationStrategy;
 impl AggregationStrategy for CorrelationStrategy {
     fn compute(&self, vals: &[f64], sec_vals: &[f64]) -> f64 {
@@ -158,6 +163,7 @@ impl AggregationStrategy for CorrelationStrategy {
     }
 }
 
+/// Estrategia de pendiente de regresión lineal simple OLS (`LINEAR_REGRESSION`).
 pub struct LinearRegressionStrategy;
 impl AggregationStrategy for LinearRegressionStrategy {
     fn compute(&self, vals: &[f64], sec_vals: &[f64]) -> f64 {
@@ -165,6 +171,7 @@ impl AggregationStrategy for LinearRegressionStrategy {
     }
 }
 
+/// Estrategia de respaldo en memoria para regresión logística (`LOGISTIC_REGRESSION`).
 pub struct LogisticRegressionStrategy;
 impl AggregationStrategy for LogisticRegressionStrategy {
     fn compute(&self, vals: &[f64], _sec_vals: &[f64]) -> f64 {

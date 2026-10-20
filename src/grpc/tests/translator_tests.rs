@@ -1,4 +1,4 @@
-//! Tests for `grpc::translator`.
+//! Pruebas unitarias de `grpc::translator`: conversión bidireccional entre `serde_json::Value` y `prost_types`.
 use super::*;
 use serde_json::json;
 

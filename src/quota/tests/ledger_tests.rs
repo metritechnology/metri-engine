@@ -1,4 +1,4 @@
-//! Tests for `quota::ledger` over `MbfStorageClient`.
+//! Pruebas unitarias de `quota::ledger` sobre `MbfStorageClient`.
 use super::*;
 
 const TABLA: &str = "metri-mbf-local";

@@ -1,6 +1,4 @@
-//! Which quota governs this operation, and with what ceiling.
-//!
-//! Qué cuota gobierna esta operación, y con qué techo.
+//! Resolución de cuota (`QuotaResolver`) — qué cuota gobierna cada operación y con qué techo.
 //!
 //! Una consulta a Aegis por (tenant, resource_domain, limit_type) devuelve todas
 //! las filas `domain_quota` de ese dominio: la del periodo en curso, las de los
@@ -76,6 +74,7 @@ pub struct QuotaSpec {
     /// por periodo y por dominio. Cuando no existía —y no existía casi nunca—,
     /// el resultado no era «sin límite»: era `Quota001` y nada se podía crear.
     pub counter_id: String,
+    /// Techo máximo de consumo permitido en el periodo vigente.
     pub max_limit: i64,
     /// `current_usage` de la fila EAV. Valor de arranque del contador, no una
     /// cifra sobre la que decidir — ver la cabecera de este archivo.
@@ -84,12 +83,14 @@ pub struct QuotaSpec {
     /// que empieza, y el de la fila `*` no es el de este dominio. Sembrar con
     /// ellos regalaría o cobraría consumo ajeno.
     pub seed_usage: i64,
+    /// Clave del periodo temporal vigente (`YYYY-MM-DD_YYYY-MM-DD` o `LIFETIME`).
     pub period_key: String,
 }
 
 /// Trait para abstraer las consultas OLTP y permitir mockearlas en tests.
 #[async_trait::async_trait]
 pub trait OltpQueryRunner: Send + Sync {
+    /// Ejecuta una consulta OLTP sobre la entidad `domain_quota` del `tenant_id`.
     async fn run_oltp_query(&self, tenant_id: &str, ast_ir: &Value) -> Result<Value, DomainError>;
 }
 
@@ -117,6 +118,7 @@ pub struct QuotaResolver<E> {
 }
 
 impl<E: OltpQueryRunner> QuotaResolver<E> {
+    /// Construye un `QuotaResolver` con el TTL de caché configurado en el entorno o 30 s por defecto.
     pub fn new(oltp: E) -> Self {
         let ttl = std::env::var("QUOTA_CACHE_TTL_SECS")
             .ok()

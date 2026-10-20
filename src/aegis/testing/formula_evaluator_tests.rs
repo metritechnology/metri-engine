@@ -1,4 +1,4 @@
-//! Tests for `aegis::formula::evaluator`.
+//! Pruebas unitarias del evaluador de fórmulas RPN (`aegis::formula::evaluator`).
 use crate::aegis::formula::evaluator::FormulaEvaluator;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::lexer::tokenize;

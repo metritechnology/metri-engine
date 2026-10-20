@@ -1,4 +1,4 @@
-//! Tests for `domain::result`.
+//! Pruebas unitarias de las utilidades Railway (`domain::pipeline::result`).
 use super::*;
 use crate::domain::errors::{DomainError, ErrorCode};
 

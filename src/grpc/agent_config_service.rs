@@ -1,10 +1,8 @@
-//! AgentConfigService gRPC implementation.
-//!
-//! Implementación de gRPC para AgentConfigService
+//! Implementación del servicio gRPC `AgentConfigService`.
 //!
 //! Responsabilidades:
 //! 1. Servir las configuraciones dinámicas de módulos y prompts al agente de IA.
-//! 2. Resolver locale (es/en) y nivel de detalle (full/compact) para los archivos de prompt.
+//! 2. Resolver idioma (`es` / `en`) y nivel de detalle (`full` / `compact`) para los archivos de prompt.
 //! 3. Retornar las rutas de navegación declaradas de forma centralizada.
 
 use serde::Deserialize;
@@ -33,6 +31,7 @@ struct RawRoute {
     keywords: Vec<String>,
 }
 
+/// Implementación gRPC de `AgentConfigService` que carga prompts y rutas desde disco.
 pub struct AgentConfigServiceImpl {
     prompts_dir: String,
 }
@@ -44,6 +43,7 @@ impl Default for AgentConfigServiceImpl {
 }
 
 impl AgentConfigServiceImpl {
+    /// Crea una nueva instancia resolviendo el directorio de prompts desde `PROMPTS_DIR` (o `config/prompts`).
     pub fn new() -> Self {
         let prompts_dir =
             std::env::var("PROMPTS_DIR").unwrap_or_else(|_| "config/prompts".to_string());

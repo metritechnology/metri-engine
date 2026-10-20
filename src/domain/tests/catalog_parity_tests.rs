@@ -1,4 +1,4 @@
-//! Tests for `domain::catalog_parity`.
+//! Pruebas de paridad 1:1 entre `ErrorCode` y `error_catalog.toml` (`domain::catalog_parity`).
 // domain/tests/catalog_parity_tests.rs — Guards C1–C4 del catálogo de errores.
 // PLAN_PATRON_RESULT.md §4.3: segunda cerradura junto al auditor Python —
 // estos guards corren dentro de `cargo test` y no pueden desincronizarse del

@@ -1,4 +1,4 @@
-//! Binary format headers, footers, directory index, .mbf.idx mirror, cryptographic tenant seals, and zero-downtime schema evolution.
+//! Especificación binaria de cabeceras, pies de página, índice de directorio, espejo `.mbf.idx`, sellos criptográficos por tenant y evolución de esquema sin tiempo de inactividad.
 
 use bytemuck::{Pod, Zeroable};
 use hmac::{Hmac, Mac};
@@ -11,44 +11,44 @@ use crate::domain::protocols::DomainResult;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Canonical 8-byte magic header identifying a Metri Binary Format v1 file (`"METRIBIN"`, §4.1).
+/// Firma mágica canónica de 8 bytes que identifica un archivo Metri Binary Format v1 (`"METRIBIN"`).
 pub const MBF_MAGIC: [u8; 8] = *b"METRIBIN";
 
-/// Alias preserved for module compatibility.
+/// Alias de `MBF_MAGIC` preservado por compatibilidad entre módulos.
 pub const MBF_MAGIC_BYTES: [u8; 8] = MBF_MAGIC;
 
-/// Canonical 8-byte magic footer identifying the trailer of a `.mbf` file (`"MBFFOOTR"`, §4.1).
+/// Firma mágica canónica de 8 bytes que identifica el pie de página (`trailer`) de un archivo `.mbf` (`"MBFFOOTR"`).
 pub const MBF_FOOTER_MAGIC: [u8; 8] = *b"MBFFOOTR";
 
-/// Canonical 8-byte magic identifying a `.mbf.idx` synopsis mirror file (`"MBFINDEX"`).
+/// Firma mágica canónica de 8 bytes que identifica un archivo espejo de sinopsis `.mbf.idx` (`"MBFINDEX"`).
 pub const MBF_IDX_MAGIC: [u8; 8] = *b"MBFINDEX";
 
-/// Current wire format version (`1`).
+/// Versión vigente del formato binario en disco (`1`).
 pub const MBF_FORMAT_VERSION: u16 = 1;
 
-/// Canonical micro-block row group size ($2^{12} = 4096$ rows, §4.2).
+/// Tamaño canónico de un grupo de filas (*micro-block row group* de $2^{12} = 4096$ filas).
 pub const MBF_ROW_GROUP_SIZE: usize = 4096;
 
-/// Header flag: file is a transactional `HOT_HEAD.mbf` frame.
+/// Bandera de cabecera: el archivo es una trama transaccional `HOT_HEAD.mbf`.
 pub const MBF_FLAG_HOT_HEAD: u16 = 1 << 0;
-/// Header flag: file includes a 64-byte `MbfTenantCryptoSeal`.
+/// Bandera de cabecera: el archivo incluye un sello criptográfico `MbfTenantCryptoSeal` de 64 bytes.
 pub const MBF_FLAG_CRYPTO_SEALED: u16 = 1 << 1;
-/// Header flag: Zone 1 (PAX-MVCC) present.
+/// Bandera de cabecera: Zona 1 (`PAX-MVCC`) presente.
 pub const MBF_FLAG_HAS_PAX: u16 = 1 << 2;
-/// Header flag: Zone 2 (CSR Graph) present.
+/// Bandera de cabecera: Zona 2 (`CSR Graph`) presente.
 pub const MBF_FLAG_HAS_CSR: u16 = 1 << 3;
-/// Header flag: Zone 3 (IoT Time-Series) present.
+/// Bandera de cabecera: Zona 3 (`IoT Time-Series`) presente.
 pub const MBF_FLAG_HAS_IOT: u16 = 1 << 4;
-/// Header flag: Zone 4 (Financial Ledger) present.
+/// Bandera de cabecera: Zona 4 (`Financial Ledger`) presente.
 pub const MBF_FLAG_HAS_LEDGER: u16 = 1 << 5;
-/// Header flag: Zone 5 (BI Synopses) present.
+/// Bandera de cabecera: Zona 5 (`BI Synopses`) presente.
 pub const MBF_FLAG_HAS_SYNOPSES: u16 = 1 << 6;
-/// Header flag: Zone 5B (Hybrid Search) present.
+/// Bandera de cabecera: Zona 5B (`Hybrid Search`) presente.
 pub const MBF_FLAG_HAS_SEARCH: u16 = 1 << 7;
-/// Header flag: Zone 6B (Cross Covariance) present.
+/// Bandera de cabecera: Zona 6B (`Cross Covariance`) presente.
 pub const MBF_FLAG_HAS_COVARIANCE: u16 = 1 << 8;
 
-/// Pads `buf` with zeroes up to the next exact multiple of 64 bytes (L1 CPU cache line size).
+/// Rellena `buf` con ceros hasta alcanzar el siguiente múltiplo exacto de 64 bytes (tamaño de línea de caché L1).
 #[inline]
 pub fn pad_to_64(buf: &mut Vec<u8>) {
     let rem = buf.len() % 64;
@@ -57,7 +57,7 @@ pub fn pad_to_64(buf: &mut Vec<u8>) {
     }
 }
 
-/// Writes a 4-byte little-endian length-prefixed UTF-8 string into `buf`.
+/// Escribe una cadena UTF-8 precedida por su longitud de 4 bytes en formato *little-endian* dentro de `buf`.
 #[inline]
 pub fn write_len_prefixed_str(buf: &mut Vec<u8>, s: &str) {
     let b = s.as_bytes();
@@ -65,7 +65,7 @@ pub fn write_len_prefixed_str(buf: &mut Vec<u8>, s: &str) {
     buf.extend_from_slice(b);
 }
 
-/// Reads a 4-byte little-endian length-prefixed UTF-8 string from `bytes` at `*cursor`.
+/// Lee una cadena UTF-8 precedida por su longitud de 4 bytes en *little-endian* desde `bytes` a partir de `*cursor`.
 #[inline]
 pub fn read_len_prefixed_str(bytes: &[u8], cursor: &mut usize) -> DomainResult<String> {
     if *cursor + 4 > bytes.len() {
@@ -92,13 +92,13 @@ pub fn read_len_prefixed_str(bytes: &[u8], cursor: &mut usize) -> DomainResult<S
     Ok(s)
 }
 
-/// Computes a hardware-accelerated CRC32 checksum over `bytes`.
+/// Calcula la suma de verificación CRC32 acelerada por hardware sobre `bytes`.
 #[inline]
 pub fn compute_crc32c(bytes: &[u8]) -> u32 {
     crc32fast::hash(bytes)
 }
 
-/// Computes a deterministic 128-bit truncated hash of `tenant_id` (§4.1 `tenant_hash`).
+/// Calcula un hash determinista truncado a 128 bits (`[u8; 16]`) del `tenant_id`.
 #[inline]
 pub fn compute_tenant_hash(tenant_id: &str) -> [u8; 16] {
     let mut hasher = Sha256::new();
@@ -110,38 +110,50 @@ pub fn compute_tenant_hash(tenant_id: &str) -> [u8; 16] {
     out
 }
 
-/// Fixed 64-byte header aligned to a single CPU cache line (`#[repr(C, align(64))]`, §4.1).
+/// Cabecera fija de 64 bytes alineada a una línea de caché de CPU (`#[repr(C, align(64))]`).
 ///
-/// Byte layout:
-/// - `0..8`:   `magic` (`"METRIBIN"`)
+/// Disposición de bytes:
+/// - `0..8`:   `magic` (`"METRIBIN"` o `"MBFINDEX"`)
 /// - `8..10`:  `version` (`1`)
 /// - `10..12`: `flags` (Bit 0: HotHead, Bit 1: Encrypted, Bits 2..9: ZoneMask, Bits 10..15: CellId)
 /// - `12..16`: `row_count` (`u32`)
 /// - `16..32`: `tenant_hash` (`[u8; 16]`)
 /// - `32..40`: `min_tx_id` (`u64`)
-/// - `40..48`: `max_tx_id` (`u64`, also serves as committed `epoch_id`)
+/// - `40..48`: `max_tx_id` (`u64`, también actúa como `epoch_id` confirmado)
 /// - `48..56`: `min_timestamp_ms` (`i64`)
 /// - `56..64`: `max_timestamp_ms` (`i64`)
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct MbfHeader {
+    /// Bytes mágicos de identificación del formato (`"METRIBIN"` o `"MBFINDEX"`).
     pub magic: [u8; 8],
+    /// Versión del formato binario (`1`).
     pub version: u16,
+    /// Máscara de bits con banderas de zonas presentes, modo `HOT_HEAD`, sello criptográfico y `cell_id`.
     pub flags: u16,
+    /// Número total de filas o registros contenidos en el archivo.
     pub row_count: u32,
+    /// Huella de 128 bits del tenant o metadatos de esquema/bloqueo fiscal.
     pub tenant_hash: [u8; 16],
+    /// Identificador mínimo de transacción (`tx_id`) incluido en el archivo.
     pub min_tx_id: u64,
+    /// Identificador máximo de transacción (`tx_id` / `epoch_id`) incluido en el archivo.
     pub max_tx_id: u64,
+    /// Marca temporal mínima en milisegundos (o época de bloqueo fiscal).
     pub min_timestamp_ms: i64,
+    /// Marca temporal máxima en milisegundos (o instante de creación del bloque).
     pub max_timestamp_ms: i64,
 }
 
 impl MbfHeader {
+    /// Bandera que indica que el archivo es un manifiesto `HOT_HEAD.mbf`.
     pub const FLAG_HOT_HEAD: u16 = MBF_FLAG_HOT_HEAD;
+    /// Bandera que indica que el bloque cuenta con sello criptográfico por tenant.
     pub const FLAG_ENCRYPTED: u16 = MBF_FLAG_CRYPTO_SEALED;
+    /// Máscara de bits que habilita todas las zonas físicas en `flags`.
     pub const FLAG_ZONE_ALL: u16 = 0b0111_1111 << 2;
 
-    /// Creates a new spec-compliant 64-byte `MbfHeader`.
+    /// Crea una nueva cabecera `MbfHeader` de 64 bytes conforme a la especificación.
     pub fn new(
         cell_id: u32,
         row_count: u64,
@@ -168,7 +180,7 @@ impl MbfHeader {
         }
     }
 
-    /// Creates a 64-byte header for a `.mbf.idx` synopsis mirror file (`"MBFINDEX"`).
+    /// Crea una cabecera de 64 bytes para un archivo espejo de sinopsis `.mbf.idx` (`"MBFINDEX"`).
     pub fn new_idx_mirror(
         cell_id: u32,
         row_count: u64,
@@ -189,7 +201,7 @@ impl MbfHeader {
         hdr
     }
 
-    /// Sets additional bitflags on `flags` while preserving cell_id bits.
+    /// Asigna banderas adicionales en `flags` preservando los bits del `cell_id`.
     #[inline]
     pub fn with_flags(mut self, extra_flags: u16) -> Self {
         let cell_bits = self.flags & (0x3F << 10);
@@ -197,7 +209,7 @@ impl MbfHeader {
         self
     }
 
-    /// Creates a new `MbfHeader` with explicit tenant hash and transaction/timestamp bounds (§4.1).
+    /// Crea un `MbfHeader` con hash explícito de tenant y cotas de transacciones y marcas de tiempo.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_tenant(
         tenant_id: &str,
@@ -229,31 +241,31 @@ impl MbfHeader {
         }
     }
 
-    /// Extracts the 6-bit domain cell ID (`0..=7`) encoded in `flags`.
+    /// Extrae el identificador de celda de dominio de 6 bits (`0..=7`) codificado en `flags`.
     #[inline]
     pub fn cell_id(&self) -> u32 {
         u32::from((self.flags >> 10) & 0x3F)
     }
 
-    /// Returns the highest transaction/epoch ID in this `.mbf` file.
+    /// Retorna el identificador de época/transacción más alto en este archivo `.mbf`.
     #[inline]
     pub fn epoch_id(&self) -> u64 {
         self.max_tx_id
     }
 
-    /// Returns true if this file is a `HOT_HEAD.mbf` transactional manifest.
+    /// Retorna `true` si este archivo corresponde a un manifiesto transaccional `HOT_HEAD.mbf`.
     #[inline]
     pub fn is_hot_head(&self) -> bool {
         (self.flags & Self::FLAG_HOT_HEAD) != 0
     }
 
-    /// Computes the CRC32C checksum of the 64-byte header.
+    /// Calcula el checksum CRC32C de los 64 bytes de la cabecera.
     #[inline]
     pub fn compute_crc32(&self) -> u32 {
         compute_crc32c(bytemuck::bytes_of(self))
     }
 
-    /// Zero-copy cast from a 64-byte aligned slice (`0 ns` via `bytemuck`).
+    /// Conversión *zero-copy* desde un slice alineado a 64 bytes (`0 ns` vía `bytemuck`).
     pub fn try_zero_copy_ref(bytes: &[u8]) -> DomainResult<&Self> {
         if bytes.len() < 64 {
             return Err(DomainError::mbf(
@@ -271,7 +283,7 @@ impl MbfHeader {
         Ok(header)
     }
 
-    /// Validates magic bytes and format version.
+    /// Valida los bytes mágicos y la versión del formato.
     pub fn validate(&self) -> DomainResult<()> {
         if self.magic != MBF_MAGIC && self.magic != MBF_IDX_MAGIC {
             return Err(DomainError::mbf(
@@ -288,7 +300,7 @@ impl MbfHeader {
         Ok(())
     }
 
-    /// Encodes the header into exactly 64 bytes.
+    /// Codifica la cabecera en un arreglo exacto de 64 bytes.
     #[inline]
     pub fn to_bytes(&self) -> [u8; 64] {
         let mut out = [0u8; 64];
@@ -296,7 +308,7 @@ impl MbfHeader {
         out
     }
 
-    /// Decodes and validates a 64-byte header slice (works on both aligned and unaligned buffers).
+    /// Decodifica y valida un slice de cabecera de 64 bytes (soporta búferes alineados y no alineados).
     pub fn from_bytes(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 64 {
             return Err(DomainError::mbf(
@@ -310,36 +322,54 @@ impl MbfHeader {
     }
 }
 
-/// 128-byte aligned table of physical zone offsets and byte lengths inside the `.mbf` file (§3.7.1).
-/// Every offset and length is a multiple of 64 bytes.
+/// Tabla de 128 bytes alineada a 64 bytes con los desplazamientos físicos y longitudes de cada zona dentro del archivo `.mbf`.
+/// Todo desplazamiento y longitud es múltiplo exacto de 64 bytes.
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct ZoneOffsetsTable {
+    /// Desplazamiento en bytes hacia la Zona 1 (`PAX-MVCC`).
     pub zone1_pax_offset: u64,
+    /// Longitud en bytes de la Zona 1 (`PAX-MVCC`).
     pub zone1_pax_len: u64,
+    /// Desplazamiento en bytes hacia la Zona 2 (`CSR Graph`).
     pub zone2_csr_offset: u64,
+    /// Longitud en bytes de la Zona 2 (`CSR Graph`).
     pub zone2_csr_len: u64,
+    /// Desplazamiento en bytes hacia la Zona 3 (`IoT Time-Series`).
     pub zone3_iot_offset: u64,
+    /// Longitud en bytes de la Zona 3 (`IoT Time-Series`).
     pub zone3_iot_len: u64,
+    /// Desplazamiento en bytes hacia la Zona 4 (`Financial Ledger`).
     pub zone4_ledger_offset: u64,
+    /// Longitud en bytes de la Zona 4 (`Financial Ledger`).
     pub zone4_ledger_len: u64,
+    /// Desplazamiento en bytes hacia la Zona 5 (`BI Synopses`).
     pub zone5_synopsis_offset: u64,
+    /// Longitud en bytes de la Zona 5 (`BI Synopses`).
     pub zone5_synopsis_len: u64,
+    /// Desplazamiento en bytes hacia la Zona 5B (`Hybrid Search`).
     pub zone5b_search_offset: u64,
+    /// Longitud en bytes de la Zona 5B (`Hybrid Search`).
     pub zone5b_search_len: u64,
+    /// Desplazamiento en bytes hacia la Zona 6B (`Cross Covariance`).
     pub zone6b_cov_offset: u64,
+    /// Longitud en bytes de la Zona 6B (`Cross Covariance`).
     pub zone6b_cov_len: u64,
+    /// Desplazamiento en bytes hacia el *overlay* de estado transaccional.
     pub state_overlay_offset: u64,
+    /// Longitud en bytes del *overlay* de estado transaccional.
     pub state_overlay_len: u64,
 }
 
 impl ZoneOffsetsTable {
+    /// Serializa la tabla de desplazamientos de zonas en 128 bytes exactos.
     pub fn to_bytes(&self) -> [u8; 128] {
         let mut out = [0u8; 128];
         out.copy_from_slice(bytemuck::bytes_of(self));
         out
     }
 
+    /// Decodifica una `ZoneOffsetsTable` a partir de un slice de al menos 128 bytes.
     pub fn from_bytes(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 128 {
             return Err(DomainError::mbf(
@@ -351,28 +381,37 @@ impl ZoneOffsetsTable {
     }
 }
 
-/// 32-byte aligned column chunk descriptor inside the Directory Index (§3.7.1).
+/// Descriptor de bloque de columna de 32 bytes alineado (`#[repr(C, align(32))]`) dentro del `MbfDirectoryIndex`.
 #[repr(C, align(32))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct ColumnChunkDescriptor {
+    /// Identificador numérico del atributo (`attr_id`).
     pub attr_id: u16,
+    /// Identificador de la zona física donde reside el bloque.
     pub zone_id: u8,
+    /// Etiqueta del tipo de valor o compresión (`value_tag`).
     pub value_tag: u8,
+    /// Cantidad de filas almacenadas en este bloque de columna.
     pub row_count: u32,
+    /// Desplazamiento físico en bytes desde el inicio del archivo `.mbf`.
     pub byte_offset: u64,
+    /// Longitud física en bytes del bloque de columna.
     pub byte_len: u64,
+    /// Desplazamiento físico hacia la sinopsis estadística de esta columna en la Zona 5.
     pub synopsis_offset: u64,
 }
 
-/// Complete binary Directory Index written at `directory_offset` before `MbfFooterTrailer` (§3.7).
+/// Índice de directorio binario completo escrito en `directory_offset` justo antes de `MbfFooterTrailer`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MbfDirectoryIndex {
+    /// Tabla de desplazamientos y longitudes de las zonas físicas.
     pub zones: ZoneOffsetsTable,
+    /// Lista de descriptores de bloques de columnas presentes en el archivo.
     pub columns: Vec<ColumnChunkDescriptor>,
 }
 
 impl MbfDirectoryIndex {
-    /// Encodes the directory index into a 64-byte aligned binary buffer.
+    /// Codifica el índice de directorio en un búfer binario alineado a 64 bytes.
     pub fn to_aligned_bytes(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(128 + 8 + self.columns.len() * 32 + 64);
         buf.extend_from_slice(&self.zones.to_bytes());
@@ -385,13 +424,13 @@ impl MbfDirectoryIndex {
         buf
     }
 
-    /// Alias for `to_aligned_bytes`.
+    /// Alias de `to_aligned_bytes`.
     #[inline]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.to_aligned_bytes()
     }
 
-    /// Decodes a `MbfDirectoryIndex` from its binary slice.
+    /// Decodifica un `MbfDirectoryIndex` desde su representación binaria.
     pub fn from_bytes(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 136 {
             return Err(DomainError::mbf(
@@ -420,9 +459,9 @@ impl MbfDirectoryIndex {
     }
 }
 
-/// Fixed 64-byte footer trailer at the end of every `.mbf` file (`#[repr(C, align(64))]`, §4.1).
+/// Pie de página fijo (`trailer`) de 64 bytes al final de todo archivo `.mbf` (`#[repr(C, align(64))]`).
 ///
-/// Byte layout:
+/// Disposición de bytes:
 /// - `0..8`:   `directory_offset` (`u64`)
 /// - `8..12`:  `directory_len` (`u32`)
 /// - `12..16`: `header_crc32c` (`u32`)
@@ -434,20 +473,29 @@ impl MbfDirectoryIndex {
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct MbfFooterTrailer {
+    /// Desplazamiento en bytes donde inicia el `MbfDirectoryIndex`.
     pub directory_offset: u64,
+    /// Longitud en bytes del `MbfDirectoryIndex`.
     pub directory_len: u32,
+    /// Suma de verificación CRC32C de los 64 bytes de `MbfHeader`.
     pub header_crc32c: u32,
+    /// Suma de verificación CRC32C de los bytes del `MbfDirectoryIndex`.
     pub directory_crc32c: u32,
+    /// Parte alta (32 bits) de la huella de esquema del modelo.
     pub schema_fingerprint_hi: u32,
+    /// Marca temporal (epoch ms) de bloqueo contable/fiscal del bloque.
     pub fiscal_lock_epoch_ms: i64,
+    /// Etiqueta HMAC-SHA256 truncada a 192 bits (24 bytes) del sello criptográfico del bloque.
     pub hmac_tag_truncated: [u8; 24],
+    /// Firma mágica de cierre de 8 bytes (`"MBFFOOTR"`).
     pub footer_magic: [u8; 8],
 }
 
 impl MbfFooterTrailer {
+    /// Bytes mágicos canónicos del pie de página (`"MBFFOOTR"`).
     pub const FOOTER_MAGIC: [u8; 8] = MBF_FOOTER_MAGIC;
 
-    /// Constructs a new `MbfFooterTrailer` with computed CRC32C and 192-bit truncated HMAC tag.
+    /// Construye un nuevo `MbfFooterTrailer` con los CRC32C calculados y la etiqueta HMAC truncada a 192 bits.
     pub fn new(
         directory_offset: u64,
         directory_len: u32,
@@ -469,6 +517,7 @@ impl MbfFooterTrailer {
         }
     }
 
+    /// Serializa el pie de página en 64 bytes exactos.
     #[inline]
     pub fn to_bytes(&self) -> [u8; 64] {
         let mut buf = [0u8; 64];
@@ -476,6 +525,7 @@ impl MbfFooterTrailer {
         buf
     }
 
+    /// Decodifica y valida el pie de página de 64 bytes verificando la firma `"MBFFOOTR"`.
     pub fn from_bytes(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 64 {
             return Err(DomainError::mbf(
@@ -494,19 +544,23 @@ impl MbfFooterTrailer {
     }
 }
 
-/// Cryptographic Multi-Tenant Block Seal (`#[repr(C, align(64))]`).
-/// Prevents any cross-tenant data leakage in shared `/tmp` NVMe cache or S3 buckets.
+/// Sello criptográfico multitenant de bloque de 64 bytes (`#[repr(C, align(64))]`).
+/// Impide cualquier fuga de datos entre tenants en la caché NVMe compartida `/tmp` o en S3.
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Pod, Zeroable, Serialize, Deserialize)]
 pub struct MbfTenantCryptoSeal {
+    /// Hash de contexto de 128 bits derivado de `tenant_id` y `entity_type`.
     pub tenant_context_hash: [u8; 16],
+    /// Nonce de 96 bits que incorpora el `epoch_id` del bloque.
     pub nonce: [u8; 12],
+    /// Banderas de configuración criptográfica del sello.
     pub crypto_flags: u32,
+    /// Código de autenticación de mensaje HMAC-SHA256 de 256 bits sobre el contexto, nonce y carga útil.
     pub keyed_mac: [u8; 32],
 }
 
 impl MbfTenantCryptoSeal {
-    /// Derives a per-tenant key from the master secret and seals a payload slice.
+    /// Deriva una clave específica por tenant a partir del secreto maestro y sella criptográficamente `payload`.
     pub fn seal_block(
         master_secret: &[u8],
         tenant_id: &str,
@@ -537,7 +591,7 @@ impl MbfTenantCryptoSeal {
         })
     }
 
-    /// Verifies that the block belongs to `expected_tenant_id` and that `payload` has not been tampered with.
+    /// Verifica en tiempo constante que el bloque pertenezca a `expected_tenant_id` y que `payload` no haya sido alterado.
     pub fn verify_block(
         &self,
         master_secret: &[u8],
@@ -571,6 +625,7 @@ impl MbfTenantCryptoSeal {
         Ok(())
     }
 
+    /// Serializa el sello criptográfico en 64 bytes exactos.
     #[inline]
     pub fn to_bytes(&self) -> [u8; 64] {
         let mut out = [0u8; 64];
@@ -578,6 +633,7 @@ impl MbfTenantCryptoSeal {
         out
     }
 
+    /// Decodifica un `MbfTenantCryptoSeal` desde un slice de al menos 64 bytes.
     pub fn from_bytes(bytes: &[u8]) -> DomainResult<Self> {
         if bytes.len() < 64 {
             return Err(DomainError::mbf(
@@ -588,7 +644,7 @@ impl MbfTenantCryptoSeal {
         Ok(bytemuck::pod_read_unaligned(&bytes[0..64]))
     }
 
-    /// Returns the first 24 bytes of `keyed_mac` for `MbfFooterTrailer.hmac_tag_truncated`.
+    /// Retorna los primeros 24 bytes de `keyed_mac` para poblar `MbfFooterTrailer.hmac_tag_truncated`.
     #[inline]
     pub fn truncated_hmac_24(&self) -> [u8; 24] {
         let mut out = [0u8; 24];
@@ -620,21 +676,28 @@ impl MbfTenantCryptoSeal {
     }
 }
 
-/// Logical value representation supporting Zero-Downtime Schema Evolution (`LazyDefaultProjection`)
-/// and pure binary encoding (Zero-JSON).
+/// Representación lógica de un valor de celda columnar con soporte de evolución de esquema sin tiempo de inactividad
+/// y codificación binaria pura (*Zero-JSON*).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum MbfCellValue {
+    /// Celda con valor nulo.
     Null,
+    /// Valor booleano (`true` o `false`).
     Bool(bool),
+    /// Entero con signo de 64 bits (`i64`).
     Int64(i64),
+    /// Punto flotante de doble precisión IEEE 754 (`f64`).
     Float64(f64),
+    /// Decimal de punto fijo de 128 bits (`i128`).
     Decimal128(i128),
+    /// Cadena de texto UTF-8 (`String`).
     Text(String),
+    /// Secuencia de bytes binarios (`Vec<u8>`).
     Bytes(Vec<u8>),
 }
 
 impl MbfCellValue {
-    /// Appends the compact binary representation of this cell value to `buf`.
+    /// Añade la representación binaria compacta de este valor de celda en `buf`.
     pub fn write_binary(&self, buf: &mut Vec<u8>) {
         match self {
             Self::Null => buf.push(0),
@@ -668,7 +731,7 @@ impl MbfCellValue {
         }
     }
 
-    /// Reads a binary `MbfCellValue` from `bytes` starting at `*cursor`.
+    /// Lee un `MbfCellValue` binario desde `bytes` avanzando `*cursor`.
     pub fn read_binary(bytes: &[u8], cursor: &mut usize) -> DomainResult<Self> {
         if *cursor >= bytes.len() {
             return Err(DomainError::mbf(
@@ -783,21 +846,23 @@ impl MbfCellValue {
     }
 }
 
-/// Column storage in an `.mbf` segment: either physically stored or lazily synthesized from Códice defaults.
+/// Proyección de columna en un segmento `.mbf`: almacenada físicamente o sintetizada perezosamente desde valores por defecto del Códice.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EvolvedColumnProjection {
-    /// Column exists physically in the `.mbf` file.
+    /// La columna existe físicamente en el archivo `.mbf`.
     Physical(Vec<MbfCellValue>),
-    /// Column was added to `config/models/*.json` after this `.mbf` file was sealed;
-    /// projected in $O(1)$ with zero disk rewrites!
+    /// La columna fue añadida en `config/models/*.json` después de haberse sellado el archivo `.mbf`;
+    /// se proyecta en $O(1)$ sin reescribir el archivo en disco.
     VirtualConstantDefault {
+        /// Valor constante por defecto definido en el Códice.
         default_value: MbfCellValue,
+        /// Número total de filas lógicas proyectadas.
         row_count: usize,
     },
 }
 
 impl EvolvedColumnProjection {
-    /// Retrieves the value at `row_idx` in $O(1)$ regardless of whether the column is physical or virtual.
+    /// Obtiene el valor en `row_idx` en tiempo $O(1)$ tanto para columnas físicas como virtuales.
     pub fn get(&self, row_idx: usize) -> Option<&MbfCellValue> {
         match self {
             EvolvedColumnProjection::Physical(values) => values.get(row_idx),
@@ -814,6 +879,7 @@ impl EvolvedColumnProjection {
         }
     }
 
+    /// Retorna la cantidad de filas de la columna proyectada.
     pub fn len(&self) -> usize {
         match self {
             EvolvedColumnProjection::Physical(values) => values.len(),
@@ -821,19 +887,23 @@ impl EvolvedColumnProjection {
         }
     }
 
+    /// Retorna `true` si la columna proyectada no contiene filas.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 }
 
-/// Schema evolution resolver for historical `.mbf` files.
+/// Directorio de resolución de evolución de esquema para archivos `.mbf` históricos.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MbfSchemaEvolutionDirectory {
+    /// Cantidad total de filas del bloque o segmento `.mbf`.
     pub row_count: usize,
+    /// Mapa de columnas físicas presentes en el archivo indexadas por `attr_id`.
     pub physical_columns: HashMap<u16, Vec<MbfCellValue>>,
 }
 
 impl MbfSchemaEvolutionDirectory {
+    /// Crea un nuevo directorio de evolución de esquema para un segmento con `row_count` filas.
     pub fn new(row_count: usize) -> Self {
         Self {
             row_count,
@@ -841,11 +911,12 @@ impl MbfSchemaEvolutionDirectory {
         }
     }
 
+    /// Registra una columna física decodificada asociada a `attr_id`.
     pub fn insert_physical_column(&mut self, attr_id: u16, values: Vec<MbfCellValue>) {
         self.physical_columns.insert(attr_id, values);
     }
 
-    /// Resolves `attr_id`: returns physical column if present, or synthesizes a `VirtualConstantDefault` in $O(1)$.
+    /// Resuelve `attr_id`: retorna la columna física si existe en el segmento, o sintetiza un `VirtualConstantDefault` en $O(1)$.
     pub fn resolve_column(
         &self,
         attr_id: u16,

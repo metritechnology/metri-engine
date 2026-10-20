@@ -1,4 +1,4 @@
-//! Tests for `codice::generator`.
+//! Pruebas unitarias del inyector de atributos autogenerados (`codice::generator`).
 use super::*;
 use crate::codice::registry::{AttrType, AttributeDescriptor, EngineChannel};
 use serde_json::json;

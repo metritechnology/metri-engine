@@ -1,7 +1,8 @@
-//! Centralized type-coercion engine for Codice payloads.
+//! Motor centralizado de coerción de tipos escalares para payloads del Códice.
 //!
-//! Motor centralizado de coerción de tipos para Códice.
-//! Maneja conversiones y normalizaciones seguras de strings/tipos en payloads.
+//! Realiza conversiones seguras y deterministas de cadenas JSON hacia tipos
+//! numéricos (`i64`, `f64`) y booleanos (`bool`) según el `AttrType` declarado
+//! en el descriptor del atributo.
 
 use crate::codice::registry::AttrType;
 use serde_json::Value;

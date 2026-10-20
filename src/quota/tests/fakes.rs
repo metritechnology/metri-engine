@@ -1,5 +1,4 @@
-//! Tests for `quota::fakes.rs`.
-// quota/tests/fakes.rs — Dobles compartidos por los tests de cuota.
+//! Dobles de prueba (`FakeCounter`) compartidos por las suites de `quota`.
 //
 // El contador falso reproduce lo que hace DynamoDB en lo que importa para
 // decidir: el techo, el arranque desde el `seed` mientras el item no existe, el
@@ -27,6 +26,7 @@ pub struct FakeCounter {
 }
 
 impl FakeCounter {
+    /// Crea un contador en memoria vacío listo para pruebas unitarias.
     pub fn new() -> Self {
         Self::default()
     }
@@ -38,14 +38,17 @@ impl FakeCounter {
         c
     }
 
+    /// Devuelve el consumo actual registrado para `quota_id`, si existe.
     pub fn usage_of(&self, quota_id: &str) -> Option<i64> {
         self.usage.lock().unwrap().get(quota_id).copied()
     }
 
+    /// Simula una caída del backend de contadores haciendo fallar las operaciones con `msg`.
     pub fn break_it(&self, msg: &str) {
         *self.down.lock().unwrap() = Some(msg.to_string());
     }
 
+    /// Restaura el funcionamiento normal del contador tras una falla simulada.
     pub fn fix_it(&self) {
         *self.down.lock().unwrap() = None;
     }

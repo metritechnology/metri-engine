@@ -1,4 +1,4 @@
-//! Tests for `codice::registry`.
+//! Pruebas unitarias del registro de modelos del Códice (`codice::registry`).
 use super::*;
 use std::fs;
 

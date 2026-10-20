@@ -1,4 +1,4 @@
-//! Tests for `janus::plan_selector`.
+//! Pruebas unitarias para `janus::plan_selector`.
 use crate::janus::plan_selector::{select_plan, EavQueryPlan};
 use serde_json::json;
 

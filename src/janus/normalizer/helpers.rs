@@ -1,4 +1,4 @@
-//! Shared normalizer helpers — safe conversions and derived labels.
+//! Funciones auxiliares compartidas para los normalizadores — conversiones seguras y etiquetas derivadas.
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -66,6 +66,7 @@ pub fn infer_viz_type(output_cast: Option<&str>, viz_hint: Option<&str>) -> &'st
     }
 }
 
+/// Normaliza una sugerencia de visualización (`viz_hint`) al literal estático canónico del motor UI.
 pub fn hint_to_static(hint: &str) -> &'static str {
     match hint {
         "indicator" | "kpi" | "gauge" => "indicator",
@@ -80,6 +81,7 @@ pub fn hint_to_static(hint: &str) -> &'static str {
     }
 }
 
+/// Convierte una clave en formato `snake_case` a texto capitalizado separado por espacios (`Title Case`).
 pub fn capitalize_key(key: &str) -> String {
     key.split('_')
         .map(|word| {
@@ -93,6 +95,7 @@ pub fn capitalize_key(key: &str) -> String {
         .join(" ")
 }
 
+/// Deriva una etiqueta semántica legible para una métrica o dimensión a partir de su clave y plantilla opcional.
 pub fn derive_semantic_label(key: &str, label_template: Option<&str>) -> String {
     if let Some(template) = label_template {
         if !template.is_empty() {

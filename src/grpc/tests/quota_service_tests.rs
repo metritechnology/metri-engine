@@ -1,4 +1,4 @@
-//! Tests for `grpc::quota_service`.
+//! Pruebas unitarias de `grpc::quota_service`: reservas distribuidas, conciliación multi-réplica y barrido.
 use super::*;
 
 use serde_json::Value;

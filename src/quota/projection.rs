@@ -1,12 +1,10 @@
-//! current_usage computed at read time.
-//!
-//! `current_usage` calculado en lectura.
+//! Proyección de `current_usage` calculada en tiempo de lectura sobre `domain_quota`.
 //!
 //! EL PROBLEMA QUE RESUELVE
 //! ────────────────────────
 //! El consumo real lo lleva el contador atómico, fuera del log de datoms. Para
 //! que el panel pudiera enseñarlo, hasta la fase 3 cada débito escribía además
-//! una `TransactWriteItems` completa —n datoms, sus índices y su posible evento
+//! una transacción completa —n datoms, sus índices y su posible evento
 //! de outbox— sobre la fila `domain_quota`, solo para dejar ahí una copia del
 //! mismo número.
 //!
@@ -42,11 +40,13 @@ const QUOTA_ENTITY: &str = "domain_quota";
 /// La columna que deja de vivir en el log.
 const USAGE_FIELD: &str = "current_usage";
 
+/// Superposición de lectura (`RowOverlay`) que inyecta el `current_usage` vivo desde `QuotaCounter`.
 pub struct QuotaUsageOverlay {
     counter: Arc<dyn QuotaCounter>,
 }
 
 impl QuotaUsageOverlay {
+    /// Construye un nuevo `QuotaUsageOverlay` conectado al contador atómico dado.
     pub fn new(counter: Arc<dyn QuotaCounter>) -> Self {
         QuotaUsageOverlay { counter }
     }

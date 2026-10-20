@@ -1,4 +1,4 @@
-//! Tests for `aegis::oltp::compiler`.
+//! Pruebas unitarias del compilador de AST IR hacia planes nativos EAV (`aegis::oltp::compiler`).
 use crate::aegis::oltp::compiler::*;
 use crate::eav::reader::query::NativeQueryPlan;
 use serde_json::json;

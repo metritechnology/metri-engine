@@ -1,4 +1,4 @@
-//! Transact RPC body.
+//! Manejador del RPC `Transact`: mutaciones transaccionales (`CREATE`, `UPDATE`, `DELETE`) y lecturas puntuales (`GET`).
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::types::datom::DatomValue;
 use crate::grpc::pb::{TransactionRequest, TransactionResponse};

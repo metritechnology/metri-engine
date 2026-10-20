@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-09-07",
-  "plan": "docs/architecture/PLAN_PATRON_RESULT.md",
+  "plan": "docs/03-arquitectura/05-calidad-clean-code-y-patron-result.md",
   "code": {
     "unwrap": {},
     "expect": {},

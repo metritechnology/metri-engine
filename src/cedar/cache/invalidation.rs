@@ -1,15 +1,10 @@
-//! Cache invalidation bus subscriber.
+//! Bus y suscriptor de invalidación reactiva de cachés de autorización.
 //!
-//! Suscriptor del bus de invalidación de cachés.
-//!
-//! Los mutadores (bulk, transact) publican `InvalidationMsg` y este suscriptor
-//! expulsa al principal de la caché — y a los usuarios que lo referencian por
-//! rol o grupo. La expulsión del EAV_CACHE vive en su módulo (`pull.rs::evict_
-//! cached_entity`): cedar ya no toma el candado de otra capa.
-//!
-//! S3: un `Lagged` del canal broadcast (mensajes perdidos por capacidad) YA NO
-//! mata al suscriptor — se registra la ventana perdida y se sigue consumiendo;
-//! el TTL de entrada de la caché de principals acota la staleness residual.
+//! Los mutadores (`bulk`, `transact`, `composite`) publican `InvalidationMsg` y este
+//! suscriptor expulsa al principal de la caché — así como a los usuarios que lo referencian
+//! por rol o grupo — y delega la expulsión de `EAV_CACHE` en su propio módulo.
+//! Si el canal `broadcast` pierde mensajes (`Lagged`), registra la advertencia y continúa
+//! consumiendo mientras el TTL de la caché acota cualquier obsolescencia residual.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -25,6 +20,7 @@ pub struct BroadcastBus {
 }
 
 impl BroadcastBus {
+    /// Crea un nuevo bus de invalidación en memoria con la capacidad de cola especificada.
     pub fn new(capacity: usize) -> Self {
         let (tx, _rx) = tokio::sync::broadcast::channel(capacity);
         BroadcastBus { tx }

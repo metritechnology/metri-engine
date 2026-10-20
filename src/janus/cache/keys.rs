@@ -1,14 +1,13 @@
-//! Cache key builder — canonical digest of the compiled request.
+//! Constructor de claves de caché (`keys`) — resumen SHA-256 canónico de la consulta compilada.
 //!
-//! D2 de PLAN_CACHE_JANUS_DYNAMODB.md: la clave es el SHA-256 del JSON
-//! canónico del **AST ya compilado** (tenant + ABAC inyectados por
-//! `ast_compiler`) más la ventana temporal resuelta y el fingerprint del
-//! schema Códice. Con eso, la dependencia del resultado respecto a
-//! (tenant, usuario, scope) queda capturada por construcción: dos usuarios
-//! con scopes distintos producen ASTs distintos ⇒ claves distintas.
+//! La clave se calcula como el SHA-256 del JSON canónico del **AST ya compilado**
+//! (con `tenant_id` y cláusulas ABAC inyectadas por `ast_compiler`) más la ventana temporal
+//! resuelta y el fingerprint del esquema del Códice. Así, la dependencia del resultado
+//! respecto a `(tenant, usuario, scope)` queda capturada por construcción: dos usuarios
+//! con alcances distintos producen ASTs distintos y claves distintas.
 //!
-//! serde_json usa `BTreeMap` para `Map` (feature `preserve_order` desactivada)
-//! ⇒ la serialización ordena claves y es determinista.
+//! `serde_json` utiliza `BTreeMap` para `Map` (feature `preserve_order` desactivada),
+//! por lo que la serialización ordena las claves de forma determinista.
 
 use sha2::{Digest, Sha256};
 

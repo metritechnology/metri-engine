@@ -1,7 +1,7 @@
-//! MetriService gRPC implementation.
+//! Implementación principal del servicio gRPC `MetriService` (`MetriGrpcService`).
 //!
-//! Implementación de gRPC (Tonic)
-//! Implementa la interfaz gRPC `MetriService`.
+//! Ensambla el orquestador IOP (`CedarAuthorizerStep` → `QuotaGuardStep` → `JanusRouterStep`)
+//! y delega el cuerpo de cada operación RPC en los submódulos de `grpc::handlers`.
 
 use std::sync::Arc;
 
@@ -14,29 +14,37 @@ use crate::grpc::pb::{
     TransactionRequest, TransactionResponse, UpsertSequenceConfigRequest,
     UpsertSequenceConfigResponse,
 };
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::{Request, Response, Status};
+
 /// Dependencias del servicio, resueltas una sola vez en la raíz de
 /// composición (`grpc/server.rs` en producción). Sustituye al constructor de
 /// once parámetros posicionales: cada campo tiene nombre y los `Option`
 /// quedan a la vista.
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status};
-
 pub struct ServiceDeps {
+    /// Ejecutor de consultas OLTP sobre el almacén EAV/MBF.
     pub oltp_executor: crate::aegis::oltp::executor::OltpExecutor,
     /// Solo para fabricar el contador de cuota; el motor escribe por Janus.
     pub eav_writer: crate::eav::writer::EavWriter,
+    /// Enrutador de canales de escritura Janus (`OltpChannel`).
     pub janus_router: std::sync::Arc<crate::janus_router::router::JanusRouter>,
     /// Caché del read path (Null Object si `QUERY_CACHE_MODE=off`).
     pub query_cache: std::sync::Arc<crate::janus::cache::QueryCacheFrontend>,
+    /// Interceptor asíncrono de auditoría fire-and-forget.
     pub audit_interceptor:
         std::sync::Arc<crate::infrastructure::audit::interceptor::AuditInterceptorImpl>,
+    /// Emisor opcional de eventos del transactional outbox hacia SQS FIFO (Moira).
     pub moira_emitter: Option<std::sync::Arc<dyn crate::iop::core::MoiraEmitter>>,
+    /// Almacén de sesiones para verificación de tokens y lista negra de revocación.
     pub valkey_store: std::sync::Arc<dyn crate::domain::protocols::ISessionStore>,
+    /// Caché de principals consolidados para el pipeline Cedar.
     pub principal_cache: std::sync::Arc<dyn crate::cedar::PrincipalCache>,
+    /// Notificador de fallos operativos y de seguridad (Sherlog / EventBridge).
     pub fault_notifier: std::sync::Arc<dyn crate::iop::sherlog::IFaultNotifier>,
+    /// Canal de escritura empleado para persistir telemetría de errores y auditoría.
     pub telemetry_channel: std::sync::Arc<dyn crate::janus_router::router::IWriteChannel>,
+    /// Almacenamiento opcional para exportación de consultas masivas a CSV en S3.
     pub export_storage: Option<std::sync::Arc<dyn crate::domain::protocols::IExportStorage>>,
-    /// Bypass de autorización para desarrollo y pruebas. Lo decide
     /// Política de autenticación decidida en el arranque
     /// (`domain::config::resolve_dev_auth_bypass`, fail-closed);
     /// los tests lo fijan explícitamente. Nunca llega activo a producción.
@@ -45,6 +53,7 @@ pub struct ServiceDeps {
     pub invalidation_bus: Arc<dyn crate::cedar::ports::InvalidationBus>,
 }
 
+/// Servidor gRPC principal que implementa el contrato `MetriService`.
 pub struct MetriGrpcService {
     pub(crate) oltp_executor: crate::aegis::oltp::executor::OltpExecutor,
     /// Escritor EAV inyectado: el composite lo usa directo (instanciación
@@ -64,6 +73,7 @@ pub struct MetriGrpcService {
 }
 
 impl MetriGrpcService {
+    /// Construye `MetriGrpcService` e inicializa el pipeline IOP con las dependencias provistas en `ServiceDeps`.
     pub fn new(deps: ServiceDeps) -> Self {
         let ServiceDeps {
             oltp_executor,

@@ -1,39 +1,36 @@
-//! Canonical time primitives — the epoch-second invariant.
+//! Primitivas temporales canónicas e invariante de segundos epoch.
 //!
-//! Primitivas temporales canónicas.
-//!
-//! # Origin
-//! Invariantes (idénticas al el stack anterior):
-//! - TODOS los valores internos son epoch-SEGUNDOS (i64), salvo sufijo _ms.
-//! - CUSTOM_RANGE del proto llega en epoch-MILISEGUNDOS → usar ms_to_s antes de procesar.
-//! - shift_by_calendar usa chrono → bisiesto-safe, DST-aware.
+//! Invariantes del módulo:
+//! - Todos los valores temporales internos se representan en segundos epoch (`i64`),
+//!   salvo aquellos campos o parámetros explícitamente sufijados con `_ms`.
+//! - Los rangos `CUSTOM_RANGE` provenientes del contrato gRPC llegan en milisegundos epoch
+//!   y se convierten mediante `ms_to_s` en la frontera de entrada.
+//! - `shift_by_calendar` y `truncate_to_unit` operan con `chrono` y `chrono_tz`, garantizando
+//!   exactitud frente a años bisiestos, longitudes variables de mes y transiciones DST.
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Timelike};
 use chrono_tz::Tz;
 
 // ── Constantes de Escala ──────────────────────────────────────────────────────
 
-/// Factor de conversión ms → s.
-/// Datahike almacena timestamps como epoch-ms (i64).
-/// El proto TimeFrameContext.start_ts / end_ts son epoch-ms.
-/// Toda la lógica interna de Metri Engine opera en epoch-s.
+/// Factor de conversión entre milisegundos y segundos (`1_000`).
+///
+/// Los datoms y `TimeFrameContext.start_ts` / `end_ts` del contrato gRPC emplean
+/// milisegundos epoch (`i64`), mientras que la aritmética temporal interna opera en segundos epoch.
 pub const MS_PER_SECOND: i64 = 1_000;
 
-/// Ventana histórica por defecto para la estrategia SMART (anomaly detection).
-/// El CTE SMART calcula AVG + STDDEV_SAMP sobre los últimos N días antes del período actual.
+/// Ventana histórica por defecto (en días) para la estrategia de detección de anomalías `SMART`.
 pub const SMART_HISTORY_DAYS: i64 = 90;
 
 // ── Conversiones ms ↔ s ──────────────────────────────────────────────────────
 
-/// Convierte epoch-milisegundos → epoch-segundos (i64).
-/// Uso: CUSTOM_RANGE del proto, timestamps de Datahike.
+/// Convierte milisegundos epoch a segundos epoch (`i64`) mediante división entera.
 #[inline]
 pub fn ms_to_s(ms: i64) -> i64 {
     ms / MS_PER_SECOND
 }
 
-/// Convierte epoch-segundos → epoch-milisegundos (i64).
-/// Uso: cláusulas Datalog para Datahike.
+/// Convierte segundos epoch a milisegundos epoch (`i64`).
 #[inline]
 pub fn s_to_ms(s: i64) -> i64 {
     s * MS_PER_SECOND
@@ -41,16 +38,15 @@ pub fn s_to_ms(s: i64) -> i64 {
 
 // ── Helpers de Timezone ───────────────────────────────────────────────────────
 
-/// Parsea el string de timezone. Retorna UTC si no se reconoce.
+/// Parsea el identificador IANA de zona horaria, haciendo fallback seguro a `UTC` si no se reconoce.
 pub fn parse_tz(tz: &str) -> Tz {
     tz.parse::<Tz>().unwrap_or(chrono_tz::UTC)
 }
 
-/// Convierte epoch-segundos → DateTime en la timezone dada.
+/// Convierte segundos epoch a `DateTime<Tz>` en la zona horaria indicada.
 ///
-/// Total: un epoch fuera del calendario soportado (años 0–9999) se clampan a
-/// los extremos y un hueco de DST se interpreta como UTC — nunca pánico
-/// (PLAN_PATRON_RESULT.md, regla R2).
+/// Función total libre de pánicos: satura valores fuera del rango soportado (años 0–9999)
+/// y resuelve huecos o ambigüedades de horario de verano (DST) a través de UTC.
 pub fn epoch_to_zdt(epoch_secs: i64, tz: Tz) -> DateTime<Tz> {
     const MIN_SECS: i64 = -62_135_596_800; // 0000-01-01T00:00:00Z
     const MAX_SECS: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
@@ -67,7 +63,7 @@ pub fn epoch_to_zdt(epoch_secs: i64, tz: Tz) -> DateTime<Tz> {
     }
 }
 
-/// Trunca un DateTime al inicio del día (00:00:00) en su timezone.
+/// Trunca un `DateTime<Tz>` al inicio del día (`00:00:00.000`) en su zona horaria local.
 pub fn day0(dt: DateTime<Tz>) -> DateTime<Tz> {
     dt.with_hour(0)
         .and_then(|d| d.with_minute(0))
@@ -78,15 +74,22 @@ pub fn day0(dt: DateTime<Tz>) -> DateTime<Tz> {
 
 // ── shift_by_calendar ─────────────────────────────────────────────────────────
 
-/// Unidad de calendario para shift_by_calendar y truncate_to_unit.
+/// Unidad de calendario para operaciones de desplazamiento (`shift_by_calendar`) y truncamiento (`truncate_to_unit`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CalUnit {
+    /// Minuto (60 segundos).
     Minute,
+    /// Hora (3.600 segundos).
     Hour,
+    /// Día calendario en la zona horaria activa.
     Day,
+    /// Semana ISO 8601 (lunes a domingo).
     Week,
+    /// Mes calendario (28 a 31 días según año y mes).
     Month,
+    /// Trimestre calendario (3 meses: Q1=Ene, Q2=Abr, Q3=Jul, Q4=Oct).
     Quarter,
+    /// Año calendario (365 o 366 días).
     Year,
 }
 
@@ -170,14 +173,12 @@ fn is_leap(year: i32) -> bool {
 
 // ── truncate_to_unit ──────────────────────────────────────────────────────────
 
-/// Trunca epoch-segundos al inicio del período dado, respetando la timezone.
-/// Equivalente a Athena date_trunc() ejecutado en Rust.
+/// Trunca segundos epoch al inicio de la unidad de calendario `unit`, respetando la zona horaria `tz`.
 ///
-/// Usado en:
-///   - OLTP executor (bucketing in-memory de TIMESERIES)
-///   - Referencia canónica para validar el SQL generado en OLAP
+/// Se utiliza en el agrupamiento (`bucketing`) en memoria de consultas `TIMESERIES`
+/// y en la resolución de límites de ventanas temporales relativas.
 ///
-/// Retorna epoch-segundos (i64).
+/// Retorna el instante truncado en segundos epoch (`i64`).
 pub fn truncate_to_unit(epoch_secs: i64, unit: CalUnit, tz: &str) -> i64 {
     match unit {
         // Truncados aritméticos sin chrono (UTC-safe para minutos/horas)
@@ -226,17 +227,21 @@ pub fn truncate_to_unit(epoch_secs: i64, unit: CalUnit, tz: &str) -> i64 {
 
 // ── Helpers de período de comparación ────────────────────────────────────────
 
-/// Par de timestamps para un rango temporal.
+/// Intervalo temporal acotado opcionalmente en segundos epoch.
 #[derive(Debug, Clone, Copy)]
 pub struct TimeRange {
+    /// Límite inferior inclusivo en segundos epoch (`None` si no tiene cota inferior).
     pub start_ts: Option<i64>,
+    /// Límite superior inclusivo en segundos epoch (`None` si no tiene cota superior).
     pub end_ts: Option<i64>,
 }
 
-/// Resultado de un cálculo de período de comparación.
+/// Ventana temporal resultante del cálculo de un período de comparación analítica.
 #[derive(Debug, Clone, Copy)]
 pub struct ComparisonPeriod {
+    /// Marca de tiempo de inicio del período previo en segundos epoch.
     pub prev_start: i64,
+    /// Marca de tiempo de fin del período previo en segundos epoch.
     pub prev_end: i64,
 }
 

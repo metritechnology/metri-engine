@@ -1,3 +1,10 @@
+//! Script de compilación de `metri-engine`.
+//!
+//! Compila en tiempo de construcción los contratos Protobuf (`proto/metri.proto` y
+//! `proto/eda.proto`) mediante `tonic-build` y el esquema FlatBuffers del AST IR
+//! (`src/janus/janus_ir_ast.fbs`) mediante `flatc`.
+
+/// Punto de entrada del script de construcción de Cargo.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
 

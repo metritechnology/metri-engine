@@ -1,26 +1,19 @@
-//! Engine configuration, loaded once at boot.
+//! Configuración global del motor (`EngineConfig`), leída una única vez en el arranque.
 //!
-//! Configuración del engine, leída una sola vez.
-//!
-//! La Fase 4 del plan de refactorización: antes, `METRI_MASTER_TENANT_ID` se
-//! leía con `env::var` dentro del camino caliente (una llamada al sistema por
-//! consulta), el concepto tenía DOS nombres (`MASTER_TENANT_ID` en la raíz de
-//! composición y `METRI_MASTER_TENANT_ID` en el executor) y los tests no podían
-//! fijar configuración sin manipular el entorno global (condición de carrera con
-//! tests en paralelo).
-//!
-//! Ahora: `EngineConfig::from_env()` en el arranque, `OnceLock` estático, y
-//! `engine_config()` para todo el resto. El guard de seguridad HMAC vive aquí
-//! como función pura — testeable sin tocar el entorno.
+//! Centraliza la resolución de variables de entorno en `EngineConfig::from_env()`
+//! almacenada en un `OnceLock` estático y accesible vía `engine_config()`.
+//! Incluye los candados puros `resolve_hmac_secret` y `resolve_dev_auth_bypass`
+//! con política fail-closed para entornos productivos.
 
 use std::sync::OnceLock;
 
 use crate::domain::errors::{DomainError, ErrorCode};
 
 /// Tope del RPC ListEntities: configuración de servicio, no una constante de
-/// código (Fase 4, ítem 5).
+/// código.
 pub const DEFAULT_MAX_LIST_LIMIT: i32 = 5_000;
 
+/// Configuración global e inmutable del motor resuelta durante el arranque.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EngineConfig {
     /// Tenant maestro ( Zero-Trust censura a este tenant los dominios de negocio).
@@ -104,7 +97,7 @@ const DEV_HMAC_SECRET: &str = "secret-key-development-metri-256-bits!!!";
 ///
 /// # Errors
 ///
-/// [`ErrorCode::InfraConfig001`] si el entorno productivo no tiene secreto, o
+/// `ErrorCode::InfraConfig001` si el entorno productivo no tiene secreto, o
 /// lo tiene débil/por defecto — el llamador (bootstrap) hace fail-fast.
 pub fn resolve_hmac_secret(
     environment: Option<&str>,
@@ -144,7 +137,7 @@ pub fn resolve_hmac_secret(
 ///
 /// # Errors
 ///
-/// [`ErrorCode::InfraConfig001`] si se pide bypass fuera de los entornos no
+/// `ErrorCode::InfraConfig001` si se pide bypass fuera de los entornos no
 /// productivos conocidos.
 pub fn resolve_dev_auth_bypass(
     environment: Option<&str>,

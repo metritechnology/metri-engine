@@ -1,12 +1,8 @@
-//! AuditInterceptorImpl — always invoked, absorbs its own errors.
+//! Implementación `AuditInterceptorImpl`: interceptor de auditoría que absorbe sus propios fallos.
 //!
-//! AuditInterceptorImpl
-//!
-//! Se invoca SIEMPRE al final de cada request (Ok o Err).
-//! Captura el request completo, calcula ActionType y persiste un registro
-//! `audit_log` en el canal de almacenamiento MBF.
-//!
-//! Es fire-and-forget, nunca falla el request original.
+//! Se invoca siempre al final de cada operación (`Ok` o `Err`), captura el contexto de
+//! seguridad, deriva el `ActionType` y persiste un registro `audit_log` en el canal de
+//! almacenamiento MBF de forma fire-and-forget sin afectar la petición original.
 
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -17,13 +13,14 @@ use crate::domain::audit::protocol::IAuditInterceptor;
 use crate::iop::core::IopContext;
 use crate::janus_router::router::IWriteChannel;
 
-/// Implementación del AuditInterceptor.
+/// Implementación del interceptor de auditoría respaldada por el canal de escritura MBF.
 pub struct AuditInterceptorImpl {
     telemetry_channel: Arc<dyn IWriteChannel>,
     // FASE 10: fault_notifier para emitir AUD_001 si falla la base transaccional
 }
 
 impl AuditInterceptorImpl {
+    /// Crea una nueva instancia del interceptor de auditoría sobre el canal de telemetría dado.
     pub fn new(telemetry_channel: Arc<dyn IWriteChannel>) -> Self {
         info!("[AuditInterceptor] Activado (Fire-and-Forget, MBF-Mode)");
         Self { telemetry_channel }

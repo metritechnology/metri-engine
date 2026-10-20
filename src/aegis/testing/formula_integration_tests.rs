@@ -1,4 +1,4 @@
-//! Tests for `aegis::formula`.
+//! Pruebas de integración extremo a extremo del motor de fórmulas (`aegis::formula`).
 use crate::aegis::formula::evaluator::FormulaEvaluator;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::lexer::tokenize;

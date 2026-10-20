@@ -1,4 +1,4 @@
-//! Discovery, Explore and ListEntities RPC bodies.
+//! Manejadores de los RPC `Discovery`, `Explore` y `ListEntities`.
 use crate::grpc::handlers::list_support::{sort_and_truncate, validate_list_filters};
 use crate::grpc::pb::{
     DiscoveryRequest, DiscoveryResponse, ExploreRequest, ExploreResponse, ListEntitiesRequest,

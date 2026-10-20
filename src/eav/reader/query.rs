@@ -1,14 +1,11 @@
-//! Physical executor of query plans on DynamoDB.
+//! Ejecutor físico de planes de consulta sobre los índices EAV del motor `.mbf`.
 //!
-//! Ejecutor físico de planes de consulta en DynamoDB.
-//! Implementa los 5 planes del PlanSelector con los índices EAV reales.
-//!
-//! Planes soportados:
-//! PointLookup        → tabla EAVT (1 Get, O(1))
-//! AvetSingleFilter   → GSI-AVET  (1 Query, valor exacto con SK binario)
-//! AvetIntersection   → GSI-AVET  (N Queries paralelas + intersección HashSet)
-//! FtsSearch          → GSI-FTS   (K Query trigrams + Levenshtein threshold)
-//! AevtScan           → GSI-AEVT  (Scan por tipo de entidad)
+//! Implementa los 5 planes físicos seleccionados por el `PlanSelector`:
+//! - `PointLookup`: acceso directo O(1) sobre el índice primario `EAVT`.
+//! - `AvetSingle`: consulta por valor exacto o prefijo sobre `GSI-AVET` con `SK` binario.
+//! - `AvetIntersect`: intersección en memoria de múltiples consultas selectivas sobre `GSI-AVET`.
+//! - `FtsSearch`: búsqueda híbrida por trigramas, fonética romance y Zona 5B (`MbfHybridSearchIndex`).
+//! - `AevtScan`: escaneo segmentado por tipo de entidad sobre `GSI-AEVT`.
 
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
@@ -16,23 +13,22 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use tracing::debug;
 
+/// Capacidad máxima de entradas `(tenant_id, entity_type)` almacenadas en `AEVT_SCAN_CACHE`.
 pub const MAX_AEVT_SCAN_CACHE_SIZE: usize = 2_000;
 
-/// Vida máxima de una entrada del scan-cache. OBLIGATORIA: la invalidación
-/// por escritura (writer/cache_policy) sólo alcanza a la INSTANCIA que
-/// commitó — otra instancia Lambda (o una escritura externa: sagas, composer,
-/// schedulers) no invalida nada, y sin TTL su lista quedaría congelada hasta
-/// que la instancia se recicle. Es el bug «el activo nuevo tarda en aparecer
-/// en el listado»: read-your-write se garantiza por TTL, no por invalidación.
+/// Vida máxima de una entrada del caché de escaneo por tipo (`AEVT_SCAN_CACHE`).
+/// Acota la obsolescencia entre instancias cuando ocurren escrituras concurrentes.
 pub const AEVT_SCAN_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// Entrada del scan-cache: los eids vivos del (tenant, tipo) y CUÁNDO se
-/// leyeron. Sin `cached_at` la entrada sería eterna.
+/// Entrada del caché de escaneo `AEVT`: lista de `entity_id` activos del par `(tenant, entity_type)` e instante de lectura.
 pub struct CachedAevtScan {
+    /// Identificadores de las entidades activas pertenecientes al tipo consultado.
     pub ids: Vec<String>,
+    /// Instante en que se materializó la entrada en caché.
     pub cached_at: std::time::Instant,
 }
 
+/// Caché global concurrente de escaneos `AEVT` indexada por `(tenant_id, entity_type)`.
 pub static AEVT_SCAN_CACHE: Lazy<RwLock<HashMap<(String, String), CachedAevtScan>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
@@ -67,32 +63,48 @@ use crate::eav::types::datom::DatomValue;
 use crate::eav::types::encoding::avet_sk_prefix;
 use crate::mbf::storage::{av_string, AttributeValue, Blob, MbfStorageClient};
 
-/// Plan nativo del PlanSelector (usa attr_name en lugar de attr_id numérico).
-/// Se genera desde `janus::plan_selector::EavQueryPlan` y ejecuta contra MBF storage.
+/// Plan físico nativo de consulta EAV (expresado con nombres de atributo `attr_name`).
+/// Se construye a partir de `janus::plan_selector::EavQueryPlan` y se ejecuta contra `MbfStorageClient`.
 #[derive(Debug, Clone)]
 pub enum NativeQueryPlan {
+    /// Búsqueda puntual directa O(1) por identificador de entidad.
     PointLookup {
+        /// Identificador único de la entidad buscada.
         entity_id: String,
     },
+    /// Consulta en el índice `GSI-AVET` por igualdad exacta de un atributo y valor.
     AvetSingle {
+        /// Identificador del tenant propietario.
         tenant_id: String,
+        /// Nombre canónico del atributo filtrado.
         attr_name: String,
+        /// Valor tipado buscado en el índice `AVET`.
         value: DatomValue,
     },
+    /// Intersección de múltiples filtros de igualdad sobre el índice `GSI-AVET`.
     AvetIntersect {
+        /// Identificador del tenant propietario.
         tenant_id: String,
+        /// Lista de pares `(attr_name, valor)` que deben cumplirse simultáneamente.
         filters: Vec<(String, DatomValue)>,
     },
+    /// Búsqueda de texto completo e híbrida (trigramas, fonética y Zona 5B).
     FtsSearch {
+        /// Identificador del tenant propietario.
         tenant_id: String,
+        /// Término o frase de búsqueda textual.
         term: String,
     },
+    /// Escaneo completo de las entidades activas de un tipo en el índice `GSI-AEVT`.
     AevtScan {
+        /// Identificador del tenant propietario.
         tenant_id: String,
+        /// Nombre del modelo o tipo de entidad a escanear.
         entity_type: String,
     },
 }
 
+/// Ejecutor físico de planes `NativeQueryPlan` sobre el motor de almacenamiento `.mbf`.
 #[derive(Clone)]
 pub struct EavQueryExecutor {
     ddb: Arc<MbfStorageClient>,
@@ -100,6 +112,7 @@ pub struct EavQueryExecutor {
 }
 
 impl EavQueryExecutor {
+    /// Crea un nuevo `EavQueryExecutor` conectado al cliente `.mbf` y tabla especificados.
     pub fn new(ddb: Arc<MbfStorageClient>, table: impl Into<String>) -> Self {
         EavQueryExecutor {
             ddb,
@@ -450,9 +463,12 @@ impl EavQueryExecutor {
             );
         }
 
-        // En el esquema EAV el atributo entity_type almacena el tipo de entidad.
-        // PK del GSI-AEVT: T#<tenant>#A#entity_type (segmentado por tipo para optimizar al máximo)
-        let pk = format!("T#{tenant}#A#entity_type#{entity_type}");
+        // En el esquema EAV el atributo entity/type almacena el tipo de entidad.
+        // PK del GSI-AEVT: T#<tenant>#A#entity/type#<entity_type> (segmentado por tipo para optimizar al máximo)
+        let pk = format!(
+            "T#{tenant}#A#{}#{entity_type}",
+            crate::eav::writer::system_attrs::TYPE_NAME
+        );
 
         let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();

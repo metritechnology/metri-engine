@@ -1,4 +1,4 @@
-//! Tests for `aegis::oltp::comparison`.
+//! Pruebas unitarias de estrategias de comparación temporal y detección de anomalías (`aegis::oltp::comparison`).
 use crate::aegis::oltp::aggregation::apply_metrics_fbs;
 use crate::aegis::oltp::comparison::*;
 use crate::janus::fbs::{

@@ -1,7 +1,8 @@
-//! Normalizer for MatchRoutingRulesBatch requests.
+//! Normalizadores de respuestas para evaluación de reglas de enrutamiento (`MatchRoutingRules`).
 use crate::janus::normalizer::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 
+/// Estrategia de normalización para respuestas individuales de evaluación de reglas (`MatchRoutingRules`).
 pub struct MatchRulesNormalizer;
 
 impl NormalizerStrategy for MatchRulesNormalizer {
@@ -13,6 +14,7 @@ impl NormalizerStrategy for MatchRulesNormalizer {
     }
 }
 
+/// Estrategia de normalización para respuestas por lotes de evaluación de reglas (`MatchRoutingRulesBatch`).
 pub struct MatchRulesBatchNormalizer;
 
 impl NormalizerStrategy for MatchRulesBatchNormalizer {

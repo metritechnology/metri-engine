@@ -1,14 +1,11 @@
-//! Cursor pagination — Base64(offset:limit).
+//! Paginación determinista basada en cursores opacos `Base64(offset:limit)`.
 //!
-//! Paginación por cursor Base64(offset:limit).
+//! Estrategia de codificación:
+//! - Cursor vacío o `None` -> primera página (`offset = 0`).
+//! - `"MTA6MTA="` -> `Base64("10:10")` -> `offset = 10, limit = 10` (segunda página).
+//! - `"MjA6MTA="` -> `Base64("20:10")` -> `offset = 20, limit = 10` (tercera página).
 //!
-//! Estrategia: cursor = Base64("offset:limit")
-//! cursor = "" / None → página 1, offset = 0
-//! "MTA6MTA=" → Base64("10:10") → offset=10, limit=10 (página 2)
-//! "MjA6MTA=" → Base64("20:10") → offset=20, limit=10 (página 3)
-//!
-//! SRP: módulo exclusivo de paginación — sin dependencias de negocio.
-//! Puro: todas las funciones son puras (sin side-effects).
+//! Módulo puro libre de efectos secundarios y de dependencias de infraestructura.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};

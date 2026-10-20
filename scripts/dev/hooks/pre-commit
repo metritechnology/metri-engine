@@ -11,11 +11,12 @@ status=0
 echo "▶ cargo fmt --check"
 cargo fmt --check || status=1
 
-echo "▶ referencia generada al día (modelos ↔ docs/reference)"
+echo "▶ referencia generada y cobertura documental 100% (docs/ y src/)"
 # El script usa tomllib (Python ≥ 3.11); el python3 del sistema puede ser más viejo.
 PY=.venv/bin/python3
 [ -x "$PY" ] || PY=python3
 "$PY" scripts/docs/gen_reference.py --check || status=1
+"$PY" scripts/dev/check_docs.py --strict || status=1
 
 echo "▶ patrón Result estricto + SOLID / DRY / Clean Code por archivo (ratchet)"
 "$PY" scripts/dev/check_result_pattern.py --strict || status=1

@@ -1,4 +1,4 @@
-//! BulkIngest RPC body.
+//! Manejador del RPC `BulkIngest`: ingesta masiva optimizada a través del orquestador IOP.
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::grpc::pb::{BulkRequest, BulkResponse};
 use crate::grpc::service::MetriGrpcService;

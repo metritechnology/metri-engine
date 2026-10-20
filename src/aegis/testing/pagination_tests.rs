@@ -1,4 +1,4 @@
-//! Tests for `aegis::pagination`.
+//! Pruebas unitarias de codificación y decodificación de cursores de paginación (`aegis::pagination`).
 use crate::aegis::pagination::*;
 use serde_json::json;
 use serde_json::Value;

@@ -1,21 +1,16 @@
-//! Step 7 — result assembly and OutputCast aggregation.
+//! Ensamblaje de resultados y agregación por `OutputCast` (`aggregator`).
 //!
-//! Paso 7: Result Assembly + OutputCast Aggregation
-//!
-//! # Origin
-//! Blueprint: JANUS - Rust.md §I.2 Paso 7 — Result Assembly
-//!
-//! Aplica el OutputCast sobre rows de negocio:
-//! TABLE      → rows directas (sin agregación)
-//! KPI        → SUM/COUNT/AVG/MIN/MAX con StreamAggregator (1 fila)
-//! TIMESERIES → epoch bucketing + group_by intervalo
-//! PIE/BUBBLE → group_by dimensiones + apply_metrics
+//! Aplica el `OutputCast` sobre filas de negocio:
+//! - `TABLE`      → filas directas (sin agregación).
+//! - `KPI`        → `SUM`/`COUNT`/`AVG`/`MIN`/`MAX` con `StreamAggregator` (1 fila).
+//! - `TIMESERIES` → truncamiento de epoch (`bucketing`) + agrupación por intervalo.
+//! - `PIE`/`BUBBLE` → agrupación por dimensiones + cálculo de métricas.
 
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use tracing::debug;
 
-// ── StreamAggregator (Blueprint: §IV.3 — Zero-Allocation KPIs) ───────────────
+// ── StreamAggregator — agregador en una pasada para KPIs ─────────────────────
 
 #[derive(Debug, Default, Clone)]
 struct StreamAggregator {
@@ -57,14 +52,19 @@ impl StreamAggregator {
 
 // ── MetricSpec — describe una métrica del AST IR ─────────────────────────────
 
+/// Especificación de una métrica analítica extraída del AST IR.
 #[derive(Debug, Clone)]
 pub struct MetricSpec {
+    /// Campo o atributo sobre el cual se calcula la agregación.
     pub field: String,
-    pub aggregation: String, // SUM, COUNT, AVG, MIN, MAX
+    /// Operador de agregación (`SUM`, `COUNT`, `AVG`, `MIN`, `MAX`).
+    pub aggregation: String,
+    /// Alias de salida para el resultado agregado.
     pub alias: String,
 }
 
 impl MetricSpec {
+    /// Construye un `MetricSpec` a partir de un objeto JSON de métrica del AST IR.
     pub fn from_json(m: &Value) -> Option<Self> {
         let field = m
             .get("field")
@@ -90,8 +90,7 @@ impl MetricSpec {
     }
 }
 
-// ── apply_metrics — agrega un conjunto de rows según métricas ─────────────────
-
+/// Agrega un conjunto de filas según la lista de especificaciones `MetricSpec`.
 pub fn apply_metrics(rows: &[Value], metrics: &[MetricSpec]) -> Value {
     let mut result = Map::new();
 
@@ -163,9 +162,7 @@ fn truncate_to_interval(epoch_secs: i64, interval: &str) -> i64 {
 
 // ── apply_output_cast — punto de entrada principal ────────────────────────────
 
-/// Aplica el OutputCast sobre los rows de negocio devueltos por el EAV reader.
-///
-/// [Blueprint: JANUS §I.2 Paso 7 — "Aplicar OutputCast: KPI aggregation, TIMESERIES bucketing, PIE grouping"]
+/// Aplica el `OutputCast` sobre las filas de negocio devueltas por el lector EAV.
 pub fn apply_output_cast(rows: Vec<Value>, ast_ir: &Value) -> Vec<Value> {
     let output_cast = ast_ir
         .get("output_cast")
@@ -331,6 +328,7 @@ pub fn apply_output_cast(rows: Vec<Value>, ast_ir: &Value) -> Vec<Value> {
 
 use crate::janus::fbs;
 
+/// Aplica el `OutputCast` tipado desde un contrato FlatBuffers `AnalyticsRequestT` sobre las filas de negocio.
 pub fn apply_output_cast_fbs(rows: Vec<Value>, ast_ir: &fbs::AnalyticsRequestT) -> Vec<Value> {
     let output_cast = match ast_ir.output_cast.0 {
         1 => "KPI",

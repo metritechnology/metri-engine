@@ -1,6 +1,6 @@
-//! Comprehensive 100% coverage test suite for the Janus & gRPC VIZ Engine:
+//! Suite exhaustiva de cobertura para el motor VIZ de Janus y gRPC:
 //! `janus::normalizer::query`, `janus::normalizer::helpers`, `janus::router::post_processor`,
-//! `janus::multi_series`, and `grpc::handlers::query_support::map_viz_meta`.
+//! `janus::multi_series` y `grpc::handlers::query_support::map_viz_meta`.
 
 use serde_json::{json, Map};
 use std::collections::HashMap;

@@ -1,11 +1,4 @@
-//! JanusRouter as an IOP step — validation and write routing.
-//!
-//! IopStep wrapper para JanusRouter.
-//! Paso 3 (y último) del pipeline IOP: validación + ruteo al canal de escritura.
-//!
-//! # Origin
-//! En el stack anterior: `(fn [ctx] (route ctx {:channel-registry channel-registry}))`
-//! En Rust:    JanusRouterStep implementa IopStep, invoca JanusRouter::route()
+//! Paso 3 del pipeline IOP (`JanusRouterStep`) — validación de esquema y ruteo al canal de escritura.
 
 use std::sync::Arc;
 use tracing::info;
@@ -20,6 +13,7 @@ pub struct JanusRouterStep {
 }
 
 impl JanusRouterStep {
+    /// Construye un nuevo `JanusRouterStep` envolviendo la instancia compartida de `JanusRouter`.
     pub fn new(router: Arc<JanusRouter>) -> Self {
         info!("[JanusStep] Inicializado — Write Path activo");
         Self { router }

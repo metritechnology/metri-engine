@@ -1,15 +1,16 @@
-//! janus — the read path of the metri engine.
+//! Subsistema `janus` — Read Path analítico y transaccional de `metri-engine`.
 //!
-//! janus/ — Read Path del Metri Engine.
-//! Write Path → ver src/janus_router/
+//! Orquesta la normalización, validación, enriquecimiento batch/cross-filter,
+//! compilación de AST IR (JSON y FlatBuffers), selección de plan EAV, caché
+//! read-through y ensamblaje de resultados (`OutputCast` y fusión multiserie).
 
-pub mod cache; // Caché KV del read path (PLAN_CACHE_JANUS_DYNAMODB.md)
+pub mod cache;
 pub mod fbs;
 pub mod normalizer;
 pub mod router;
-pub mod validator; // Read Path: CedarCtx, QueryChunk, run_query_pipeline
+pub mod validator;
 
-// FASE 3 — Compiladores del Read Path
+// Compiladores y agregadores del Read Path
 pub mod abac_clauses;
 pub mod aggregator;
 pub mod ast_compiler;

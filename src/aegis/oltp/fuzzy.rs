@@ -1,17 +1,11 @@
-//! Fuzzy matching for Omnisearch (MATCHES operator).
+//! Coincidencia aproximada (`fuzzy matching`) para búsquedas Omnisearch y operador `MATCHES`.
 //!
-//! Fuzzy matching para Omnisearch (operador MATCHES).
-//!
-//! Algoritmos (aprovechando EAV FTS):
-//! 1. Substring case-insensitive (fast path)
-//! 2. Trigram Intersection Score (fast fuzzy path)
-//! 3. Damerau-Levenshtein distance O(m·n) (deep fuzzy path)
-//! 4. Word-level tokenization
-//!
-//! Threshold adaptativo:
-//! ≤ 2 chars → 0 (solo exacto)
-//! 3-8 chars → 1 (1 error tipográfico)
-//! ≥ 9 chars → 2 (2 errores)
+//! Pipeline de evaluación en cortocircuito:
+//! 1. Subcadena exacta insensible a mayúsculas y tildes (vía rápida).
+//! 2. Canonicalización de códigos técnicos alfanuméricos (preservando dígitos exactos).
+//! 3. Puntuación de intersección de trigramas ($\ge 0,75$).
+//! 4. Distancia de edición de Damerau-Levenshtein y clave fonética romance por token
+//!    con umbral adaptativo según longitud (`<=2` -> `0`, `3..=8` -> `1`, `>=9` -> `2`).
 
 use crate::eav::fts::searcher::{canonicalize_alphanumeric_code, damerau_levenshtein};
 use crate::eav::fts::trigram::generate_trigrams;

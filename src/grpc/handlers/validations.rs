@@ -1,4 +1,4 @@
-//! Shared request validations for the RPC handlers.
+//! Validaciones compartidas por los handlers RPC de mutación: formato de grants, autoservicio, ABAC e invariante acíclica de grupos.
 use crate::grpc::service::MetriGrpcService;
 use crate::janus_router::oltp_channel::extract_entity_id;
 use tonic::Status;

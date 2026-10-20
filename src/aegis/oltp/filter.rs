@@ -1,8 +1,8 @@
-//! In-memory FilterNode evaluator for the OLTP engine.
+//! Evaluador en memoria de árboles de predicados `FilterNodeT` para el motor de lectura.
 //!
-//! aegis/oltp/filter.rs
-//! Evaluador de FilterNode in-memory para el motor OLTP (EAV).
-//! SRP: Evaluar si un row JSON cumple con un conjunto de predicados definidos en el AST/FilterNode.
+//! Determina si una fila JSON hidratada satisface un árbol arbitrario de condiciones
+//! conjuntivas (`AND`), disyuntivas (`OR`) y operadores de comparación (`EQ`, `NEQ`, `GT`,
+//! `GTE`, `LT`, `LTE`, `IN`, `NOT_IN`, `BETWEEN`, `CONTAINS`, `LIKE`, `MATCHES`, `IS_NULL`, `IS_NOT_NULL`).
 
 use serde_json::Value;
 use tracing::warn;

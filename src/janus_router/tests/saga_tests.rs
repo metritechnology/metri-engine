@@ -1,5 +1,4 @@
-//! Tests for `janus_router::saga`.
-// Pruebas del SagaBuilder — proyección declarativa hacia scheduled_job.
+//! Pruebas unitarias de `janus_router::saga` — proyección y reconciliación declarativa hacia `scheduled_job`.
 //
 // Cubren los casos límite que separan una proyección correcta de una que parece
 // correcta: derivación del trigger, fan-out por pre-notificación, traversal del
@@ -343,7 +342,7 @@ fn desired_status_sigue_la_salud_de_la_madre() {
 
 /// El mapping DECLARA su fuente de trigger: sin `trigger_source` la
 /// proyección falla explícito — la plataforma no adivina attrs de ningún
-/// dominio por nombre (PLAN_DESCACOLE_PM_TOTAL F1).
+/// dominio por nombre.
 #[tokio::test]
 async fn mapping_sin_trigger_source_falla_explicitamente() {
     let mut m = model("reminder");

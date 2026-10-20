@@ -1,8 +1,8 @@
-//! Infrastructure — outbound adapters: AWS SDK clients and local emulations.
+//! Capa de infraestructura: adaptadores de salida hacia servicios AWS y emulaciones locales.
 //!
-//! Cada adaptador implementa un puerto de [`crate::application`] o de
-//! [`crate::domain`]; los interruptores `*_MODE` permiten levantar el
-//! engine completo sin AWS (modo stub) — ver `docs/guides/desarrollo-local.md`.
+//! Cada adaptador implementa un puerto de `crate::application` o de
+//! `crate::domain`; los interruptores `*_MODE` permiten levantar el
+//! motor completo sin AWS (modo stub) — ver `docs/01-inicio/01-quickstart-local.md`.
 pub mod audit;
 pub mod domain_event_bus;
 pub use crate::mbf::storage as dynamodb;

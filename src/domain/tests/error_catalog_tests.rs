@@ -1,4 +1,4 @@
-//! Tests for `domain::error_catalog`.
+//! Pruebas unitarias del cargador de catálogo de errores (`domain::error_catalog`).
 use super::*;
 
 #[test]

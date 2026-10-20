@@ -1,4 +1,4 @@
-//! Tests for `quota::sweeper`.
+//! Pruebas unitarias de `quota::sweeper` (`sweep_once` y reconciliación de reservas vencidas).
 use super::*;
 
 use crate::quota::reservations::{MemoryReservationStore, Reservation};

@@ -1,12 +1,4 @@
-//! EAV read path — selective pull without loading the blob.
-//!
-//! # Origin
-//! [NUEVO — reemplaza: src/metri/aegis/datalog/pull.clj]
-//! Read path del motor EAV.
-//! Blueprint: Metri EAV - OLPT.md §V y §VI
-//!
-//! En el stack anterior: (d/pull db pattern entity-id) → blob completo en memoria
-//! En Rust:    Query selectiva por atributo → solo los bytes necesarios
+//! Ruta de lectura del motor EAV — reconstrucción selectiva (`pull`) e histórica (`pull_as_of`, `history`) sobre `.mbf`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,25 +15,24 @@ use crate::eav::types::{
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
 
+/// Entrada almacenada en la caché en memoria `EAV_CACHE` para una entidad reconstruida.
 #[derive(Clone, Debug)]
 pub struct CacheEntry {
+    /// Indica si el mapa contiene la totalidad de los atributos vigentes de la entidad (`true`) o un subconjunto parcial (`false`).
     pub is_complete: bool,
+    /// Mapa de atributos y valores vigentes de la entidad.
     pub map: EntityMap,
-    /// Nacimiento de la entrada: la caché es por-instancia y la invalidación
-    /// por escritura sólo limpia la instancia que escribió — otra instancia
-    /// caliente serviría el snapshot viejo INDEFINIDAMENTE. El TTL acota el
-    /// staleness entre instancias.
+    /// Instante de creación de la entrada para acotar la obsolescencia entre instancias mediante `EAV_CACHE_TTL`.
     pub cached_at: std::time::Instant,
 }
 
-/// Vida máxima de una entrada de caché de lectura. Consciente: calienta lo
-/// caliente sin convertir la instancia en una verdad propia por siempre.
+/// Tiempo de vida máximo de una entrada en la caché de lectura de entidades.
 pub const EAV_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Global thread-safe in-memory cache for fully assembled EAV entities.
-/// Keyed by PK: "T#<tenant_id>#E#<entity_id>"
+/// Capacidad máxima de entidades ensambladas en la caché en memoria por instancia.
 pub const MAX_EAV_CACHE_SIZE: usize = 10_000;
 
+/// Caché global concurrente en memoria de entidades EAV ensambladas, indexada por `T#<tenant_id>#E#<entity_id>`.
 pub static EAV_CACHE: Lazy<RwLock<HashMap<String, CacheEntry>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
@@ -75,22 +66,30 @@ pub fn insert_eav_cache_entry(
 /// Resultado de un pull — mapa de atributos con sus valores actuales.
 pub type EntityMap = HashMap<String, DatomValue>;
 
-/// Estructura interna súper compacta para warmup.
+/// Estructura compacta para representar un datom decodificado durante el precalentamiento de caché (`warm_cache_for_tenant`).
 #[derive(Debug)]
 pub struct WarmupItem {
+    /// Identificador único de la entidad a la que pertenece el datom.
     pub entity_id: String,
+    /// Identificador monotónico de la transacción (`tx_id`).
     pub tx_id: u64,
+    /// Operación del datom (`true` = assert, `false` = retract).
     pub op: bool,
+    /// Valor tipado del atributo en este datom.
     pub value: DatomValue,
 }
 
+/// Lector de entidades del motor EAV sobre el almacenamiento indexado `.mbf`.
 #[derive(Clone)]
 pub struct EavReader {
+    /// Cliente de almacenamiento `.mbf` subyacente.
     pub ddb: Arc<MbfStorageClient>,
+    /// Nombre lógico de la tabla o partición `.mbf`.
     pub table: String,
 }
 
 impl EavReader {
+    /// Crea una nueva instancia de `EavReader` asociada al cliente `.mbf` y tabla indicados.
     pub fn new(ddb: Arc<MbfStorageClient>, table: impl Into<String>) -> Self {
         EavReader {
             ddb,
@@ -214,8 +213,7 @@ impl EavReader {
         Ok(result_map)
     }
 
-    /// Time-travel: estado de la entidad as-of un TX_ID específico.
-    /// [BLUEPRINT: §VI.1 — "Snapshot Reads — as-of TX T"]
+    /// Reconstruye mediante *time-travel* el estado de la entidad vigente hasta el corte transaccional `as_of_tx`.
     pub async fn pull_as_of(
         &self,
         tenant_id: &str,
@@ -258,9 +256,7 @@ impl EavReader {
         Ok(assemble_current_state(raw_items, attrs))
     }
 
-    /// History query — retorna TODOS los datoms de una entidad incluyendo retracts.
-    /// Ideal para audit trail.
-    /// [BLUEPRINT: §VI.2 — "History Query (Auditoría completa)"]
+    /// Consulta el historial completo de una entidad retornando todos sus datoms (incluyendo retracciones) para auditoría.
     pub async fn history(
         &self,
         tenant_id: &str,
@@ -320,10 +316,8 @@ impl EavReader {
         Ok(entries)
     }
 
-    /// Escanea la tabla principal y carga en la caché en memoria EAV_CACHE
-    /// todas las entidades de un tenant de un solo golpe.
-    /// Esto evita tener que hacer miles de consultas individuales (CACHE MISS) en DynamoDB
-    /// y acelera drásticamente las operaciones en masa/analíticas.
+    /// Escanea el índice `AEVT` de `.mbf` y precalienta en `EAV_CACHE` las entidades de un tenant en paralelo.
+    /// Evita consultas individuales repetitivas durante cargas analíticas o masivas.
     pub async fn warm_cache_for_tenant(
         &self,
         tenant_id: &str,
@@ -536,13 +530,17 @@ impl EavReader {
     }
 }
 
-/// Entrada del historial de una entidad.
+/// Entrada individual del historial cronológico de mutaciones de una entidad.
 #[derive(Debug, Clone)]
 pub struct HistoryEntry {
+    /// Nombre canónico del atributo afectado.
     pub attr_name: String,
+    /// Valor tipado del datom (si aplica).
     pub value: Option<DatomValue>,
+    /// Identificador monotónico de la transacción (`tx_id`).
     pub tx_id: u64,
-    pub op: bool, // true=assert, false=retract
+    /// Indicador de operación (`true` = assert, `false` = retract).
+    pub op: bool,
 }
 
 /// Ensambla el estado actual de una entidad desde los datoms raw de la partición `.mbf`.

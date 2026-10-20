@@ -1,18 +1,11 @@
-//! Transactional outbox — the event row is born with the mutation.
+//! Transactional Outbox — generación pura de la fila `outbox_event` dentro de la misma transacción ACID.
 //!
-//! Patrón outbox: la fila del evento nace en la MISMA
-//! transacción que la mutación (Componente Externo 05, metri-schedulers §10).
+//! La fila `outbox_event` constituye el registro durable de la mutación: su identificador coincide con el
+//! `mutation_ulid` del sobre de eventos. Este módulo es puro —compone datoms sin realizar I/O—
+//! para que `EavWriter` sólo orqueste la persistencia.
 //!
-//! La fila outbox_event ES el registro durable de la mutación: su id es el ULID
-//! de la mutación y la llave de orden del ledger del Hub (§10.3). Este módulo es
-//! puro — compone datoms, no toca I/O — para que el escritor (transact.rs) sólo
-//! orqueste y los tests puedan fijar el sobre sin DynamoDB.
-//!
-//! Los helpers JSON (`datom_value_to_json`, `datom_map_to_json`) viven aquí
-//! porque el sobre `payload` fijó su formato: aplanado y con la misma
-//! representación que el delta del contrato metri-contracts. Consumidores
-//! externos (saga, domain_event_bus, materialization) comparten la función para
-//! no partir la representación en dos.
+//! Incluye además los serializadores JSON canónicos (`datom_value_to_json`, `datom_map_to_json`)
+//! compartidos con el bus de eventos de dominio y el motor de sagas.
 
 use std::collections::HashMap;
 
@@ -171,16 +164,6 @@ pub(crate) fn generate_outbox_datoms(
         actor,
     );
 
-    let outbox_type_datom = Datom::assert(
-        tenant_id,
-        &outbox_ulid,
-        "entity_type",
-        Datom::hash_attr_name("entity_type"),
-        DatomValue::Str("outbox_event".to_string()),
-        tx_id,
-    );
-    outbox_datoms.push(outbox_type_datom);
-
     Ok(Some(outbox_datoms))
 }
 
@@ -244,8 +227,8 @@ mod tests {
 
         let tipo = datoms
             .iter()
-            .find(|d| d.attr_name == "entity_type")
-            .expect("la fila trae entity_type");
+            .find(|d| d.attr_name == crate::eav::writer::system_attrs::TYPE_NAME)
+            .expect("la fila trae entity/type");
         assert_eq!(tipo.value, DatomValue::Str("outbox_event".into()));
         assert_eq!(tipo.entity_id, "01ARZ3NDEKTSV4RRFFQ69G5FAV");
     }

@@ -1,41 +1,36 @@
-//! Temporal adapters — TimeRange to engine-specific clauses.
+//! Adaptadores temporales para traducir rangos `TimeRange` a predicados y buckets de consulta.
 //!
-//! Adaptadores temporales: TimeRange → cláusulas engine-específicas.
-//!
-//! traducir {start_ts, end_ts} epoch-s a la sintaxis de cada motor.
-//!
-//! Adaptadores disponibles:
-//! to_datalog_clauses  → cláusulas Datahike (convierte a ms con s_to_ms)
-//!
-//! # Origin
-//! to_honey_clause → el stack anterior BETWEEN para Athena/SQL (serde_json)
-//! to_bucket_fn → fn de bucketing el stack anterior para OLTP TIMESERIES
+//! Convierte límites `{start_ts, end_ts}` en segundos epoch a las estructuras de filtrado
+//! requeridas por los ejecutores de lectura sobre datoms EAV / `.mbf` y agrupadores de
+//! series temporales (`TIMESERIES`) en memoria:
+//! - `to_datalog_clauses`: Genera cláusulas de enlace y cotas en milisegundos epoch.
+//! - `to_honey_clause`: Construye árboles de predicados JSON compatibles con `WhereNode`.
+//! - `apply_bucket`: Trunca marcas temporales al inicio del intervalo según la zona horaria.
 
 use crate::temporal::core::{s_to_ms, truncate_to_unit, CalUnit, TimeRange};
 use serde_json::{json, Value};
 
-// ── OLTP: Datahike Datalog ────────────────────────────────────────────────────
+// ── OLTP: Predicados Datalog sobre Datoms ─────────────────────────────────────
 
-/// Representa una cláusula Datalog para Datahike.
-/// Ejemplo: [?e :created_at ?ts1] [>= ?ts1 1735689600000]
+/// Representa una cláusula de filtrado temporal en formato Datalog.
+///
+/// Ejemplo: `[?e :created_at ?ts1]` junto con `[>= ?ts1 1735689600000]`.
 #[derive(Debug, Clone)]
 pub struct DatalogClause {
-    pub binding: String,       // "[?e :created_at ?ts1]"
+    /// Patrón de enlace EAV que vincula la entidad con la variable temporal (ej. `"[?e :created_at ?ts1]"`).
+    pub binding: String, // "[?e :created_at ?ts1]"
+    /// Predicado de límite inferior en milisegundos epoch (ej. `"[>= ?ts1 <ms>]"`).
     pub lower: Option<String>, // "[>= ?ts1 <ms>]"
+    /// Predicado de límite superior en milisegundos epoch (ej. `"[<= ?ts1 <ms>]"`).
     pub upper: Option<String>, // "[<= ?ts1 <ms>]"
 }
 
-/// TimeRange × ts_field × counter → DatalogClause para Datahike.
+/// Convierte un `TimeRange`, nombre de atributo temporal e índice en una `DatalogClause`.
 ///
-/// IMPORTANTE: Datahike almacena timestamps como epoch-MILISEGUNDOS.
-/// s_to_ms convierte epoch-s → epoch-ms.
+/// Los datoms almacenan marcas de tiempo como milisegundos epoch (`i64`), por lo que
+/// `s_to_ms` convierte los límites de segundos a milisegundos.
 ///
-/// Retorna None si time_range es None o ambos límites son None.
-///
-/// Parámetros:
-///   time_range  {start_ts, end_ts} epoch-s
-///   ts_field    nombre del atributo — ej. "_created_at", "inventory_movement/reading_ts"
-///   counter     índice para generar vars únicas (?ts1, ?ts2, …)
+/// Retorna `None` si ambos límites de `time_range` son `None`.
 pub fn to_datalog_clauses(
     time_range: &TimeRange,
     ts_field: &str,
@@ -62,7 +57,7 @@ pub fn to_datalog_clauses(
     })
 }
 
-/// Serializa DatalogClause a `Vec<String>` de cláusulas Datalog completas.
+/// Serializa una `DatalogClause` en un vector ordenado de fragmentos Datalog (`Vec<String>`).
 pub fn datalog_clause_to_parts(clause: &DatalogClause) -> Vec<String> {
     let mut parts = vec![clause.binding.clone()];
     if let Some(l) = &clause.lower {
@@ -74,17 +69,16 @@ pub fn datalog_clause_to_parts(clause: &DatalogClause) -> Vec<String> {
     parts
 }
 
-// ── OLAP: el stack anterior Athena ─────────────────────────────────────────────────────
+// ── Predicados AST JSON (WhereNode) ───────────────────────────────────────────
 
-/// TimeRange × col_name → cláusula WHERE en formato serde_json Value.
+/// Traduce un `TimeRange` y nombre de columna a una expresión de filtro JSON (`Value`).
 ///
-/// Si solo hay start_ts → [">=", col, start_ts]
-/// Si solo hay end_ts   → ["<=", col, end_ts]
-/// Si ambos             → ["and", [">=", ...], ["<=", ...]]
-/// Si nil / ambos nil   → null (sin cláusula temporal)
+/// - Si solo existe `start_ts`: `[">=", col, start_ts]`
+/// - Si solo existe `end_ts`: `["<=", col, end_ts]`
+/// - Si ambos existen: `["and", [">=", col, start_ts], ["<=", col, end_ts]]`
+/// - Si ambos son `None`: `Value::Null` (sin filtro temporal)
 ///
-/// Los valores son epoch-segundos (i64) directamente.
-/// Athena compara timestamps numéricos vía from_unixtime() en el WHERE.
+/// Los valores emitidos están expresados en segundos epoch (`i64`).
 pub fn to_honey_clause(time_range: &TimeRange, col: &str) -> Value {
     let col_v = Value::String(col.to_string());
 
@@ -96,19 +90,22 @@ pub fn to_honey_clause(time_range: &TimeRange, col: &str) -> Value {
     }
 }
 
-// ── OLTP: Bucket fn para TIMESERIES in-memory ─────────────────────────────────
+// ── OLTP: Agrupación temporal (Bucketing) para TIMESERIES en memoria ──────────
 
-/// Configuración de bucketing para TIMESERIES in-memory.
+/// Configuración de agrupación por intervalos temporales para series de tiempo en memoria.
 #[derive(Debug, Clone)]
 pub struct BucketConfig {
+    /// Unidad de intervalo temporal (`"minute"`, `"hour"`, `"day"`, `"week"`, `"month"`, `"quarter"`, `"year"`).
     pub interval: String, // "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year"
+    /// Identificador IANA de la zona horaria aplicable al truncamiento (ej. `"UTC"`, `"America/Bogota"`).
     pub timezone: String,
 }
 
-/// Aplica bucketing a un epoch-valor (puede ser ms si viene de Datahike).
-/// Normaliza a segundos antes de truncar con truncate_to_unit.
+/// Aplica agrupación por intervalo (`bucketing`) a un valor epoch en segundos o milisegundos.
 ///
-/// Retorna el epoch-segundos truncado, o None si epoch_val es 0.
+/// Normaliza automáticamente valores mayores a `100_000_000_000` (milisegundos) a segundos
+/// antes de truncar con `truncate_to_unit`. Retorna `None` si `epoch_val` es `0` o si el
+/// intervalo no es válido.
 pub fn apply_bucket(config: &BucketConfig, epoch_val: i64) -> Option<i64> {
     if epoch_val == 0 {
         return None;

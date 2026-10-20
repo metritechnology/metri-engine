@@ -1,11 +1,9 @@
-//! System entity security rules — one definition of master tenant.
+//! Reglas de seguridad de entidades de sistema, aislamiento de tenant y validación de ventana horaria.
 //!
-//! Reglas de seguridad de entidades de sistema.
-//!
-//! Qué es maestro y qué entidad es de sistema se decide AQUÍ, una vez, sobre
-//! la configuración del arranque (engine_config). Antes había tres definiciones
-//! divergentes de "tenant maestro" repartidas por evaluator, principal_graph y
-//! este módulo — un tenant podía ser maestro para una capa y no para otra.
+//! Centraliza la definición única de tenant maestro (`is_master_tenant`), la protección de
+//! entidades reservadas (`MASTER_ONLY_ENTITIES`), las excepciones de autoservicio con grant,
+//! el control de ventana horaria (`step3b_validate_time_window`) y la política explícita
+//! `AuthenticationPolicy`.
 
 use crate::domain::errors::{DomainError, ErrorCode};
 
@@ -139,6 +137,8 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 
 use crate::cedar::types::PrincipalData;
 
+/// Paso 3b del pipeline Cedar: verifica que el instante `now` (UTC) se encuentre dentro
+/// de al menos una de las ventanas horarias (`TimeRestriction`) permitidas para el principal.
 pub fn step3b_validate_time_window(
     principal: &PrincipalData,
     now: DateTime<Utc>,
@@ -170,11 +170,14 @@ pub fn step3b_validate_time_window(
 /// no un flag implícito — en producción siempre es `Production`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthenticationPolicy {
+    /// Modo de producción estándar: exige verificación completa de sesión y grafo Cedar.
     Production,
+    /// Modo de bypass exclusivo para desarrollo y pruebas locales controladas.
     DevBypass,
 }
 
 impl AuthenticationPolicy {
+    /// Devuelve `true` si la política activa es `AuthenticationPolicy::DevBypass`.
     pub fn is_bypass(&self) -> bool {
         matches!(self, AuthenticationPolicy::DevBypass)
     }

@@ -1,3 +1,5 @@
+//! Suite de pruebas de auditoría extremo a extremo (E2E) para `metri-engine`.
+
 use serde_json::json;
 use std::sync::Arc;
 

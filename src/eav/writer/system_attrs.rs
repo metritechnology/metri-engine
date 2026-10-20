@@ -1,35 +1,37 @@
-//! Single source of truth for reserved system attribute ids.
+//! Fuente única de verdad para los identificadores numéricos (`attr_id`) y nombres reservados de los atributos de sistema.
 //!
-//! Fuente única de los atributos de sistema.
-//!
-//! Los primeros attr_ids del motor están reservados y su nombre va ligado al
-//! número: el escritor los emite (enricher) y el lector de atributos activos
-//! los resuelve de vuelta (transact::get_active_attributes). Antes de este
-//! módulo, ambos lados repetían los literales a mano — una drift silenciosa
-//! entre escritura y lectura habría corrompido el resolve sin que compile
-//! fallara. Hoy ambos lados consumen estas constantes.
+//! Los primeros `attr_id` del motor (`0x0000..=0x0006`) están reservados y vinculan de forma
+//! inmutable su código numérico con su nombre canónico tanto en el enriquecedor de escritura
+//! (`enricher`) como en el lector de atributos activos (`transact::get_active_attributes`).
 
-/// `entity/ulid` — identidad de la entidad.
+/// `entity/ulid` — identificador numérico reservado (`0x0000`) para la identidad de la entidad.
 pub const ULID_ID: u16 = 0x0000;
-/// `entity/type` — tipo de la entidad (formato con slash).
+/// `entity/type` — identificador numérico reservado (`0x0001`) para el tipo de la entidad.
 pub const TYPE_ID: u16 = 0x0001;
-/// `tenant/id` — aislamiento multitenant.
+/// `tenant/id` — identificador numérico reservado (`0x0002`) para el aislamiento multitenant.
 pub const TENANT_ID: u16 = 0x0002;
-/// `meta/created_at` — epoch ms de creación.
+/// `meta/created_at` — identificador numérico reservado (`0x0003`) para el instante de creación (epoch ms).
 pub const CREATED_AT_ID: u16 = 0x0003;
-/// `meta/updated_at` — epoch ms de última modificación.
+/// `meta/updated_at` — identificador numérico reservado (`0x0004`) para el instante de última modificación (epoch ms).
 pub const UPDATED_AT_ID: u16 = 0x0004;
-/// `meta/created_by` — actor (user_id del token) que creó la entidad.
+/// `meta/created_by` — identificador numérico reservado (`0x0005`) para el actor que creó la entidad.
 pub const CREATED_BY_ID: u16 = 0x0005;
-/// `meta/updated_by` — actor de la última modificación.
+/// `meta/updated_by` — identificador numérico reservado (`0x0006`) para el actor de la última modificación.
 pub const UPDATED_BY_ID: u16 = 0x0006;
 
+/// Nombre canónico del atributo de sistema para el ULID de la entidad (`"entity/ulid"`).
 pub const ULID_NAME: &str = "entity/ulid";
+/// Nombre canónico del atributo de sistema para el tipo de entidad (`"entity/type"`).
 pub const TYPE_NAME: &str = "entity/type";
+/// Nombre canónico del atributo de sistema para el identificador del tenant (`"tenant/id"`).
 pub const TENANT_NAME: &str = "tenant/id";
+/// Nombre canónico del atributo de sistema para la marca temporal de creación (`"meta/created_at"`).
 pub const CREATED_AT_NAME: &str = "meta/created_at";
+/// Nombre canónico del atributo de sistema para la marca temporal de actualización (`"meta/updated_at"`).
 pub const UPDATED_AT_NAME: &str = "meta/updated_at";
+/// Nombre canónico del atributo de sistema para el actor creador (`"meta/created_by"`).
 pub const CREATED_BY_NAME: &str = "meta/created_by";
+/// Nombre canónico del atributo de sistema para el actor actualizador (`"meta/updated_by"`).
 pub const UPDATED_BY_NAME: &str = "meta/updated_by";
 
 /// Resuelve el nombre de un atributo de sistema por su attr_id reservado.

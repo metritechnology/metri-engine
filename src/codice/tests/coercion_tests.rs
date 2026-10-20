@@ -1,4 +1,4 @@
-//! Tests for `codice::coercion`.
+//! Pruebas unitarias del motor de coerción de tipos (`codice::coercion`).
 use super::*;
 use serde_json::Value;
 

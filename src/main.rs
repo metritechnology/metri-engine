@@ -1,22 +1,21 @@
-//! metri-engine Lambda entry point — the `bootstrap` binary.
+//! Punto de entrada de `metri-engine` para AWS Lambda — binario `bootstrap`.
 //!
-//! Punto de arranque de la función Lambda: `provided.al2023` exige que el
-//! binario se llame `bootstrap`. La secuencia es fail-fast — cada paso
-//! aborta con `exit(1)` y log estructurado si falla:
+//! El runtime `provided.al2023` de AWS Lambda exige que el ejecutable se denomine
+//! `bootstrap`. La secuencia de inicialización aplica validación *fail-fast*
+//! (ADR-005): cualquier anomalía en esquemas o catálogo de errores aborta el
+//! proceso con `exit(1)` y registro estructurado JSON antes de aceptar tráfico:
 //!
-//! 1. Telemetría OTel (logs JSON para CloudWatch, filtro por `RUST_LOG`).
-//! 2. [`metri_engine::codice`] — compila el `CodeRegistry` desde
-//!    `CODICE_MODELS_DIR` (default `config/models`) y lo instala global.
-//! 3. [`metri_engine::domain`] — carga el `ErrorCatalog` TOML desde
-//!    `ERROR_CATALOG_PATH` y lo instala global.
-//! 4. [`metri_engine::grpc`] — levanta el servidor gRPC sobre la Lambda
-//!    Function URL.
+//! 1. Telemetría y suscriptor de trazas JSON compatible con AWS CloudWatch (`RUST_LOG`).
+//! 2. [`metri_engine::codice`] — compila el `CodeRegistry` desde `CODICE_MODELS_DIR`
+//!    (por defecto `config/models`) e instala la instancia estática `OnceLock`.
+//! 3. [`metri_engine::domain`] — carga y valida el `ErrorCatalog` desde
+//!    `ERROR_CATALOG_PATH` (`config/errors/error_catalog.toml`).
+//! 4. [`metri_engine::grpc`] — inicia el servidor gRPC Tonic sobre Lambda Function URL
+//!    o socket TCP local.
 
-// Cerradura final del patrón Result (PLAN_PATRON_RESULT.md §4.4): prohibido
-// unwrap/expect/panic en código no-test. Los únicos sitios permitidos son las
-// invariantes documentadas en scripts/dev/result_pattern_allowlist.json, cada
-// una con su #[allow] y comentario. Bajo cfg(test) se desactiva: los tests
-// usan unwrap/expect libremente.
+// Cerradura final del patrón Result: prohibido unwrap/expect/panic en código
+// no-test. Los únicos sitios permitidos son las invariantes documentadas en
+// scripts/dev/result_pattern_allowlist.json. Bajo cfg(test) se desactiva.
 #![cfg_attr(
     not(test),
     deny(

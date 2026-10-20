@@ -1,4 +1,4 @@
-//! Authorization checks shared by the RPC handlers.
+//! Verificaciones de autorización Cedar y aislamiento de tenant compartidas por los handlers RPC de lectura.
 use crate::grpc::service::MetriGrpcService;
 use tonic::Status;
 use tracing::error;

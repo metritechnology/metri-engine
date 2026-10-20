@@ -1,8 +1,8 @@
-//! Request normalizers — raw gRPC bodies to canonical pre-AST form.
+//! Normalizadores de respuestas y payloads gRPC hacia contratos canónicos de salida (`janus::normalizer`).
 //!
-//! Un normalizador por forma de RPC ([`strategy::NormalizerStrategy`]):
+//! Define un normalizador por cada forma de RPC (`strategy::NormalizerStrategy`):
 //! `query`, `bulk`, `discovery`, `explore`, `transaction` y `match_rules`.
-//! [`helpers`] concentra las conversiones seguras compartidas.
+//! El submódulo `helpers` concentra las conversiones seguras compartidas.
 pub mod bulk;
 pub mod discovery;
 pub mod explore;
@@ -16,15 +16,24 @@ use self::helpers::ensure_status;
 use self::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 
+/// Categoría de respuesta inferida para seleccionar la estrategia de normalización adecuada.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseType {
+    /// Respuesta analítica o transaccional de consulta (`Query` / `ExecuteQuery`).
     Query,
+    /// Respuesta de descubrimiento de modelos del Códice (`ListEntities` / `GetSchema`).
     Discovery,
+    /// Respuesta de exploración de facetas y valores únicos (`Explore`).
     Explore,
+    /// Respuesta de mutación transaccional individual (`Transact`).
     Transaction,
+    /// Respuesta de ingesta masiva por lotes (`BulkIngest`).
     Bulk,
+    /// Respuesta de evaluación de reglas de enrutamiento (`MatchRoutingRules`).
     MatchRules,
+    /// Respuesta de evaluación en lote de reglas de enrutamiento (`MatchRoutingRulesBatch`).
     MatchRulesBatch,
+    /// Respuesta genérica por defecto cuando no aplica una forma especializada.
     Default,
 }
 
@@ -44,9 +53,7 @@ impl ResponseType {
         {
             ResponseType::Bulk
         } else if obj.contains_key("entity_id")
-            || obj.contains_key("entity-id")
             || obj.get("result").and_then(|r| r.get("entity_id")).is_some()
-            || obj.get("result").and_then(|r| r.get("entity-id")).is_some()
         {
             ResponseType::Transaction
         } else if obj.contains_key("data")

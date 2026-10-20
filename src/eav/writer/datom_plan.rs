@@ -1,21 +1,17 @@
-//! Pure planner of the write path — payload to datom list.
-//!
-//! Planificador puro del camino de escritura.
+//! Planificador puro del camino de escritura — traducción determinista de `TransactPayload` a lista de `Datom`.
 //!
 //! Traduce un payload (o una entidad proyectada de saga) a la lista de datoms
-//! que la transacción ACID confirmará: retracts del valor previo, asserts del
-//! nuevo, atributos de sistema, `entity_type`, delta del contrato y el rescate
-//! de `deleted_attrs`. Es la extracción del núcleo que `transact_inner` y
-//! `transact_bulk_deferred` duplicaban línea a línea — con esta pieza, el
-//! escritor sólo orquesta I/O y este módulo se prueba sin DynamoDB.
+//! que la transacción ACID confirmará: retracciones del valor previo, aserciones del
+//! nuevo, atributos de sistema, `entity/type`, delta del contrato y el rescate
+//! de `deleted_attrs`.
 //!
-//! Invariantes que fija (y los tests de caracterización candan):
-//! - Un UPDATE genera par retract+assert por atributo cambiado; los
-//! atributos no tocados no generan nada.
-//! - Un DELETE genera sólo retracts y NO añade datoms de sistema.
-//! - UPDATE/DELETE sobre entidad sin atributos activos es Eav002: el motor
-//! no hace upsert (el audit trail del recurso real no se fabrica aquí).
-//! - El delta sólo entra atributos que realmente cambiaron.
+//! Invariantes garantizados:
+//! - Un `UPDATE` genera el par `retract + assert` únicamente por cada atributo modificado; los
+//!   atributos no incluidos o sin cambio efectivo no generan mutación.
+//! - Un `DELETE` genera exclusivamente retracciones y no añade datoms de sistema.
+//! - `UPDATE` o `DELETE` sobre una entidad sin atributos activos falla con `ErrorCode::Eav002`
+//!   (prohibición de *upsert* implícito).
+//! - El `Delta` sólo incluye los atributos cuyo valor cambió efectivamente.
 
 use std::collections::HashMap;
 
@@ -24,22 +20,25 @@ use crate::eav::types::datom::{Datom, DatomValue};
 use crate::eav::writer::outbox::datom_value_to_json;
 use crate::eav::writer::transact::{TransactOp, TransactPayload};
 
-/// Plan de una sola entidad (madre o proyección de saga): sus datoms y los
-/// requests FTS que sus asserts generen. El ORQUESTADOR decide si los FTS se
-/// despachan — hoy sólo la entidad madre los usa.
+/// Plan de escritura de una entidad individual (entidad madre o proyección de saga).
 #[derive(Debug)]
 pub struct EntityPlan {
+    /// Lista ordenada de datoms (`retract` y `assert`) generados para la entidad.
     pub datoms: Vec<Datom>,
+    /// Solicitudes de indexación FTS generadas por los atributos con `fts: true`.
     pub fts_requests: Vec<crate::mbf::storage::WriteRequest>,
 }
 
-/// Plan completo de la mutación del payload: datoms, FTS, delta del contrato
-/// y los atributos previos que un DELETE rescata para el sobre del Hub.
+/// Plan completo de la mutación de un `TransactPayload`.
 #[derive(Debug)]
 pub struct DatomPlan {
+    /// Lista completa de datoms a persistir en la transacción.
     pub datoms: Vec<Datom>,
+    /// Solicitudes de escritura para el índice de búsqueda de texto completo (FTS).
     pub fts_requests: Vec<crate::mbf::storage::WriteRequest>,
+    /// Diferencial `before/after` de los atributos que cambiaron en un `Update`.
     pub delta: Option<crate::domain::events::Delta>,
+    /// Mapa de atributos activos previos rescatados antes de un `Delete` para el sobre de eventos.
     pub deleted_attrs: Option<HashMap<String, DatomValue>>,
 }
 
@@ -123,32 +122,6 @@ pub fn plan_entity_datoms(
         active_attrs,
         actor,
     );
-
-    // Compatibilidad con consultas legacy que busquen "entity_type" sin slash:
-    if !is_create {
-        if let Some((_, DatomValue::Str(old_type))) = active_attrs.get("entity_type") {
-            if old_type != entity_type {
-                let entity_type_retract = Datom::retract(
-                    tenant_id,
-                    entity_id,
-                    "entity_type",
-                    Datom::hash_attr_name("entity_type"),
-                    DatomValue::Str(old_type.clone()),
-                    tx_id,
-                );
-                datoms.push(entity_type_retract);
-            }
-        }
-    }
-    let entity_type_datom = Datom::assert(
-        tenant_id,
-        entity_id,
-        "entity_type",
-        Datom::hash_attr_name("entity_type"),
-        DatomValue::Str(entity_type.to_string()),
-        tx_id,
-    );
-    datoms.push(entity_type_datom);
 
     Ok(EntityPlan {
         datoms,
@@ -501,7 +474,7 @@ mod tests {
         assert!(!plan
             .datoms
             .iter()
-            .any(|d| d.attr_name == "meta/updated_at" || d.attr_name == "entity_type"));
+            .any(|d| d.attr_name == "meta/updated_at" || d.attr_name == "entity/type"));
 
         let borrados = plan.deleted_attrs.expect("delete rescata los previos");
         assert_eq!(
@@ -690,6 +663,40 @@ mod tests {
                 .iter()
                 .any(|d| d.attr_name == "meta/created_by" || d.attr_name == "meta/updated_by"),
             "sin actor no se emite atribución: mejor ausente que valor inventado"
+        );
+    }
+
+    #[test]
+    fn atributo_negocio_entity_type_no_colisiona_con_entity_slash_type() {
+        registry();
+        let mut attrs = HashMap::new();
+        attrs.insert("entity_type".to_string(), DatomValue::Str("asset".into()));
+        let p = TransactPayload {
+            tenant_id: "t1".to_string(),
+            entity_id: Some("fault_1".to_string()),
+            entity_type: "domain_fault".to_string(),
+            attrs,
+            op: TransactOp::Create,
+            suppress_events: false,
+        };
+        let plan = plan_payload_datoms(&p, "fault_1", 1000, &HashMap::new(), ACTOR_TEST)
+            .expect("planifica");
+
+        assert!(
+            assert_de(&plan.datoms, "entity_type", "asset"),
+            "el atributo de negocio entity_type conserva su valor 'asset'"
+        );
+        assert!(
+            assert_de(&plan.datoms, "entity/type", "domain_fault"),
+            "el atributo de sistema entity/type registra el tipo del modelo 'domain_fault'"
+        );
+        assert_eq!(
+            plan.datoms
+                .iter()
+                .filter(|d| d.attr_name == "entity_type")
+                .count(),
+            1,
+            "solo debe existir un datom para el atributo de negocio entity_type"
         );
     }
 }

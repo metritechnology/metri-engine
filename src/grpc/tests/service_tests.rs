@@ -1,4 +1,4 @@
-//! Tests for `grpc::service`.
+//! Pruebas unitarias de `grpc::service`: FLS, prevención de ciclos en grupos, invalidación pub/sub y puertas de seguridad.
 use super::*;
 use crate::grpc::handlers::query_support::*;
 use crate::grpc::translator;

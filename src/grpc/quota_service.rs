@@ -1,13 +1,9 @@
-//! QuotaService gRPC implementation.
-//!
-//! Implementación de gRPC para QuotaService.
+//! Implementación del servicio gRPC `QuotaService` (`QuotaServiceImpl`) para reserva y conciliación de tokens IA.
 //!
 //! Responsabilidades:
-//! 1. Ofrecer endpoints atómicos para que el MCP Proxy reserve y concilie tokens.
-//! 2. Apoyarse en `quota::QuotaResolver` para localizar la cuota vigente y en
-//! `quota::QuotaLedger` para aplicarla.
-//! 3. Guardar cada reserva en un store compartido, de modo que la concilie la
-//! réplica que la abrió o cualquier otra.
+//! 1. Ofrecer endpoints atómicos (`ReserveTokens` y `ReconcileTokens`) para que el proxy MCP reserve y liquide tokens.
+//! 2. Apoyarse en `quota::QuotaResolver` para localizar la cuota vigente y en `quota::QuotaLedger` para aplicarla.
+//! 3. Persistir cada reserva en un `ReservationStore` compartido con ULID opaco y verificación de aislamiento por tenant.
 //!
 //! LO QUE CAMBIÓ Y POR QUÉ
 //! ───────────────────────
@@ -61,6 +57,7 @@ const RECONCILE_LEASE: Duration = Duration::from_secs(30);
 /// Las mismas que ya saltan el control de cuota en `iop/quota_step.rs`.
 const SYSTEM_USERS: [&str; 2] = ["usr_system_bff", "usr_master"];
 
+/// Servicio gRPC de contabilidad de cuotas de tokens (`ReserveTokens` / `ReconcileTokens`).
 pub struct QuotaServiceImpl<E = OltpExecutor> {
     /// Localiza la cuota vigente del modelo. La misma pieza que usa el paso IOP.
     resolver: QuotaResolver<E>,
@@ -73,6 +70,8 @@ pub struct QuotaServiceImpl<E = OltpExecutor> {
 }
 
 impl QuotaServiceImpl<OltpExecutor> {
+    /// Construye `QuotaServiceImpl` con el ejecutor OLTP, el escritor EAV y el almacén de reservas,
+    /// iniciando en segundo plano la tarea de barrido (`sweeper`) de reservas expiradas.
     pub fn new(
         oltp_executor: OltpExecutor,
         eav_writer: EavWriter,

@@ -1,16 +1,12 @@
-//! SagaBuilder — declarative projection into scheduled_job.
+//! Proyector declarativo de Sagas (`SagaBuilder`) hacia entidades `scheduled_job`.
 //!
-//! SagaBuilder — Proyección declarativa hacia `scheduled_job`.
+//! Cuando una entidad madre declara `shadow_sagas_mapping` en el Códice, cada operación de
+//! creación o actualización proyecta y reconcilia uno o más `scheduled_job` dentro de la
+//! misma transacción ACID.
 //!
-//! Cuando una entidad madre declara `shadow_sagas_mapping`, cada CREATE proyecta uno o más
-//! `scheduled_job` en la MISMA transacción ACID. Metri Schedulers los consume por el bus.
-//! Ver docs/architecture/COMPONENTE_EXTERNO_05_METRI_SCHEDULERS.md §3 y 03B §III.2.
-//!
-//! El builder no inventa valores y NO CONOCE dominios: la madre declara en su
-//! mapping de qué atributo sale el disparo (`trigger_source`, un instante
-//! ISO-8601) y qué attrs viajan al job. Los dominios con semánticas de ciclo
-//! propias (p. ej. el recurrente de las pautas preventivas) implementan su
-//! lógica en su plugin — aquí sólo plataforma (PLAN_DESCACOLE_PM_TOTAL.md).
+//! El constructor es agnóstico al dominio: la entidad madre declara en su mapeo de qué
+//! atributo proviene el instante de disparo (`trigger_source`, en formato ISO-8601) y qué
+//! atributos se proyectan hacia el trabajo programado.
 
 use std::collections::{HashMap, HashSet};
 
@@ -27,8 +23,11 @@ use crate::janus_router::ulid;
 /// Entidad proyectada que viaja en la misma TX ACID que su madre.
 #[derive(Debug, Clone)]
 pub struct SagaProjection {
+    /// Tipo de entidad proyectada (por ejemplo, `"scheduled_job"`).
     pub entity_type: String,
+    /// Identificador único ULID asignado a la entidad proyectada.
     pub entity_id: String,
+    /// Mapa de atributos validados y tipados como `DatomValue` listos para persistir.
     pub attrs: HashMap<String, DatomValue>,
 }
 
@@ -36,8 +35,7 @@ pub struct SagaProjection {
 /// un instante ISO-8601 a EXACT_TIME — sin vocabulario de dominio: la madre
 /// declara de qué attr sale su disparo (`trigger_source`) y los dominios con
 /// semánticas propias (cron recurrente, telemetría) implementan su ciclo en su
-/// plugin, no aquí (PLAN_DESCACOLE_PM_TOTAL.md: esquema = dato del motor,
-/// comportamiento = plugin).
+/// plugin, no aquí (esquema = dato del motor, comportamiento = plugin).
 fn resolve_trigger(
     entity: &str,
     mapping: &Map<String, Value>,
@@ -183,8 +181,11 @@ async fn resolve_source(
 /// Job vivo de una madre, leído por AVET + pull para el diff de convergencia.
 #[derive(Debug, Clone)]
 pub struct LiveSagaJob {
+    /// Identificador único del `scheduled_job` existente.
     pub job_id: String,
+    /// Hash de idempotencia calculado al proyectar el trabajo, si existe.
     pub idempotency_hash: Option<String>,
+    /// Estado operativo actual del trabajo (`ACTIVE`, `SUSPENDED`, `COMPLETED`, `FAILED`, etc.).
     pub status: String,
 }
 

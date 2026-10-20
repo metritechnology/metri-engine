@@ -1,4 +1,4 @@
-//! Tests for `aegis::formula::lexer`.
+//! Pruebas unitarias del analizador léxico de fórmulas (`aegis::formula::lexer`).
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::lexer::tokenize;
 use crate::aegis::formula::token::{Operator, Token};

@@ -1,8 +1,8 @@
-//! Guardián de vocabulario de dominio (PLAN_DESCACOLE_PM_TOTAL.md F2).
+//! Guardián de vocabulario de dominio agnóstico de `metri-engine`.
 //!
 //! Regla que conserva el desacople: **esquema = dato del motor
-//! (config/models); comportamiento = plugin**. El motor puede declarar cómo
-//! se storea una entidad de mantenimiento; jamás qué significa mantener.
+//! (`config/models/`); comportamiento = plugin**. El motor puede declarar cómo
+//! se almacena una entidad de mantenimiento; jamás qué significa mantener.
 //! Este test recorre `src/` y rompe el build si el vocabulario de
 //! mantenimientos preventivos reaparece en código de plataforma (los
 //! modelos como config y los fixtures bajo `*/tests/` quedan fuera: uno es

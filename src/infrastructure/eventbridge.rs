@@ -1,10 +1,7 @@
-//! EventBridgeClient — IEventBus implementation.
+//! Cliente de AWS EventBridge que implementa el puerto `IEventBus`.
 //!
-//! EventBridgeClient implementando IEventBus.
-//!
-//! # Origin
-//! En el stack anterior: cognitect/aws :events PutEvents
-//! En Rust:    aws-sdk-eventbridge
+//! Encapsula la invocación a `PutEvents` del SDK oficial `aws-sdk-eventbridge` y
+//! traduce fallos de transporte o por entrada al catálogo canónico (`INFRA_004`).
 
 use async_trait::async_trait;
 use aws_sdk_eventbridge::Client;
@@ -14,11 +11,13 @@ use tracing::{error, info};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::IEventBus;
 
+/// Adaptador de infraestructura para la publicación de eventos en AWS EventBridge.
 pub struct EventBridgeClient {
     client: Client,
 }
 
 impl EventBridgeClient {
+    /// Inicializa un cliente de AWS EventBridge cargando la configuración del entorno.
     pub async fn new() -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);

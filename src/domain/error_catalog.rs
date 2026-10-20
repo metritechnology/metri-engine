@@ -1,14 +1,8 @@
-//! Native loader for the canonical TOML error catalog.
+//! Cargador nativo para el catálogo canónico de errores en formato TOML.
 //!
-//! Loader nativo del catálogo de errores
-//! Lee config/errors/error_catalog.toml en bootstrap y expone un HashMap O(1).
-//!
-//! # Origin
-//! Reemplaza la referencia a errors/error_catalog.edn de el stack anterior.
-//!
-//! Uso:
-//! let catalog = ErrorCatalog::load("config/errors/error_catalog.toml")?;
-//! let entry = catalog.get("EAV_002");
+//! Lee `config/errors/error_catalog.toml` durante el arranque del motor y expone
+//! una tabla hash inmutable con consulta $O(1)$ por código canónico.
+//! Verifica la paridad 1:1 entre `ErrorCode::ALL` y las definiciones del catálogo.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -22,17 +16,25 @@ use crate::domain::errors::{DomainError, ErrorCode};
 /// Una entrada del catálogo de errores.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ErrorEntry {
+    /// Código canónico único del error (ej. `"JANUS_400"`, `"EAV_005"`).
     pub code: String,
+    /// Familia funcional a la que pertenece el error (ej. `"jns"`, `"eav"`, `"aeg"`, `"mbf"`).
     pub family: String,
+    /// Etapa o subsistema del pipeline donde se origina el fallo.
     pub stage: String,
+    /// Nivel de severidad operativa (`"info"`, `"warning"`, `"error"`, `"fatal"`).
     pub severity: String,
+    /// Código de estado HTTP equivalente para pasarelas REST/BFF.
     pub http_status: u16,
+    /// Nombre canónico del código de estado gRPC (ej. `"INVALID_ARGUMENT"`, `"ABORTED"`).
     pub grpc_status: String,
+    /// Descripción técnica detallada de la condición de error.
     pub description: String,
+    /// Lista de claves de contexto obligatorias al construir el error.
     pub context_required: Vec<String>,
+    /// Indica si la operación fallida puede ser reintentada de forma segura por el cliente.
     pub retryable: bool,
-    /// Regla C5 (PLAN_PATRON_RESULT.md): definida para uso futuro, sin variante
-    /// que la use todavía. El auditor la acepta; `gen_reference.py` la anota.
+    /// Entrada reservada para uso futuro, sin variante activa asociada todavía.
     #[serde(default)]
     pub reserved: bool,
     /// Ya publicada a clientes pero retirada del mapeo actual.
@@ -47,7 +49,9 @@ struct ErrorCatalogRaw {
     pub errors: Vec<ErrorEntry>,
 }
 
+/// Catálogo canónico de errores indexado en memoria para resolución $O(1)$ tras el arranque.
 pub struct ErrorCatalog {
+    /// Versión semántica declarada en el archivo `error_catalog.toml`.
     pub version: String,
     by_code: HashMap<String, ErrorEntry>,
 }
@@ -66,7 +70,7 @@ impl ErrorCatalog {
     ///
     /// # Errors
     ///
-    /// Retorna [`ErrorCode::InfraCatalog001`] si el archivo no existe o el TOML
+    /// Retorna `ErrorCode::InfraCatalog001` si el archivo no existe o el TOML
     /// está malformado — en bootstrap el llamador hace fail-fast (`exit(1)`).
     pub fn load(path: impl AsRef<Path>) -> Result<Self, DomainError> {
         let content = std::fs::read_to_string(path.as_ref()).map_err(|e| {
@@ -117,6 +121,7 @@ impl ErrorCatalog {
         self.get(code).map(|e| e.retryable).unwrap_or(false)
     }
 
+    /// Retorna la cantidad total de entradas registradas en el catálogo.
     pub fn entry_count(&self) -> usize {
         self.by_code.len()
     }

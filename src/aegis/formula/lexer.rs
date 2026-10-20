@@ -1,7 +1,8 @@
-//! Formula lexer — formula string to token stream.
+//! Analizador léxico (`lexer`) del motor de fórmulas de Aegis.
 //!
-//! Convierte un string de fórmula en una secuencia de tokens.
-//! SRP: Solo tokeniza. No reordena, no evalúa, no valida semántica.
+//! Convierte una cadena de fórmula matemática en una secuencia lineal de `Token`s,
+//! distinguiendo automáticamente entre resta binaria (`Sub`), negación unaria (`Neg`),
+//! variables con namespace (`entidad/atributo`) e invocaciones a funciones.
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::token::{Operator, Token};

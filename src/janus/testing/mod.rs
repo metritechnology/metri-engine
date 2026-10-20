@@ -1,4 +1,4 @@
-//! Test suite entry point for `janus::mod.rs`.
+//! Punto de entrada de la suite de pruebas de `janus`.
 mod aggregator_tests;
 mod batch_enricher_tests;
 mod contract_tests;

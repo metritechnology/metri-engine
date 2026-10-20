@@ -1,4 +1,4 @@
-//! Tests for `iop::quota_step`.
+//! Pruebas unitarias de `iop::quota_step` (`QuotaGuardStep`).
 use super::*;
 use crate::iop::core::IopContext;
 use crate::quota::SettleOutcome;

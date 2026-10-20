@@ -1,4 +1,4 @@
-//! Read-path routing helpers — channel execution per query plan.
+//! Enrutador del Read Path (`janus::router`) — ejecución paralela de sub-queries por plan EAV.
 pub mod oltp;
 pub mod post_processor;
 pub mod translator;
@@ -19,11 +19,17 @@ use tracing::error;
 /// Contexto Cedar enriquecido para el Read Path.
 #[derive(Debug, Clone)]
 pub struct CedarCtx {
+    /// Identificador del tenant autenticado.
     pub tenant_id: String,
+    /// Identificador del usuario autenticado.
     pub user_id: String,
+    /// Roles activos del usuario para evaluación ABAC.
     pub roles: Vec<String>,
+    /// Indica si el usuario opera desde el tenant maestro (`metri_global`).
     pub is_super_master: bool,
+    /// Alcance de visibilidad inter-tenant (`"FULL"` o `"NONE"`).
     pub cross_tenant_scope: String,
+    /// Fronteras de dominio ABAC hidratadas para el principal.
     pub domain_boundaries: serde_json::Value,
 }
 
@@ -46,8 +52,11 @@ impl CedarCtx {
 /// Resultado de un sub-query — decorado con query_key.
 #[derive(Debug, Clone)]
 pub struct QueryChunk {
+    /// Clave identificadora del sub-query dentro del lote de consultas.
     pub query_key: String,
+    /// Cuerpo JSON normalizado del resultado o del error del sub-query.
     pub body: Value,
+    /// Indica si la ejecución del sub-query finalizó con éxito.
     pub success: bool,
 }
 
@@ -131,7 +140,9 @@ pub async fn run_query_pipeline(
 /// Contexto de ejecución del read path — lo que viaja junto por los pasos
 /// 4-8 además de la petición misma: el dry-run flag y el frontend de caché.
 pub struct QueryExecCtx<'a> {
+    /// Si es `true`, devuelve el plan de ejecución compilado sin consultar el almacenamiento.
     pub explain_plan: bool,
+    /// Referencia al frontend de caché read-through del Read Path.
     pub cache: &'a QueryCacheFrontend,
 }
 

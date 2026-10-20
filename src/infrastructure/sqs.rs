@@ -1,10 +1,7 @@
-//! SQSFifoBus — ISqsBus implementation.
+//! Adaptadores de cola FIFO (`SqsFifoBus` y `StubSqsBus`) que implementan `ISqsBus`.
 //!
-//! SQSFifoBus implementando ISqsBus.
-//!
-//! # Origin
-//! En el stack anterior: (defrecord SQSFifoBus [client queue-url])
-//! En Rust:    aws-sdk-sqs + ISqsBus trait
+//! Gestionan la publicación ordenada con deduplicación, recepción mediante long-polling
+//! y confirmación de borrado de mensajes del transactional outbox hacia el Event Router.
 
 use async_trait::async_trait;
 use aws_sdk_sqs::Client;
@@ -13,12 +10,14 @@ use tracing::{info, warn};
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::domain::protocols::{ISqsBus, SqsMessage};
 
+/// Cliente de Amazon SQS FIFO que implementa el puerto `ISqsBus`.
 pub struct SqsFifoBus {
     client: Client,
     queue_url: String,
 }
 
 impl SqsFifoBus {
+    /// Inicializa un cliente SQS FIFO cargando la configuración AWS del entorno para la URL de cola dada.
     pub async fn new(queue_url: impl Into<String>) -> Self {
         let config = aws_config::load_from_env().await;
         let client = Client::new(&config);
@@ -139,8 +138,9 @@ impl ISqsBus for SqsFifoBus {
     }
 }
 
-/// StubSqsBus — Simulación local en memoria del SQS FIFO.
+/// Simulación local en memoria de una cola SQS FIFO para pruebas y modo `SQS_MODE=stub`.
 pub struct StubSqsBus {
+    /// Cola protegida por mutex con los mensajes publicados pendientes de consumo.
     pub messages: std::sync::Mutex<Vec<SqsMessage>>,
 }
 
@@ -151,6 +151,7 @@ impl Default for StubSqsBus {
 }
 
 impl StubSqsBus {
+    /// Crea una nueva instancia vacía del bus SQS simulado en memoria.
     pub fn new() -> Self {
         StubSqsBus {
             messages: std::sync::Mutex::new(Vec::new()),

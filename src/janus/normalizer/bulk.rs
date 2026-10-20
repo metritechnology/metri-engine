@@ -1,7 +1,8 @@
-//! Normalizer for BulkIngest requests.
+//! Normalizador de respuestas para solicitudes `BulkIngest`.
 use crate::janus::normalizer::strategy::NormalizerStrategy;
 use serde_json::{json, Value};
 
+/// Estrategia de normalización para operaciones de ingesta masiva (`BulkIngest`).
 pub struct BulkNormalizer;
 
 impl NormalizerStrategy for BulkNormalizer {

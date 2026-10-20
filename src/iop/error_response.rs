@@ -1,10 +1,7 @@
-//! Forensic error DTO — domain errors to gRPC responses.
+//! Constructor de DTO forense de errores (`error_response`) — traduce `DomainError` a respuestas estructuradas.
 //!
-//! DTO forense para errores de dominio → gRPC.
-//!
-//! # Origin
-//! En el stack anterior: sanitize-context + build-error-dto + OTel trace_id.
-//! En Rust: mismo contrato con otel::tracer::current_trace_id().
+//! Sanitiza el contexto redactando atributos marcados con `sensitive: true` en el Códice e inyecta
+//! `trace_id` y `span_id` de OpenTelemetry para trazabilidad extremo a extremo.
 
 use serde_json::{json, Value};
 

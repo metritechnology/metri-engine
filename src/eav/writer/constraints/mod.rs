@@ -1,29 +1,15 @@
-//! Integrity constraints enforced inside the transaction.
+//! Restricciones de integridad e invariantes de estado evaluadas dentro de la transacción ACID sobre `.mbf`.
 //!
-//! ## Por qué existe este módulo
+//! ## Propósito del módulo
 //!
-//! La unicidad se comprobaba leyendo el índice AVET y escribiendo después
-//! (`oltp_channel.rs`). Entre la lectura y la escritura cabe otra
-//! transacción, así que dos `create` concurrentes con el mismo valor leen
-//! ambos «no existe» y ambos escriben. La restricción era *advisoria*, no un
-//! invariante — y afectaba a todos los modelos con `unique`, no solo a
-//! `tenant_plugin`.
+//! Garantiza que las restricciones de unicidad (`unique`) se apliquen como invariantes
+//! atómicos mediante un **ítem de reclamación** escrito en la misma operación
+//! `TransactWriteItems` con la condición `attribute_not_exists`, evitando condiciones
+//! de carrera tipo *check-then-act* entre escritores concurrentes.
 //!
-//! Aquí la unicidad se enforcea con un **item de reclamación** escrito en la
-//! MISMA `TransactWriteItems`, con `attribute_not_exists`. DynamoDB aborta uno
-//! de los dos escritores. Un ganador, siempre, y sin lectura previa: es a la
-//! vez más correcto y más rápido.
-//!
-//! El patrón ya estaba probado en este repositorio, en `quota/ledger.rs` y
-//! `quota/dynamo_store.rs`.
-//!
-//! ## Por qué no se cambia el ULID de la entidad
-//!
-//! La alternativa era derivar el id de entidad de la clave natural (UUIDv5).
-//! Habría roto `track_history`, las referencias `entityRef`, la ordenación
-//! temporal de los ULID y los datos ya escritos. El item de reclamación
-//! consigue lo mismo sin tocar nada de eso: la identidad sigue siendo un
-//! ULID, y la unicidad vive en un item aparte.
+//! Asimismo, evalúa las restricciones declarativas de estado (`requires_when`,
+//! `at_most`, `at_least`, `requires_any`) y de estado de referencia (`ref_state`)
+//! definidas en los modelos del Códice.
 
 mod unique_claim;
 
@@ -36,65 +22,60 @@ use crate::eav::writer::transact::TransactOp;
 use crate::mbf::storage::TransactWriteItem;
 use std::collections::HashMap;
 
-/// Todo lo que un planificador necesita saber de una escritura.
+/// Contexto inmutable con los datos de una entidad que se está escribiendo para planificar sus restricciones.
 pub struct ConstraintContext<'a> {
+    /// Identificador del tenant propietario de la transacción.
     pub tenant_id: &'a str,
+    /// Identificador único (ULID) de la entidad evaluada.
     pub entity_id: &'a str,
+    /// Descriptor del modelo de la entidad en el Códice.
     pub model: &'a EntityModel,
+    /// Mapa de atributos y valores incluidos en la escritura.
     pub attrs: &'a HashMap<String, DatomValue>,
+    /// Tipo de operación transaccional (`Create`, `Update`, `Delete`).
     pub op: TransactOp,
+    /// Nombre lógico de la tabla o partición `.mbf`.
     pub table: &'a str,
 }
 
-/// Traduce una restricción declarada en items de la MISMA transacción.
+/// Traduce una restricción declarada en el modelo en ítems condicionales dentro de la misma transacción.
 ///
-/// **No lee.** Es la regla del módulo: si una restricción necesita consultar
-/// para decidir, no es un invariante — es una comprobación, y una
-/// comprobación tiene una ventana de carrera por construcción.
+/// Opera de forma pura (sin lecturas previas) para evitar ventanas de carrera.
 pub trait ConstraintPlanner: Send + Sync {
-    /// Nombre, para trazas y mensajes de error.
+    /// Nombre identificador del planificador para trazas y mensajes de error.
     fn name(&self) -> &'static str;
 
-    /// Si este planificador tiene algo que decir sobre este modelo.
-    ///
-    /// Separado de `plan` para poder descartar el modelo entero sin recorrer
-    /// sus atributos, que es el caso común: hoy ningún modelo declara
-    /// restricciones.
+    /// Indica si este planificador aplica sobre las restricciones declaradas en `model`.
     fn applies_to(&self, model: &EntityModel) -> bool;
 
+    /// Construye los `TransactWriteItem` condicionales que garantizan la restricción durante el commit.
     fn plan(&self, ctx: &ConstraintContext) -> Result<Vec<TransactWriteItem>, DomainError>;
 }
 
-/// Los planificadores activos del motor.
-///
-/// Se compone una vez y se inyecta; el escritor no construye planificadores ni
-/// sabe cuáles hay. Añadir una restricción nueva —`check`, `foreign_key`,
-/// `exclusion`— es añadir un tipo aquí, sin tocar el camino de escritura.
+/// Construye la lista predeterminada de planificadores de restricciones activos del motor.
 pub fn default_planners() -> Vec<Box<dyn ConstraintPlanner>> {
     vec![Box::new(UniqueClaimPlanner::new())]
 }
 
-/// Una entidad participante de una transacción (compuesta o no).
-///
-/// La madre de un `transact_with_projections` y cada proyección entran por
-/// aquí: las mismas reglas se evalúan para todas — SOLID sin privilegiar a la
-/// madre.
+/// Entidad participante dentro de una transacción (ya sea la entidad madre o una proyección de saga).
 pub struct EntidadEnTx<'a> {
+    /// Nombre del tipo de entidad en el Códice.
     pub entity_type: &'a str,
+    /// Identificador único (ULID) de la entidad.
     pub entity_id: &'a str,
+    /// Atributos que se están escribiendo para esta entidad.
     pub attrs: &'a HashMap<String, DatomValue>,
+    /// Operación transaccional aplicada a la entidad.
     pub op: TransactOp,
+    /// Modelo del Códice correspondiente a la entidad.
     pub model: &'a EntityModel,
 }
 
-/// Planifica los items de reclamación (`unique`) de TODAS las entidades de la
-/// transacción, con detección de conflicto intra-transacción.
+/// Planifica los ítems de reclamación (`unique`) de todas las entidades participantes en la
+/// transacción, detectando conflictos intra-transacción antes del commit.
 ///
-/// Dos entidades distintas que reclamen la misma clave en la MISMA
-/// `TransactWriteItems` serían dos Puts sobre el mismo item: DynamoDB los
-/// rechazaría con una `ValidationException` genérica a mitad del commit.
-/// Aquí se detecta antes y sale como error de dominio con contexto. La misma
-/// entidad re-clamando su propia clave (reintento) se deduplica: un solo item.
+/// Si dos entidades distintas reclaman la misma clave única dentro de la misma transacción,
+/// retorna `ErrorCode::Cod001`. Si la misma entidad reclama dos veces la misma clave, se deduplica.
 pub fn plan_claims_para(
     planners: &[Box<dyn ConstraintPlanner>],
     tenant_id: &str,

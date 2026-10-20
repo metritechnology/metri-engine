@@ -1,19 +1,21 @@
-//! Decoupled RPN formula evaluator.
+//! Evaluador de fórmulas en notación polaca inversa (`RPN`) mediante máquina de pila.
 //!
-//! Evaluador RPN desacoplado.
-//! ISP: Solo expone evaluate(). No conoce parseo ni compilación SQL.
-//! DIP: Depende de traits (VariableResolver, FormulaFunction), NO de implementaciones concretas.
+//! Opera desacoplado del lexer y del parser (ISP), recibiendo únicamente la secuencia
+//! de tokens en orden postfijo y resolviendo variables y funciones a través de los
+//! contratos `VariableResolver` y `FunctionRegistry` (DIP).
 
 use crate::aegis::formula::errors::FormulaError;
 use crate::aegis::formula::functions_registry::FunctionRegistry;
 use crate::aegis::formula::resolver::VariableResolver;
 use crate::aegis::formula::token::{Operator, Token};
 
+/// Evaluador sin estado mutable externo para secuencias de tokens en notación polaca inversa (`RPN`).
 pub struct FormulaEvaluator {
     rpn_tokens: Vec<Token>,
 }
 
 impl FormulaEvaluator {
+    /// Construye un nuevo `FormulaEvaluator` a partir de una cola de tokens ya convertida a `RPN`.
     pub fn new(rpn_tokens: Vec<Token>) -> Self {
         Self { rpn_tokens }
     }

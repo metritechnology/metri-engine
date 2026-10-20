@@ -1,16 +1,19 @@
-//! Temporal — canonical time primitives for the metri engine.
+//! Primitivas temporales canónicas de `metri-engine`.
 //!
-//! Primitivas temporales canónicas del Metri Engine.
+//! Actúa como fuente única de verdad (SSOT) para toda aritmética de fechas y ventanas
+//! de tiempo: opera como un núcleo puro sin I/O, sin estado global mutable y sin
+//! dependencias cruzadas hacia infraestructura externa.
 //!
-//! SSOT para toda aritmética de fechas: sin I/O, sin estado, sin dependencias cruzadas.
-//!
-//! Módulos:
-//! core       → constantes, conversiones ms↔s, shift_by_calendar, truncate_to_unit,
-//! shift_period, duration_seconds
-//! time_frame → resolve_time_frame (29 tipos del contrato TimeFrameContext)
-//! comparison → resolve_comparison_period, resolve_shortcut, smart_history_window
-//! adapters   → to_datalog_clauses (Datahike), to_honey_clause,
-//! to_bucket_fn (TIMESERIES in-memory)
+//! Submódulos:
+//! - `core`: Constantes de escala, conversiones milisegundos/segundos, desplazamientos de
+//!   calendario (`shift_by_calendar`), truncamiento con zona horaria (`truncate_to_unit`),
+//!   desplazamiento de períodos (`shift_period`) y cálculo de duración (`duration_seconds`).
+//! - `time_frame`: Resolución determinista de las 29 ventanas nombradas del contrato
+//!   `TimeFrameContext` (`resolve_time_frame`).
+//! - `comparison`: Resolución de períodos comparativos analíticos (`resolve_comparison_period`,
+//!   `resolve_shortcut`, `smart_history_window`).
+//! - `adapters`: Adaptadores de rangos temporales hacia predicados Datalog, árboles de filtros
+//!   JSON (`WhereNode`) y bucketing de series temporales en memoria (`apply_bucket`).
 
 pub mod adapters;
 pub mod comparison;

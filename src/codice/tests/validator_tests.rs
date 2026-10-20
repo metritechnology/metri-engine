@@ -1,4 +1,4 @@
-//! Tests for `codice::validator`.
+//! Pruebas unitarias del validador estructural y semántico (`codice::validator`).
 use super::*;
 use crate::codice::registry::{AttributeDescriptor, EngineChannel};
 use serde_json::json;

@@ -1,11 +1,8 @@
-//! In-memory cache of consolidated principals, with TTL.
+//! Caché en memoria de principals consolidados con tiempo de vida (TTL) acotado.
 //!
-//! Caché en memoria de principals consolidados.
-//!
-//! Entradas con TTL: la staleness máxima de una decisión por caché queda
-//! acotada incluso si el suscriptor de invalidación pierde mensajes (ventana
-//! de `Lagged`) — se prefiere re-consultar el grafo antes que autorizar con
-//! roles obsoletos.
+//! La obsolescencia máxima de una decisión por caché queda acotada por `PRINCIPAL_CACHE_TTL`
+//! incluso si el suscriptor de invalidación pierde mensajes (`Lagged`), prefiriendo
+//! re-consultar el grafo antes que autorizar con roles obsoletos.
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -17,6 +14,7 @@ use crate::cedar::cache::invalidation::spawn_invalidation_task;
 use crate::cedar::types::PrincipalData;
 use crate::domain::errors::DomainError;
 
+/// Número máximo de entradas permitidas en la caché en memoria de principals.
 pub const MAX_PRINCIPAL_CACHE_SIZE: usize = 5_000;
 
 /// Vida máxima de una entrada. Cubre la ventana de mensajes de invalidación
@@ -28,6 +26,7 @@ pub(crate) struct Entry {
     stored_at: Instant,
 }
 
+/// Implementación en memoria de `PrincipalCache` con expiración por TTL y suscripción al bus de invalidación.
 pub struct InMemoryPrincipalCache {
     cache: Arc<RwLock<HashMap<String, Entry>>>,
 }

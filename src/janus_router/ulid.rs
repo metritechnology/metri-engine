@@ -1,17 +1,10 @@
-//! Monotonic ULID generator (Crockford Base32).
+//! Generador ULID monotónico en Crockford Base32.
 //!
-//! Generador ULID monotónico.
-//! Spec: <https://github.com/ulid/spec>
+//! Especificación: <https://github.com/ulid/spec>
 //!
-//! Formato: ttttttttttrrrrrrrrrrrrrrrrr (26 chars Crockford Base32)
-//! ├─ 48 bits timestamp (ms epoch) — lexicográficamente ordenable
-//! └─ 80 bits random — unicidad global
-//!
-//! Usamos Ulid::new() con un Mutex global para garantía de monotonía:
-//! si el nuevo ULID tiene el mismo ms que el anterior, incrementamos
-//!
-//! # Origin
-//! manualmente — equivalente a UlidCreator/getMonotonicUlid() de JVM.
+//! Formato: `ttttttttttrrrrrrrrrrrrrrrrr` (26 caracteres Crockford Base32)
+//! - 48 bits de marca temporal (ms epoch) — ordenable lexicográficamente.
+//! - 80 bits de entropía aleatoria — unicidad global con incremento monotónico bajo `Mutex`.
 
 use std::sync::Mutex;
 

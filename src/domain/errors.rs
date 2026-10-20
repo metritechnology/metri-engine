@@ -1,126 +1,94 @@
-//! Railway error monad — DomainError and the canonical ErrorCode catalog.
+//! Mónada de error Railway (`DomainError`) y catálogo canónico de códigos de error (`ErrorCode`).
 //!
-//! # Origin
-//! Equivalencia: Railway-oriented error monad constructor.
-//! En el stack anterior: (error :JANUS_400 {:reason "..."}) → [:error {...}]
-//! En Rust:    DomainError::janus(JANUS_400, ctx) → Result::Err(DomainError)
-//!
-//! Zero-Drop Policy: todos los códigos de error del catálogo original
-//! están representados como variantes del enum `ErrorCode`.
+//! Mantiene una correspondencia biyectiva 1:1 entre cada variante de `ErrorCode`
+//! y su entrada canónica en `config/errors/error_catalog.toml` (ADR-006).
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Catálogo completo de códigos de error.
-/// Mapea 1:1 con errors/error_catalog.edn del el stack anterior.
+/// Catálogo exhaustivo de códigos de error tipados del motor.
+#[rustfmt::skip]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
-    // ── Janus Pipeline ───────────────────────────────────────────────────────
-    Janus400,
-    Janus401,
-    Janus403,
-    Janus404,
-    Janus422,
-    Janus500,
-    JanusAstCompileError,
-    JanusFilterCompileError,
-    JanusSchemaNotFound,
-    JanusTenantMismatch,
-    JanusVal001, // Defensa Inquebrantable — payload inválido
-    Jns001,      // Sin canal de escritura para engine
-    JnsLock001,  // write_path_locked = true
-    JnsSeed001,  // is_system_seeded = true
-    JnsTx001,    // TX ACID falló en el canal OLTP
-
-    // ── Aegis Analytical Engine ──────────────────────────────────────────────
-    Aeg001, // Query compilation failed
-    Aeg002, // Query execution failed
-    Aeg003, // Query execution timeout
-    Aeg004, // Query output parse error
-    Aeg005, // Unsupported aggregation function
-
-    // ── EAV Engine ──────────────────────────────────────────────────────────
-    Eav001, // TransactWriteItems failed
-    Eav002, // Entity not found
-    // Cursor obsoleto: el AST cambió entre páginas (eav/cursor/composite.rs).
-    // El código canónico dice `EAV_TX_003` y el catálogo lo describe como un
-    // conflicto de bloqueo optimista, que es lo que se pensaba usar cuando se
-    // reservó. Nada implementa ese bloqueo; cambiar la cadena tocaría el
-    // contrato con los clientes, así que se deja y se documenta.
-    Eav003,
-    Eav004,    // Attribute not in registry
-    Eav005,    // Sort key overflow (> 1024 bytes)
-    EavFts001, // FTS index write failed
-
-    // ── Códice / Schema Registry ─────────────────────────────────────────────
-    Cod001,      // Model file parse error
-    Cod002,      // Duplicate entity in registry
-    Cod003,      // SHA-256 fingerprint collision
-    CodScope001, // Sequence scope provider not found
-    CodMat001,   // Materialization spec references unknown entity/attribute/hook
-
-    // ── IOP Pipeline ─────────────────────────────────────────────────────────
-    Iop001, // Integrity validation failed
-    Iop002, // Enrichment failed
-    Iop003, // ACID transaction failed
-    Iop004, // Outbox publish failed
-
-    // ── Quota ────────────────────────────────────────────────────────────────
-    Quota001, // Tenant quota exhausted
-
-    // ── Infraestructura ──────────────────────────────────────────────────────
-    Infra001,         // Storage client error
-    Infra002,         // S3 client error
-    Infra003,         // SQS client error
-    Infra004,         // EventBridge client error
-    InfraCatalog001,  // Error catalog TOML failed to load/validate at bootstrap
-    InfraConfig001,   // Engine configuration failed to resolve/validate at bootstrap
-    InfraGlue001,     // Glue SDK error — Iceberg table sync failed
-    InfraFirehose001, // Firehose SDK error — delivery stream operation failed
-
-    // ── Auth / Tenant ────────────────────────────────────────────────────────
-    Auth401,     // Token inválido o expirado
-    Auth403,     // Tenant mismatch — acceso denegado
-    AuthRevoked, // Token revocado (blacklist)
-
-    // ── Auditoria ────────────────────────────────────────────────────────────
-    Aud001,
-    Aud002,
-
-    // ── Missing error catalog codes ──────────────────────────────────────────
-    JnsRef002,
-    JnsConflict001,
-    EavTx001,
-    EavTx004,
-    GrpcTenant001,
-    InfraCedar002,
-    Mcp503,
-
-    // ── Formula Engine ───────────────────────────────────────────────────────
-    Fml001,
-    Fml002,
-    Fml003,
-    Fml004,
-    Fml005,
-    Fml006,
-    Fml007,
-    Fml008,
-    Fml009,
-    Fml010,
-    Fml011,
-    Fml012,
-    Fml013,
-
-    // ── Metri Vortex (.mbf) Engine ───────────────────────────────────────────
-    MbfCorrupt001,
-    MbfCasConflict001,
-    MbfLedgerUnbalanced001,
-    MbfFiscalClosed001,
-    MbfTenantSeal001,
+    #[doc = "Petición rechazada por validación inicial en Janus (`JANUS_400`)."] Janus400,
+    #[doc = "Token de autenticación inválido o expirado en Janus (`JANUS_401`)."] Janus401,
+    #[doc = "Acceso denegado por evaluación de política Cedar en Janus (`JANUS_403`)."] Janus403,
+    #[doc = "Recurso o entidad objetivo no encontrado en Janus (`JANUS_404`)."] Janus404,
+    #[doc = "Petición semánticamente inválida o referencia fallida (`JANUS_422`)."] Janus422,
+    #[doc = "Error interno no controlado en el manejador gRPC (`GRPC_500`)."] Janus500,
+    #[doc = "Fallo al compilar el AST IR hacia un plan de consulta EAV (`AEG_COMPILE_001`)."] JanusAstCompileError,
+    #[doc = "Fallo al compilar el árbol de filtros del AST IR (`AEG_COMPILE_002`)."] JanusFilterCompileError,
+    #[doc = "Tipo de entidad no encontrado en el registro del Códice (`CDX_003`)."] JanusSchemaNotFound,
+    #[doc = "Aislamiento de tenant ausente en la cláusula `where` del AST IR (`AEG_TENANT_MISSING`)."] JanusTenantMismatch,
+    #[doc = "Validación de esquema o contrato fallida en Janus Validator (`JANUS_VAL_001`)."] JanusVal001,
+    #[doc = "No existe canal de escritura registrado para el motor solicitado (`JNS_001`)."] Jns001,
+    #[doc = "Entidad bloqueada para escritura directa (`write_path_locked = true`, `JNS_LOCK_001`)."] JnsLock001,
+    #[doc = "Entidad sembrada por el sistema e inmutable por clientes (`is_system_seeded = true`, `JNS_SEED_001`)."] JnsSeed001,
+    #[doc = "Transacción ACID abortada en el canal de escritura (`JNS_TX_001`)."] JnsTx001,
+    #[doc = "Fallo general de compilación de consulta analítica en Aegis (`AEG_COMPILE_003`)."] Aeg001,
+    #[doc = "Fallo de ejecución de consulta en el motor Aegis (`AEG_002`)."] Aeg002,
+    #[doc = "Tiempo máximo de ejecución excedido en consulta Aegis (`AEG_006`)."] Aeg003,
+    #[doc = "Error al interpretar o dar forma a la salida de consulta Aegis (`AEG_007`)."] Aeg004,
+    #[doc = "Función de agregación no soportada por el motor Aegis (`AEG_008`)."] Aeg005,
+    #[doc = "Error al construir los ítems de escritura del almacén EAV (`EAV_001`)."] Eav001,
+    #[doc = "Entidad no encontrada para el `entity_id` y `tenant` indicados (`EAV_005`)."] Eav002,
+    #[doc = "Conflicto de concurrencia optimista o cursor de paginación obsoleto (`EAV_TX_003`)."] Eav003,
+    #[doc = "Entidad o atributo no registrado en el esquema EAV (`EAV_004`)."] Eav004,
+    #[doc = "Desbordamiento de clave de ordenamiento (> 1024 bytes, `EAV_KEY_001`)."] Eav005,
+    #[doc = "Fallo al escribir el lote de trigramas en el índice FTS (`EAV_FTS_001`)."] EavFts001,
+    #[doc = "Fallo al leer o parsear un archivo de modelo del Códice (`CDX_001`)."] Cod001,
+    #[doc = "Entidad duplicada o esquema inválido en el Códice (`CDX_002`)."] Cod002,
+    #[doc = "Colisión de huella SHA-256 entre modelos del Códice (`CDX_004`)."] Cod003,
+    #[doc = "Proveedor de ámbito de secuencia inválido o inexistente (`JNS_SCOPE_001`)."] CodScope001,
+    #[doc = "Especificación de materialización referencia entidad, atributo o hook desconocido (`COD_MAT_001`)."] CodMat001,
+    #[doc = "Fallo de validación de integridad en el pipeline IOP (`IOP_001`)."] Iop001,
+    #[doc = "Fallo durante el enriquecimiento de contexto en el pipeline IOP (`IOP_002`)."] Iop002,
+    #[doc = "Fallo de transacción ACID en el pipeline IOP (`IOP_003`)."] Iop003,
+    #[doc = "Fallo al publicar en el outbox transaccional del pipeline IOP (`IOP_004`)."] Iop004,
+    #[doc = "Cuota operativa del tenant agotada (`QUOTA_001`)."] Quota001,
+    #[doc = "Error inesperado en el cliente de almacenamiento clave-valor (`INFRA_DDB_001`)."] Infra001,
+    #[doc = "Error inesperado en operación sobre almacenamiento de objetos S3 (`INFRA_S3_001`)."] Infra002,
+    #[doc = "Error inesperado en operación sobre cola de mensajes SQS (`INFRA_SQS_001`)."] Infra003,
+    #[doc = "Error al publicar evento en el bus EventBridge (`INFRA_EB_001`)."] Infra004,
+    #[doc = "Fallo al cargar o validar el catálogo de errores TOML en el arranque (`INFRA_CATALOG_001`)."] InfraCatalog001,
+    #[doc = "Fallo al resolver o validar la configuración del motor en el arranque (`INFRA_CONFIG_001`)."] InfraConfig001,
+    #[doc = "Fallo de sincronización de catálogo en el cliente Glue (`INFRA_GLUE_001`)."] InfraGlue001,
+    #[doc = "Fallo en flujo de entrega de telemetría Firehose (`INFRA_FIREHOSE_001`)."] InfraFirehose001,
+    #[doc = "Verificación de firma HMAC-SHA256 fallida o token expirado (`GRPC_AUTH_001`)."] Auth401,
+    #[doc = "Discrepancia de tenant: principal sin acceso al tenant solicitado (`GRPC_AUTH_004`)."] Auth403,
+    #[doc = "Token presente en la lista de sesiones revocadas (`GRPC_AUTH_003`)."] AuthRevoked,
+    #[doc = "Fallo al emitir registro en el canal de auditoría (`AUD_001`)."] Aud001,
+    #[doc = "Derivación de `ActionType` desconocida en el interceptor de auditoría (`AUD_002`)."] Aud002,
+    #[doc = "Entidad referenciada existe pero pertenece a un tipo de entidad distinto (`JNS_REF_002`)."] JnsRef002,
+    #[doc = "Violación de restricción de unicidad en el índice AVET (`JNS_CONFLICT_001`)."] JnsConflict001,
+    #[doc = "Transacción de escritura cancelada por condición atómica (`EAV_TX_001`)."] EavTx001,
+    #[doc = "Colisión de escritura condicional sobre datom histórico inmutable (`EAV_TX_004`)."] EavTx004,
+    #[doc = "Metadato `tenant_id` ausente o vacío en la cabecera gRPC (`GRPC_TENANT_001`)."] GrpcTenant001,
+    #[doc = "Fallo crítico al cargar el almacén de políticas Cedar en el arranque (`INFRA_CEDAR_002`)."] InfraCedar002,
+    #[doc = "Servicio de modelo de lenguaje (LLM) no disponible o con timeout (`MCP_503`)."] Mcp503,
+    #[doc = "Token inesperado durante el análisis léxico de una fórmula (`FML_001`)."] Fml001,
+    #[doc = "Paréntesis desbalanceados en la expresión de fórmula (`FML_002`)."] Fml002,
+    #[doc = "Función desconocida invocada dentro de la fórmula (`FML_003`)."] Fml003,
+    #[doc = "Número de argumentos inválido para la función en la fórmula (`FML_004`)."] Fml004,
+    #[doc = "División por cero detectada al evaluar la fórmula (`FML_005`)."] Fml005,
+    #[doc = "Error de dominio matemático al evaluar la fórmula (`FML_006`)."] Fml006,
+    #[doc = "Patrón de inyección o token prohibido detectado en la fórmula (`FML_007`)."] Fml007,
+    #[doc = "La fórmula excede la longitud máxima permitida (`FML_008`)."] Fml008,
+    #[doc = "La profundidad de anidamiento de paréntesis excede el límite (`FML_009`)."] Fml009,
+    #[doc = "La cantidad de tokens de la fórmula excede el límite (`FML_010`)."] Fml010,
+    #[doc = "La profundidad de anidamiento de funciones excede el límite (`FML_011`)."] Fml011,
+    #[doc = "Variable referenciada ausente en el contexto de la fila (`FML_012`)."] Fml012,
+    #[doc = "Expresión de fórmula vacía recibida (`FML_013`)."] Fml013,
+    #[doc = "Corrupción de integridad binaria en bloque `.mbf` (`MBF_CORRUPT_001`)."] MbfCorrupt001,
+    #[doc = "Conflicto de escritura condicional CAS por solapamiento real (`MBF_CAS_CONFLICT_001`)."] MbfCasConflict001,
+    #[doc = "Asiento contable desbalanceado o lote de inventario insuficiente (`MBF_LEDGER_UNBALANCED_001`)."] MbfLedgerUnbalanced001,
+    #[doc = "Intento de mutación sobre un período fiscal cerrado (`MBF_FISCAL_CLOSED_001`)."] MbfFiscalClosed001,
+    #[doc = "Discrepancia en el sello criptográfico de aislamiento por tenant (`MBF_TENANT_SEAL_001`)."] MbfTenantSeal001,
 }
 
 impl ErrorCode {
+    #[doc = "Arreglo estático con la totalidad de las variantes de `ErrorCode` para validación exhaustiva."]
     pub const ALL: &'static [ErrorCode] = &[
         ErrorCode::Janus400,
         ErrorCode::Janus401,
@@ -200,10 +168,9 @@ impl ErrorCode {
 
     /// Obtiene el código canónico correspondiente en el catálogo de errores (TOML).
     ///
-    /// Mapeo 1:1 (PLAN_PATRON_RESULT.md §3.2, catálogo v3.0.0): cada variante
-    /// tiene un código propio y semánticamente correcto. El guard
-    /// `codigos_canonicos_son_unicos` impide compartir códigos; el guard
-    /// `todo_codigo_canonico_esta_en_el_catalogo` impide códigos fuera del TOML.
+    /// Mapeo 1:1 (catálogo v3.0.0): cada variante tiene un código propio y
+    /// semánticamente correcto. El guard `codigos_canonicos_son_unicos` impide
+    /// compartir códigos; `todo_codigo_canonico_esta_en_el_catalogo` verifica el TOML.
     pub fn canonical_code(&self) -> &'static str {
         match self {
             ErrorCode::Janus400 => "JANUS_400",
@@ -298,7 +265,7 @@ impl ErrorCode {
     /// Retorna true si el error admite reintento por el cliente.
     ///
     /// Consulta el catálogo global (TOML, fuente canónica); antes del bootstrap
-    /// usa [`ErrorCode::fallback_is_retryable`].
+    /// usa `ErrorCode::fallback_is_retryable`.
     pub fn is_retryable(&self) -> bool {
         match crate::domain::error_catalog::try_global() {
             Some(catalog) => catalog.is_retryable(self.canonical_code()),
@@ -309,8 +276,7 @@ impl ErrorCode {
     /// Fallback estático previo al bootstrap.
     ///
     /// DEBE coincidir con el campo `retryable` de `error_catalog.toml`: el
-    /// guard `fallback_retryable_coincide_con_el_catalogo` rompe el build si
-    /// diverge (PLAN_PATRON_RESULT.md, regla C4).
+    /// guard `fallback_retryable_coincide_con_el_catalogo` rompe el build si diverge.
     pub fn fallback_is_retryable(&self) -> bool {
         matches!(
             self,
@@ -407,22 +373,25 @@ impl ErrorCode {
     }
 }
 
-/// Error de dominio Railway-Oriented.
-/// Reemplaza el vector el stack anterior [:error {:code :JANUS_400 :detail "..." :retryable? false}]
+/// Error de dominio estructurado bajo el patrón Railway-Oriented Programming.
 #[derive(Debug, Clone, Error, PartialEq, Serialize, Deserialize)]
 #[error("{code:?}: {detail}")]
 pub struct DomainError {
+    #[doc = "Código tipado del error dentro del catálogo canónico."]
     pub code: ErrorCode,
+    #[doc = "Etapa o subsistema del pipeline donde se produjo el error."]
     pub stage: String,
+    #[doc = "Mensaje descriptivo detallado de la causa del fallo."]
     pub detail: String,
+    #[doc = "Indica si la operación puede ser reintentada por el llamador."]
     pub retryable: bool,
-    /// /// Contexto adicional (equivale al ctx-map del error el stack anterior)
+    /// Contexto adicional estructurado asociado al fallo.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<Box<serde_json::Value>>,
 }
 
 impl DomainError {
-    /// /// Constructor principal — equivale a (error code ctx-map) en el stack anterior.
+    /// Constructor principal de `DomainError` que infiere `stage` y `retryable` desde `ErrorCode`.
     pub fn new(code: ErrorCode, detail: impl Into<String>) -> Self {
         let retryable = code.is_retryable();
         let stage = code.stage().to_string();
@@ -458,30 +427,37 @@ impl DomainError {
 
     // ── Constructores rápidos por dominio ────────────────────────────────────
 
+    #[doc = "Construye un `DomainError` originado en el subsistema Janus."]
     pub fn janus(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }
 
+    #[doc = "Construye un `DomainError` originado en el motor EAV."]
     pub fn eav(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }
 
+    #[doc = "Construye un `DomainError` originado en el motor analítico Aegis."]
     pub fn aegis(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }
 
+    #[doc = "Construye un `DomainError` originado en la capa de autenticación/autorización."]
     pub fn auth(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }
 
+    #[doc = "Construye un `DomainError` originado en adaptadores de infraestructura."]
     pub fn infra(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }
 
+    #[doc = "Construye un `DomainError` originado en el registro o validador del Códice."]
     pub fn codice(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }
 
+    #[doc = "Construye un `DomainError` originado en el motor binario `.mbf`."]
     pub fn mbf(code: ErrorCode, detail: impl Into<String>) -> Self {
         Self::new(code, detail)
     }

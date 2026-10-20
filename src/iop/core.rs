@@ -1,19 +1,11 @@
-//! IOP orchestrator — the root coordinating Cedar, Quota and Janus.
+//! Orquestador raíz del IOP (`IopOrchestrator`) — coordina Cedar, Quota, Janus, Moira, Sherlog y Auditoría.
 //!
-//! IOP Orchestrator raíz del Metri Engine.
-//!
-//! # Origin
-//! En el stack anterior: ig/init-key :iop/orchestrator — coordina Cedar → Quota → Janus → Moira → Audit
-//! En Rust: IopOrchestrator struct con run() async.
-//!
-//! Arquitectura:
-//! Paso 1: CedarAuthorizer  (Zero-Trust)
-//! Paso 2: QuotaGuard       (control de recursos)
-//! Paso 3: JanusRouter      (validación + ruteo)
-//! → gRPC 200 OK al cliente
-//! → (async fire-and-forget) MoiraEmitter  [solo en Ok]
-//! → audit! SIEMPRE [Ok y Err]
-//! → normalize_response (contrato de salida garantizado)
+//! Arquitectura de ejecución:
+//! - Paso 1: `CedarAuthorizerStep` (autorización Zero-Trust ABAC).
+//! - Paso 2: `QuotaGuardStep` (débito atómico de recursos con compensación ante fallos).
+//! - Paso 3: `JanusRouterStep` (validación y escritura ACID sobre `.mbf`).
+//! - Post-procesamiento: emisión asíncrona `MoiraEmitter` (en éxito), reporte forense `Sherlog`
+//!   (en error), auditoría inmutable (`IAuditInterceptor`) y normalización de respuesta.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -28,27 +20,43 @@ use crate::janus::normalizer::{normalize_response, ResponseType};
 /// Contexto de una request IOP — viaja por todo el pipeline.
 #[derive(Debug, Clone)]
 pub struct IopContext {
+    /// Identificador del tenant autenticado que ejecuta la operación.
     pub tenant_id: String,
+    /// Identificador del usuario o principal que origina la solicitud.
     pub user_id: String,
+    /// Mapa JSON mutable con el payload original de la solicitud gRPC y resultados intermedios.
     pub request: Map<String, Value>, // payload original gRPC
+    /// Nombre canónico de la entidad objetivo según el Códice.
     pub entity_type: String,
+    /// Verbo de operación solicitado (`CREATE`, `UPDATE`, `DELETE`, `UPSERT`, `GET`, etc.).
     pub operation: String,
     // Enriquecido por cada paso del pipeline:
+    /// Esquema JSON de la entidad inyectado por `JanusRouter`.
     pub schema: Option<Value>,
+    /// Modelo semántico adicional asociado a la entidad durante el procesamiento.
     pub model: Option<Value>,
+    /// Lista de roles efectivos del usuario resueltos en el paso Cedar.
     pub roles: Vec<String>,
+    /// Instante monotónico de inicio de la ejecución del pipeline.
     pub exec_start: Option<Instant>,
+    /// Latencia total de ejecución en milisegundos.
     pub execution_time_ms: Option<u64>,
     // ── Cedar (Paso 1) ─────────────────────────────────────────────────────────
+    /// Conjunto de claves de acción concedidas por las políticas Cedar (`entidad:VERBO`).
     pub granted_action_keys: std::collections::HashSet<String>,
+    /// Indica si el principal pertenece al tenant maestro de plataforma (`metri_global`).
     pub is_super_master: bool,
+    /// Alcance de acceso inter-tenant (`"FULL"` para super-master, `"NONE"` para tenants estándar).
     pub cross_tenant_scope: String,
+    /// Fronteras de dominio ABAC hidratadas para el principal.
     pub domain_boundaries: Value,
     // ── Quota (Paso 2) ─────────────────────────────────────────────────────────
+    /// Metadatos de la reserva o débito de cuota aplicado en el Paso 2 para posible compensación.
     pub quota_reservation: Option<Value>,
 }
 
 impl IopContext {
+    /// Crea un nuevo `IopContext` inicializando los metadatos base y el reloj de ejecución.
     pub fn new(
         tenant_id: impl Into<String>,
         user_id: impl Into<String>,
@@ -90,6 +98,7 @@ impl IopContext {
 /// Trait del IOP Orchestrator — permite inyección de mocks en tests.
 #[async_trait::async_trait]
 pub trait IIopOrchestrator: Send + Sync {
+    /// Ejecuta el pipeline IOP completo y devuelve la respuesta JSON normalizada o el DTO de error forense.
     async fn run(&self, ctx: IopContext) -> Value;
 }
 
@@ -108,6 +117,7 @@ pub struct IopOrchestrator {
 }
 
 impl IopOrchestrator {
+    /// Construye un `IopOrchestrator` con sus pasos síncronos, emisor Moira, auditor y bus de fallas Sherlog.
     pub fn new(
         steps: Vec<Arc<dyn IopStep>>,
         moira_emitter: Option<Arc<dyn MoiraEmitter>>,
@@ -322,6 +332,7 @@ impl IopOrchestrator {
 /// Paso del pipeline IOP — Cedar / Quota / JanusRouter implementan este trait.
 #[async_trait::async_trait]
 pub trait IopStep: Send + Sync {
+    /// Ejecuta la lógica del paso sobre el `IopContext` y devuelve el contexto enriquecido o un `DomainError`.
     async fn execute(&self, ctx: IopContext) -> Result<IopContext, DomainError>;
 
     /// Deshace lo que `execute` hizo FUERA de este proceso, cuando un paso
@@ -353,7 +364,9 @@ pub fn record_step_span_error(
 /// Moira Emitter — fire-and-forget EDA tras Ok.
 #[async_trait::async_trait]
 pub trait MoiraEmitter: Send + Sync {
+    /// Drena y publica en el bus de eventos los `outbox_event` pendientes del tenant.
     async fn emit(&self, ctx: IopContext) -> Result<(), DomainError>;
+    /// Reestablece a `PENDING` los eventos que quedaron huérfanos en estado `PROCESSING` tras superar `ttl_ms`.
     async fn reset_orphaned_processing(
         &self,
         tenant_id: &str,

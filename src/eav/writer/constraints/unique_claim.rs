@@ -1,22 +1,17 @@
-//! Uniqueness via a claim item inside the transaction.
+//! Garantía de unicidad mediante un ítem de reclamación (`#CLAIM`) dentro de la misma transacción ACID.
 //!
-//! Un item aparte, en la misma transacción, cuya clave primaria ES la clave
-//! natural. DynamoDB garantiza que solo un escritor puede crearlo.
+//! Genera un registro independiente en la misma transacción cuya clave primaria (`PK`)
+//! se deriva criptográficamente (SHA-256) de la tupla de atributos únicos declarados:
 //!
 //! ```text
 //! PK  = T#<tenant|GLOBAL>#U#<entidad>#<sha256(tupla ordenada)>
-//! SK  = b"#CLAIM" (binario: el tipo de la tabla exige B en el SK)
+//! SK  = b"#CLAIM"
 //! eid = <ulid de la entidad propietaria>
 //! ```
 //!
-//! - CREATE: `Put(claim)` con `attribute_not_exists(PK)`.
-//! - UPDATE: `Put(claim)` con `attribute_not_exists(PK) OR eid = :self`, de
-//!   modo que reescribir la misma entidad con la misma clave es idempotente y
-//!   reclamar la de otra entidad falla.
-//! - DELETE: no se planifica nada aquí. Liberar la reclamación al borrar es
-//!   trabajo del camino de borrado, que hoy es un retract lógico y no libera
-//!   la clave — a propósito: un `unique` sobre una entidad retractada sigue
-//!   ocupado mientras el histórico la conserve.
+//! - `CREATE`: `Put(claim)` con `attribute_not_exists(PK)`.
+//! - `UPDATE`: `Put(claim)` con `attribute_not_exists(PK) OR eid = :self` (idempotente para la misma entidad).
+//! - `DELETE`: el borrado lógico mediante retracción conserva la reclamación histórica.
 
 use super::{ConstraintContext, ConstraintPlanner};
 use crate::codice::registry::{ConstraintKind, ConstraintScope, EntityModel};
@@ -27,6 +22,7 @@ use crate::mbf::storage::{AttributeValue, Blob, Put, TransactWriteItem};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+/// Planificador que materializa restricciones `ConstraintKind::Unique` como ítems `#CLAIM` condicionales en la transacción.
 pub struct UniqueClaimPlanner;
 
 impl Default for UniqueClaimPlanner {
@@ -36,6 +32,7 @@ impl Default for UniqueClaimPlanner {
 }
 
 impl UniqueClaimPlanner {
+    /// Crea una nueva instancia del planificador de unicidad `UniqueClaimPlanner`.
     pub fn new() -> Self {
         UniqueClaimPlanner
     }

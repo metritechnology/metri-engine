@@ -248,7 +248,11 @@ def parse_errors_rs() -> dict:
     text = ERRORS_RS.read_text()
     # variantes declaradas en el enum (entre `pub enum ErrorCode {` y su cierre a col 0)
     enum_m = re.search(r"pub enum ErrorCode \{(.*?)\n\}", text, re.S)
-    enum_variants = re.findall(r"^    ([A-Z]\w*),?\s*(?://.*)?$", enum_m.group(1), re.M) if enum_m else []
+    enum_variants = (
+        re.findall(r'^    (?:#\[doc = "[^"]*"\]\s*)?([A-Z]\w*),?\s*(?://.*)?$', enum_m.group(1), re.M)
+        if enum_m
+        else []
+    )
     # lista `pub const ALL` (zero-drop)
     all_m = re.search(r"pub const ALL[^\[]*\[(.*?)\];", text, re.S)
     all_variants = re.findall(r"ErrorCode::(\w+)", all_m.group(1)) if all_m else []
@@ -454,7 +458,7 @@ def main() -> int:
     if update:
         BASELINE_JSON.write_text(json.dumps({
             "generated_at": date.today().isoformat(),
-            "plan": "docs/architecture/PLAN_PATRON_RESULT.md",
+            "plan": "docs/03-arquitectura/05-calidad-clean-code-y-patron-result.md",
             "code": current["code"],
             "catalog": current["catalog"],
         }, indent=2, ensure_ascii=False) + "\n")

@@ -1,4 +1,4 @@
-//! Tests for `iop::pipeline`.
+//! Pruebas unitarias de `iop::pipeline` (motor Railway).
 use super::*;
 use crate::domain::errors::ErrorCode;
 

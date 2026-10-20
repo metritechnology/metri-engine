@@ -1,11 +1,12 @@
-//! Dynamic function registry — extend without touching the evaluator.
+//! Registro dinámico de funciones matemáticas y lógicas del motor de fórmulas.
 //!
-//! Registro dinámico de funciones.
-//! OCP: Nuevas funciones se REGISTRAN sin modificar el evaluador ni el parser.
+//! Cumple con el principio Abierto/Cerrado (OCP): permite registrar funciones adicionales
+//! que implementen `FormulaFunction` sin modificar el lexer, el parser ni el evaluador.
 
 use crate::aegis::formula::functions::FormulaFunction;
 use std::collections::HashMap;
 
+/// Catálogo indexado (insensible a mayúsculas) de funciones disponibles para evaluación de fórmulas.
 pub struct FunctionRegistry {
     functions: HashMap<String, Box<dyn FormulaFunction>>,
 }

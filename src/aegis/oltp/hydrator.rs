@@ -1,7 +1,8 @@
-//! Entity hydration — EAV to JSON rows with cache control.
+//! Hidratación concurrente de entidades EAV a filas JSON con control y calentamiento selectivo de caché.
 //!
-//! aegis/oltp/hydrator.rs
-//! SRP: Encapsular hidratación de entidades (EAV → JSON Rows in-memory), control de cache y calentamiento selectivo.
+//! Resuelve primero las entidades presentes en `EAV_CACHE` bajo un único cerrojo de lectura
+//! y ejecuta las lecturas faltantes en paralelo mediante un `JoinSet` acotado, preservando
+//! el orden determinista original y filtrando en streaming.
 
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
@@ -317,13 +318,11 @@ pub fn entity_map_to_json(map: std::collections::HashMap<String, DatomValue>) ->
             let bare_key = k.split('/').next_back().unwrap_or(&k).to_string();
             if !bare_key.is_empty() {
                 if bare_key == "id" {
-                    if k == "entity/id" {
-                        row.insert(bare_key, json_val.clone());
-                    } else if k == "tenant/id" {
+                    if k == crate::eav::writer::system_attrs::TENANT_NAME {
                         row.insert("tenant_id".to_string(), json_val.clone());
                     }
                 } else if bare_key == "type" {
-                    if k != "entity/type" {
+                    if k != crate::eav::writer::system_attrs::TYPE_NAME {
                         row.insert(bare_key, json_val.clone());
                     }
                 } else {

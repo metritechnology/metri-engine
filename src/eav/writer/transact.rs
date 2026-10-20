@@ -1,15 +1,8 @@
-//! ACID write path of the EAV engine.
+//! Ruta de escritura ACID del motor EAV sobre el almacenamiento unificado `.mbf`.
 //!
-//! # Origin
-//! [NUEVO — reemplaza: src/metri/infrastructure/datahike.clj + tenant_guard.clj]
-//! Write path ACID del motor EAV.
-//! Blueprint: Metri EAV - OLPT.md §IV — ACID Write Path
-//!
-//! En el stack anterior: d/transact → DynamoDB (blob monolítico via Datahike)
-//! En Rust:    TransactWriteItems con datoms EAVT/AEVT/AVET/VAET individuales
-//!
-//! Este módulo es el reemplazo directo de la corrupción de blobs de Datahike.
-//! Cada atributo es un datom independiente — sin contención bajo concurrencia.
+//! Orquesta la validación contra el Códice, la planificación pura de datoms (`EAVT`, `AEVT`,
+//! `AVET`, `VAET`), las restricciones de estado y unicidad (`#CLAIM`), la generación del
+//! evento en el Transactional Outbox, las proyecciones de sagas y la invalidación de cachés.
 
 use serde_json;
 use std::collections::HashMap;
@@ -54,54 +47,51 @@ enum ConstraintPolicy {
     Skip,
 }
 
-/// Contexto de una transacción EAV.
-/// Equivale al `TransactPayload` implícito en el pipeline IOP de el stack anterior.
+/// Carga útil de entrada para ejecutar una transacción en el motor EAV.
 #[derive(Debug, Clone)]
 pub struct TransactPayload {
+    /// Identificador del tenant propietario de la entidad.
     pub tenant_id: String,
-    pub entity_id: Option<String>, // None = nuevo (se genera ULID)
+    /// Identificador de la entidad (`None` en creaciones para que el motor asigne un nuevo ULID).
+    pub entity_id: Option<String>,
+    /// Nombre del modelo o tipo de entidad en el Códice.
     pub entity_type: String,
-    pub attrs: HashMap<String, DatomValue>, // nombre_attr → valor nuevo
+    /// Mapa de atributos a mutar (`nombre_atributo -> DatomValue`).
+    pub attrs: HashMap<String, DatomValue>,
+    /// Operación transaccional a ejecutar (`Create`, `Update`, `Delete`).
     pub op: TransactOp,
-    /// true → la mutación no genera outbox ni eventos de dominio.
-    ///
-    /// Es la PRIMERA barrera contra el ciclo de realimentación del Hub
-    /// (metri-schedulers §10.4): las escrituras de bitácora del ejecutor
-    /// (last_run_at, run_count, last_error) la usan para no reprovisionar
-    /// trampas. La segunda barrera — independiente del escritor — es el guard
-    /// de delta en el sobre (`domain::events::is_bookkeeping_only`).
+    /// Si es `true`, la mutación no genera fila en el outbox ni emite eventos de dominio.
     #[doc(hidden)]
     pub suppress_events: bool,
 }
 
-/// Operación de la transacción.
+/// Tipo de operación transaccional en el motor EAV.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransactOp {
-    /// Crear entidad nueva
+    /// Crear una entidad nueva.
     Create,
-    /// Actualizar atributos existentes (genera retract + assert)
+    /// Actualizar atributos de una entidad existente (genera par `retract + assert`).
     Update,
-    /// Retract completo (marca todos los atributos como inactivos)
+    /// Borrado lógico completo (genera `retract` de todos los atributos activos).
     Delete,
 }
 
-/// Resultado de una transacción exitosa.
+/// Resultado devuelto tras confirmar exitosamente una transacción ACID en el motor EAV.
 #[derive(Debug, Clone)]
 pub struct TransactResult {
+    /// Identificador único (ULID) de la entidad mutada.
     pub entity_id: String,
+    /// Identificador monotónico de la transacción (`tx_id`).
     pub tx_id: u64,
-    pub datoms: usize, // número de datoms escritos
+    /// Cantidad total de datoms escritos en la transacción.
+    pub datoms: usize,
+    /// Número de eventos `outbox_event` persistidos en la misma transacción.
     pub outbox_count: usize,
-    /// ULID monotónico de ESTA mutación. Es la llave de orden del ledger del
-    /// Hub (metri-schedulers §10.3) y coincide con el id de la fila outbox
-    /// generada — la fila outbox ES el registro durable de la mutación.
+    /// ULID monotónico único asignado a esta mutación (coincide con el `id` de la fila outbox).
     pub mutation_ulid: String,
-    /// Before/after de un UPDATE (sólo atributos que cambiaron), en el formato
-    /// del contrato metri-contracts. None en CREATE y DELETE.
+    /// Diferencial `before/after` de los atributos que cambiaron en un `Update`.
     pub delta: Option<crate::domain::events::Delta>,
-    /// Atributos activos previos de un DELETE — el sobre `deleted` del Hub
-    /// necesita trigger_type/action_payload para eliminar la trampa correcta,
-    /// y después del retract ya no existen en el almacén.
+    /// Atributos activos previos rescatados antes de un `Delete`.
     pub deleted_attrs: Option<HashMap<String, DatomValue>>,
 }
 
@@ -142,6 +132,7 @@ pub struct EavWriter {
 }
 
 impl EavWriter {
+    /// Crea un nuevo `EavWriter` configurado con los planificadores de restricciones predeterminados.
     pub fn new(ddb: Arc<MbfStorageClient>, table: impl Into<String>) -> Self {
         Self::with_planners(
             ddb,
@@ -264,9 +255,8 @@ impl EavWriter {
         .await
     }
 
-    /// Ejecuta una transacción ACID sin invalidar caches per-row.
-    /// Diseñado para bulk operations donde la cache se invalida una sola vez al final.
-    /// [OPTIMIZATION: 10x Bulk — evita N RwLock::write() por fila]
+    /// Ejecuta una transacción ACID difiriendo la invalidación de cachés de lectura al final del lote.
+    /// Diseñado para operaciones masivas (`bulk`) donde la caché se invalida una sola vez al concluir.
     pub async fn transact_bulk_deferred(
         &self,
         payload: TransactPayload,
@@ -796,9 +786,6 @@ impl EavWriter {
 
             let attr_name = match crate::eav::writer::system_attrs::name_of(attr_id) {
                 Some(n) => n.to_string(),
-                None if attr_id == Datom::hash_attr_name("entity_type") => {
-                    "entity_type".to_string()
-                }
                 None => match crate::codice::global().get_attr_name(attr_id) {
                     Some(n) => n.to_string(),
                     None => format!("attr_{}", attr_id),

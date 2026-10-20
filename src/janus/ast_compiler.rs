@@ -1,7 +1,4 @@
-//! AST IR assembler — combines sub-steps 4a to 4f.
-//!
-//! Ensamblador del AST IR.
-//! combina los sub-pasos 4a-4f en un AST IR inmutable completo.
+//! Ensamblador del AST IR (`ast_compiler`) — combina los sub-pasos 4a a 4f en un AST IR inmutable completo.
 
 use serde_json::{json, Value};
 
@@ -284,7 +281,7 @@ pub fn compile_ast_fbs(
         if !is_master_tenant(tenant_id) {
             let tenant_filter = fbs::FilterNodeT {
                 criteria: Some(Box::new(fbs::FilterCriteriaT {
-                    field: Some("entity/ulid".to_string()),
+                    field: Some(crate::eav::writer::system_attrs::ULID_NAME.to_string()),
                     op_ref: fbs::FilterOperator::EQ,
                     value: Some(Box::new(fbs::FilterValueT {
                         string_val: Some(tenant_id.to_string()),
@@ -299,7 +296,7 @@ pub fn compile_ast_fbs(
     } else {
         let tenant_filter = fbs::FilterNodeT {
             criteria: Some(Box::new(fbs::FilterCriteriaT {
-                field: Some("tenant_id".to_string()),
+                field: Some(crate::eav::writer::system_attrs::TENANT_NAME.to_string()),
                 op_ref: fbs::FilterOperator::EQ,
                 value: Some(Box::new(fbs::FilterValueT {
                     string_val: Some(tenant_id.to_string()),
@@ -314,7 +311,7 @@ pub fn compile_ast_fbs(
 
     let entity_type_filter = fbs::FilterNodeT {
         criteria: Some(Box::new(fbs::FilterCriteriaT {
-            field: Some("entity_type".to_string()),
+            field: Some(crate::eav::writer::system_attrs::TYPE_NAME.to_string()),
             op_ref: fbs::FilterOperator::EQ,
             value: Some(Box::new(fbs::FilterValueT {
                 string_val: Some(entity.to_string()),
@@ -495,7 +492,7 @@ pub fn compile_ast_fbs(
         "NONE" => {
             let deny_filter = fbs::FilterNodeT {
                 criteria: Some(Box::new(fbs::FilterCriteriaT {
-                    field: Some("tenant_id".to_string()),
+                    field: Some(crate::eav::writer::system_attrs::TENANT_NAME.to_string()),
                     op_ref: FilterOperator::EQ,
                     value: Some(Box::new(fbs::FilterValueT {
                         string_val: Some("DENIED_BY_SCOPE_NONE".to_string()),

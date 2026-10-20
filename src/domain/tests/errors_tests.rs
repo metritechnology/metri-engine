@@ -1,4 +1,4 @@
-//! Tests for `domain::errors`.
+//! Pruebas unitarias de `DomainError` y `ErrorCode` (`domain::errors`).
 use super::*;
 
 #[test]

@@ -1,4 +1,4 @@
-//! Query RPC body — server-side streaming.
+//! Manejador del RPC `Query`: ejecución paralela de subconsultas analíticas y streaming gRPC del lado del servidor.
 use crate::grpc::handlers::query_support::*;
 use crate::grpc::pb::{QueryRequest, QueryResponse};
 use crate::grpc::service::MetriGrpcService;

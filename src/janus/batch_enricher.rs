@@ -1,8 +1,4 @@
-//! Pre-compilation query enricher — batch and cross-filters.
-//!
-//! Enriquecedor de queries pre-compilación.
-//! aplica BatchContext.common-filters y DashboardCrossFilterContext
-//! al mapa de sub-queries antes de que el AST compiler los procese.
+//! Enriquecedor de consultas pre-compilación (`batch_enricher`) — aplica `BatchContext` y `DashboardCrossFilterContext`.
 
 use serde_json::Value;
 

@@ -1,4 +1,4 @@
-//! Tests for `janus::validator`.
+//! Pruebas unitarias para `janus::validator`.
 use crate::janus::validator::{validate_query_request, validate_tenant};
 use serde_json::json;
 

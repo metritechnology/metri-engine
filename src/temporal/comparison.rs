@@ -1,31 +1,37 @@
-//! AnalyticalComparison resolution — comparison periods.
+//! Resolución de comparaciones analíticas (`AnalyticalComparison`) hacia períodos de tiempo previos.
 //!
-//! Resolución de AnalyticalComparison → períodos de comparación.
-//!
-//! CORRECCIONES vs implementación anterior:
-//! 1. Todos los shortcuts usan shift_by_calendar (chrono) — bisiesto-safe
-//! 2. SAME_PERIOD_LAST_YEAR ya no usa 365*86400 fijo
-//! 3. SAME_PERIOD_LAST_QUARTER ya no usa 91*86400 fijo
-//! 4. Timezone propagada en todos los shortcuts
-//! 5. TIME_SHIFT_RELATIVE usa shift_by_calendar — 'month' es mes real
+//! Garantías de exactitud calendárica:
+//! 1. Todos los atajos (`ShiftShortcut`) utilizan `shift_by_calendar` (`chrono`) respetando años bisiestos.
+//! 2. `SamePeriodLastYear` desplaza 1 año calendario real en lugar de 365 días fijos.
+//! 3. `SamePeriodLastQuarter` desplaza 1 trimestre calendario real en lugar de 91 días fijos.
+//! 4. La zona horaria IANA se propaga en todos los cálculos de desplazamiento.
+//! 5. `TimeShiftRelative` respeta la duración real de meses y trimestres.
 
 use crate::temporal::core::{
     shift_by_calendar, CalUnit, ComparisonPeriod, TimeRange, SMART_HISTORY_DAYS,
 };
 
-// ── Tipos del proto ───────────────────────────────────────────────────────────
+// ── Tipos del contrato gRPC ───────────────────────────────────────────────────
 
+/// Estrategia de comparación analítica definida en el contrato gRPC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComparisonType {
+    /// Desplazamiento relativo por un número explícito de unidades de calendario (`N × granularidad`).
     TimeShiftRelative,
+    /// Desplazamiento mediante un atajo semántico predefinido (`ShiftShortcut`).
     TimeShiftShortcut,
+    /// Comparación contra una ventana temporal absoluta con inicio y fin explícitos.
     TimeShiftAbsolute,
+    /// Comparación contra un valor objetivo constante (benchmark estático).
     Benchmark,
+    /// Detección estadística de anomalías (Z-score) sobre una ventana histórica móvil.
     Smart,
+    /// Tipo de comparación no especificado o desconocido.
     Unspecified,
 }
 
 impl ComparisonType {
+    /// Convierte el discriminante entero del enum Protobuf `ComparisonType` al tipo de dominio.
     pub fn from_proto(v: i32) -> Self {
         match v {
             1 => Self::TimeShiftRelative,
@@ -38,24 +44,39 @@ impl ComparisonType {
     }
 }
 
+/// Atajo semántico de desplazamiento temporal para comparaciones analíticas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShiftShortcut {
+    /// Período inmediatamente anterior de idéntica duración en segundos (`PoP`).
     PreviousPeriod,
+    /// Mismo período en el año calendario anterior (`YoY`).
     SamePeriodLastYear,
+    /// Mismo período en el trimestre calendario anterior (`QoQ`).
     SamePeriodLastQuarter,
+    /// Mismo período en el mes calendario anterior (`MoM`).
     SamePeriodLastMonth,
+    /// Mismo día en la semana anterior.
     SameDayLastWeek,
+    /// Mismo día en el mes calendario anterior.
     SameDayLastMonth,
+    /// Mismo día en el año calendario anterior.
     SameDayLastYear,
+    /// Día anterior al inicio del rango desplazado un año hacia atrás.
     YesterdayLastYear,
+    /// Día anterior al inicio del rango desplazado un mes hacia atrás.
     YesterdayLastMonth,
+    /// Día anterior al inicio del rango desplazado una semana hacia atrás.
     YesterdayLastWeek,
+    /// Rango actual desplazado exactamente un año calendario hacia atrás.
     TodayLastYear,
+    /// Rango actual desplazado exactamente un mes calendario hacia atrás.
     TodayLastMonth,
+    /// Atajo no especificado o desconocido.
     Unspecified,
 }
 
 impl ShiftShortcut {
+    /// Convierte el discriminante entero del enum Protobuf `ShiftShortcut` al tipo de dominio.
     pub fn from_proto(v: i32) -> Self {
         match v {
             1 => Self::PreviousPeriod,
@@ -75,15 +96,21 @@ impl ShiftShortcut {
     }
 }
 
-/// Representa un AnalyticalComparison del proto.
+/// Definición de una comparación analítica normalizada desde el contrato gRPC.
 #[derive(Debug, Clone)]
 pub struct AnalyticalComparison {
+    /// Estrategia de comparación a ejecutar.
     pub comp_type: ComparisonType,
+    /// Granularidad relativa (`"day"`, `"week"`, `"month"`, `"quarter"`, `"year"`).
     pub relative_granularity: String, // "day", "week", "month", "quarter", "year"
+    /// Cantidad de unidades a desplazar hacia el pasado en modo `TimeShiftRelative`.
     pub relative_amount: i64,
+    /// Atajo predefinido cuando `comp_type` es `TimeShiftShortcut`.
     pub shortcut: ShiftShortcut,
+    /// Inicio explícito en segundos epoch para `TimeShiftAbsolute`.
     pub absolute_start_ts: Option<i64>, // epoch-s
-    pub absolute_end_ts: Option<i64>,   // epoch-s
+    /// Fin explícito en segundos epoch para `TimeShiftAbsolute`.
+    pub absolute_end_ts: Option<i64>, // epoch-s
 }
 
 // ── Helpers privados ──────────────────────────────────────────────────────────

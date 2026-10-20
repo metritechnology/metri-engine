@@ -1,30 +1,35 @@
-//! The twelve EAV value types and their SK tag bytes.
-//!
-//! # Origin
-//! [NUEVO — no tiene equivalente en el stack anterior]
-//! src/eav/types/value_type.rs
-//! Define los 12 tipos de valor del sistema EAV y sus tag bytes para SK binario.
-//! Diseñado según Metri EAV - OLPT.md §II.3
+//! Los doce tipos de valor (`ValueType`) del sistema EAV y sus etiquetas binarias (`tag` bytes) para claves de ordenamiento (`SK`).
 
 use serde::{Deserialize, Serialize};
 
 /// Los 12 tipos de valor del sistema EAV.
-/// Cada variante tiene un tag byte para el Sort Key binario.
-/// El tag determina el orden lexicográfico entre tipos distintos.
+/// Cada variante posee un byte de etiqueta (`tag`) para el Sort Key binario que define el orden lexicográfico entre tipos distintos.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ValueType {
-    Null,      // 0x00 — valor nulo / retract marker
-    Boolean,   // 0x01
-    Long,      // 0x02 — number / epoch (i64)
-    Double,    // 0x03 — decimal (f64, IEEE 754 bit-flip para AVET ordering)
-    String,    // 0x04
-    Uuid,      // 0x05
-    Reference, // 0x06 — entity_id (u64) apuntando a otra entidad
-    Array,     // 0x07 — Vec<String> serializado
-    Bytes,     // 0x08 — datos binarios opacos
-    BigInt,    // 0x09 — números grandes (sequencias)
-    Instant,   // 0x0A — timestamp epoch ms (i64, mismo encoding que Long)
-    Geo,       // 0x0B — [lat, lon] codificados como dos f64
+    /// Valor nulo o marcador de retracción (`0x00`).
+    Null,
+    /// Valor booleano (`0x01`).
+    Boolean,
+    /// Entero con signo de 64 bits (`0x02`).
+    Long,
+    /// Punto flotante IEEE 754 de 64 bits con inversión de bits de signo para ordenamiento `AVET` (`0x03`).
+    Double,
+    /// Cadena de texto UTF-8 (`0x04`).
+    String,
+    /// Identificador único UUID o ULID (`0x05`).
+    Uuid,
+    /// Referencia a otra entidad (`0x06`).
+    Reference,
+    /// Arreglo de cadenas serializado (`0x07`).
+    Array,
+    /// Bloque opaco de bytes binarios (`0x08`).
+    Bytes,
+    /// Entero con signo de 128 bits para secuencias y contadores (`0x09`).
+    BigInt,
+    /// Marca de tiempo en milisegundos desde la época Unix (`0x0A`).
+    Instant,
+    /// Par de coordenadas geográficas `[lat, lon]` codificadas como dos `f64` (`0x0B`).
+    Geo,
 }
 
 impl ValueType {
@@ -53,14 +58,11 @@ impl ValueType {
     }
 }
 
-/// Regla canónica de indexabilidad AVET a nivel de ATRIBUTO (códice).
+/// Regla canónica de indexabilidad `AVET` a nivel de atributo del Códice (`AttrType`).
 ///
-/// Único lugar donde se decide qué tipos de atributo puede filtrar el índice
-/// AVET. `validate_list_filters` (grpc) consulta aquí en vez de reimplementar
-/// la regla; el escritor aplica el mismo criterio a nivel de datom vía
-/// [`ValueType::is_avet_indexable`]. La divergencia histórica en `Null` muere
-/// por construcción: `Null` no existe como `AttrType` y a nivel de datom ya lo
-/// excluye `is_avet_indexable`.
+/// Único punto donde se decide qué tipos de atributo puede filtrar el índice
+/// `AVET`. El validador de filtros de listado y el escritor aplican este mismo
+/// criterio junto con `ValueType::is_avet_indexable`.
 pub fn attr_type_is_avet_indexable(attr_type: &crate::codice::registry::AttrType) -> bool {
     use crate::codice::registry::AttrType;
     !matches!(attr_type, AttrType::Bytes | AttrType::Array)

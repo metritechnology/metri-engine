@@ -1,4 +1,4 @@
-//! Tests for `domain::events::golden`.
+//! Pruebas de paridad con los fixtures dorados del contrato `metri-contracts` (`domain::events::golden`).
 // golden_test — el candado del contrato (Tramo 0 del plan de integración).
 //
 // Lee los fixtures dorados de metri-contracts/golden/ — los MISMOS archivos que

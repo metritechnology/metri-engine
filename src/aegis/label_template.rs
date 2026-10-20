@@ -1,7 +1,8 @@
-//! Mustache-style label template interpolation.
+//! Interpolación pura de plantillas de etiquetas estilo Mustache (`{{campo}}`).
 //!
-//! Interpolación de label templates Mustache-style.
-//! SRP: resolución pura de templates — sin I/O, sin estado.
+//! Resuelve placeholders dinámicos sobre filas JSON sin I/O ni estado mutable,
+//! soportando claves con namespace (`entity/attr`), nombres simples y rutas anidadas
+//! separadas por punto (`location_id.name`).
 
 use once_cell::sync::Lazy;
 use regex::Regex;

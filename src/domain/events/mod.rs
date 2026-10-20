@@ -1,19 +1,16 @@
-//! Domain event contract — producer side of metri-contracts.
+//! Contrato de eventos de dominio — lado productor de `metri-contracts` v1.0.
 //!
-//! domain/events — el contrato de eventos de dominio, del lado del productor.
+//! `metri-schedulers` (Go) parsea estos sobres bajo un contrato estricto: un campo
+//! ausente envía el evento a DLQ o impide el ordenamiento del ledger.
+//! Los tipos de este módulo reflejan `metri-contracts/schema/envelope.schema.json`,
+//! verificados por los fixtures dorados en `golden_test.rs`.
 //!
-//! metri-schedulers (Go) parsea estos sobres con un contrato estricto: un campo
-//! ausente no es ruido, es un evento que cae a DLQ o un ledger que no puede
-//! ordenar. Los tipos de este módulo son el espejo Rust de
-//! `metri-contracts/schema/envelope.schema.json`; los fixtures dorados de
-//! `metri-contracts/golden/` son el candado que impide que los dos lados
-//! diverjan (golden_test.rs).
-//!
-//! DIP: este módulo no conoce DatomValue ni DynamoDB — trabaja con
-//! serde_json::Value. La conversión desde el almacén EAV vive en la
-//! infraestructura (infrastructure/domain_event_bus.rs).
+//! Siguiendo DIP, este módulo es independiente de `DatomValue` y del motor de
+//! almacenamiento subyacente: opera exclusivamente con `serde_json::Value`.
 
+/// Cálculo de diferencias (`Delta`, `DeltaEntry`) y clasificación de cambios de bitácora.
 pub mod delta;
+/// Estructura del sobre de evento `DomainEnvelope` y validación fail-closed.
 pub mod envelope;
 
 // El candado golden solo compila donde existe el repo hermano metri-contracts

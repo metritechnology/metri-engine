@@ -1,8 +1,7 @@
-//! eda — event-driven architecture: outbox drainage and fault reporting.
+//! Arquitectura orientada a eventos (EDA): drenaje transaccional del Outbox y despacho asíncrono.
 //!
-//! El patrón outbox completa su ciclo aquí: la fila `outbox_event` nace en
-//! [`crate::eav::writer::outbox`] dentro de la transacción EAV y [`moira`]
-//! la drena con su semántica de reintento hacia EventBridge/SQS.
-//! Por qué outbox y no publicación directa: el evento no puede perderse —
-//! nace en la misma transacción que la mutación que lo causa.
+//! El patrón Transactional Outbox completa su ciclo en este módulo: la entidad `outbox_event`
+//! nace en `crate::eav::writer::outbox` dentro de la misma transacción ACID `.mbf` que la mutación
+//! de negocio, y el submódulo `moira` la drena con semántica de reclamo atómico (`claim`),
+//! reintento con *backoff* exponencial y *watchdog* de huérfanos hacia SQS FIFO / EventBridge.
 pub mod moira;

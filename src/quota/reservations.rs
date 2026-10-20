@@ -1,6 +1,4 @@
-//! AI reservation tickets and who stores them.
-//!
-//! El ticket de una reserva de IA, y quién lo guarda.
+//! Tickets de reserva de cuota de IA y su almacenamiento compartido (`ReservationStore`).
 //!
 //! POR QUÉ NO PUEDE VIVIR EN MEMORIA
 //! ─────────────────────────────────
@@ -50,7 +48,9 @@ pub const SWEEP_SHARDS: u8 = 16;
 /// Estado de una reserva. «Conciliándose» es `Open` con `lease_until` vivo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReservationStatus {
+    /// Reserva abierta en vuelo (con o sin lease de conciliación activo).
     Open,
+    /// Reserva ya cerrada de forma definitiva.
     Closed,
 }
 
@@ -70,6 +70,7 @@ pub enum CloseReason {
 }
 
 impl CloseReason {
+    /// Devuelve la representación textual canónica de la razón de cierre.
     pub fn as_str(&self) -> &'static str {
         match self {
             CloseReason::Settled => "SETTLED",
@@ -95,9 +96,11 @@ impl CloseReason {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reservation {
     /// ULID. El identificador que viaja al cliente lleva además el tenant
-    /// delante; ver [`wire_id`].
+    /// delante; ver `wire_id`.
     pub id: String,
+    /// Identificador del tenant propietario de la reserva.
     pub tenant_id: String,
+    /// Identificador del contador de cuota contra el que se debita o concilia.
     pub quota_id: String,
     /// Lo que se apuntó por adelantado y habrá que ajustar al conciliar.
     pub estimated: i64,
@@ -256,6 +259,7 @@ pub struct MemoryReservationStore {
 }
 
 impl MemoryReservationStore {
+    /// Crea un almacén de reservas en memoria vacío.
     pub fn new() -> Self {
         Self::default()
     }
