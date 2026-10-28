@@ -274,7 +274,7 @@ El subsistema `src/eav/` es agnóstico a la infraestructura y recibe sus depende
 El módulo `src/eav/` cuenta con suites de pruebas unitarias integradas en cada submódulo (`#[cfg(test)] mod tests`):
 
 - **`src/eav/types/encoding.rs` y `value_type.rs`**: Verifican la preservación del orden numérico y lexicográfico en `encode_value` / `decode_value` (incluyendo números negativos `Long` y punto flotante `Double` con inversión de signo IEEE 754) y la generación de claves `EAVT`, `AEVT`, `AVET` y `VAET`.
-- **`src/eav/writer/` (`transact.rs`, `enricher.rs`, `datom_plan.rs`, `system_attrs.rs`, `unique_claim.rs`, `outbox.rs`, `cache_policy.rs`)**:
+- **`src/eav/writer/` (`transact.rs`, `enricher.rs`, `datom_plan.rs`, `history_mirror.rs`, `system_attrs.rs`, `unique_claim.rs`, `outbox.rs`, `cache_policy.rs`)**:
   - Creación de entidades con generación automática de ULID, secuencias formateadas (`FAC-000001`), evaluación de expresiones CEL y normalización (`lowercase`, `uppercase`, `trim`).
   - Emisión de pares `(retract, assert)` en actualizaciones parciales, omisión de escrituras redundantes (*no-op*) y encadenamiento criptográfico `_prevHash` -> `_hash`.
   - Bloqueo ante violaciones de unicidad (`EavUniqueConstraintViolation`), liberación de centinelas cuando un valor único cambia, control de concurrencia optimista (`expected_version`) e idempotencia (`IdempotencyCache`).

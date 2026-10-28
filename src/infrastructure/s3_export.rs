@@ -187,6 +187,17 @@ impl IExportStorage for StubExportStorage {
 
 // ── Helper functions ──────────────────────────────────────────────────────────
 
+/// Prefija con apóstrofo (`'`) celdas cuyo contenido comienza con caracteres de
+/// invocación de fórmulas en hojas de cálculo (`=`, `+`, `-`, `@`, `\t`, `\r`)
+/// para neutralizar ataques de CSV Formula Injection (DDE).
+fn sanitize_csv_formula(cell: String) -> String {
+    if cell.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{cell}")
+    } else {
+        cell
+    }
+}
+
 fn value_to_csv_field(v: &prost_types::Value) -> String {
     use prost_types::value::Kind;
     match &v.kind {
@@ -198,11 +209,12 @@ fn value_to_csv_field(v: &prost_types::Value) -> String {
                 format!("{}", n)
             }
         }
-        Some(Kind::StringValue(s)) => s.clone(),
+        Some(Kind::StringValue(s)) => sanitize_csv_formula(s.clone()),
         Some(Kind::BoolValue(b)) => b.to_string(),
         Some(Kind::StructValue(s)) => {
-            serde_json::to_string(&crate::grpc::translator::struct_to_value(s.clone()))
-                .unwrap_or_default()
+            let raw = serde_json::to_string(&crate::grpc::translator::struct_to_value(s.clone()))
+                .unwrap_or_default();
+            sanitize_csv_formula(raw)
         }
         Some(Kind::ListValue(l)) => {
             let arr: Vec<Value> = l
@@ -210,8 +222,47 @@ fn value_to_csv_field(v: &prost_types::Value) -> String {
                 .iter()
                 .map(|v| crate::grpc::translator::value_to_json(v.clone()))
                 .collect();
-            serde_json::to_string(&arr).unwrap_or_default()
+            let raw = serde_json::to_string(&arr).unwrap_or_default();
+            sanitize_csv_formula(raw)
         }
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prost_types::value::Kind;
+
+    #[test]
+    fn csv_field_neutraliza_formula_injection() {
+        for payload in [
+            "=CMD|' /C calc'!A0",
+            "+SUM(A1:A2)",
+            "-2+3+cmd|' /C calc'!A0",
+            "@SUM(1+1)*cmd|' /C calc'!A0",
+            "\t=1+1",
+            "\r=1+1",
+        ] {
+            let val = prost_types::Value {
+                kind: Some(Kind::StringValue(payload.to_string())),
+            };
+            let escaped = value_to_csv_field(&val);
+            assert!(
+                escaped.starts_with('\''),
+                "Celda peligrosa no fue neutralizada: {escaped}"
+            );
+            assert_eq!(escaped, format!("'{payload}"));
+        }
+
+        let safe = prost_types::Value {
+            kind: Some(Kind::StringValue("Orden de trabajo #104".to_string())),
+        };
+        assert_eq!(value_to_csv_field(&safe), "Orden de trabajo #104");
+
+        let num = prost_types::Value {
+            kind: Some(Kind::NumberValue(-42.0)),
+        };
+        assert_eq!(value_to_csv_field(&num), "-42");
     }
 }

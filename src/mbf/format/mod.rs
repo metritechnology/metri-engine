@@ -677,7 +677,8 @@ impl MbfTenantCryptoSeal {
         expected_entity_type: &str,
         payload: &[u8],
     ) -> DomainResult<()> {
-        let active_key = crate::domain::config::engine_config().active_mbf_seal_key();
+        let cfg = crate::domain::config::engine_config();
+        let active_key = cfg.active_mbf_seal_key();
         match self.verify_block(
             active_key,
             expected_tenant_id,
@@ -686,14 +687,35 @@ impl MbfTenantCryptoSeal {
         ) {
             Ok(()) => Ok(()),
             Err(err) if err.code == ErrorCode::MbfTenantSeal001 => Err(err),
-            Err(_) if active_key != crate::domain::config::LEGACY_MBF_SEAL_KEY => self
-                .verify_block(
-                    crate::domain::config::LEGACY_MBF_SEAL_KEY,
-                    expected_tenant_id,
-                    expected_entity_type,
-                    payload,
-                ),
-            Err(err) => Err(err),
+            Err(_) => {
+                if let Some(ref raw_hmac) = cfg.hmac_secret {
+                    if !raw_hmac.is_empty() && raw_hmac.as_bytes() != active_key {
+                        if self
+                            .verify_block(
+                                raw_hmac.as_bytes(),
+                                expected_tenant_id,
+                                expected_entity_type,
+                                payload,
+                            )
+                            .is_ok()
+                        {
+                            return Ok(());
+                        }
+                    }
+                }
+                if active_key != crate::domain::config::LEGACY_MBF_SEAL_KEY {
+                    return self.verify_block(
+                        crate::domain::config::LEGACY_MBF_SEAL_KEY,
+                        expected_tenant_id,
+                        expected_entity_type,
+                        payload,
+                    );
+                }
+                Err(DomainError::mbf(
+                    ErrorCode::MbfCorrupt001,
+                    "MbfTenantCryptoSeal keyed_mac mismatch (tampering or wrong seal key)",
+                ))
+            }
         }
     }
 

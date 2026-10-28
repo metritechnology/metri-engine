@@ -114,6 +114,8 @@ def deploy_policy() -> dict:
     ]
     zone = f"arn:aws:route53:::hostedzone/{HOSTED_ZONE_ID}"
     secret = f"arn:aws:secretsmanager:{REGION}:{ACCOUNT_ID}:secret:metri-hmac-secret-*"
+    ssm_params = f"arn:aws:ssm:{REGION}:{ACCOUNT_ID}:parameter/metri/engine/*"
+    cf_func = f"arn:aws:cloudfront::{ACCOUNT_ID}:function/metri-engine*"
     log_group = f"arn:aws:logs:{REGION}:{ACCOUNT_ID}:log-group:/aws/lambda/metri-*:*"
     glue_catalog = f"arn:aws:glue:{REGION}:{ACCOUNT_ID}:catalog"
     glue_db = f"arn:aws:glue:{REGION}:{ACCOUNT_ID}:database/metri_olap"
@@ -180,11 +182,13 @@ def deploy_policy() -> dict:
                 "Resource": "*",
             },
             {
-                # MetriDataLakeBucket (metri-lake-ACCOUNT-REGION).
+                # MetriDataLakeBucket (metri-engine y legacy metri-lake-ACCOUNT-REGION).
                 "Sid": "StackS3Bucket",
                 "Effect": "Allow",
                 "Action": "s3:*",
                 "Resource": [
+                    "arn:aws:s3:::metri-engine",
+                    "arn:aws:s3:::metri-engine/*",
                     f"arn:aws:s3:::metri-lake-{ACCOUNT_ID}-{REGION}",
                     f"arn:aws:s3:::metri-lake-{ACCOUNT_ID}-{REGION}/*",
                 ],
@@ -349,8 +353,24 @@ def deploy_policy() -> dict:
             {
                 "Sid": "CloudFrontUnscopedReads",
                 "Effect": "Allow",
-                "Action": "cloudfront:ListDistributions",
+                "Action": [
+                    "cloudfront:ListDistributions",
+                    "cloudfront:ListFunctions",
+                ],
                 "Resource": "*",
+            },
+            {
+                "Sid": "CloudFrontFunctions",
+                "Effect": "Allow",
+                "Action": [
+                    "cloudfront:CreateFunction",
+                    "cloudfront:UpdateFunction",
+                    "cloudfront:DeleteFunction",
+                    "cloudfront:DescribeFunction",
+                    "cloudfront:PublishFunction",
+                    "cloudfront:GetFunction",
+                ],
+                "Resource": cf_func,
             },
             {
                 # MetriWebACL + ipsets/regexpatternsets (scope CLOUDFRONT).
@@ -422,6 +442,27 @@ def deploy_policy() -> dict:
                 "Sid": "SecretsRandomPassword",
                 "Effect": "Allow",
                 "Action": "secretsmanager:GetRandomPassword",
+                "Resource": "*",
+            },
+            {
+                # Clave única de bootstrap en AWS Systems Manager Parameter Store
+                # (/metri/engine/bootstrap/master-key).
+                "Sid": "SsmBootstrapParameterStore",
+                "Effect": "Allow",
+                "Action": [
+                    "ssm:GetParameter",
+                    "ssm:GetParameters",
+                    "ssm:GetParametersByPath",
+                    "ssm:PutParameter",
+                    "ssm:AddTagsToResource",
+                    "ssm:ListTagsForResource",
+                ],
+                "Resource": ssm_params,
+            },
+            {
+                "Sid": "SsmDescribeParameters",
+                "Effect": "Allow",
+                "Action": "ssm:DescribeParameters",
                 "Resource": "*",
             },
             {

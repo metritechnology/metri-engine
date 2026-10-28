@@ -45,6 +45,15 @@ impl MetriGrpcService {
         };
         req.tenant_id = resolved_tenant_id;
 
+        const MAX_SUBQUERIES_PER_REQUEST: usize = 25;
+        if req.queries.len() > MAX_SUBQUERIES_PER_REQUEST {
+            return Err(Status::invalid_argument(format!(
+                "El lote de consultas supera el máximo permitido ({} > {})",
+                req.queries.len(),
+                MAX_SUBQUERIES_PER_REQUEST
+            )));
+        }
+
         // Extraer entidades implicadas en la consulta del gRPC Request
         let mut query_entities: Vec<String> = req
             .queries
@@ -298,9 +307,6 @@ impl MetriGrpcService {
                             &cedar.tenant_id,
                         )
                         .await;
-
-                        // Añadir pacing delay (150ms) en modo de desarrollo para visualización fluida
-                        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
                         if tx_clone.send(Ok(pb_chunk)).await.is_err() {
                             break; // El cliente se desconectó

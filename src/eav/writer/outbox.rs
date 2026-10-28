@@ -360,5 +360,114 @@ mod tests {
             datom_value_to_json(&DatomValue::Str("{no es json".into())),
             serde_json::json!("{no es json")
         );
+        // Arrays con mezcla de JSON embebido y strings planos (p. ej. grants de role)
+        assert_eq!(
+            datom_value_to_json(&DatomValue::Array(vec![
+                "{\"domain\":\"*\",\"actions\":[\"*\"]}".into(),
+                "*:ALL".into(),
+            ])),
+            serde_json::json!([
+                {"domain": "*", "actions": ["*"]},
+                "*:ALL"
+            ])
+        );
+    }
+
+    #[test]
+    fn barrido_exhaustivo_de_todos_los_modelos_del_codice_para_emision_outbox() {
+        registry();
+        let cod = crate::codice::global();
+        let mut total_models = 0usize;
+        let mut enabled_models = 0usize;
+        let mut suppressed_models = 0usize;
+
+        for entity_name in cod.entity_names() {
+            total_models += 1;
+            let model = cod.get_model(entity_name).expect("modelo existe en Códice");
+
+            if entity_name == "outbox_event" || model.disable_eda {
+                suppressed_models += 1;
+                let res = generate_outbox_datoms(
+                    "t_sweep",
+                    entity_name,
+                    "ent_sweep_01",
+                    TransactOp::Create,
+                    &attrs_de_ejemplo(),
+                    2000,
+                    "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+                    "usr_sweep",
+                )
+                .expect("sin error en modelo suprimido");
+                assert!(
+                    res.is_none(),
+                    "El modelo '{entity_name}' (disable_eda={}) NO debe emitir outbox_event",
+                    model.disable_eda
+                );
+                continue;
+            }
+
+            enabled_models += 1;
+            for (op, suffix) in [
+                (TransactOp::Create, "create"),
+                (TransactOp::Update, "update"),
+                (TransactOp::Delete, "delete"),
+            ] {
+                let datoms = generate_outbox_datoms(
+                    "t_sweep",
+                    entity_name,
+                    "ent_sweep_01",
+                    op,
+                    &attrs_de_ejemplo(),
+                    2000,
+                    "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+                    "usr_sweep",
+                )
+                .unwrap_or_else(|e| {
+                    panic!("Fallo generando outbox para {entity_name}.{suffix}: {e:?}")
+                })
+                .unwrap_or_else(|| {
+                    panic!("El modelo '{entity_name}' debía emitir outbox en {suffix}")
+                });
+
+                let dt = datoms
+                    .iter()
+                    .find(|d| d.attr_name == "detail_type")
+                    .expect("detail_type presente");
+                assert_eq!(
+                    dt.value,
+                    DatomValue::Str(format!("{entity_name}.{suffix}")),
+                    "detail_type canónico para {entity_name}"
+                );
+
+                let st = datoms
+                    .iter()
+                    .find(|d| d.attr_name == "status")
+                    .expect("status presente");
+                assert_eq!(st.value, DatomValue::Str("PENDING".into()));
+
+                let rc = datoms
+                    .iter()
+                    .find(|d| d.attr_name == "retry_count")
+                    .expect("retry_count presente");
+                assert_eq!(rc.value, DatomValue::Long(0));
+
+                let payload = datoms
+                    .iter()
+                    .find(|d| d.attr_name == "payload")
+                    .expect("payload presente");
+                if let DatomValue::Str(raw_json) = &payload.value {
+                    let parsed: serde_json::Value = serde_json::from_slice(raw_json.as_bytes())
+                        .unwrap_or_else(|e| panic!("Payload JSON inválido en {entity_name}: {e}"));
+                    assert_eq!(parsed["id"], "ent_sweep_01");
+                } else {
+                    panic!("payload debe ser DatomValue::Str");
+                }
+            }
+        }
+
+        assert!(
+            total_models >= 20 && enabled_models >= 15 && suppressed_models >= 2,
+            "El barrido del Códice debe cubrir todos los modelos (total={total_models}, activos={enabled_models}, suprimidos={suppressed_models})"
+        );
     }
 }

@@ -1,7 +1,8 @@
 //! Semilla de arranque (`bootstrap`) del tenant maestro y cuentas de sistema.
 //!
 //! Verifica de forma idempotente si el almacén OLTP carece de usuarios en el tenant
-//! `system` y, cuando las variables `METRI_BOOTSTRAP_MASTER_*` están presentes,
+//! `system` y, cuando las variables `METRI_BOOTSTRAP_MASTER_*` están presentes
+//! (incluyendo `METRI_BOOTSTRAP_MASTER_KEY` resuelta desde AWS SSM Parameter Store),
 //! crea el tenant `system`, los roles `role_super_master` y `system-bff`, y los
 //! usuarios `usr_master` y `usr_system_bff`, limpiando después los secretos de memoria.
 use crate::aegis::oltp::executor::OltpExecutor;
@@ -44,32 +45,48 @@ pub async fn check_and_bootstrap_master(
     }
 
     // 2. Extraer variables de entorno
-    let email = match std::env::var("METRI_BOOTSTRAP_MASTER_EMAIL") {
-        Ok(v) => v,
-        Err(_) => {
+    let email = match std::env::var("METRI_BOOTSTRAP_MASTER_EMAIL")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        Some(v) => v,
+        None => {
             info!("[Bootstrap] Base de datos vacía pero METRI_BOOTSTRAP_MASTER_EMAIL no está configurada. Omitiendo.");
             return Ok(());
         }
     };
 
-    let username = match std::env::var("METRI_BOOTSTRAP_MASTER_USERNAME") {
-        Ok(v) => v,
-        Err(_) => {
+    let username = match std::env::var("METRI_BOOTSTRAP_MASTER_USERNAME")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    {
+        Some(v) => v,
+        None => {
             info!("[Bootstrap] Base de datos vacía pero METRI_BOOTSTRAP_MASTER_USERNAME no está configurada. Omitiendo.");
             return Ok(());
         }
     };
 
-    let password = match std::env::var("METRI_BOOTSTRAP_MASTER_PASSWORD") {
-        Ok(v) => v,
-        Err(_) => {
-            info!("[Bootstrap] Base de datos vacía pero METRI_BOOTSTRAP_MASTER_PASSWORD no está configurada. Omitiendo.");
+    let password = match resolve_bootstrap_master_key() {
+        Some(v) => v,
+        None => {
+            info!("[Bootstrap] Base de datos vacía pero METRI_BOOTSTRAP_MASTER_KEY no está configurada. Omitiendo.");
             return Ok(());
         }
     };
 
     seed_master(oltp_channel, &email, &username, &password).await
 }
+
+/// Resuelve la clave única de bootstrap desde `METRI_BOOTSTRAP_MASTER_KEY`
+/// (inyectada desde AWS SSM Parameter Store `arn:aws:ssm:us-east-1:982592308819:parameter/metri/engine/bootstrap/master-key`).
+fn resolve_bootstrap_master_key() -> Option<String> {
+    std::env::var("METRI_BOOTSTRAP_MASTER_KEY")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+}
+
+const ALL_DOMAIN_GRANTS: &str = r#"{"domain":"*","actions":["VIEW","CREATE","UPDATE","DELETE","EXECUTE","EXPORT"],"scope":"ALL"}"#;
 
 /// Mecánica de la semilla: hashea la contraseña, crea el tenant, los roles y
 /// los usuarios maestros, y limpia los secretos del entorno. La DECISIÓN de
@@ -83,169 +100,142 @@ async fn seed_master(
 ) -> Result<(), DomainError> {
     info!("[Bootstrap] Iniciando creación de semilla para el Administrador Master...");
 
-    // 1. Hashear la contraseña con bcrypt (cost = 12)
     let password_hash = bcrypt::hash(password, 12)
         .map_err(|e| DomainError::new(ErrorCode::Janus500, format!("bcrypt hash falló: {e}")))?;
 
-    // 4. Crear el Tenant Semilla ("system")
-    let mut tenant_req = serde_json::Map::new();
-    tenant_req.insert(
-        "payload".to_string(),
-        json!({
-            "id": "system",
-            "name": "System Master Tenant",
-            "status": "ACTIVE",
-            "tier": "ENTERPRISE",
-            "storage_region": "us-east-1",
-            "billing_admin_email": email
-        }),
-    );
-
-    let tenant_ctx = crate::iop::core::IopContext::new(
-        "system",
-        "bootstrap-system",
+    route_bootstrap_entity(
+        oltp_channel,
         "tenant",
-        "CREATE",
-        tenant_req,
-    );
+        "Tenant 'system'",
+        build_system_tenant_payload(email),
+    )
+    .await?;
 
-    match oltp_channel.route(tenant_ctx).await {
-        Ok(_) => info!("[Bootstrap] Tenant 'system' creado con éxito."),
-        Err(e) => {
-            error!("[Bootstrap] Error creando el tenant semilla: {:?}", e);
-            return Err(e);
-        }
-    }
-
-    // 5. Crear el Rol Semilla ("role_super_master")
-    let mut role_req = serde_json::Map::new();
-    role_req.insert("payload".to_string(), json!({
-        "id": "role_super_master",
-        "name": "super-master",
-        "description": "System Super Master Administrative Role",
-        "tenant_id": "system",
-        "grants": [
-            r#"{"domain":"*","actions":["VIEW","CREATE","UPDATE","DELETE","EXECUTE","EXPORT"],"scope":"ALL"}"#
-        ]
-    }));
-
-    let role_ctx =
-        crate::iop::core::IopContext::new("system", "bootstrap-system", "role", "CREATE", role_req);
-
-    match oltp_channel.route(role_ctx).await {
-        Ok(_) => info!("[Bootstrap] Rol 'role_super_master' creado con éxito."),
-        Err(e) => {
-            error!("[Bootstrap] Error creando el rol semilla: {:?}", e);
-            return Err(e);
-        }
-    }
-
-    // 5b. Crear el Rol Semilla ("system-bff")
-    let mut role_bff_req = serde_json::Map::new();
-    role_bff_req.insert("payload".to_string(), json!({
-        "id": "system-bff",
-        "name": "system-bff",
-        "description": "System BFF Role",
-        "tenant_id": "system",
-        "grants": [
-            r#"{"domain":"*","actions":["VIEW","CREATE","UPDATE","DELETE","EXECUTE","EXPORT"],"scope":"ALL"}"#
-        ]
-    }));
-
-    let role_bff_ctx = crate::iop::core::IopContext::new(
-        "system",
-        "bootstrap-system",
+    route_bootstrap_entity(
+        oltp_channel,
         "role",
-        "CREATE",
-        role_bff_req,
-    );
+        "Rol 'role_super_master'",
+        build_role_payload(
+            "role_super_master",
+            "super-master",
+            "System Super Master Administrative Role",
+        ),
+    )
+    .await?;
 
-    match oltp_channel.route(role_bff_ctx).await {
-        Ok(_) => info!("[Bootstrap] Rol 'system-bff' creado con éxito."),
-        Err(e) => {
-            error!("[Bootstrap] Error creando el rol system-bff: {:?}", e);
-            return Err(e);
-        }
-    }
+    route_bootstrap_entity(
+        oltp_channel,
+        "role",
+        "Rol 'system-bff'",
+        build_role_payload("system-bff", "system-bff", "System BFF Role"),
+    )
+    .await?;
 
-    // 6. Crear el Usuario Semilla ("usr_master")
-    let mut user_req = serde_json::Map::new();
-    user_req.insert(
-        "payload".to_string(),
-        json!({
-            "id": "usr_master",
-            "username": username,
-            "email": email,
-            "password_hash": password_hash,
-            "first_name": "Super",
-            "last_name": "Administrador",
-            "status": "ACTIVE",
-            "user_type": "INTERNAL",
-            "tenant_id": "system",
-            "role_ids": ["role_super_master"]
-        }),
-    );
-
-    let user_ctx =
-        crate::iop::core::IopContext::new("system", "bootstrap-system", "user", "CREATE", user_req);
-
-    match oltp_channel.route(user_ctx).await {
-        Ok(_) => info!("[Bootstrap] Usuario administrador Máster creado con éxito."),
-        Err(e) => {
-            error!(
-                "[Bootstrap] Error creando el usuario administrador: {:?}",
-                e
-            );
-            return Err(e);
-        }
-    }
-
-    // 6b. Crear el Usuario de Servicio BFF ("usr_system_bff")
-    let mut user_bff_req = serde_json::Map::new();
-    user_bff_req.insert(
-        "payload".to_string(),
-        json!({
-            "id": "usr_system_bff",
-            "username": "system-bff",
-            "email": "bff@metri.one",
-            "password_hash": "SystemBffDummyPasswordHashNotUsed",
-            "first_name": "System",
-            "last_name": "BFF",
-            "status": "ACTIVE",
-            "user_type": "INTERNAL",
-            "tenant_id": "system",
-            "role_ids": ["system-bff"]
-        }),
-    );
-
-    let user_bff_ctx = crate::iop::core::IopContext::new(
-        "system",
-        "bootstrap-system",
+    route_bootstrap_entity(
+        oltp_channel,
         "user",
-        "CREATE",
-        user_bff_req,
-    );
+        "Usuario administrador Máster",
+        build_master_user_payload(username, email, &password_hash),
+    )
+    .await?;
 
-    match oltp_channel.route(user_bff_ctx).await {
-        Ok(_) => info!("[Bootstrap] Usuario de servicio 'usr_system_bff' creado con éxito."),
+    route_bootstrap_entity(
+        oltp_channel,
+        "user",
+        "Usuario de servicio 'usr_system_bff'",
+        build_bff_user_payload(),
+    )
+    .await?;
+
+    wipe_bootstrap_env_vars();
+    Ok(())
+}
+
+async fn route_bootstrap_entity(
+    oltp_channel: &Arc<dyn IWriteChannel>,
+    entity_type: &str,
+    label: &str,
+    payload: serde_json::Value,
+) -> Result<(), DomainError> {
+    let mut req = serde_json::Map::new();
+    req.insert("payload".to_string(), payload);
+    let ctx =
+        crate::iop::core::IopContext::new("system", "bootstrap-system", entity_type, "CREATE", req);
+    match oltp_channel.route(ctx).await {
+        Ok(_) => {
+            info!("[Bootstrap] {label} creado con éxito.");
+            Ok(())
+        }
         Err(e) => {
-            error!(
-                "[Bootstrap] Error creando el usuario de servicio bff: {:?}",
-                e
-            );
-            return Err(e);
+            error!("[Bootstrap] Error creando {label}: {:?}", e);
+            Err(e)
         }
     }
+}
 
-    // 7. Wipe/Limpieza permanente de variables de entorno para evitar leaks
+fn build_system_tenant_payload(email: &str) -> serde_json::Value {
+    json!({
+        "id": "system",
+        "name": "System Master Tenant",
+        "status": "ACTIVE",
+        "tier": "ENTERPRISE",
+        "storage_region": "us-east-1",
+        "billing_admin_email": email
+    })
+}
+
+fn build_role_payload(id: &str, name: &str, description: &str) -> serde_json::Value {
+    json!({
+        "id": id,
+        "name": name,
+        "description": description,
+        "tenant_id": "system",
+        "grants": [ALL_DOMAIN_GRANTS]
+    })
+}
+
+fn build_master_user_payload(
+    username: &str,
+    email: &str,
+    password_hash: &str,
+) -> serde_json::Value {
+    json!({
+        "id": "usr_master",
+        "username": username,
+        "email": email,
+        "password_hash": password_hash,
+        "first_name": "Super",
+        "last_name": "Administrador",
+        "status": "ACTIVE",
+        "user_type": "INTERNAL",
+        "tenant_id": "system",
+        "role_ids": ["role_super_master"]
+    })
+}
+
+fn build_bff_user_payload() -> serde_json::Value {
+    json!({
+        "id": "usr_system_bff",
+        "username": "system-bff",
+        "email": "bff@metri.one",
+        "password_hash": "SystemBffDummyPasswordHashNotUsed",
+        "first_name": "System",
+        "last_name": "BFF",
+        "status": "ACTIVE",
+        "user_type": "INTERNAL",
+        "tenant_id": "system",
+        "role_ids": ["system-bff"]
+    })
+}
+
+fn wipe_bootstrap_env_vars() {
     std::env::remove_var("METRI_BOOTSTRAP_MASTER_EMAIL");
     std::env::remove_var("METRI_BOOTSTRAP_MASTER_USERNAME");
+    std::env::remove_var("METRI_BOOTSTRAP_MASTER_KEY");
     std::env::remove_var("METRI_BOOTSTRAP_MASTER_PASSWORD");
     info!(
         "[Bootstrap] ✅ Proceso de semilla completado. Secretos limpiados del entorno en memoria."
     );
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -315,6 +305,7 @@ mod tests {
         // Los secretos de la semilla se limpian del entorno tras crearla.
         assert!(std::env::var("METRI_BOOTSTRAP_MASTER_EMAIL").is_err());
         assert!(std::env::var("METRI_BOOTSTRAP_MASTER_USERNAME").is_err());
+        assert!(std::env::var("METRI_BOOTSTRAP_MASTER_KEY").is_err());
         assert!(std::env::var("METRI_BOOTSTRAP_MASTER_PASSWORD").is_err());
     }
 }

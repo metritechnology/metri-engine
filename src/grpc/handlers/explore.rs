@@ -15,13 +15,7 @@ impl MetriGrpcService {
         &self,
         request: Request<DiscoveryRequest>,
     ) -> Result<Response<DiscoveryResponse>, Status> {
-        let (session_tenant_id, session_user_id) = {
-            let session = request
-                .extensions()
-                .get::<crate::grpc::interceptors::AuthenticatedSession>()
-                .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
-            (session.tenant_id.clone(), session.user_id.clone())
-        };
+        let (session_tenant_id, session_user_id) = self.extract_verified_session(&request).await?;
 
         let accept_language = request
             .metadata()
@@ -150,13 +144,7 @@ impl MetriGrpcService {
         &self,
         request: Request<ExploreRequest>,
     ) -> Result<Response<ExploreResponse>, Status> {
-        let (session_tenant_id, session_user_id) = {
-            let session = request
-                .extensions()
-                .get::<crate::grpc::interceptors::AuthenticatedSession>()
-                .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
-            (session.tenant_id.clone(), session.user_id.clone())
-        };
+        let (session_tenant_id, session_user_id) = self.extract_verified_session(&request).await?;
 
         let auth_header = request
             .metadata()
@@ -203,19 +191,35 @@ impl MetriGrpcService {
             return Err(Status::permission_denied(e.detail));
         }
 
+        // Field-Level Security (FLS): bloquear enumeración de atributos sensibles en Explore
+        let registry = crate::codice::global();
+        if let Some(model) = registry.get_model(&req.entity) {
+            if model
+                .attributes
+                .iter()
+                .any(|a| a.name == req.attribute && a.sensitive)
+            {
+                return Err(Status::permission_denied(format!(
+                    "Atributo sensible '{}' no permitido en Explore",
+                    req.attribute
+                )));
+            }
+        }
+
         info!(
             "Explore request: tenant={} entity={} attr={}",
             req.tenant_id, req.entity, req.attribute
         );
         let exec = self.oltp_executor.clone();
 
-        // Use AEVT scan to get distinct values for the attribute
+        // Use AEVT scan to get distinct values for the attribute, acotando limit y aplicando ABAC RLS
+        let max_limit = crate::domain::config::engine_config().max_list_limit.max(1) as usize;
         let limit = if req.limit > 0 {
-            req.limit as usize
+            (req.limit as usize).min(max_limit)
         } else {
             100
         };
-        let ast_ir = crate::janus::fbs::AnalyticsRequestT {
+        let raw_ast = crate::janus::fbs::AnalyticsRequestT {
             entity: Some(req.entity.clone()),
             dimensions: Some(vec![crate::janus::fbs::DimensionDefinitionT {
                 entity: Some(req.entity.clone()),
@@ -232,6 +236,35 @@ impl MetriGrpcService {
             output_cast: crate::janus::fbs::OutputCastType(3), // PIE
             limit: limit as i32,
             ..Default::default()
+        };
+        let is_master = crate::cedar::is_master_tenant(&authenticated_ctx.tenant_id);
+        let cedar_ctx = crate::janus::router::CedarCtx {
+            tenant_id: req.tenant_id.clone(),
+            user_id: authenticated_ctx.user_id.clone(),
+            roles: authenticated_ctx.roles.iter().cloned().collect(),
+            is_super_master: is_master,
+            cross_tenant_scope: if is_master {
+                "FULL".to_string()
+            } else {
+                "NONE".to_string()
+            },
+            domain_boundaries: authenticated_ctx.domain_boundaries.clone(),
+        };
+        let schema = registry
+            .get_model(&req.entity)
+            .and_then(|m| serde_json::to_value(m).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        let ast_ir = if self.dev_auth_bypass.is_bypass()
+            && authenticated_ctx
+                .domain_boundaries
+                .as_object()
+                .map(|m| m.is_empty())
+                .unwrap_or(true)
+        {
+            raw_ast
+        } else {
+            crate::janus::ast_compiler::compile_ast_fbs(&raw_ast, &cedar_ctx, &schema)
+                .map_err(|e| Status::permission_denied(e.to_string()))?
         };
 
         let mut values = Vec::new();
@@ -296,13 +329,7 @@ impl MetriGrpcService {
         &self,
         request: Request<ListEntitiesRequest>,
     ) -> Result<Response<ListEntitiesResponse>, Status> {
-        let (session_tenant_id, session_user_id) = {
-            let session = request
-                .extensions()
-                .get::<crate::grpc::interceptors::AuthenticatedSession>()
-                .ok_or_else(|| Status::unauthenticated("Peticion no autenticada [Fail-Closed]"))?;
-            (session.tenant_id.clone(), session.user_id.clone())
-        };
+        let (session_tenant_id, session_user_id) = self.extract_verified_session(&request).await?;
 
         let auth_header = request
             .metadata()
@@ -384,22 +411,27 @@ impl MetriGrpcService {
         }
 
         // ── Ejecucion ──
-        // `entity_type` va SIEMPRE como primer filtro: es lo que acota el resultado a
-        // la entidad pedida, porque los demas atributos se indexan por tenant y no por tipo.
-        let mut filters: Vec<(String, crate::eav::types::datom::DatomValue)> = vec![(
-            "entity_type".to_string(),
-            crate::eav::types::datom::DatomValue::Str(req.entity_type.clone()),
-        )];
-        for (k, v) in &req.filters {
-            filters.push((
-                k.clone(),
-                crate::eav::types::datom::DatomValue::Str(v.clone()),
-            ));
-        }
+        // `entity_type` viaja en el plan: el ejecutor AVET aplica el corte
+        // estricto por `entity/type`, que es lo que acota el resultado a la
+        // entidad pedida — los demás atributos se indexan por tenant y no por
+        // tipo. (Antes se prependía un filtro `entity_type = <entidad>` sobre
+        // el AVET, pero ese es un atributo de NEGOCIO que casi ningún modelo
+        // declara: la intersección salía vacía o, peor, cruzaba tipos.)
+        let filters: Vec<(String, crate::eav::types::datom::DatomValue)> = req
+            .filters
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    crate::eav::types::datom::DatomValue::Str(v.clone()),
+                )
+            })
+            .collect();
 
         let plan = crate::eav::reader::query::NativeQueryPlan::AvetIntersect {
             tenant_id: req.tenant_id.clone(),
             filters,
+            entity_type: Some(req.entity_type.clone()),
         };
 
         let mut ids = match self

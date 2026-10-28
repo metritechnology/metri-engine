@@ -6,6 +6,7 @@
 //! - `enricher` y `system_attrs` — inyección determinista de atributos de sistema reservados.
 //! - `constraints` — verificación de estado, referencias e invariantes de unicidad dentro de la misma transacción.
 //! - `outbox` — materialización atómica del evento de dominio en la misma transacción (patrón Transactional Outbox).
+//! - `history_mirror` — datoms espejo `_refs/<hija>` en la partición del dueño, en la misma transacción.
 //! - `cache_policy` — invalidación inmediata o diferida de las cachés de lectura tras confirmar el commit.
 
 /// Políticas de invalidación de las cachés de lectura (`EAV_CACHE` y `AEVT_SCAN_CACHE`) post-commit.
@@ -16,6 +17,8 @@ pub mod constraints;
 pub mod datom_plan;
 /// Enriquecimiento automático de datoms con atributos de sistema y generación monotónica de `tx_id`.
 pub mod enricher;
+/// Espejo de relaciones (`_refs/<hija>`) en la partición del dueño para historial agregado.
+pub mod history_mirror;
 /// Generación pura de datoms para el patrón Transactional Outbox y serialización JSON del contrato.
 pub mod outbox;
 /// Fuente única de verdad para los identificadores (`u16`) y nombres de atributos de sistema reservados.

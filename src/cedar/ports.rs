@@ -65,6 +65,8 @@ impl EntityReader for EavReader {
             tenant_id: tenant_id.to_string(),
             attr_name: attr_name.to_string(),
             value: value.clone(),
+            // Puerto deliberadamente transversal: el contrato no conoce el tipo.
+            entity_type: None,
         };
         query_executor.execute_native_plan(&plan).await
     }

@@ -550,6 +550,74 @@ fn test_enum_open_se_parsea_y_es_false_por_defecto() {
     cleanup();
 }
 
+/// `track_history` se parsea a nivel de modelo: ausente ⇒ `true` (historial
+/// expuesto, comportamiento previo a la flag); `false` explícito se respeta.
+#[test]
+fn test_track_history_se_parsea_y_es_true_por_defecto() {
+    let (dir, cleanup) = create_temp_models_dir();
+
+    let tracked_json = serde_json::json!({
+        "entity": "test_tracked",
+        "attributes": [{ "name": "content", "type": "string" }]
+    });
+    let untracked_json = serde_json::json!({
+        "entity": "test_untracked",
+        "track_history": false,
+        "attributes": [{ "name": "content", "type": "string" }]
+    });
+
+    fs::write(
+        dir.join("test_tracked.json"),
+        serde_json::to_string(&tracked_json).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("test_untracked.json"),
+        serde_json::to_string(&untracked_json).unwrap(),
+    )
+    .unwrap();
+
+    let (registry, _rules) = CodeRegistry::build(&dir).expect("compila");
+
+    assert!(
+        registry.tracks_history("test_tracked"),
+        "track_history ausente = true (default)"
+    );
+    assert!(
+        registry
+            .get_model("test_tracked")
+            .expect("registrado")
+            .track_history,
+        "el modelo parseado también expone el default"
+    );
+    assert!(
+        !registry.tracks_history("test_untracked"),
+        "track_history: false debe llegar al modelo"
+    );
+    assert!(
+        registry.tracks_history("entidad_inexistente"),
+        "entidad desconocida = true (fail-open, comportamiento previo)"
+    );
+
+    cleanup();
+}
+
+/// Candado del modelo real: la infraestructura derivada del pipeline RAG
+/// (`document_chunk`) no expone historial; el activo de negocio sí.
+#[test]
+fn test_document_chunk_no_rastrea_historial_y_asset_si() {
+    let (registry, _rules) =
+        CodeRegistry::build(std::path::Path::new("config/models")).expect("códice real compila");
+    assert!(
+        !registry.tracks_history("document_chunk"),
+        "document_chunk es infraestructura: estado actual sí, historial no"
+    );
+    assert!(
+        registry.tracks_history("asset"),
+        "asset expone su historial de auditoría"
+    );
+}
+
 /// Candado del modelo real: status y category de work_order son enums
 /// ABIERTOS con su catálogo canónico en options (metadato del RPC Explore),
 /// mientras priority conserva la validación estricta.

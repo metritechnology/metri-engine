@@ -80,6 +80,15 @@ pub enum NativeQueryPlan {
         attr_name: String,
         /// Valor tipado buscado en el índice `AVET`.
         value: DatomValue,
+        /// Tipo de entidad esperado (`entity/type`). `Some` activa el corte
+        /// estricto por tipo: el índice `AVET` particiona por (tenant,
+        /// atributo) y NO por tipo, así que dos modelos que comparten nombre
+        /// de atributo (p. ej. `owner_entity_id` en `file` y
+        /// `document_chunk`) colisionan en la misma partición y, sin este
+        /// corte, un query de la entidad X exhuma filas de la entidad Y.
+        /// `None` conserva el comportamiento agnóstico (consumidores
+        /// internos deliberadamente transversales).
+        entity_type: Option<String>,
     },
     /// Intersección de múltiples filtros de igualdad sobre el índice `GSI-AVET`.
     AvetIntersect {
@@ -87,6 +96,8 @@ pub enum NativeQueryPlan {
         tenant_id: String,
         /// Lista de pares `(attr_name, valor)` que deben cumplirse simultáneamente.
         filters: Vec<(String, DatomValue)>,
+        /// Tipo de entidad esperado (`entity/type`) — mismo corte estricto que `AvetSingle`.
+        entity_type: Option<String>,
     },
     /// Búsqueda de texto completo e híbrida (trigramas, fonética y Zona 5B).
     FtsSearch {
@@ -135,10 +146,19 @@ impl EavQueryExecutor {
                 tenant_id,
                 attr_name,
                 value,
-            } => self.execute_avet_single(tenant_id, attr_name, value).await,
+                entity_type,
+            } => {
+                self.execute_avet_single(tenant_id, attr_name, value, entity_type.as_deref())
+                    .await
+            }
 
-            NativeQueryPlan::AvetIntersect { tenant_id, filters } => {
-                self.execute_avet_intersection(tenant_id, filters).await
+            NativeQueryPlan::AvetIntersect {
+                tenant_id,
+                filters,
+                entity_type,
+            } => {
+                self.execute_avet_intersection(tenant_id, filters, entity_type.as_deref())
+                    .await
             }
 
             NativeQueryPlan::FtsSearch { tenant_id, term } => {
@@ -161,14 +181,16 @@ impl EavQueryExecutor {
 
     /// GSI-AVET: PK = "T#<tenant>#AV#<attr_name>", SK begins_with <value_prefix>
     /// Retorna los entity_ids almacenados en `eid` del datom encontrado.
+    /// Con `entity_type = Some(..)` aplica el corte estricto por tipo al final.
     async fn execute_avet_single(
         &self,
         tenant: &str,
         attr_name: &str,
         value: &DatomValue,
+        entity_type: Option<&str>,
     ) -> Result<Vec<String>, DomainError> {
         let mut ids = self
-            .execute_avet_single_with_type_tolerance(tenant, attr_name, value)
+            .execute_avet_single_with_type_tolerance(tenant, attr_name, value, entity_type)
             .await?;
 
         let master_tenant = &crate::domain::config::engine_config().master_tenant_id;
@@ -184,7 +206,7 @@ impl EavQueryExecutor {
                     continue;
                 }
                 if let Ok(tenant_ids) = self
-                    .execute_avet_single_with_type_tolerance(&t, attr_name, value)
+                    .execute_avet_single_with_type_tolerance(&t, attr_name, value, entity_type)
                     .await
                 {
                     if !tenant_ids.is_empty() {
@@ -203,6 +225,7 @@ impl EavQueryExecutor {
         tenant: &str,
         attr_name: &str,
         value: &DatomValue,
+        entity_type: Option<&str>,
     ) -> Result<Vec<String>, DomainError> {
         let mut ids = self
             .execute_avet_single_for_tenant(tenant, attr_name, value)
@@ -224,7 +247,40 @@ impl EavQueryExecutor {
             }
         }
 
-        Ok(ids)
+        self.restrict_to_entity_type(tenant, ids, entity_type).await
+    }
+
+    /// Corte estricto por tipo de entidad sobre un conjunto de ids del `AVET`.
+    ///
+    /// El índice `AVET` agrupa por `(tenant, atributo)` y no por tipo: un
+    /// atributo denormalizado con el mismo nombre en otro modelo (el caso
+    /// real: `document_chunk.owner_entity_id`, heredado del `file` para
+    /// queries RAG) comparte partición y contamina los resultados. El corte
+    /// conserva sólo los ids cuyo datom `entity/type` vigente es el pedido,
+    /// reusando la misma consulta `AVET` (el atributo de sistema también está
+    /// indexado por valor). `None` o cadena vacía = sin corte.
+    async fn restrict_to_entity_type(
+        &self,
+        tenant: &str,
+        ids: Vec<String>,
+        entity_type: Option<&str>,
+    ) -> Result<Vec<String>, DomainError> {
+        let Some(expected) = entity_type.filter(|t| !t.is_empty()) else {
+            return Ok(ids);
+        };
+        if ids.is_empty() {
+            return Ok(ids);
+        }
+        let of_type: HashSet<String> = self
+            .execute_avet_single_for_tenant(
+                tenant,
+                crate::eav::writer::system_attrs::TYPE_NAME,
+                &DatomValue::Str(expected.to_string()),
+            )
+            .await?
+            .into_iter()
+            .collect();
+        Ok(ids.into_iter().filter(|id| of_type.contains(id)).collect())
     }
 
     async fn execute_avet_single_for_tenant(
@@ -267,10 +323,12 @@ impl EavQueryExecutor {
 
     /// GSI-AVET intersección: ejecuta N queries en secuencia y hace HashSet intersection.
     /// Blueprint: §I.2 Paso 5 — AvetIntersection "paralelo + intersección HashSet"
+    /// Con `entity_type = Some(..)` aplica el corte estricto por tipo sobre la intersección.
     async fn execute_avet_intersection(
         &self,
         tenant: &str,
         filters: &[(String, DatomValue)],
+        entity_type: Option<&str>,
     ) -> Result<Vec<String>, DomainError> {
         if filters.is_empty() {
             return Ok(vec![]);
@@ -279,7 +337,9 @@ impl EavQueryExecutor {
         let mut common_ids: Option<HashSet<String>> = None;
 
         for (attr_name, value) in filters {
-            let ids = self.execute_avet_single(tenant, attr_name, value).await?;
+            let ids = self
+                .execute_avet_single(tenant, attr_name, value, None)
+                .await?;
             let id_set: HashSet<String> = ids.into_iter().collect();
 
             match common_ids {
@@ -296,7 +356,8 @@ impl EavQueryExecutor {
             }
         }
 
-        Ok(common_ids.unwrap_or_default().into_iter().collect())
+        let ids: Vec<String> = common_ids.unwrap_or_default().into_iter().collect();
+        self.restrict_to_entity_type(tenant, ids, entity_type).await
     }
 
     /// GSI-FTS + MBF Zone 5B Hybrid Search:
@@ -764,5 +825,219 @@ mod avet_dedup_tests {
             &datom_value_to_string(&DatomValue::Uuid("01M365N0KHB9A4SK0ZRKEP6WAT".to_string())),
         );
         assert_eq!(ids, vec!["E1".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod avet_strict_type_tests {
+    use super::*;
+    use crate::eav::types::encoding::{build_avet_sk, build_eavt_sk};
+    use crate::eav::writer::system_attrs as sys;
+    use crate::mbf::storage::partition_for;
+
+    /// Item con la forma que escribe `transact.rs`: clave base `(PK, SK)` más
+    /// la proyección del índice `AVET` (`vp`, `vs`) y el valor `v`.
+    /// `attr_id` distingue los datoms de una misma entidad en su clave base.
+    fn avet_item(
+        tenant: &str,
+        eid: &str,
+        attr_id: u16,
+        attr_name: &str,
+        value: &str,
+        tx: u64,
+        op: bool,
+    ) -> HashMap<String, AttributeValue> {
+        let mut m = HashMap::new();
+        m.insert(
+            "PK".to_string(),
+            AttributeValue::S(format!("T#{tenant}#E#{eid}")),
+        );
+        m.insert(
+            "SK".to_string(),
+            AttributeValue::B(Blob::new(build_eavt_sk(attr_id, tx, op))),
+        );
+        m.insert(
+            "vp".to_string(),
+            AttributeValue::S(format!("T#{tenant}#AV#{attr_name}")),
+        );
+        m.insert(
+            "vs".to_string(),
+            AttributeValue::B(Blob::new(build_avet_sk(
+                &DatomValue::Str(value.to_string()),
+                eid,
+            ))),
+        );
+        m.insert("v".to_string(), AttributeValue::S(value.to_string()));
+        m
+    }
+
+    fn insert_items(table: &str, items: Vec<HashMap<String, AttributeValue>>) {
+        let part = partition_for(table);
+        let mut guard = part.write().expect("partition lock");
+        for item in items {
+            let pk = match item.get("PK") {
+                Some(AttributeValue::S(s)) => s.clone(),
+                _ => continue,
+            };
+            let sk = match item.get("SK") {
+                Some(AttributeValue::B(b)) => b.as_ref().to_vec(),
+                _ => Vec::new(),
+            };
+            guard.insert_indexed((pk, sk), item);
+        }
+    }
+
+    /// Siembra un `file` y un `document_chunk` que COMPARTEN la partición AVET
+    /// de `owner_entity_id` (el chunk denormaliza los owner_* del archivo para
+    /// queries RAG directos) — la colisión real de producción.
+    fn seed_file_y_chunk(table: &str) {
+        let owner_id = crate::eav::types::datom::Datom::hash_attr_name("owner_entity_id");
+        insert_items(
+            table,
+            vec![
+                avet_item(
+                    "t1",
+                    "file_1",
+                    sys::TYPE_ID,
+                    sys::TYPE_NAME,
+                    "file",
+                    100,
+                    true,
+                ),
+                avet_item(
+                    "t1",
+                    "file_1",
+                    owner_id,
+                    "owner_entity_id",
+                    "asset_1",
+                    100,
+                    true,
+                ),
+                avet_item(
+                    "t1",
+                    "file_1_chunk_0",
+                    sys::TYPE_ID,
+                    sys::TYPE_NAME,
+                    "document_chunk",
+                    100,
+                    true,
+                ),
+                avet_item(
+                    "t1",
+                    "file_1_chunk_0",
+                    owner_id,
+                    "owner_entity_id",
+                    "asset_1",
+                    100,
+                    true,
+                ),
+            ],
+        );
+    }
+
+    fn executor(table: &str) -> EavQueryExecutor {
+        EavQueryExecutor::new(
+            Arc::new(crate::mbf::storage::MbfStorageClient::new_stub()),
+            table,
+        )
+    }
+
+    #[tokio::test]
+    async fn avet_single_sin_corte_devuelve_ids_de_cualquier_tipo() {
+        let table = "test-avet-strict-none";
+        seed_file_y_chunk(table);
+
+        let plan = NativeQueryPlan::AvetSingle {
+            tenant_id: "t1".to_string(),
+            attr_name: "owner_entity_id".to_string(),
+            value: DatomValue::Str("asset_1".to_string()),
+            entity_type: None,
+        };
+        let mut ids = executor(table)
+            .execute_native_plan(&plan)
+            .await
+            .expect("plan ok");
+        ids.sort();
+        assert_eq!(
+            ids,
+            vec!["file_1".to_string(), "file_1_chunk_0".to_string()],
+            "sin corte el AVET compartido exhuma al chunk (comportamiento previo, opt-in)"
+        );
+    }
+
+    #[tokio::test]
+    async fn avet_single_con_corte_solo_devuelve_el_tipo_pedido() {
+        let table = "test-avet-strict-file";
+        seed_file_y_chunk(table);
+
+        let plan = NativeQueryPlan::AvetSingle {
+            tenant_id: "t1".to_string(),
+            attr_name: "owner_entity_id".to_string(),
+            value: DatomValue::Str("asset_1".to_string()),
+            entity_type: Some("file".to_string()),
+        };
+        let ids = executor(table)
+            .execute_native_plan(&plan)
+            .await
+            .expect("plan ok");
+        assert_eq!(
+            ids,
+            vec!["file_1".to_string()],
+            "el descubrimiento de hijas `file where owner_entity_id = X` no debe traer chunks"
+        );
+    }
+
+    #[tokio::test]
+    async fn avet_intersect_con_corte_solo_devuelve_el_tipo_pedido() {
+        let table = "test-avet-strict-intersect";
+        seed_file_y_chunk(table);
+
+        let plan = NativeQueryPlan::AvetIntersect {
+            tenant_id: "t1".to_string(),
+            filters: vec![(
+                "owner_entity_id".to_string(),
+                DatomValue::Str("asset_1".to_string()),
+            )],
+            entity_type: Some("document_chunk".to_string()),
+        };
+        let ids = executor(table)
+            .execute_native_plan(&plan)
+            .await
+            .expect("plan ok");
+        assert_eq!(ids, vec!["file_1_chunk_0".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn el_corte_respeta_la_retraccion_del_tipo() {
+        let table = "test-avet-strict-retract";
+        seed_file_y_chunk(table);
+        // El file fue borrado: su entity/type queda retractado en tx posterior.
+        insert_items(
+            table,
+            vec![avet_item(
+                "t1",
+                "file_1",
+                sys::TYPE_ID,
+                sys::TYPE_NAME,
+                "file",
+                200,
+                false,
+            )],
+        );
+
+        let plan = NativeQueryPlan::AvetSingle {
+            tenant_id: "t1".to_string(),
+            attr_name: "owner_entity_id".to_string(),
+            value: DatomValue::Str("asset_1".to_string()),
+            entity_type: Some("file".to_string()),
+        };
+        let ids = executor(table)
+            .execute_native_plan(&plan)
+            .await
+            .expect("plan ok");
+        assert!(
+            ids.is_empty(),
+            "una entidad cuyo tipo quedó retractado no pasa el corte"
+        );
     }
 }

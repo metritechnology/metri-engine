@@ -45,6 +45,13 @@ pub fn compile_native_plan(ast_ir: &Value, tenant_id: &str) -> NativeQueryPlan {
     let plan = select_plan(ast_ir);
     debug!("[Aegis Compiler] Plan seleccionado: {:?}", plan);
 
+    // Corte estricto por tipo: los planes AVET lo aplican sobre sus ids
+    // (ver `NativeQueryPlan::AvetSingle::entity_type`).
+    let entity_type = ast_ir
+        .get("entity")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
     match plan {
         EavQueryPlan::PointLookup { entity_id } => NativeQueryPlan::PointLookup { entity_id },
 
@@ -52,11 +59,13 @@ pub fn compile_native_plan(ast_ir: &Value, tenant_id: &str) -> NativeQueryPlan {
             tenant_id: tenant_id.to_string(),
             attr_name,
             value,
+            entity_type,
         },
 
         EavQueryPlan::AvetIntersection { filters } => NativeQueryPlan::AvetIntersect {
             tenant_id: tenant_id.to_string(),
             filters,
+            entity_type,
         },
 
         EavQueryPlan::FtsSearch { term } => NativeQueryPlan::FtsSearch {
@@ -114,12 +123,14 @@ pub fn compile_native_plan_fbs(
                 tenant_id: tenant_id.to_string(),
                 attr_name,
                 value,
+                entity_type: ast_ir.entity.clone(),
             })
         }
         crate::janus::plan_selector::EavQueryPlan::AvetIntersection { filters } => {
             Ok(NativeQueryPlan::AvetIntersect {
                 tenant_id: tenant_id.to_string(),
                 filters,
+                entity_type: ast_ir.entity.clone(),
             })
         }
         crate::janus::plan_selector::EavQueryPlan::AevtScan {
@@ -142,6 +153,7 @@ pub fn compile_native_plan_fbs(
             tenant_id: tenant_id.to_string(),
             attr_name: attr_name.unwrap_or_default(),
             value: DatomValue::Str(ref_entity_id),
+            entity_type: ast_ir.entity.clone(),
         }),
         // AsOfSnapshot se maneja en OltpExecutor (fetch_as_of_snapshot) antes
         // de llegar aquí. Este brazo es defensivo ante un cambio del plan

@@ -664,21 +664,41 @@ impl IMbfObjectStore for S3MbfObjectStore {
         }
 
         let new_etag = Self::compute_etag(&bytes);
-        let _ = self.enforce_nvme_cache_budget(MBF_NVME_CACHE_BUDGET_BYTES);
-        let _ = std::fs::write(&local_path, &bytes);
-
         let mut put_req = self
             .s3_client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
             .content_type("application/x-metri-mbf")
-            .body(aws_sdk_s3::primitives::ByteStream::from(bytes));
+            .body(aws_sdk_s3::primitives::ByteStream::from(bytes.clone()));
         if let Some(exp) = expected_etag {
             put_req = put_req.if_match(format!("\"{exp}\""));
         }
-        let _ = put_req.send().await;
-        Ok(new_etag)
+        match put_req.send().await {
+            Ok(out) => {
+                let s3_etag = out
+                    .e_tag()
+                    .map(|s| s.trim_matches('"').to_string())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(new_etag);
+                let _ = self.enforce_nvme_cache_budget(MBF_NVME_CACHE_BUDGET_BYTES);
+                let _ = std::fs::write(&local_path, &bytes);
+                Ok(s3_etag)
+            }
+            Err(sdk_err) => {
+                let status_code = sdk_err.raw_response().map(|r| r.status().as_u16());
+                if status_code == Some(412) {
+                    let _ = std::fs::remove_file(&local_path);
+                    return Err(DomainError::mbf(
+                        ErrorCode::MbfCasConflict001,
+                        format!("S3 If-Match PreconditionFailed (412) on {key}"),
+                    ));
+                }
+                let _ = self.enforce_nvme_cache_budget(MBF_NVME_CACHE_BUDGET_BYTES);
+                let _ = std::fs::write(&local_path, &bytes);
+                Ok(new_etag)
+            }
+        }
     }
 }
 
@@ -1594,6 +1614,10 @@ fn is_non_searchable_attr(attr_name: &str) -> bool {
         || attr_name == crate::eav::writer::system_attrs::ULID_NAME
         || attr_name == crate::eav::writer::system_attrs::TENANT_NAME
         || attr_name.starts_with("meta/")
+        // Espejos de historial `_refs/<entidad>`: viven en la partición del
+        // dueño sin declararse en su modelo — exentos de indexación de texto,
+        // igual que los atributos de sistema.
+        || attr_name.starts_with(crate::eav::writer::history_mirror::REFS_PREFIX)
         || attr_name.ends_with("_id")
         || matches!(
             attr_name,
@@ -1668,28 +1692,46 @@ impl ColdStartDocBuilder {
             attr_name_opt,
             Some("name" | "title" | "label" | "full_name" | "username")
         );
-        let is_code = matches!(
-            attr_name_opt,
-            Some(
-                "tag"
-                    | "code"
-                    | "serial_number"
-                    | "barcode_qr_code"
-                    | "functional_location_code"
-                    | "sku"
-            )
-        );
+        let is_chunk_content = matches!(attr_name_opt, Some("chunk_content"));
+        let is_metadata_tags = matches!(attr_name_opt, Some("metadata_tags"));
+        let is_code = is_metadata_tags
+            || matches!(
+                attr_name_opt,
+                Some(
+                    "tag"
+                        | "code"
+                        | "serial_number"
+                        | "barcode_qr_code"
+                        | "functional_location_code"
+                        | "sku"
+                )
+            );
         if is_code {
-            let canon = crate::eav::fts::searcher::canonicalize_alphanumeric_code(trimmed);
-            if !canon.is_empty() && !self.doc.code.contains(&canon) {
+            let code_segment = if is_metadata_tags {
+                let canon = crate::eav::fts::searcher::canonicalize_alphanumeric_code(trimmed);
+                if canon.is_empty() {
+                    trimmed.to_string()
+                } else {
+                    format!("{trimmed} {canon}")
+                }
+            } else {
+                crate::eav::fts::searcher::canonicalize_alphanumeric_code(trimmed)
+            };
+            if !code_segment.is_empty() && !self.doc.code.contains(&code_segment) {
                 if !self.doc.code.is_empty() {
                     self.doc.code.push(' ');
                 }
-                self.doc.code.push_str(&canon);
+                self.doc.code.push_str(&code_segment);
             }
         }
         if is_title && (self.doc.title.is_empty() || trimmed.len() > self.doc.title.len()) {
             self.doc.title = trimmed.to_string();
+        } else if is_chunk_content && self.doc.title.is_empty() {
+            self.doc.title = trimmed
+                .split_whitespace()
+                .take(16)
+                .collect::<Vec<_>>()
+                .join(" ");
         }
         if !self.doc.description.contains(trimmed) {
             if !self.doc.description.is_empty() {
@@ -1821,7 +1863,7 @@ impl MbfPartitionStore {
         if let Some((rp, rs_bytes)) = extract_index_key(item, "rp", "rs") {
             self.vaet_index.insert((rp, rs_bytes, key.clone()), ());
         }
-        if key.1.len() != 11 || key.1[10] == 0 {
+        if key.1.len() != 11 {
             return None;
         }
         if self.transient_entities.contains(key.0.as_str()) {
@@ -1835,6 +1877,13 @@ impl MbfPartitionStore {
                 _ => None,
             })
             .map(|a| a.split('#').next().unwrap_or(a).to_string());
+
+        if key.1[10] == 0 {
+            if attr_name_opt.as_deref() == Some(crate::eav::writer::system_attrs::TYPE_NAME) {
+                crate::eav::fts::searcher::remove_fts_document(tenant_id, entity_id);
+            }
+            return None;
+        }
 
         if attr_name_opt.as_deref() == Some(crate::eav::writer::system_attrs::TYPE_NAME) {
             if let Some(AttributeValue::S(et)) = item.get("v") {
@@ -1865,39 +1914,65 @@ impl MbfPartitionStore {
         > = HashMap::new();
         let mut current_pk = String::new();
         let mut current_builder: Option<ColdStartDocBuilder> = None;
+        let mut latest_by_attr: BTreeMap<
+            [u8; 2],
+            (bool, Option<String>, &HashMap<String, AttributeValue>),
+        > = BTreeMap::new();
+
+        let flush_builder = |builder_opt: Option<ColdStartDocBuilder>,
+                             latest: &mut BTreeMap<
+            [u8; 2],
+            (bool, Option<String>, &HashMap<String, AttributeValue>),
+        >,
+                             out: &mut HashMap<
+            String,
+            Vec<crate::mbf::zones::hybrid_search::IndexedEntityDocument>,
+        >| {
+            let entries = std::mem::take(latest);
+            if let Some(mut builder) = builder_opt {
+                for (_, (is_assert, attr_name_opt, item_ref)) in entries {
+                    if is_assert {
+                        builder.feed(attr_name_opt.as_deref(), item_ref);
+                    }
+                }
+                if let Some((t_id, doc)) = builder.finish() {
+                    out.entry(t_id).or_default().push(doc);
+                }
+            }
+        };
 
         for ((pk, sk), item) in &self.items {
-            if sk.len() != 11 || sk[10] == 0 || self.transient_entities.contains(pk.as_str()) {
+            if sk.len() != 11 || self.transient_entities.contains(pk.as_str()) {
                 continue;
             }
             if pk != &current_pk {
-                if let Some(prev) = current_builder.take() {
-                    if let Some((t_id, doc)) = prev.finish() {
-                        docs_by_tenant.entry(t_id).or_default().push(doc);
-                    }
-                }
+                flush_builder(
+                    current_builder.take(),
+                    &mut latest_by_attr,
+                    &mut docs_by_tenant,
+                );
                 current_pk.clone_from(pk);
                 if let Some((t_id, e_id)) = pk.strip_prefix("T#").and_then(|s| s.split_once("#E#"))
                 {
                     current_builder = Some(ColdStartDocBuilder::new(t_id, e_id));
                 }
             }
-            if let Some(builder) = &mut current_builder {
+            if current_builder.is_some() {
                 let attr_name_opt = item
                     .get("ap")
                     .and_then(|av| match av {
                         AttributeValue::S(ap_str) => ap_str.split_once("#A#").map(|(_, a)| a),
                         _ => None,
                     })
-                    .map(|a| a.split('#').next().unwrap_or(a));
-                builder.feed(attr_name_opt, item);
+                    .map(|a| a.split('#').next().unwrap_or(a).to_string());
+                latest_by_attr.insert([sk[0], sk[1]], (sk[10] != 0, attr_name_opt, item));
             }
         }
-        if let Some(last) = current_builder.take() {
-            if let Some((t_id, doc)) = last.finish() {
-                docs_by_tenant.entry(t_id).or_default().push(doc);
-            }
-        }
+        flush_builder(
+            current_builder.take(),
+            &mut latest_by_attr,
+            &mut docs_by_tenant,
+        );
         for (tenant_id, docs) in docs_by_tenant {
             crate::eav::fts::searcher::register_fts_documents_batch(&tenant_id, docs);
         }
@@ -2530,28 +2605,37 @@ impl MbfStorageClient {
         let target_pk = format!("T#{tenant_id}#E#{entity_id}");
         let range_start = (target_pk.clone(), Vec::new());
         let mut datoms = Vec::new();
-        let mut fallback_text_parts = Vec::new();
+        let mut latest_text_by_attr: BTreeMap<[u8; 2], Option<String>> = BTreeMap::new();
         for ((item_pk, item_sk), item) in guard.items.range(range_start..) {
             if item_pk != &target_pk {
                 break;
             }
-            if item_sk.len() == 11 && item_sk[10] != 0 {
-                let attr_name_opt = item
-                    .get("ap")
-                    .and_then(av_string)
-                    .and_then(|ap_str| ap_str.split_once("#A#").map(|(_, a)| a))
-                    .map(|a| a.split('#').next().unwrap_or(a));
-                if !attr_name_opt.is_some_and(is_non_searchable_attr) {
-                    if let Some(AttributeValue::S(s)) = item.get("v") {
-                        let trimmed = s.trim();
-                        if !trimmed.is_empty() && !trimmed.starts_with('{') {
-                            fallback_text_parts.push(trimmed.to_string());
-                        }
-                    }
+            if item_sk.len() == 11 {
+                let attr_key = [item_sk[0], item_sk[1]];
+                if item_sk[10] == 0 {
+                    latest_text_by_attr.insert(attr_key, None);
+                } else {
+                    let attr_name_opt = item
+                        .get("ap")
+                        .and_then(av_string)
+                        .and_then(|ap_str| ap_str.split_once("#A#").map(|(_, a)| a))
+                        .map(|a| a.split('#').next().unwrap_or(a));
+                    let text_opt = if !attr_name_opt.is_some_and(is_non_searchable_attr) {
+                        item.get("v")
+                            .and_then(av_string)
+                            .map(str::trim)
+                            .filter(|t| !t.is_empty() && !t.starts_with('{'))
+                            .map(ToString::to_string)
+                    } else {
+                        None
+                    };
+                    latest_text_by_attr.insert(attr_key, text_opt);
                 }
             }
             datoms.push((item_sk.clone(), item.clone()));
         }
+        let fallback_text_parts: Vec<String> =
+            latest_text_by_attr.into_values().flatten().collect();
         let ent_snap = MbfEntityWireSnapshot {
             tenant_id: tenant_id.to_string(),
             entity_type: entity_type.to_string(),

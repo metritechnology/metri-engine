@@ -38,16 +38,26 @@ impl MetriGrpcService {
         .map_err(|err| Status::unauthenticated(format!("Authentication failed: {}", err.detail)))?;
 
         let mut req = request.into_inner();
-        req.tenant_id = if principal.tenant_id == "system" && req.tenant_id.is_empty() {
-            "system".to_string()
+        req.tenant_id = if principal.tenant_id == "system" {
+            if req.tenant_id.is_empty() {
+                "system".to_string()
+            } else {
+                req.tenant_id.clone()
+            }
         } else {
-            req.tenant_id.clone()
+            principal.tenant_id.clone()
         };
 
         if req.entities.is_empty() {
             return Err(Status::invalid_argument(
                 "CompositeTransact exige al menos una entidad",
             ));
+        }
+        if req.entities.len() > 100 {
+            return Err(Status::invalid_argument(format!(
+                "CompositeTransact supera el máximo de 100 entidades por transacción ({})",
+                req.entities.len()
+            )));
         }
 
         // Planificación: seguridad + validación estructural por entidad.
@@ -64,6 +74,12 @@ impl MetriGrpcService {
             } else {
                 principal.tenant_id.clone()
             };
+            if tenant_id != req.tenant_id {
+                return Err(Status::permission_denied(format!(
+                    "entities[{i}]: Conflicto de tenant en transacción compuesta ({} vs {})",
+                    tenant_id, req.tenant_id
+                )));
+            }
 
             if entity.action != 1 {
                 // OperationAction::CREATE — un composite es una instanciación.
@@ -94,6 +110,12 @@ impl MetriGrpcService {
                 None => payload_json,
             };
 
+            if entity.entity_type == "role" {
+                if let Some(grants) = payload_json.get("grants") {
+                    self.validate_role_grants(grants)?;
+                }
+            }
+
             // Seguridad por entidad: aislamiento de tenant, grants self-service
             // y ABAC Cedar — la misma puerta que Transact, sin atajos.
             self.validate_single_mutation(
@@ -104,6 +126,15 @@ impl MetriGrpcService {
                 &principal,
             )
             .await?;
+
+            if entity.entity_type == "user_group" {
+                self.validate_user_group_hierarchy_cycle(
+                    &tenant_id,
+                    &entity.entity_id,
+                    &payload_json,
+                )
+                .await?;
+            }
 
             // Estructura + coerción contra el Códice (misma validación del
             // camino normal: falla ANTES de planear datoms).
@@ -132,6 +163,76 @@ impl MetriGrpcService {
             });
         }
 
+        // Control de cuotas transaccional para CompositeTransact (salvo bypass de desarrollo,
+        // tenant maestro o cuentas de sistema).
+        let mut debited_quotas: Vec<(String, i64)> = Vec::new();
+        let quota_exempt_caller = self.dev_auth_bypass.is_bypass()
+            || crate::cedar::is_master_tenant(&req.tenant_id)
+            || principal.user_id == "usr_system_bff"
+            || principal.user_id == "usr_master";
+
+        if !quota_exempt_caller {
+            use crate::quota::{DebitOutcome, QuotaCounter, QuotaResolver};
+            let mut counts_by_domain: std::collections::BTreeMap<String, i64> =
+                std::collections::BTreeMap::new();
+            for (entity_type, _) in &identidad {
+                if !crate::cedar::SystemSecurityRules::is_quota_exempt(entity_type) {
+                    *counts_by_domain.entry(entity_type.clone()).or_insert(0) += 1;
+                }
+            }
+            if !counts_by_domain.is_empty() {
+                let resolver = QuotaResolver::new(self.oltp_executor.clone());
+                let ledger = self.eav_writer.quota_ledger();
+                for (domain, units) in counts_by_domain {
+                    let active_quota = resolver
+                        .active_quota(&req.tenant_id, &domain, "WRITE_COUNT")
+                        .await
+                        .map_err(Status::from)?;
+                    let Some(quota) = active_quota else {
+                        for (cid, amt) in &debited_quotas {
+                            let _ = ledger.release(&req.tenant_id, cid, *amt).await;
+                        }
+                        return Err(Status::from(DomainError::new(
+                            ErrorCode::Quota001,
+                            format!(
+                                "No quota configured for tenant={} resource_domain={} limit_type=WRITE_COUNT",
+                                req.tenant_id, domain
+                            ),
+                        )));
+                    };
+                    match ledger
+                        .try_debit(
+                            &req.tenant_id,
+                            &quota.counter_id,
+                            units,
+                            quota.max_limit,
+                            quota.seed_usage,
+                        )
+                        .await
+                    {
+                        Ok(DebitOutcome::Debited { .. }) => {
+                            debited_quotas.push((quota.counter_id, units));
+                        }
+                        Ok(DebitOutcome::Exhausted { .. }) => {
+                            for (cid, amt) in &debited_quotas {
+                                let _ = ledger.release(&req.tenant_id, cid, *amt).await;
+                            }
+                            return Err(Status::from(DomainError::new(
+                                ErrorCode::Quota001,
+                                "Quota exhausted — upgrade plan or wait for reset",
+                            )));
+                        }
+                        Err(e) => {
+                            for (cid, amt) in &debited_quotas {
+                                let _ = ledger.release(&req.tenant_id, cid, *amt).await;
+                            }
+                            return Err(Status::from(e));
+                        }
+                    }
+                }
+            }
+        }
+
         // Madre = entities[0]; hijos = proyecciones de la MISMA transacción.
         // (R6 del Patrón Result: el vacío ya se rechazó arriba con Status;
         // aquí no hay pánico — se degrada a error de dominio por si el
@@ -154,14 +255,24 @@ impl MetriGrpcService {
             })
             .collect();
 
-        let result = self
+        let result = match self
             .eav_writer
             .transact_with_projections(madre, proyecciones, Some(&principal.user_id))
             .await
-            .map_err(|e| {
+        {
+            Ok(res) => res,
+            Err(e) => {
+                if !debited_quotas.is_empty() {
+                    use crate::quota::QuotaCounter;
+                    let ledger = self.eav_writer.quota_ledger();
+                    for (cid, amt) in &debited_quotas {
+                        let _ = ledger.release(&req.tenant_id, cid, *amt).await;
+                    }
+                }
                 warn!(error = ?e, "[Composite] abortado: 0 filas escritas");
-                Status::from(e)
-            })?;
+                return Err(Status::from(e));
+            }
+        };
 
         // Invalidación de caches de aplicación, una vez por entidad escrita.
         for (entity_type, entity_id) in &identidad {

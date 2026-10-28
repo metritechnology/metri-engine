@@ -552,3 +552,95 @@ fn test_lifecycle_state_de_procedure_acepta_sus_tres_estados() {
     );
     assert!(bad.is_err(), "ARCHIVED no está en el catálogo");
 }
+
+#[test]
+fn test_document_chunk_acepta_auto_generate_from_y_semantic_embedding_bytes() {
+    let dir = std::path::Path::new("config/models");
+    let (registry, _rules) =
+        crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
+    let model = registry
+        .get_model("document_chunk")
+        .expect("document_chunk registrado");
+
+    // 1. Sin semantic_embedding explícito: válido gracias a auto_generate_from: ["chunk_content"]
+    let without_embedding = validate_payload(
+        model,
+        &json!({
+            "parent_file": "0-ficha_tecnica.pdf",
+            "chunk_index": 0,
+            "chunk_content": "Caudal nominal: 45 m3/h. Altura dinámica: 180 m.",
+            "page_range": "1-1",
+            "owner_entity_type": "asset",
+            "owner_entity_id": "01M5D9Q0KMWNJ9JRAFQS29G6DK"
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(
+        without_embedding.is_ok(),
+        "document_chunk sin semantic_embedding debe ser válido por auto_generate_from: {without_embedding:?}"
+    );
+
+    // 2. Con semantic_embedding como arreglo de floats (serializado a f32 little-endian)
+    let with_float_vec = validate_payload(
+        model,
+        &json!({
+            "parent_file": "0-ficha_tecnica.pdf",
+            "chunk_index": 1,
+            "chunk_content": "Mantenimiento preventivo cada 500 horas.",
+            "semantic_embedding": [0.25, -0.5, 1.0, 0.0]
+        }),
+        "tnt_01",
+        true,
+    );
+    let attrs = with_float_vec.expect("arreglo de floats válido para AttrType::Bytes");
+    match attrs.get("semantic_embedding") {
+        Some(DatomValue::Bytes(bytes)) => assert_eq!(bytes.len(), 16),
+        other => panic!("Se esperaba DatomValue::Bytes, se obtuvo: {other:?}"),
+    }
+}
+
+#[test]
+fn test_webhook_endpoint_rechaza_ssrf_y_http_plano() {
+    let dir = std::path::Path::new("config/models");
+    let (registry, _rules) =
+        crate::codice::CodeRegistry::build(dir).expect("config/models debe compilar");
+    let model = registry
+        .get_model("webhook_endpoint")
+        .expect("webhook_endpoint registrado");
+
+    let valid = validate_payload(
+        model,
+        &json!({
+            "name": "Slack Prod",
+            "target_url": "https://hooks.slack.com/services/T000/B000/X000",
+            "subscribed_rule_ids": ["rule_01"]
+        }),
+        "tnt_01",
+        true,
+    );
+    assert!(valid.is_ok(), "HTTPS con dominio válido debe aceptarse");
+
+    for bad_url in [
+        "http://hooks.slack.com/services/T000",
+        "https://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "https://127.0.0.1:9001/2018-06-01/runtime/invocation/next",
+        "https://localhost:9090/metri.MetriService/Query",
+        "https://[::1]/internal",
+    ] {
+        let res = validate_payload(
+            model,
+            &json!({
+                "name": "SSRF Probe",
+                "target_url": bad_url,
+                "subscribed_rule_ids": ["rule_01"]
+            }),
+            "tnt_01",
+            true,
+        );
+        assert!(
+            res.is_err(),
+            "target_url insegura '{bad_url}' debería ser rechazada por el patrón del Códice"
+        );
+    }
+}

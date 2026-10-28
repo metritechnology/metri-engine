@@ -647,6 +647,9 @@ impl OltpChannel {
                 tenant_id: tenant_id.to_string(),
                 attr_name: "parent_entity_ref".to_string(),
                 value: DatomValue::Uuid(parent_id.to_string()),
+                // Los jobs vivos de una madre son `scheduled_job`, pero el
+                // atributo es interno y exclusivo de ese modelo: sin corte.
+                entity_type: None,
             })
             .await?;
 
@@ -845,6 +848,10 @@ impl OltpChannel {
                                     tenant_id: query_tenant,
                                     attr_name: attr.name.clone(),
                                     value: datom_val,
+                                    // La unicidad es por (tenant, atributo) en
+                                    // el diseño AVET vigente — fuera del
+                                    // alcance del corte por tipo.
+                                    entity_type: None,
                                 };
 
                                 if let Ok(existing_ids) =

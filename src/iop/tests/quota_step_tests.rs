@@ -84,7 +84,7 @@ impl QuotaCounter for MockQuotaCounter {
         }
         let mut guard = self.usage.lock().unwrap();
         let actual = guard.unwrap_or(seed);
-        if actual >= max_limit {
+        if actual + amount > max_limit {
             return Ok(DebitOutcome::Exhausted {
                 current_usage: actual,
                 limit: max_limit,
@@ -504,4 +504,33 @@ async fn compensar_sin_reserva_no_hace_nada() {
     step.compensate(&ctx).await;
 
     assert!(step.counter.releases.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn bulk_ingest_debita_y_compensa_por_cantidad_de_filas() {
+    let quota = json!({"id":"quota_01","max_limit":10,"current_usage":3,"period_key":"LIFETIME"});
+    let oltp = MockOltpExecutor {
+        mock_rows: Mutex::new(vec![quota]),
+    };
+    let step = QuotaGuardStep::new(oltp, MockQuotaCounter::nuevo());
+
+    let mut req_map = serde_json::Map::new();
+    req_map.insert(
+        "data".to_string(),
+        json!([{"id": "1"}, {"id": "2"}, {"id": "3"}, {"id": "4"}, {"id": "5"}]),
+    );
+    let ctx = IopContext::new("tnt_01", "usr_01", "asset", "CREATE", req_map);
+    let res_ctx = step.execute(ctx).await.unwrap();
+    assert_eq!(
+        *step.counter.usage.lock().unwrap(),
+        Some(8),
+        "debitó 5 unidades (3 + 5 = 8)"
+    );
+
+    step.compensate(&res_ctx).await;
+    assert_eq!(
+        *step.counter.usage.lock().unwrap(),
+        Some(3),
+        "devolvió las 5 unidades del lote"
+    );
 }

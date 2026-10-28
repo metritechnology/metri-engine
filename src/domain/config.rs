@@ -30,6 +30,8 @@ pub struct EngineConfig {
     pub hmac_secret: Option<String>,
     /// Clave maestra activa para `MbfTenantCryptoSeal` (`MBF_SEAL_KEY` o derivada de `HMAC_SECRET`).
     pub mbf_seal_key: Option<String>,
+    /// Token compartido de borde (`ORIGIN_VERIFY_TOKEN`) inyectado por CloudFront en `X-Metri-Origin-Token`.
+    pub origin_verify_token: Option<String>,
     /// Tabla lógica para `sequence_registry` (`SEQUENCE_REGISTRY_TABLE`).
     pub sequence_registry_table: String,
 }
@@ -42,6 +44,7 @@ impl Default for EngineConfig {
             environment: None,
             hmac_secret: None,
             mbf_seal_key: None,
+            origin_verify_token: None,
             sequence_registry_table: "metri-sequence-registry".to_string(),
         }
     }
@@ -61,13 +64,22 @@ impl EngineConfig {
         let mbf_seal_key = std::env::var("MBF_SEAL_KEY")
             .ok()
             .filter(|k| !k.is_empty())
-            .or_else(|| hmac_secret.clone().filter(|k| !k.is_empty()));
+            .or_else(|| {
+                hmac_secret
+                    .as_deref()
+                    .filter(|k| !k.is_empty())
+                    .map(derive_mbf_seal_key_from_hmac)
+            });
+        let origin_verify_token = std::env::var("ORIGIN_VERIFY_TOKEN")
+            .ok()
+            .filter(|k| !k.is_empty());
         Self {
             master_tenant_id,
             max_list_limit: DEFAULT_MAX_LIST_LIMIT,
             environment: std::env::var("ENVIRONMENT").ok(),
             hmac_secret,
             mbf_seal_key,
+            origin_verify_token,
             sequence_registry_table,
         }
     }
@@ -80,6 +92,7 @@ impl EngineConfig {
             environment: None,
             hmac_secret: None,
             mbf_seal_key: None,
+            origin_verify_token: None,
             sequence_registry_table: "metri-sequence-registry".to_string(),
         }
     }
@@ -153,6 +166,53 @@ pub fn resolve_hmac_secret(
         return Ok(secret.to_string());
     }
     Ok(hmac_secret.unwrap_or(DEV_HMAC_SECRET).to_string())
+}
+
+/// Deriva una sub-clave criptográfica independiente para `MbfTenantCryptoSeal` a partir de `HMAC_SECRET`
+/// aplicando separación de dominios (`HMAC-SHA256(secret, "metri-mbf-tenant-seal-v1")`).
+pub fn derive_mbf_seal_key_from_hmac(hmac_secret: &str) -> String {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes()).unwrap_or_else(|_| {
+        use hmac::digest::generic_array::GenericArray;
+        <HmacSha256 as hmac::digest::KeyInit>::new(GenericArray::from_slice(&[0u8; 32]))
+    });
+    mac.update(b"metri-mbf-tenant-seal-v1");
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Valida el token de verificación de origen (`ORIGIN_VERIFY_TOKEN`) según el entorno.
+///
+/// En entornos productivos (cualquier `ENVIRONMENT` distinto de `development`, `dev`,
+/// `local` o `test`), exige que el token esté configurado y tenga al menos 32 bytes.
+///
+/// # Errors
+///
+/// `ErrorCode::InfraConfig001` si el entorno productivo carece de `ORIGIN_VERIFY_TOKEN`
+/// o este tiene menos de 32 bytes.
+pub fn resolve_origin_verify_token(
+    environment: Option<&str>,
+    origin_verify_token: Option<&str>,
+) -> Result<Option<String>, DomainError> {
+    let known_non_prod = matches!(environment, Some("development" | "dev" | "local" | "test"));
+    let normalized = origin_verify_token.map(str::trim).filter(|s| !s.is_empty());
+    if !known_non_prod {
+        let token = normalized.ok_or_else(|| {
+            DomainError::new(
+                ErrorCode::InfraConfig001,
+                "ORIGIN_VERIFY_TOKEN ausente en entorno productivo (o ENVIRONMENT desconocido)",
+            )
+        })?;
+        if token.len() < 32 {
+            return Err(DomainError::new(
+                ErrorCode::InfraConfig001,
+                "ORIGIN_VERIFY_TOKEN débil (< 32 bytes) en entorno productivo",
+            ));
+        }
+        return Ok(Some(token.to_string()));
+    }
+    Ok(normalized.map(str::to_string))
 }
 
 /// Bypass de autorización para desarrollo y pruebas (`METRI_DEV_AUTH_BYPASS=1`).
@@ -256,5 +316,28 @@ mod tests {
         assert!(resolve_dev_auth_bypass(Some("staging"), true).is_err());
         assert!(resolve_dev_auth_bypass(Some("qa"), true).is_err());
         assert!(resolve_dev_auth_bypass(None, true).is_err());
+    }
+
+    #[test]
+    fn origin_verify_token_exigido_en_produccion() {
+        assert!(resolve_origin_verify_token(Some("production"), None).is_err());
+        assert!(resolve_origin_verify_token(Some("production"), Some("too-short")).is_err());
+        assert!(resolve_origin_verify_token(
+            Some("production"),
+            Some("a-very-strong-origin-verify-token-0001")
+        )
+        .is_ok());
+        assert_eq!(
+            resolve_origin_verify_token(Some("development"), None).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn derivacion_mbf_seal_key_separa_dominios() {
+        let raw = "a-very-strong-production-secret-0001";
+        let derived = derive_mbf_seal_key_from_hmac(raw);
+        assert_ne!(derived, raw);
+        assert_eq!(derived.len(), 64);
     }
 }

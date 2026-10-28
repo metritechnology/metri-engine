@@ -111,7 +111,7 @@ pub fn validate_payload(
                 }
             }
             None => {
-                if is_create && attr_desc.required {
+                if is_create && attr_desc.required && attr_desc.auto_generate_from.is_empty() {
                     violations.push(format!("Campo requerido '{}' está ausente", attr_name));
                 }
             }
@@ -232,10 +232,41 @@ pub fn map_to_datom_value(val: &Value, attr_type: &AttrType) -> Result<DatomValu
             .as_str()
             .map(|s| DatomValue::Uuid(s.to_string()))
             .ok_or_else(|| DomainError::codice(ErrorCode::Cod002, "Debe ser un UUID válido")),
-        AttrType::Bytes => Err(DomainError::codice(
-            ErrorCode::Cod002,
-            "Mapeo de Bytes no implementado directamente desde JSON",
-        )),
+        AttrType::Bytes => {
+            if let Some(s) = val.as_str() {
+                use base64::{engine::general_purpose, Engine as _};
+                general_purpose::STANDARD
+                    .decode(s)
+                    .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(s))
+                    .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(s))
+                    .or_else(|_| general_purpose::URL_SAFE.decode(s))
+                    .map(DatomValue::Bytes)
+                    .map_err(|_| {
+                        DomainError::codice(
+                            ErrorCode::Cod002,
+                            "Bytes desde string debe estar codificado en Base64 válido",
+                        )
+                    })
+            } else if let Some(arr) = val.as_array() {
+                let mut bytes = Vec::with_capacity(arr.len() * 4);
+                for item in arr {
+                    if let Some(f) = item.as_f64() {
+                        bytes.extend_from_slice(&(f as f32).to_le_bytes());
+                    } else {
+                        return Err(DomainError::codice(
+                            ErrorCode::Cod002,
+                            "Vector de Bytes en arreglo solo soporta elementos numéricos",
+                        ));
+                    }
+                }
+                Ok(DatomValue::Bytes(bytes))
+            } else {
+                Err(DomainError::codice(
+                    ErrorCode::Cod002,
+                    "Bytes debe ser una cadena Base64 o un arreglo numérico de floats",
+                ))
+            }
+        }
         AttrType::Json => Ok(DatomValue::Str(val.to_string())),
         AttrType::Unknown(u) => Err(DomainError::codice(
             ErrorCode::Cod002,

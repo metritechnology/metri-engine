@@ -864,6 +864,10 @@ impl OltpExecutor {
                                             tenant_id: tenant_id.to_string(),
                                             attr_name: target_attr_name.to_string(),
                                             value: dv,
+                                            // Los ids resueltos son de la entidad
+                                            // REFERENCIADA: el corte por su tipo
+                                            // evita colisiones de atributo homónimo.
+                                            entity_type: Some(ref_entity_type.clone()),
                                         };
                                     if let Ok(ids) =
                                         self.query_executor.execute_native_plan(&plan).await
@@ -1561,6 +1565,18 @@ fn retain_in_time_window(
     });
 }
 
+fn resolve_hierarchy_parent_field(entity_type: &str, pf: &str) -> String {
+    let registry = crate::codice::global();
+    if let Some(attrs) = registry.get_attributes(entity_type) {
+        for attr in attrs {
+            if attr.name == pf || attr.name.split('/').next_back() == Some(pf) {
+                return attr.name.clone();
+            }
+        }
+    }
+    pf.to_string()
+}
+
 /// `has_children` real contra la base: un lookup GSI-AVET por fila en
 /// paralelo (JoinSet) anota `has_children` en cada fila.
 async fn inject_has_children_real(
@@ -1573,22 +1589,7 @@ async fn inject_has_children_real(
     if let Some(h) = hierarchy {
         if h.inject_has_children {
             if let Some(pf) = &h.parent_field {
-                let registry = crate::codice::global();
-                let mut resolved_parent_field = pf.clone();
-                if let Some(attrs) = registry.get_attributes(entity_type) {
-                    for attr in attrs {
-                        if &attr.name == pf {
-                            resolved_parent_field = attr.name.clone();
-                            break;
-                        }
-                        if let Some(last_part) = attr.name.split('/').next_back() {
-                            if last_part == pf {
-                                resolved_parent_field = attr.name.clone();
-                                break;
-                            }
-                        }
-                    }
-                }
+                let resolved_parent_field = resolve_hierarchy_parent_field(entity_type, pf);
 
                 let mut join_set = tokio::task::JoinSet::new();
                 for row in rows.iter() {
@@ -1599,6 +1600,7 @@ async fn inject_has_children_real(
                         .to_string();
                     let field_clone = resolved_parent_field.clone();
                     let tenant_clone = target_tenant.to_string();
+                    let entity_type_clone = entity_type.to_string();
                     let executor = executor.query_executor.clone();
 
                     join_set.spawn(async move {
@@ -1610,6 +1612,10 @@ async fn inject_has_children_real(
                             tenant_id: tenant_clone,
                             attr_name: field_clone,
                             value: crate::eav::types::datom::DatomValue::Str(id.clone()),
+                            // Los hijos son del MISMO tipo que la fila: sin el
+                            // corte, cualquier entidad que comparta el atributo
+                            // padre (p. ej. document_chunk) inflaría has_children.
+                            entity_type: Some(entity_type_clone),
                         };
                         match executor.execute_native_plan(&plan).await {
                             Ok(child_ids) => {

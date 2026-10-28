@@ -517,10 +517,10 @@ async fn un_consumo_negativo_se_rechaza() {
 // Convivencia durante el despliegue
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Un ticket emitido por la versión anterior. Su dueño —si sigue vivo— devolverá
-/// la estimación al vencer, así que aquí solo se apunta lo consumido.
+/// Un ticket falsificado con el antiguo formato de 4 partes (sin respaldo en ReservationStore)
+/// debe ser rechazado con `InvalidArgument` sin alterar el contador del tenant.
 #[tokio::test]
-async fn un_ticket_del_formato_anterior_solo_apunta_lo_consumido() {
+async fn un_ticket_del_formato_anterior_se_rechaza_sin_tocar_contador() {
     let store: Arc<dyn ReservationStore> = Arc::new(MemoryReservationStore::new());
     let counter = Arc::new(FakeCounter::at("q_01", 400));
     let servicio = replica(
@@ -529,7 +529,7 @@ async fn un_ticket_del_formato_anterior_solo_apunta_lo_consumido() {
         vec![cuota(1000, 0)],
     );
 
-    let respuesta = servicio
+    let err = servicio
         .reconcile_tokens(conciliacion_de(
             "tnt_01",
             "q_01:400:tnt_01:uuid-xyz",
@@ -537,12 +537,10 @@ async fn un_ticket_del_formato_anterior_solo_apunta_lo_consumido() {
             50,
         ))
         .await
-        .unwrap()
-        .into_inner();
+        .expect_err("ticket legacy sin reserva en store debe ser rechazado");
 
-    assert!(respuesta.status.unwrap().success);
-    assert_eq!(respuesta.tokens_consumed, 150);
-    assert_eq!(counter.usage_of("q_01"), Some(550), "carga el consumo real");
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    assert_eq!(counter.usage_of("q_01"), Some(400), "no altera el contador");
 }
 
 #[tokio::test]

@@ -113,6 +113,15 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         }
     };
 
+    let cfg_ref = crate::domain::config::engine_config();
+    if let Err(e) = crate::domain::config::resolve_origin_verify_token(
+        cfg_ref.environment.as_deref(),
+        cfg_ref.origin_verify_token.as_deref(),
+    ) {
+        tracing::error!("FATAL SECURITY ERROR: {e} — Aborting server startup.");
+        std::process::exit(1);
+    }
+
     let valkey_store = Arc::new(crate::infrastructure::session_store::HmacTokenStore::new(
         hmac_secret_str.into_bytes(),
         Arc::clone(&ddb_client),
@@ -226,11 +235,23 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         AgentConfigServiceServer::with_interceptor(config_grpc_impl, auth_interceptor);
     let config_web_service = tonic_web::enable(config_service_raw);
 
-    // FASE 10: Habilitar gRPC Server Reflection para testing (grpcurl)
-    let reflection_service = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(super::pb::FILE_DESCRIPTOR_SET)
-        .build()
-        .map_err(|e| DomainError::new(ErrorCode::Janus500, format!("reflection: {e}")))?;
+    // FASE 10: Habilitar gRPC Server Reflection exclusivamente en entornos no productivos explícitos
+    let is_non_prod = matches!(
+        crate::domain::config::engine_config()
+            .environment
+            .as_deref(),
+        Some("development" | "dev" | "local" | "test")
+    );
+    let reflection_service = if is_non_prod {
+        Some(
+            tonic_reflection::server::Builder::configure()
+                .register_encoded_file_descriptor_set(super::pb::FILE_DESCRIPTOR_SET)
+                .build()
+                .map_err(|e| DomainError::new(ErrorCode::Janus500, format!("reflection: {e}")))?,
+        )
+    } else {
+        None
+    };
 
     // Ejecutar semilla de seguridad Master User si corresponde
     if let Err(e) = super::bootstrap::check_and_bootstrap_master(&oltp_exec, &oltp_channel).await {
@@ -241,12 +262,13 @@ pub async fn start_lambda_grpc_server() -> Result<(), DomainError> {
         .allow_origin(Any)
         .allow_methods(vec![Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers(Any)
-        .expose_headers(Any);
+        .expose_headers(Any)
+        .max_age(std::time::Duration::from_secs(86400));
 
     Server::builder()
         .accept_http1(true)
         .layer(cors)
-        .add_service(reflection_service)
+        .add_optional_service(reflection_service)
         .add_service(web_service)
         .add_service(eda_web_service)
         .add_service(quota_web_service)

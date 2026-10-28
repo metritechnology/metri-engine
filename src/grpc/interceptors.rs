@@ -3,6 +3,7 @@
 //! Verifica en tiempo constante la firma de cada token `mk_` antes de alcanzar los handlers
 //! e inyecta `AuthenticatedSession` en las extensiones de la petición.
 
+use constant_time_eq::constant_time_eq;
 use tonic::{Request, Status};
 use tracing::debug;
 
@@ -19,8 +20,41 @@ pub struct AuthenticatedSession {
     pub jti: String,
 }
 
+/// Verifica en tiempo constante la cabecera `x-metri-origin-token` inyectada por CloudFront.
+///
+/// Si `expected` es `Some(secret)` (configurado en producción vía `ORIGIN_VERIFY_TOKEN`),
+/// exige que la cabecera coincida byte a byte en tiempo constante, bloqueando cualquier
+/// invocación directa a la URL de Lambda que intente evadir CloudFront y AWS WAF.
+pub fn verify_origin_token(expected: Option<&str>, provided: Option<&str>) -> Result<(), Status> {
+    if let Some(expected_token) = expected.filter(|s| !s.is_empty()) {
+        let Some(provided_token) = provided.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Err(Status::permission_denied(
+                "Missing x-metri-origin-token header [WAF Bypass Blocked]",
+            ));
+        };
+        if !constant_time_eq(expected_token.as_bytes(), provided_token.as_bytes()) {
+            return Err(Status::permission_denied(
+                "Invalid x-metri-origin-token header [WAF Bypass Blocked]",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Interceptor WAF y Auth para proteger los endpoints gRPC (Fail-Closed estricto).
 pub fn auth_waf_interceptor(mut req: Request<()>) -> Result<Request<()>, Status> {
+    // 0. Verificar origen CloudFront (anti-Origin-Bypass) si ORIGIN_VERIFY_TOKEN está activo
+    let provided_origin = req
+        .metadata()
+        .get("x-metri-origin-token")
+        .and_then(|v| v.to_str().ok());
+    verify_origin_token(
+        crate::domain::config::engine_config()
+            .origin_verify_token
+            .as_deref(),
+        provided_origin,
+    )?;
+
     // 1. Extraer token preferentemente desde el metadato "sid" o "authorization"
     let token = if let Some(sid_header) = req.metadata().get("sid").and_then(|v| v.to_str().ok()) {
         sid_header.trim().to_string()
@@ -73,4 +107,32 @@ fn verify_hmac_token_local(raw_token: &str) -> Option<AuthenticatedSession> {
             user_id: t.user_id,
             jti: t.jti,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tonic::Code;
+
+    #[test]
+    fn origin_token_desactivado_en_local_permite_trafico() {
+        assert!(verify_origin_token(None, None).is_ok());
+        assert!(verify_origin_token(Some(""), None).is_ok());
+    }
+
+    #[test]
+    fn origin_token_activo_bloquea_ausencia_o_discrepancia() {
+        let secret = Some("metri-cf-origin-guard-v1-test-secret-0001");
+
+        let missing = verify_origin_token(secret, None);
+        assert!(missing.is_err());
+        assert_eq!(missing.unwrap_err().code(), Code::PermissionDenied);
+
+        let wrong = verify_origin_token(secret, Some("otro-token-invalido"));
+        assert!(wrong.is_err());
+        assert_eq!(wrong.unwrap_err().code(), Code::PermissionDenied);
+
+        let valid = verify_origin_token(secret, Some("metri-cf-origin-guard-v1-test-secret-0001"));
+        assert!(valid.is_ok());
+    }
 }

@@ -82,13 +82,20 @@ where
             return;
         };
 
+        let debit_units = reservation
+            .get("debit")
+            .and_then(|v| v.as_i64())
+            .filter(|&n| n > 0)
+            .unwrap_or(1);
+
         info!(
             tenant = %ctx.tenant_id,
             quota_id = %id,
+            units = debit_units,
             "[QuotaStep] Devolviendo la reserva — el pipeline no llegó a escribir"
         );
 
-        if let Err(e) = self.counter.release(&ctx.tenant_id, id, 1).await {
+        if let Err(e) = self.counter.release(&ctx.tenant_id, id, debit_units).await {
             // No se propaga: quien está delante necesita leer el error que
             // tumbó su operación, no el de la limpieza. Pero esto deja el
             // contador un punto por encima de la realidad, y eso sí merece
@@ -187,13 +194,27 @@ where
                 let current_usage = quota.seed_usage;
                 let period_key = quota.period_key.as_str();
 
+                let debit_units = ctx
+                    .request
+                    .get("data")
+                    .and_then(|d| d.as_array())
+                    .map(|a| a.len() as i64)
+                    .filter(|&n| n > 0)
+                    .unwrap_or(1);
+
                 // Techo e incremento en una sola escritura condicional. La
                 // lectura de arriba sirve para localizar la cuota y su límite;
                 // NO para decidir. Decidir con ella era la carrera.
                 let outcome = self
                     .counter
-                    // Una unidad: aquí se cuenta por registro creado o leído.
-                    .try_debit(&ctx.tenant_id, counter_id, 1, max_limit, current_usage)
+                    // Se debita por cantidad de registros creados o leídos (1 en Transact, N en BulkIngest).
+                    .try_debit(
+                        &ctx.tenant_id,
+                        counter_id,
+                        debit_units,
+                        max_limit,
+                        current_usage,
+                    )
                     .await?;
 
                 match outcome {
@@ -242,7 +263,7 @@ where
                             // leer la traza.
                             "id":       counter_id,
                             "quota_id": id,
-                            "debit":  1,
+                            "debit":  debit_units,
                             "domain": domain.clone(),
                             "period_key": period_key,
                             "new_usage": new_usage,

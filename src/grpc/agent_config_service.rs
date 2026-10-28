@@ -55,7 +55,21 @@ impl AgentConfigServiceImpl {
     }
 }
 
+fn sanitize_locale(raw: &str) -> &str {
+    if raw.is_empty()
+        || raw.len() > 16
+        || !raw
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        "es"
+    } else {
+        raw
+    }
+}
+
 fn resolve_prompt_text(prompts_dir: &str, name: &str, locale: &str, level: &str) -> String {
+    let locale = sanitize_locale(locale);
     let module_dir = std::path::Path::new(prompts_dir).join(name);
 
     // Para nivel "compact", intentar cargar el archivo compact correspondiente primero
@@ -98,12 +112,13 @@ impl AgentConfigService for AgentConfigServiceImpl {
         &self,
         request: Request<AgentConfigRequest>,
     ) -> Result<Response<AgentConfigResponse>, Status> {
+        let _session = request
+            .extensions()
+            .get::<crate::grpc::interceptors::AuthenticatedSession>()
+            .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
+
         let req = request.into_inner();
-        let locale = if req.locale.is_empty() {
-            "es"
-        } else {
-            &req.locale
-        };
+        let locale = sanitize_locale(&req.locale);
         let prompt_level = if req.prompt_level.is_empty() {
             "full"
         } else {

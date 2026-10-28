@@ -129,30 +129,46 @@ pub fn register_fts_document_attr(
             attr_name,
             Some("name" | "title" | "label" | "full_name" | "username")
         );
-        let is_code_attr = matches!(
-            attr_name,
-            Some(
-                "tag"
-                    | "code"
-                    | "serial_number"
-                    | "barcode_qr_code"
-                    | "functional_location_code"
-                    | "sku"
-            )
-        );
-        if is_new_segment || is_title_attr || is_code_attr {
+        let is_chunk_content = matches!(attr_name, Some("chunk_content"));
+        let is_metadata_tags = matches!(attr_name, Some("metadata_tags"));
+        let is_code_attr = is_metadata_tags
+            || matches!(
+                attr_name,
+                Some(
+                    "tag"
+                        | "code"
+                        | "serial_number"
+                        | "barcode_qr_code"
+                        | "functional_location_code"
+                        | "sku"
+                )
+            );
+        if is_new_segment || is_title_attr || is_code_attr || is_chunk_content {
             let coords = state
                 .partial_coords
                 .get(entity_id)
                 .and_then(|&(lat, lon)| lat.zip(lon));
             let row_id = state.zone5b.docs.len() as u32;
-            let code_field = if is_code_attr || attr_name.is_none() {
+            let code_field = if is_metadata_tags {
+                let canon = canonicalize_alphanumeric_code(trimmed);
+                if canon.is_empty() {
+                    trimmed.to_string()
+                } else {
+                    format!("{trimmed} {canon}")
+                }
+            } else if is_code_attr || attr_name.is_none() {
                 canonicalize_alphanumeric_code(trimmed)
             } else {
                 String::new()
             };
             let title_field = if is_title_attr || attr_name.is_none() {
                 trimmed.to_string()
+            } else if is_chunk_content {
+                trimmed
+                    .split_whitespace()
+                    .take(16)
+                    .collect::<Vec<_>>()
+                    .join(" ")
             } else {
                 String::new()
             };
@@ -170,6 +186,24 @@ pub fn register_fts_document_attr(
                     .zone5b
                     .set_document_title(entity_id, trimmed.to_string());
             }
+        }
+    }
+}
+
+/// Elimina por completo el documento de una entidad del corpus FTS y de la Zona 5B (`MbfHybridSearchIndex`) del tenant tras un `DELETE`.
+pub fn remove_fts_document(tenant_id: &str, entity_id: &str) {
+    if let Ok(mut guard) = fts_corpus().write() {
+        if let Some(state) = guard.get_mut(tenant_id) {
+            if let Some(pos) = state.doc_positions.remove(entity_id) {
+                if pos < state.docs.len() {
+                    state.docs.remove(pos);
+                    for (idx, (eid, _)) in state.docs.iter().enumerate().skip(pos) {
+                        state.doc_positions.insert(eid.clone(), idx);
+                    }
+                }
+            }
+            state.partial_coords.remove(entity_id);
+            state.zone5b.remove_document(entity_id);
         }
     }
 }
@@ -483,7 +517,12 @@ pub async fn fts_search_entity_ids(
         .and_then(|guard| {
             guard.get(tenant_id).map(|state| {
                 let top_k = state.zone5b.docs.len().max(256);
-                let z_hits = state.zone5b.search_hybrid(term, None, top_k);
+                let query_vec = state.zone5b.rabitq_vectors.values().next().map(|qv| {
+                    MbfHybridSearchIndex::compute_deterministic_embedding(term, qv.dimension)
+                });
+                let z_hits = state
+                    .zone5b
+                    .search_hybrid(term, query_vec.as_deref(), top_k);
                 (state.docs.clone(), z_hits)
             })
         })

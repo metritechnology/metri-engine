@@ -66,7 +66,7 @@ impl MoiraRoutingService for EdaGrpcService {
         &self,
         request: Request<MatchRoutingRulesBatchRequest>,
     ) -> Result<Response<MatchRoutingRulesBatchResponse>, Status> {
-        let req = request.into_inner();
+        let req = Self::authorize_system_caller(request)?;
 
         // 1. Descomprimir el batch de MessagePack
         let requests: Vec<EdaMatchRequest> = rmp_serde::from_slice(&req.messagepack_encoded_batch)
@@ -234,7 +234,7 @@ impl MoiraRoutingService for EdaGrpcService {
         &self,
         request: Request<ResetOrphanedEventsRequest>,
     ) -> Result<Response<ResetOrphanedEventsResponse>, Status> {
-        let req = request.into_inner();
+        let req = Self::authorize_system_caller(request)?;
         let ttl_ms = req.ttl_ms;
 
         // Determinar los tenants sobre los cuales correr el watchdog
@@ -281,5 +281,58 @@ impl MoiraRoutingService for EdaGrpcService {
             reset_count: total_reset,
             reset_event_ids,
         }))
+    }
+}
+
+impl EdaGrpcService {
+    fn authorize_system_caller<T>(request: Request<T>) -> Result<T, Status> {
+        let s = request
+            .extensions()
+            .get::<crate::grpc::interceptors::AuthenticatedSession>()
+            .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
+        if !crate::cedar::is_master_tenant(&s.tenant_id) && s.user_id != "usr_system_bff" {
+            return Err(Status::permission_denied(
+                "Acceso denegado: Se requiere rol de sistema para la consulta de ruteo",
+            ));
+        }
+        Ok(request.into_inner())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grpc::interceptors::AuthenticatedSession;
+
+    #[test]
+    fn eda_rechaza_peticion_sin_sesion_y_de_tenant_regular() {
+        let unauth_req = Request::new(());
+        assert_eq!(
+            EdaGrpcService::authorize_system_caller(unauth_req)
+                .unwrap_err()
+                .code(),
+            tonic::Code::Unauthenticated
+        );
+
+        let mut regular_req = Request::new(());
+        regular_req.extensions_mut().insert(AuthenticatedSession {
+            tenant_id: "tnt_01".to_string(),
+            user_id: "usr_regular".to_string(),
+            jti: "jti_1".to_string(),
+        });
+        assert_eq!(
+            EdaGrpcService::authorize_system_caller(regular_req)
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+
+        let mut sys_req = Request::new(());
+        sys_req.extensions_mut().insert(AuthenticatedSession {
+            tenant_id: "system".to_string(),
+            user_id: "usr_system_bff".to_string(),
+            jti: "jti_sys".to_string(),
+        });
+        assert!(EdaGrpcService::authorize_system_caller(sys_req).is_ok());
     }
 }

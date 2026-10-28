@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-import sys
-import os
-import time
-import hmac
-import hashlib
-import base64
-import json
-import struct
+"""Utilidad de Bootstrap en Producción para Metri Engine con clave única en AWS SSM Parameter Store."""
+
+from __future__ import annotations
+
 import argparse
-import requests
-from urllib.parse import unquote
+import base64
+import hashlib
+import hmac
+import json
+import re
+import secrets
+import string
+import struct
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
+
+import boto3
+import requests
 
 # Add proto directory to path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -20,38 +29,155 @@ sys.path.append(str(ENGINE_ROOT / "scripts" / "proto"))
 try:
     import metri_pb2 as pb
     from google.protobuf import struct_pb2
+
     GRPC_AVAILABLE = True
 except ImportError:
     GRPC_AVAILABLE = False
 
 DEFAULT_HOST = "engine.metri.one"
-DEFAULT_HMAC_SECRET = "QnhvaQUtUpym6iRSGzfIxxtEBbm53GM7kPEYCEbToktFYUmI6dmWlwNsxf7RHFqs"
+DEFAULT_REGION = "us-east-1"
+DEFAULT_PROFILE = "metri-dev"
+DEFAULT_SSM_PARAM = "/metri/engine/bootstrap/master-key"
+DEFAULT_HMAC_SECRET_NAME = "metri-hmac-secret-metri-engine"
+DEFAULT_S3_BUCKET = "metri-engine"
+MASTER_USER_MBF_KEY = "metri-engine/tenants/system/entities/user/usr_master.mbf"
+
+
+def generate_unique_bootstrap_key(length: int = 32) -> str:
+    """Genera una clave criptográfica única alfanumérica de alta entropía."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def ensure_ssm_bootstrap_key(
+    session: boto3.Session,
+    param_name: str,
+    rotate: bool = False,
+    explicit_value: str | None = None,
+) -> tuple[str, int, str, bool]:
+    """Obtiene o aprovisiona la clave única de bootstrap en AWS SSM Parameter Store.
+
+    Retorna `(key_value, version, arn, created_or_rotated)`.
+    """
+    ssm = session.client("ssm")
+    if not rotate and not explicit_value:
+        try:
+            resp = ssm.get_parameter(Name=param_name, WithDecryption=True)
+            param = resp["Parameter"]
+            return (
+                param["Value"],
+                int(param.get("Version", 1)),
+                param.get("ARN", param_name),
+                False,
+            )
+        except ssm.exceptions.ParameterNotFound:
+            pass
+
+    new_key = explicit_value or generate_unique_bootstrap_key(32)
+    ssm.put_parameter(
+        Name=param_name,
+        Description=(
+            "Clave única de arranque (bootstrap) para el tenant maestro 'system' "
+            "y el usuario administrador 'usr_master' en metri-engine."
+        ),
+        Value=new_key,
+        Type="String",
+        Overwrite=True,
+        Tier="Standard",
+    )
+    resp = ssm.get_parameter(Name=param_name, WithDecryption=True)
+    param = resp["Parameter"]
+    return (
+        param["Value"],
+        int(param.get("Version", 1)),
+        param.get("ARN", param_name),
+        True,
+    )
+
+
+def resolve_hmac_secret_from_aws(session: boto3.Session, secret_name: str) -> str:
+    """Obtiene el HMAC_SECRET activo desde AWS Secrets Manager."""
+    sm = session.client("secretsmanager")
+    resp = sm.get_secret_value(SecretId=secret_name)
+    return resp["SecretString"].strip()
+
+
+def verify_bcrypt_password(plain_key: str, bcrypt_hash: str) -> bool:
+    """Verifica criptográficamente un hash bcrypt ($2a$/$2b$/$2y$) contra una clave en texto plano."""
+    try:
+        import bcrypt
+
+        return bool(bcrypt.checkpw(plain_key.encode("utf-8"), bcrypt_hash.encode("utf-8")))
+    except ImportError:
+        normalized_hash = bcrypt_hash.replace("$2b$", "$2y$").replace("$2a$", "$2y$")
+        with tempfile.NamedTemporaryFile("w+", delete=True) as tmp:
+            tmp.write(f"admin:{normalized_hash}\n")
+            tmp.flush()
+            proc = subprocess.run(
+                ["htpasswd", "-vb", tmp.name, "admin", plain_key],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return proc.returncode == 0
+
+
+def verify_s3_master_key_binding(
+    session: boto3.Session,
+    bucket_name: str,
+    ssm_key: str,
+    ssm_arn: str,
+) -> bool:
+    """Descarga `usr_master.mbf` desde S3 y certifica que su hash bcrypt corresponde a la clave de SSM."""
+    s3 = session.client("s3")
+    try:
+        obj = s3.get_object(Bucket=bucket_name, Key=MASTER_USER_MBF_KEY)
+        raw = obj["Body"].read()
+    except Exception as e:
+        print(f"  ✗ Error leyendo s3://{bucket_name}/{MASTER_USER_MBF_KEY}: {e}")
+        return False
+
+    matches = re.findall(rb"\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}", raw)
+    if not matches:
+        print(f"  ✗ No se encontró hash bcrypt en s3://{bucket_name}/{MASTER_USER_MBF_KEY}")
+        return False
+
+    latest_hash = matches[-1].decode("utf-8")
+    matches_ssm = verify_bcrypt_password(ssm_key, latest_hash)
+    print("\n--- Certificación Criptográfica S3 (.mbf) vs AWS SSM Parameter Store ---")
+    print(f"  S3 Object       : s3://{bucket_name}/{MASTER_USER_MBF_KEY}")
+    print(f"  LastModified    : {obj.get('LastModified')}")
+    print(f"  SSM Parameter   : {ssm_arn}")
+    print(f"  Bcrypt Hash     : {latest_hash[:16]}...{latest_hash[-8:]}")
+    print(f"  Matches SSM Key : {matches_ssm}")
+    return matches_ssm
+
 
 class GrpcWebStub:
-    def __init__(self, host, hmac_secret):
+    def __init__(self, host: str, hmac_secret: str):
         self.host = host
         self.hmac_secret = hmac_secret
         scheme = "http" if "127.0.0.1" in self.host or "localhost" in self.host else "https"
         self.base = f"{scheme}://{self.host}"
         self.session = requests.Session()
 
-    def _make_token(self, tenant_id="system"):
+    def _make_token(self, tenant_id: str = "system") -> str:
         now = int(time.time())
         claims = {
             "exp": now + 3600,
             "iat": now,
-            "jti": f"bootstrap-prod-{now}",
+            "jti": f"bootstrap-prod-{now}-{secrets.token_hex(4)}",
             "tid": tenant_id,
-            "uid": "usr_system_bff"
+            "uid": "usr_system_bff",
         }
-        payload_bytes = json.dumps(claims, separators=(',', ':')).encode('utf-8')
-        payload_b64 = base64.urlsafe_b64encode(payload_bytes).decode('utf-8').rstrip('=')
-        sig = hmac.new(self.hmac_secret.encode('utf-8'), payload_bytes, hashlib.sha256).digest()
-        sig_b64 = base64.urlsafe_b64encode(sig).decode('utf-8').rstrip('=')
+        payload_bytes = json.dumps(claims, separators=(",", ":")).encode("utf-8")
+        payload_b64 = base64.urlsafe_b64encode(payload_bytes).decode("utf-8").rstrip("=")
+        sig = hmac.new(self.hmac_secret.encode("utf-8"), payload_bytes, hashlib.sha256).digest()
+        sig_b64 = base64.urlsafe_b64encode(sig).decode("utf-8").rstrip("=")
         return f"Bearer mk_{payload_b64}.{sig_b64}"
 
     def _grpc_frame(self, data: bytes) -> bytes:
-        return b'\x00' + struct.pack('>I', len(data)) + data
+        return b"\x00" + struct.pack(">I", len(data)) + data
 
     def _parse_frames(self, body: bytes):
         idx = 0
@@ -59,9 +185,9 @@ class GrpcWebStub:
             if idx + 5 > len(body):
                 break
             flag = body[idx]
-            length = struct.unpack('>I', body[idx+1:idx+5])[0]
+            length = struct.unpack(">I", body[idx + 1 : idx + 5])[0]
             idx += 5
-            payload = body[idx:idx+length]
+            payload = body[idx : idx + length]
             idx += length
             yield (flag & 0x80 != 0, payload)
 
@@ -70,7 +196,7 @@ class GrpcWebStub:
         framed = self._grpc_frame(data)
         tenant_id = getattr(proto_msg, "tenant_id", "system") or "system"
         token = self._make_token(tenant_id)
-        
+
         headers = {
             "Content-Type": "application/grpc-web+proto",
             "Accept": "application/grpc-web+proto",
@@ -79,158 +205,138 @@ class GrpcWebStub:
             "x-grpc-web": "1",
             "X-Metri-Origin-Token": self.hmac_secret,
         }
-        
-        resp = self.session.post(f"{self.base}{path}", data=framed, headers=headers, timeout=15)
+
+        resp = self.session.post(f"{self.base}{path}", data=framed, headers=headers, timeout=20)
         resp.raise_for_status()
         return resp.content
 
-    def Transact(self, req: pb.TransactionRequest) -> pb.TransactionResponse:
-        body = self._post("/metri.MetriService/Transact", req)
+    def Explore(self, req: pb.ExploreRequest) -> pb.ExploreResponse:
+        body = self._post("/metri.MetriService/Explore", req)
         for is_trailer, payload in self._parse_frames(body):
             if not is_trailer:
-                msg = pb.TransactionResponse()
+                msg = pb.ExploreResponse()
                 msg.ParseFromString(payload)
                 return msg
-        return pb.TransactionResponse()
+        return pb.ExploreResponse()
 
-    def Discovery(self, req: pb.DiscoveryRequest) -> pb.DiscoveryResponse:
-        body = self._post("/metri.MetriService/Discovery", req)
-        for is_trailer, payload in self._parse_frames(body):
-            if not is_trailer:
-                msg = pb.DiscoveryResponse()
-                msg.ParseFromString(payload)
-                return msg
-        return pb.DiscoveryResponse()
 
-def check_tenant_exists(stub, tenant_id):
-    req = pb.DiscoveryRequest(tenant_id=tenant_id, type="user", include_attributes=False)
-    try:
-        resp = stub.Discovery(req)
-        # If we get a response and the status is success or doesn't say tenant not found, it exists
-        if resp.status and not resp.status.success:
-            err_msg = resp.status.error_message or ""
-            if "not found" in err_msg.lower() or "not registered" in err_msg.lower():
-                return False
-        return True
-    except Exception as e:
-        err_msg = str(e)
-        if "404" in err_msg or "not found" in err_msg.lower() or "not registered" in err_msg.lower():
-            return False
-        # If it is some other error, let's assume it might not exist or we can proceed to try creating
-        return False
-
-def create_resource(stub, tenant_id, entity_type, entity_id, payload_dict, action=pb.CREATE):
-    payload = struct_pb2.Struct()
-    payload.update(payload_dict)
-    
-    req = pb.TransactionRequest(
+def check_master_user_exists(stub: GrpcWebStub, tenant_id: str = "system") -> bool:
+    """Despierta `metri-engine` y verifica si `usr_master` ya está sembrado en el tenant `system`."""
+    req = pb.ExploreRequest(
         tenant_id=tenant_id,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        action=action,
-        payload=payload
+        entity="user",
+        attribute="username",
+        limit=10,
     )
-    
     try:
-        resp = stub.Transact(req)
-        if resp.status and resp.status.success:
-            print(f"  ✓ Created {entity_type} '{entity_id}' successfully.")
+        resp = stub.Explore(req)
+        if resp.status and resp.status.success and len(resp.values) > 0:
             return True
-        else:
-            err_msg = resp.status.error_message if resp.status else "Unknown error"
-            print(f"  ✗ Failed to create {entity_type} '{entity_id}': {err_msg}")
-            return False
-    except Exception as e:
-        print(f"  ✗ Error calling Transact for {entity_type} '{entity_id}': {e}")
+        return False
+    except Exception:
         return False
 
-def main():
-    parser = argparse.ArgumentParser(description="Metri Production Master Bootstrap Utility")
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Metri Production Master Bootstrap Utility (AWS SSM Parameter Store)"
+    )
     parser.add_argument("--host", default=DEFAULT_HOST, help="Target engine endpoint (host:port)")
-    parser.add_argument("--secret", default=DEFAULT_HMAC_SECRET, help="HMAC validation key")
+    parser.add_argument("--profile", default=DEFAULT_PROFILE, help="AWS CLI profile name")
+    parser.add_argument("--region", default=DEFAULT_REGION, help="AWS region")
+    parser.add_argument("--bucket", default=DEFAULT_S3_BUCKET, help="Target S3 bucket name")
+    parser.add_argument(
+        "--ssm-param",
+        default=DEFAULT_SSM_PARAM,
+        help="SSM Parameter Store path for unique bootstrap key",
+    )
+    parser.add_argument(
+        "--ensure-ssm-key",
+        action="store_true",
+        help="Ensure the unique bootstrap key exists in AWS SSM Parameter Store (create if missing)",
+    )
+    parser.add_argument(
+        "--rotate-ssm-key",
+        action="store_true",
+        help="Force generation and rotation of a new unique bootstrap key in AWS SSM Parameter Store",
+    )
+    parser.add_argument(
+        "--ssm-only",
+        action="store_true",
+        help="Only provision/verify the key in AWS SSM Parameter Store and exit without calling gRPC",
+    )
+    parser.add_argument(
+        "--verify-s3-hash",
+        action="store_true",
+        help="Cryptographically verify that usr_master.mbf in S3 matches the SSM Parameter Store master key",
+    )
+    parser.add_argument("--secret", default=None, help="Explicit HMAC secret (otherwise fetched from Secrets Manager)")
     parser.add_argument("--email", default="admin@metri.one", help="Admin email address")
     parser.add_argument("--username", default="admin", help="Admin username")
-    parser.add_argument("--password-hash", default="$2a$12$OOIgpGVtZCr9H18VLoZMhufZfQ8bDWw4fuEJrBpGxmzlDiKiNWnJy", 
-                        help="Bcrypt hash of the admin password")
-    parser.add_argument("--force", action="store_true", help="Force creation even if tenant seems to exist")
-    
+
     args = parser.parse_args()
+
+    session = (
+        boto3.Session(profile_name=args.profile, region_name=args.region)
+        if args.profile
+        else boto3.Session(region_name=args.region)
+    )
+
+    # 1. Resolver o aprovisionar clave única en AWS SSM Parameter Store
+    bootstrap_key, version, ssm_arn, changed = ensure_ssm_bootstrap_key(
+        session=session,
+        param_name=args.ssm_param,
+        rotate=args.rotate_ssm_key,
+    )
+    action_label = "CREATED/ROTATED" if changed else "EXISTING"
+    masked_key = f"{bootstrap_key[:4]}...{bootstrap_key[-4:]}" if len(bootstrap_key) >= 8 else "****"
+
+    print("============================================================")
+    print("      METRI PRODUCTION SYSTEM BOOTSTRAP (SSM PARAMETER)     ")
+    print("============================================================")
+    print(f"AWS Region      : {args.region}")
+    print(f"SSM Parameter   : {ssm_arn} (v{version} - {action_label})")
+    print(f"Bootstrap Key   : {masked_key} (len={len(bootstrap_key)})")
+    print("============================================================")
+
+    if args.ssm_only:
+        return
 
     if not GRPC_AVAILABLE:
         print("✗ Error: python grpc library is not available. Please verify local package bindings.")
         sys.exit(1)
 
-    print("==================================================")
-    print("      METRI PRODUCTION SYSTEM BOOTSTRAP UTILITY   ")
-    print("==================================================")
+    hmac_secret = args.secret or resolve_hmac_secret_from_aws(session, DEFAULT_HMAC_SECRET_NAME)
     print(f"Target API Host : {args.host}")
-    print(f"HMAC Secret     : {args.secret[:6]}...{args.secret[-6:]} (Loaded)")
+    print(f"HMAC Secret     : {hmac_secret[:6]}...{hmac_secret[-6:]} (Loaded)")
     print(f"Admin Email     : {args.email}")
     print(f"Admin Username  : {args.username}")
-    print("==================================================")
+    print("============================================================")
 
-    stub = GrpcWebStub(args.host, args.secret)
+    stub = GrpcWebStub(args.host, hmac_secret)
     tenant_id = "system"
 
-    # 1. Check if tenant exists
-    if not args.force:
-        print(f"Checking if tenant '{tenant_id}' exists in production...")
-        if check_tenant_exists(stub, tenant_id):
-            print(f"\n[SKIP] Tenant '{tenant_id}' already exists in production. Bootstrap omitted.")
-            print("Use --force to override.")
-            sys.exit(0)
-        else:
-            print(f"Tenant '{tenant_id}' does not exist or pre-flight check failed. Proceeding with bootstrap...")
+    # 2. Despertar cold-start bootstrap en Rust y verificar usr_master
+    print(f"Triggering/checking cold-start bootstrap in tenant '{tenant_id}'...")
+    found = False
+    for attempt in range(1, 4):
+        if check_master_user_exists(stub, tenant_id):
+            found = True
+            break
+        time.sleep(2 * attempt)
 
-    # 2. Start Bootstrap
-    print(f"\nStarting bootstrap for tenant '{tenant_id}'...")
-
-    # 2.1 Create Tenant system
-    tenant_payload = {
-        "id": "system",
-        "name": "System Master Tenant",
-        "status": "ACTIVE",
-        "tier": "ENTERPRISE",
-        "storage_region": "us-east-1",
-        "billing_admin_email": args.email
-    }
-    # Create tenant (using "system" as the tenant itself)
-    if not create_resource(stub, "system", "tenant", "system", tenant_payload):
-        print("✗ Critical: Failed to create tenant 'system'. Aborting bootstrap.")
+    if not found:
+        print(f"\n[ERROR] 'usr_master' was not found after cold-start invocation.")
         sys.exit(2)
 
-    # 2.2 Create Role role_super_master
-    role_super_payload = {
-        "id": "role_super_master",
-        "name": "super-master",
-        "description": "System Super Master Administrative Role",
-        "tenant_id": "system",
-        "grants": [
-            '{"domain":"*","actions":["VIEW","CREATE","UPDATE","DELETE","EXECUTE","EXPORT"],"scope":"ALL"}'
-        ]
-    }
-    create_resource(stub, "system", "role", "role_super_master", role_super_payload)
+    print(f"\n[OK] Tenant '{tenant_id}' and 'usr_master' are bootstrapped in production.")
 
+    if args.verify_s3_hash:
+        if not verify_s3_master_key_binding(session, args.bucket, bootstrap_key, ssm_arn):
+            print("\n[ERROR] S3 usr_master.mbf password_hash DOES NOT MATCH SSM Parameter Store key!")
+            sys.exit(3)
+        print("\n[OK] Cryptographic verification passed: usr_master.mbf is bound to SSM master-key.")
 
-    # 2.4 Create User usr_master
-    user_master_payload = {
-        "id": "usr_master",
-        "username": args.username,
-        "email": args.email,
-        "password_hash": args.password_hash,
-        "first_name": "Super",
-        "last_name": "Administrador",
-        "status": "ACTIVE",
-        "user_type": "INTERNAL",
-        "tenant_id": "system",
-        "role_ids": ["role_super_master"]
-    }
-    create_resource(stub, "system", "user", "usr_master", user_master_payload)
-
-
-    print("\n==================================================")
-    print("      BOOTSTRAP PROCESS COMPLETED                 ")
-    print("==================================================")
 
 if __name__ == "__main__":
     main()

@@ -6,6 +6,29 @@ use tracing::error;
 // Handlers del MetriGrpcService — fase 2: service.rs delega, aquí vive el cuerpo.
 
 impl MetriGrpcService {
+    /// Extrae la sesión autenticada de las extensiones de Tonic y verifica revocación JTI en `HmacTokenStore`.
+    pub(crate) async fn extract_verified_session<T>(
+        &self,
+        request: &tonic::Request<T>,
+    ) -> Result<(String, String), Status> {
+        let (tenant_id, user_id) = {
+            let session = request
+                .extensions()
+                .get::<crate::grpc::interceptors::AuthenticatedSession>()
+                .ok_or_else(|| Status::unauthenticated("Petición no autenticada [Fail-Closed]"))?;
+            (session.tenant_id.clone(), session.user_id.clone())
+        };
+        if !self.dev_auth_bypass.is_bypass() {
+            let auth_req = crate::cedar::AuthRequest::from_tonic(request);
+            if auth_req.session_token().is_some() {
+                crate::cedar::authn::step1_extract_token(&auth_req, self.valkey_store.as_ref())
+                    .await
+                    .map_err(|e| Status::unauthenticated(e.detail))?;
+            }
+        }
+        Ok((tenant_id, user_id))
+    }
+
     /// Preámbulo de autorización compartido por los RPC de lectura.
     ///
     /// Una sola copia del camino Cedar: request sintético con sus cuatro

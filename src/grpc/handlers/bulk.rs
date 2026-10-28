@@ -119,17 +119,39 @@ impl MetriGrpcService {
                     rows_vec.push(row_val);
                 }
 
-                // [OPTIMIZATION 10x]: Validate Cedar permission ONCE for the entire bulk
-                // instead of per-row. All rows share the same (tenant_id, entity_type, operation).
-                if let Some(first_row) = rows_vec.first() {
+                let max_bulk_rows: usize = 1_000;
+                if rows_vec.len() > max_bulk_rows {
+                    return Err(Status::invalid_argument(format!(
+                        "BulkIngest supera el límite máximo de filas por lote ({} > {})",
+                        rows_vec.len(),
+                        max_bulk_rows
+                    )));
+                }
+
+                // Validar autorización Cedar, aislamiento de tenant y jerarquías por CADA fila
+                // para impedir contrabando de atributos ABAC (location_id, assigned_company_id,
+                // tenant_id) en filas 1..N.
+                for row_val in &rows_vec {
                     self.validate_single_mutation(
                         &req.tenant_id,
                         &req.entity_type,
                         operation_str,
-                        first_row,
+                        row_val,
                         &principal,
                     )
                     .await?;
+
+                    if req.entity_type == "user_group"
+                        && (operation_str == "CREATE" || operation_str == "UPDATE")
+                    {
+                        let target_group_id = extract_entity_id(row_val).unwrap_or_default();
+                        self.validate_user_group_hierarchy_cycle(
+                            &req.tenant_id,
+                            &target_group_id,
+                            row_val,
+                        )
+                        .await?;
+                    }
                 }
 
                 // Gather entity IDs for invalidation

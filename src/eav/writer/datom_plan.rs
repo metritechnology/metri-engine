@@ -111,6 +111,96 @@ pub fn plan_entity_datoms(
         datoms.push(assert);
     }
 
+    // Auto-generación declarativa de vectores (`auto_generate_from`, p. ej. `document_chunk.semantic_embedding`)
+    // cuando el cliente envía el texto fuente (`chunk_content`) sin precalcular el vector de bytes.
+    if let Some(model_attrs) = crate::codice::global().get_attributes(entity_type) {
+        for attr_desc in model_attrs {
+            if attr_desc.auto_generate_from.is_empty()
+                || attr_desc.attr_type != crate::codice::registry::AttrType::Bytes
+            {
+                continue;
+            }
+            let bare_target = attr_desc
+                .name
+                .split('/')
+                .next_back()
+                .unwrap_or(attr_desc.name.as_str());
+            let already_provided = attrs
+                .get(bare_target)
+                .or_else(|| attrs.get(&attr_desc.name))
+                .is_some_and(|v| {
+                    !matches!(v, DatomValue::Null)
+                        && !matches!(v, DatomValue::Bytes(b) if b.is_empty())
+                });
+            if already_provided {
+                continue;
+            }
+
+            let mut source_touched = false;
+            let mut source_parts = Vec::new();
+            for src_field in &attr_desc.auto_generate_from {
+                let bare_src = src_field
+                    .split('/')
+                    .next_back()
+                    .unwrap_or(src_field.as_str());
+                if let Some(DatomValue::Str(s)) =
+                    attrs.get(bare_src).or_else(|| attrs.get(src_field))
+                {
+                    if !s.trim().is_empty() {
+                        source_touched = true;
+                        source_parts.push(s.trim().to_string());
+                    }
+                } else if !is_create {
+                    if let Some((_, DatomValue::Str(s))) = active_attrs
+                        .get(bare_src)
+                        .or_else(|| active_attrs.get(src_field))
+                    {
+                        if !s.trim().is_empty() {
+                            source_parts.push(s.trim().to_string());
+                        }
+                    }
+                }
+            }
+
+            if source_touched && !source_parts.is_empty() {
+                let dim = attr_desc.dimensions.unwrap_or(1024) as usize;
+                let combined_text = source_parts.join(" ");
+                let emb_vec =
+                    crate::mbf::zones::hybrid_search::MbfHybridSearchIndex::compute_deterministic_embedding(
+                        &combined_text,
+                        dim,
+                    );
+                let emb_bytes =
+                    crate::mbf::zones::hybrid_search::MbfHybridSearchIndex::encode_embedding_le_bytes(
+                        &emb_vec,
+                    );
+                if !is_create {
+                    if let Some((old_attr_id, old_val)) = active_attrs
+                        .get(bare_target)
+                        .or_else(|| active_attrs.get(&attr_desc.name))
+                    {
+                        datoms.push(Datom::retract(
+                            tenant_id,
+                            entity_id,
+                            bare_target,
+                            *old_attr_id,
+                            old_val.clone(),
+                            tx_id,
+                        ));
+                    }
+                }
+                datoms.push(Datom::assert(
+                    tenant_id,
+                    entity_id,
+                    bare_target,
+                    Datom::hash_attr_name(&attr_desc.name),
+                    DatomValue::Bytes(emb_bytes),
+                    tx_id,
+                ));
+            }
+        }
+    }
+
     // Atributos de sistema (ulid, type, tenant, created_at/updated_at)
     crate::eav::writer::enricher::enrich_datoms(
         &mut datoms,
@@ -123,10 +213,51 @@ pub fn plan_entity_datoms(
         actor,
     );
 
+    // Espejo de historial: si el modelo declara atributos con `history_mirror`,
+    // la partición del DUEÑO recibe en esta misma TX el assert/retract del
+    // datom `_refs/<entidad>` correspondiente (create y update; el delete lo
+    // planifica `plan_payload_datoms`).
+    datoms.extend(crate::eav::writer::history_mirror::plan_mirror_datoms(
+        (tenant_id, entity_type, entity_id),
+        attrs,
+        active_attrs,
+        tx_id,
+        false,
+    ));
+
     Ok(EntityPlan {
         datoms,
         fts_requests,
     })
+}
+
+fn build_delete_datoms(
+    payload: &TransactPayload,
+    entity_id: &str,
+    active_attrs: &HashMap<String, (u16, DatomValue)>,
+    tx_id: u64,
+) -> Vec<Datom> {
+    let mut datoms: Vec<Datom> = active_attrs
+        .iter()
+        .map(|(attr_name, (attr_id, val))| {
+            Datom::retract(
+                &payload.tenant_id,
+                entity_id,
+                attr_name,
+                *attr_id,
+                val.clone(),
+                tx_id,
+            )
+        })
+        .collect();
+    datoms.extend(crate::eav::writer::history_mirror::plan_mirror_datoms(
+        (&payload.tenant_id, &payload.entity_type, entity_id),
+        &payload.attrs,
+        active_attrs,
+        tx_id,
+        true,
+    ));
+    datoms
 }
 
 /// Plan completo del payload: guards de existencia, delta, deleted_attrs y la
@@ -139,15 +270,11 @@ pub fn plan_payload_datoms(
     active_attrs: &HashMap<String, (u16, DatomValue)>,
     actor: &str,
 ) -> Result<DatomPlan, DomainError> {
-    // Delta del contrato (before/after) — sólo tiene sentido en UPDATE, y
-    // debe computarse ANTES de que las ramas de abajo consuman active_attrs.
     let delta = if payload.op == TransactOp::Update {
         compute_transact_delta(active_attrs, &payload.attrs)
     } else {
         None
     };
-    // En DELETE, los atributos previos se van con el retract — el sobre
-    // `deleted` del Hub los necesita, así que se rescatan aquí.
     let deleted_attrs = if payload.op == TransactOp::Delete && !active_attrs.is_empty() {
         Some(
             active_attrs
@@ -159,10 +286,6 @@ pub fn plan_payload_datoms(
         None
     };
 
-    // Invariante de existencia: un UPDATE/DELETE presupone una entidad
-    // previa. Sin este guard, una entidad fantasma (id equivocado, id de
-    // cliente ignorado en el CREATE) se fabrica aquí como upsert silencioso
-    // y el audit trail del recurso real queda amputado.
     if matches!(payload.op, TransactOp::Update | TransactOp::Delete) && active_attrs.is_empty() {
         return Err(DomainError::eav(
             ErrorCode::Eav002,
@@ -174,20 +297,8 @@ pub fn plan_payload_datoms(
     }
 
     if payload.op == TransactOp::Delete {
-        let mut datoms = Vec::new();
-        for (attr_name, (attr_id, val)) in active_attrs {
-            let retract = Datom::retract(
-                &payload.tenant_id,
-                entity_id,
-                attr_name,
-                *attr_id,
-                val.clone(),
-                tx_id,
-            );
-            datoms.push(retract);
-        }
         return Ok(DatomPlan {
-            datoms,
+            datoms: build_delete_datoms(payload, entity_id, active_attrs, tx_id),
             fts_requests: Vec::new(),
             delta,
             deleted_attrs,
@@ -698,5 +809,61 @@ mod tests {
             1,
             "solo debe existir un datom para el atributo de negocio entity_type"
         );
+    }
+
+    #[test]
+    fn document_chunk_autogenera_semantic_embedding_de_1024_floats_desde_chunk_content() {
+        registry();
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "id".to_string(),
+            DatomValue::Uuid("01M5D9Q0KMWNJ9JRAFQS29G6DK#chunk-0".into()),
+        );
+        attrs.insert(
+            "parent_file".to_string(),
+            DatomValue::Str("01M5D9Q0KMWNJ9JRAFQS29G6DK".into()),
+        );
+        attrs.insert("chunk_index".to_string(), DatomValue::Long(0));
+        attrs.insert(
+            "chunk_content".to_string(),
+            DatomValue::Str("Manual técnico de bomba centrífuga KSB-500 150 PSI".into()),
+        );
+        attrs.insert(
+            "metadata_tags".to_string(),
+            DatomValue::Str("manual-bomba.pdf".into()),
+        );
+
+        let p = TransactPayload {
+            tenant_id: "t1".to_string(),
+            entity_id: Some("01M5D9Q0KMWNJ9JRAFQS29G6DK#chunk-0".to_string()),
+            entity_type: "document_chunk".to_string(),
+            attrs,
+            op: TransactOp::Create,
+            suppress_events: true,
+        };
+        let plan = plan_payload_datoms(
+            &p,
+            "01M5D9Q0KMWNJ9JRAFQS29G6DK#chunk-0",
+            1000,
+            &HashMap::new(),
+            ACTOR_TEST,
+        )
+        .expect("planifica document_chunk");
+
+        let emb_datom = plan
+            .datoms
+            .iter()
+            .find(|d| d.attr_name == "semantic_embedding" && d.op)
+            .expect("debe emitir datom assert de semantic_embedding");
+        match &emb_datom.value {
+            DatomValue::Bytes(bytes) => {
+                assert_eq!(
+                    bytes.len(),
+                    4096,
+                    "1024 dimensiones * 4 bytes f32 LE = 4096 bytes"
+                );
+            }
+            other => panic!("esperaba DatomValue::Bytes(4096), obtuvo: {other:?}"),
+        }
     }
 }

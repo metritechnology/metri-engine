@@ -6,7 +6,7 @@
     {
       "name": "name",
       "type": "string",
-      "unique": "identity",
+      "unique": "tenant",
       "required": true,
       "fts": true,
       "is_dimension": true,

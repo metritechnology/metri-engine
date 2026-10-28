@@ -22,7 +22,7 @@
       "name": "target_url",
       "type": "string",
       "required": true,
-      "pattern": "^https?://.+"
+      "pattern": "^https://([a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}(:[0-9]{1,5})?(/.*)?$"
     },
     {
       "name": "http_method",

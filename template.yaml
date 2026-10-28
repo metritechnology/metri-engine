@@ -28,6 +28,26 @@ Parameters:
     AllowedValues:
       - primary
     Description: "Modo del motor binario Metri Vortex (.mbf): primary (S3 + /tmp NVMe)."
+  OriginVerifyToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: "Secreto dedicado de borde opcional (si se deja vacío se usa MetriHMACSecret en Secrets Manager)."
+  BootstrapMasterKey:
+    Type: AWS::SSM::Parameter::Value<String>
+    NoEcho: true
+    Default: "/metri/engine/bootstrap/master-key"
+    Description: "Clave única en AWS Systems Manager Parameter Store para el proceso de bootstrap del administrador maestro (usr_master)."
+  MaxLambdaConcurrency:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 1000
+    Description: "Fusible financiero opcional (ReservedConcurrentExecutions, 0 = sin reserva para cuentas con cuota base)."
+
+Conditions:
+  HasCustomOriginVerifyToken: !Not [!Equals [!Ref OriginVerifyToken, ""]]
+  HasReservedConcurrency: !Not [!Equals [!Ref MaxLambdaConcurrency, 0]]
 
 Globals:
   Function:
@@ -120,57 +140,114 @@ Resources:
         Allow: {}
       VisibilityConfig:
         SampledRequestsEnabled: true
-        CloudWatchMetricsEnabled: false
+        # Métrica 1 de 2 activas ($0.30/mes): visibilidad global de bloqueos y alertas DDoS
+        CloudWatchMetricsEnabled: true
         MetricName: MetriWebACLMetrics
       Rules:
-        # Regla 1: Filtro Protocolar — solo POST (gRPC-Web) y OPTIONS (CORS)
-        - Name: MetriBlockNonGrpcMethods
-          Priority: 5
+        # Regla 1 (Unificada Zero-Trust): Contrato estricto gRPC-Web + Ruta /metri.* normalizada
+        # + Validación de formato de token mk_ (>60B).
+        # Fusiona MetriBlockNonGrpcMethods + MetriGrpcProtocolEnforcement (-$1.00/mes)
+        # y evita invocaciones Lambda sin token o hacia /grpc.reflection.
+        - Name: MetriGrpcZeroTrustGate
+          Priority: 1
           Action:
             Block: {}
           Statement:
             NotStatement:
               Statement:
-                OrStatement:
+                AndStatement:
                   Statements:
+                    # 1. Solo rutas de servicios gRPC registrados (/metri.*), previniendo ../
                     - ByteMatchStatement:
                         FieldToMatch:
-                          Method: {}
-                        SearchString: "POST"
-                        PositionalConstraint: EXACTLY
+                          UriPath: {}
+                        SearchString: "/metri."
+                        PositionalConstraint: STARTS_WITH
                         TextTransformations:
                           - Priority: 0
-                            Type: NONE
-                    - ByteMatchStatement:
-                        FieldToMatch:
-                          Method: {}
-                        SearchString: "OPTIONS"
-                        PositionalConstraint: EXACTLY
-                        TextTransformations:
-                          - Priority: 0
-                            Type: NONE
+                            Type: URL_DECODE
+                          - Priority: 1
+                            Type: NORMALIZE_PATH
+                    # 2. O es preflight OPTIONS, o es POST gRPC con token mk_ (>60 bytes)
+                    - OrStatement:
+                        Statements:
+                          - ByteMatchStatement:
+                              FieldToMatch:
+                                Method: {}
+                              SearchString: "OPTIONS"
+                              PositionalConstraint: EXACTLY
+                              TextTransformations:
+                                - Priority: 0
+                                  Type: NONE
+                          - AndStatement:
+                              Statements:
+                                - ByteMatchStatement:
+                                    FieldToMatch:
+                                      Method: {}
+                                    SearchString: "POST"
+                                    PositionalConstraint: EXACTLY
+                                    TextTransformations:
+                                      - Priority: 0
+                                        Type: NONE
+                                - ByteMatchStatement:
+                                    FieldToMatch:
+                                      SingleHeader:
+                                        Name: "content-type"
+                                    SearchString: "application/grpc"
+                                    PositionalConstraint: STARTS_WITH
+                                    TextTransformations:
+                                      - Priority: 0
+                                        Type: LOWERCASE
+                                - OrStatement:
+                                    Statements:
+                                      - AndStatement:
+                                          Statements:
+                                            - ByteMatchStatement:
+                                                FieldToMatch:
+                                                  SingleHeader:
+                                                    Name: "sid"
+                                                SearchString: "mk_"
+                                                PositionalConstraint: STARTS_WITH
+                                                TextTransformations:
+                                                  - Priority: 0
+                                                    Type: COMPRESS_WHITE_SPACE
+                                            - SizeConstraintStatement:
+                                                FieldToMatch:
+                                                  SingleHeader:
+                                                    Name: "sid"
+                                                ComparisonOperator: GT
+                                                Size: 60
+                                                TextTransformations:
+                                                  - Priority: 0
+                                                    Type: NONE
+                                      - AndStatement:
+                                          Statements:
+                                            - ByteMatchStatement:
+                                                FieldToMatch:
+                                                  SingleHeader:
+                                                    Name: "authorization"
+                                                SearchString: "mk_"
+                                                PositionalConstraint: CONTAINS
+                                                TextTransformations:
+                                                  - Priority: 0
+                                                    Type: NONE
+                                            - SizeConstraintStatement:
+                                                FieldToMatch:
+                                                  SingleHeader:
+                                                    Name: "authorization"
+                                                ComparisonOperator: GT
+                                                Size: 60
+                                                TextTransformations:
+                                                  - Priority: 0
+                                                    Type: NONE
           VisibilityConfig:
             SampledRequestsEnabled: true
             CloudWatchMetricsEnabled: false
-            MetricName: MetriBlockNonGrpcMethodsMetrics
+            MetricName: MetriGrpcZeroTrustGateMetrics
 
-        # Regla 2: Rate Limiting por IP (1000 req/5min ≈ 3.3 req/s por IP)
-        - Name: MetriRateLimitRule
-          Priority: 10
-          Action:
-            Block: {}
-          Statement:
-            RateBasedStatement:
-              Limit: 1000
-              AggregateKeyType: IP
-          VisibilityConfig:
-            SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: false
-            MetricName: MetriRateLimitRuleMetrics
-
-        # Regla 3: IP Reputation List
+        # Regla 2: IP Reputation List ($0/mes - bloquea botnets conocidas antes del Rate Limit)
         - Name: AWS-AmazonIpReputationList
-          Priority: 20
+          Priority: 10
           Statement:
             ManagedRuleGroupStatement:
               VendorName: AWS
@@ -182,9 +259,9 @@ Resources:
             CloudWatchMetricsEnabled: false
             MetricName: AWSIpReputationMetrics
 
-        # Regla 4: Anonymous IP List (permitiendo proveedores cloud B2B)
+        # Regla 3: Anonymous IP List ($0/mes - bloquea Tor/Proxies permitiendo proveedores cloud B2B)
         - Name: AWS-AWSManagedRulesAnonymousIpList
-          Priority: 25
+          Priority: 15
           Statement:
             ManagedRuleGroupStatement:
               VendorName: AWS
@@ -198,7 +275,22 @@ Resources:
             CloudWatchMetricsEnabled: false
             MetricName: AWSAnonymousIpMetrics
 
-        # Regla 5: Known Bad Inputs
+        # Regla 4: Rate Limiting por IP (1000 req/5min ≈ 3.3 req/s sobre tráfico ya filtrado)
+        - Name: MetriRateLimitRule
+          Priority: 20
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 1000
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            # Métrica 2 de 2 activas ($0.30/mes): detección y alarma de abuso/fuerza bruta por IP
+            CloudWatchMetricsEnabled: true
+            MetricName: MetriRateLimitRuleMetrics
+
+        # Regla 5: Known Bad Inputs ($0/mes bajo 1500 WCU)
         - Name: AWS-KnownBadInputsRuleSet
           Priority: 30
           Statement:
@@ -212,7 +304,8 @@ Resources:
             CloudWatchMetricsEnabled: false
             MetricName: AWSKnownBadInputsMetrics
 
-        # Regla 6: Common Rule Set (excluyendo SizeRestrictions_BODY para BulkIngest/Query batch)
+        # Regla 6: Common Rule Set ($0/mes bajo 1500 WCU — protege contra SSRF y Stored XSS,
+        # excluyendo SizeRestrictions_BODY y GenericRFI_BODY para payloads binarios Protobuf)
         - Name: AWS-AWSManagedRulesCommonRuleSet
           Priority: 40
           Statement:
@@ -221,6 +314,7 @@ Resources:
               Name: AWSManagedRulesCommonRuleSet
               ExcludedRules:
                 - Name: SizeRestrictions_BODY
+                - Name: GenericRFI_BODY
           OverrideAction:
             None: {}
           VisibilityConfig:
@@ -228,37 +322,44 @@ Resources:
             CloudWatchMetricsEnabled: false
             MetricName: AWSCommonRuleSetMetrics
 
-        # Regla 7: gRPC-Web Protocol Enforcement (Content-Type: application/grpc*)
-        - Name: MetriGrpcProtocolEnforcement
-          Priority: 50
-          Action:
-            Block: {}
-          Statement:
-            AndStatement:
-              Statements:
-                - ByteMatchStatement:
-                    FieldToMatch:
-                      Method: {}
-                    SearchString: "POST"
-                    PositionalConstraint: EXACTLY
-                    TextTransformations:
-                      - Priority: 0
-                        Type: NONE
-                - NotStatement:
-                    Statement:
-                      ByteMatchStatement:
-                        FieldToMatch:
-                          SingleHeader:
-                            Name: "content-type"
-                        SearchString: "application/grpc"
-                        PositionalConstraint: STARTS_WITH
-                        TextTransformations:
-                          - Priority: 0
-                            Type: LOWERCASE
-          VisibilityConfig:
-            SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: false
-            MetricName: MetriGrpcProtocolEnforcementMetrics
+  # Cortocircuito CORS Preflight en CloudFront Edge (<0.5ms, 2M req/mes gratis, 0 invocaciones Lambda)
+  MetriCorsPreflightFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-cors-preflight"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: "Responde OPTIONS CORS en el borde con Max-Age 24h sin despertar la Lambda Rust"
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          if (request.method === 'OPTIONS') {
+            var reqOrigin = request.headers['origin'] ? request.headers['origin'].value : '';
+            var allowedOrigin = 'https://app.metri.one';
+            if (
+              reqOrigin === 'https://metri.one' ||
+              reqOrigin.endsWith('.metri.one') ||
+              reqOrigin.startsWith('http://localhost:') ||
+              reqOrigin.startsWith('http://127.0.0.1:')
+            ) {
+              allowedOrigin = reqOrigin;
+            }
+            return {
+              statusCode: 204,
+              statusDescription: 'No Content',
+              headers: {
+                'access-control-allow-origin': { value: allowedOrigin },
+                'access-control-allow-methods': { value: 'POST, OPTIONS' },
+                'access-control-allow-headers': { value: 'content-type, x-grpc-web, x-user-agent, authorization, sid, grpc-timeout, x-metri-origin-token' },
+                'access-control-expose-headers': { value: 'grpc-status, grpc-message, grpc-status-details-bin' },
+                'access-control-max-age': { value: '86400' },
+                'vary': { value: 'Origin' }
+              }
+            };
+          }
+          return request;
+        }
 
   MetriLambdaPublicPermission:
     Type: AWS::Lambda::Permission
@@ -286,7 +387,12 @@ Resources:
               ]
             OriginCustomHeaders:
               - HeaderName: X-Metri-Origin-Token
-                HeaderValue: !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}"
+                HeaderValue:
+                  !If [
+                    HasCustomOriginVerifyToken,
+                    !Ref OriginVerifyToken,
+                    !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}",
+                  ]
             CustomOriginConfig:
               OriginProtocolPolicy: https-only
         DefaultCacheBehavior:
@@ -304,6 +410,9 @@ Resources:
           CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
           # Managed-AllViewerExceptHostHeader
           OriginRequestPolicyId: "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt MetriCorsPreflightFunction.FunctionARN
         ViewerCertificate:
           AcmCertificateArn: !Ref AcmCertificateArn
           SslSupportMethod: sni-only
@@ -412,6 +521,8 @@ Resources:
     Properties:
       MemorySize: 1769 # 1.0 vCPU exacta en Graviton ARM64 (óptimo costo/rendimiento SIMD NEON)
       Timeout: 30
+      ReservedConcurrentExecutions:
+        !If [HasReservedConcurrency, !Ref MaxLambdaConcurrency, !Ref "AWS::NoValue"]
       EphemeralStorage:
         Size: 512 # 512 MB gratuitos en /tmp NVMe para caché de bloques .mbf y HOT_HEAD.mbf
       CodeUri: .
@@ -456,11 +567,17 @@ Resources:
                 - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-faults"
                 - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/metri-events"
 
-            # HMAC Secret: cargado una vez en cold start
+            # Secretos de seguridad y clave única de bootstrap (SSM Parameter Store)
             - Effect: Allow
               Action:
                 - secretsmanager:GetSecretValue
               Resource: !Ref MetriHMACSecret
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+              Resource:
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/metri/engine/bootstrap/*"
 
       Environment:
         Variables:
@@ -489,12 +606,18 @@ Resources:
           OUTBOX_QUEUE_URL: !GetAtt MetriOutboxQueue.QueueUrl
           FAULT_BUS_NAME: "metri-faults"
           # ── Seguridad ──
+          ORIGIN_VERIFY_TOKEN:
+            !If [
+              HasCustomOriginVerifyToken,
+              !Ref OriginVerifyToken,
+              !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}",
+            ]
           HMAC_SECRET_ARN: !Ref MetriHMACSecret
           HMAC_SECRET: !Sub "{{resolve:secretsmanager:${MetriHMACSecret}:SecretString}}"
           METRI_BOOTSTRAP_MASTER_EMAIL: "admin@metri.one"
           METRI_BOOTSTRAP_MASTER_USERNAME: "admin"
-          METRI_BOOTSTRAP_MASTER_PASSWORD: "SuperSecurePassword123!"
-          FORCE_DEPLOY: "8"
+          METRI_BOOTSTRAP_MASTER_KEY: !Ref BootstrapMasterKey
+          FORCE_DEPLOY: "10"
 
   # ── 6. Observabilidad Estructurada con Retención Acotada (14 días) ───────────
   MetriEngineLogGroup:
@@ -504,9 +627,6 @@ Resources:
       RetentionInDays: 14
 
 Outputs:
-  MetriEngineFunctionPublicUrl:
-    Description: "URL base del Lambda Rust ARM64 (protegida por CloudFront + WAF)"
-    Value: !GetAtt MetriEngineFunctionUrl.FunctionUrl
   MetriCloudFrontDomain:
     Description: "Dominio CloudFront intermedio"
     Value: !GetAtt MetriCloudFrontDistribution.DomainName
@@ -525,3 +645,6 @@ Outputs:
   MetriHMACTokenStore:
     Description: "Autenticación HMAC-SHA256 | Secret en Secrets Manager + KMS"
     Value: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:metri-hmac-secret-${AWS::StackName}"
+  MetriBootstrapParameterStoreKey:
+    Description: "ARN del parámetro SSM con la clave única de bootstrap del administrador maestro"
+    Value: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/metri/engine/bootstrap/master-key"

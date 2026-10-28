@@ -79,34 +79,113 @@ impl MetriGrpcService {
                     "GET sin entity_id: no hay entidad que leer",
                 ));
             }
+            if req.entity_type.is_empty() {
+                return Err(Status::invalid_argument(
+                    "GET sin entity_type: el tipo de entidad es obligatorio",
+                ));
+            }
+
+            // 1. Validar autorización CRUD sobre entidades de sistema (salvo autoservicio propio)
+            let is_own_tenant_read =
+                req.entity_type == "tenant" && entity_id == principal.tenant_id;
+            if !is_own_tenant_read
+                && !crate::cedar::SystemSecurityRules::is_self_service_read(
+                    &req.entity_type,
+                    &req.tenant_id,
+                    &principal.tenant_id,
+                )
+            {
+                if let Err(e) = crate::cedar::SystemSecurityRules::check_crud_authorization(
+                    &req.entity_type,
+                    &principal.tenant_id,
+                    &principal.user_id,
+                    "read",
+                ) {
+                    return Err(Status::permission_denied(e.detail));
+                }
+            }
+
+            // 2. Evaluar autorización ABAC Cedar para lectura (VIEW)
+            if !self.dev_auth_bypass.is_bypass() {
+                let get_resource = serde_json::json!({
+                    "entity_type": req.entity_type,
+                    "entity_id": entity_id,
+                    "domains": [req.entity_type],
+                });
+                crate::cedar::step4_evaluate_cedar(
+                    &self.cedar_engine,
+                    &self.policy_cache,
+                    &principal,
+                    "VIEW",
+                    &get_resource,
+                )
+                .map_err(|err| Status::permission_denied(format!("Auth403: {}", err.detail)))?;
+            }
+
+            let is_privileged_system_caller = crate::cedar::is_master_tenant(&principal.tenant_id)
+                || principal.user_id == "usr_system_bff";
+
             let reader = self.oltp_executor.pull_reader();
             let mut attrs = reader
                 .pull(&req.tenant_id, &entity_id, None)
                 .await
                 .unwrap_or_default();
-            if attrs.is_empty() && req.tenant_id != "system" {
-                // El IAM (users, roles…) vive en la partición system: el GET de
-                // reautorización llega con el tenant del JOB y sin este
-                // fallback el principal aparecía «DESCONOCIDO» y el disparo
-                // moría aunque el usuario siguiera activo.
+            if attrs.is_empty() && req.tenant_id != "system" && is_privileged_system_caller {
+                // El IAM (users, roles…) vive en la partición system: solo cuentas
+                // privilegiadas de sistema (ej. ejecutor BFF en T=0) pueden hacer fallback.
                 attrs = reader
                     .pull("system", &entity_id, None)
                     .await
                     .unwrap_or_default();
             }
-            if attrs.is_empty() && entity_id == "usr_system_bff" {
-                // Principal de servicio del BFF: no es una fila de IAM — es la
-                // identidad que Cedar resuelve del token HMAC que el propio
-                // interceptor ya validó al entrar. Para el GET del ejecutor
-                // (reautorización en T=0) un servicio autenticado está activo.
+            if attrs.is_empty() && entity_id == "usr_system_bff" && is_privileged_system_caller {
                 attrs.insert("status".to_string(), DatomValue::Str("ACTIVE".to_string()));
             }
             if attrs.is_empty() {
                 return Err(Status::not_found(format!(
-                    "GET {} {}: la entidad no existe en {} ni en system",
+                    "GET {} {}: la entidad no existe en {}",
                     req.entity_type, entity_id, req.tenant_id
                 )));
             }
+
+            // 3. Verificar correspondencia de entity_type si el datom almacena su tipo
+            if let Some(DatomValue::Str(stored_type)) = attrs
+                .get("entity/type")
+                .or_else(|| attrs.get("entity_type"))
+            {
+                if stored_type != &req.entity_type {
+                    return Err(Status::permission_denied(format!(
+                        "Auth403: La entidad {} no pertenece al tipo solicitado '{}'",
+                        entity_id, req.entity_type
+                    )));
+                }
+            }
+
+            // 4. Aislamiento de contratistas (P06): verificar assigned_company_id si aplica
+            if !self.dev_auth_bypass.is_bypass() && principal.user_type == "CONTRACTOR" {
+                let assigned_company = [
+                    "assigned_company_id",
+                    "company_id",
+                    "assigned_company",
+                    "company",
+                ]
+                .iter()
+                .find_map(|k| {
+                    attrs
+                        .get(*k)
+                        .or_else(|| attrs.get(&format!("{}/{}", req.entity_type, k)))
+                        .and_then(|v| match v {
+                            DatomValue::Str(s) => Some(s.as_str()),
+                            _ => None,
+                        })
+                });
+                if assigned_company != Some(principal.company_id.as_str()) {
+                    return Err(Status::permission_denied(
+                        "Auth403: Contractor cannot access resource not assigned to their company",
+                    ));
+                }
+            }
+
             let mut value = crate::eav::writer::outbox::datom_map_to_json(&attrs);
             if let serde_json::Value::Object(map) = &mut value {
                 map.insert(
@@ -118,6 +197,26 @@ impl MetriGrpcService {
                     serde_json::Value::String(req.entity_type.clone()),
                 );
             }
+
+            // 5. Censurar campos sensibles declarados en el Códice (ej. password_hash, auth_token)
+            let cedar_ctx = crate::janus::router::CedarCtx {
+                tenant_id: req.tenant_id.clone(),
+                user_id: principal.user_id.clone(),
+                roles: principal.roles.iter().cloned().collect(),
+                is_super_master: is_privileged_system_caller,
+                cross_tenant_scope: if is_privileged_system_caller {
+                    "FULL".to_string()
+                } else {
+                    "NONE".to_string()
+                },
+                domain_boundaries: serde_json::Value::Null,
+            };
+            crate::janus::router::post_processor::redact_sensitive_attributes(
+                std::slice::from_mut(&mut value),
+                &req.entity_type,
+                &cedar_ctx,
+            );
+
             return Ok(Response::new(TransactionResponse {
                 status: Some(crate::grpc::pb::Status {
                     success: true,

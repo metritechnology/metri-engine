@@ -1,7 +1,7 @@
 {
   "entity": "file",
   "is_system": true,
-  "track_history": false,
+  "track_history": true,
   "attributes": [
     {
       "name": "file_name",
@@ -73,7 +73,8 @@
       "type": "string",
       "required": true,
       "index": true,
-      "description": "ID (ULID) de la entidad propietaria. Combinado con owner_entity_type, forma la clave de asociación polimórfica."
+      "history_mirror": true,
+      "description": "ID (ULID) de la entidad propietaria. Combinado con owner_entity_type, forma la clave de asociación polimórfica. history_mirror: el writer escribe en la misma TX un datom espejo '_refs/file' en la partición del dueño para que su _history agregado incluya altas, cambios y borrados de archivos."
     },
     {
       "name": "url",

@@ -148,16 +148,6 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
             return Ok(());
         }
 
-        if std::env::var("QUOTA_TENANT_MISMATCH").unwrap_or_default() == "warn" {
-            warn!(
-                sesion_tenant = %session.tenant_id,
-                objetivo = %target_tenant,
-                usuario = %session.user_id,
-                "[QuotaService] Cuota de otro tenant — se deja pasar por QUOTA_TENANT_MISMATCH=warn"
-            );
-            return Ok(());
-        }
-
         warn!(
             sesion_tenant = %session.tenant_id,
             objetivo = %target_tenant,
@@ -411,12 +401,9 @@ where
 
         // ── 1. Localizar el ticket ───────────────────────────────────────────
         let Some((tenant_hint, id)) = split_wire_id(&req.reservation_id) else {
-            // Formato de cuatro partes: lo emitió una versión anterior, que
-            // guardaba las reservas en memoria. Su dueño —si sigue vivo— las
-            // devolverá al vencer, así que aquí solo se apunta lo consumido.
-            return self
-                .reconcile_legacy(&session, &req.reservation_id, actual_consumed)
-                .await;
+            return Err(Status::invalid_argument(
+                "Formato de reservation_id inválido",
+            ));
         };
         Self::authorize(&session, tenant_hint)?;
 
@@ -589,52 +576,6 @@ impl<E: OltpQueryRunner> QuotaServiceImpl<E> {
                 )))
             }
         }
-    }
-
-    /// Conciliación de un ticket con el formato anterior al store compartido.
-    ///
-    /// Provisional: en cuanto pase un despliegue completo no puede quedar
-    /// ninguno vivo —duraban 90 s— y esta función se retira.
-    async fn reconcile_legacy(
-        &self,
-        session: &AuthenticatedSession,
-        wire: &str,
-        actual_consumed: i64,
-    ) -> Result<Response<ReconcileTokensResponse>, Status> {
-        let parts: Vec<&str> = wire.split(':').collect();
-        if parts.len() != 4 {
-            return Err(Status::invalid_argument(
-                "Formato de reservation_id inválido",
-            ));
-        }
-        let quota_id = parts[0];
-        let tenant_id = parts[2];
-        Self::authorize(session, tenant_id)?;
-
-        warn!(
-            res_id = %wire,
-            "[QuotaService] Ticket con el formato anterior — se apunta el consumo y \
-             la réplica que lo emitió devolverá la estimación al vencer"
-        );
-
-        if actual_consumed > 0 {
-            if let Err(e) = self
-                .counter
-                .settle_once(tenant_id, quota_id, actual_consumed, &late_charge_key(wire))
-                .await
-            {
-                error!("[QuotaService] Falló la conciliación heredada: {:?}", e);
-                return Err(Status::internal(format!(
-                    "Fallo escribiendo conciliación: {e}"
-                )));
-            }
-        }
-
-        Ok(Response::new(ReconcileTokensResponse {
-            status: Self::ok_status(),
-            tokens_consumed: actual_consumed,
-            tokens_returned: 0,
-        }))
     }
 }
 

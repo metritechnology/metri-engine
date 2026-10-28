@@ -387,6 +387,115 @@ impl MbfHybridSearchIndex {
         false
     }
 
+    /// Elimina un documento y sus entradas asociadas (`RaBitQ`, léxico FST, N-gramas y fonética) cuando la entidad se borra.
+    pub fn remove_document(&mut self, entity_id: &str) -> bool {
+        self.ensure_fast_lookup_cache();
+        let Some(pos) = self.entity_positions.remove(entity_id) else {
+            return false;
+        };
+        if pos >= self.docs.len() {
+            return false;
+        }
+        let removed = self.docs.remove(pos);
+        let row_id = removed.row_id;
+        let removed_len = Self::doc_char_len(&removed);
+        self.total_char_len = self.total_char_len.saturating_sub(removed_len);
+        for (idx, doc) in self.docs.iter().enumerate().skip(pos) {
+            self.entity_positions.insert(doc.entity_id.clone(), idx);
+        }
+        self.rabitq_vectors.remove(&row_id);
+        for rows in self.fst_lexicon.values_mut() {
+            rows.retain(|&r| r != row_id);
+        }
+        for rows in self.ngram_bitmaps.values_mut() {
+            rows.retain(|&r| r != row_id);
+        }
+        for rows in self.phonetic_index.values_mut() {
+            rows.retain(|&r| r != row_id);
+        }
+        for rows in self.spatial_morton_cells.values_mut() {
+            rows.retain(|&r| r != row_id);
+        }
+        self.avg_doc_len = if self.docs.is_empty() {
+            1.0
+        } else {
+            (self.total_char_len as f64) / (self.docs.len() as f64)
+        };
+        true
+    }
+
+    /// Genera un vector de incrustación determinista de `dimensions` coordenadas (`f32` normalizado $L_2 = 1.0$)
+    /// mediante proyección aleatoria firmada (FNV-1a multi-sonda) sobre tokens normalizados, códigos fonéticos romance y 3-gramas.
+    pub fn compute_deterministic_embedding(text: &str, dimensions: usize) -> Vec<f32> {
+        let dim = dimensions.max(16);
+        let mut vec = vec![0.0_f32; dim];
+        let tokens = Self::tokenize_normalized(text);
+        if tokens.is_empty() {
+            return vec;
+        }
+
+        fn fnv1a_64(bytes: &[u8], seed: u64) -> u64 {
+            let mut h = seed;
+            for &b in bytes {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0000_0100_0000_01B3);
+            }
+            h
+        }
+
+        let mut project_feature = |feat: &str, weight: f32| {
+            if feat.is_empty() {
+                return;
+            }
+            let h1 = fnv1a_64(feat.as_bytes(), 0xcbf2_9ce4_8422_2325);
+            let h2 = fnv1a_64(feat.as_bytes(), 0x8422_2325_cbf2_9ce4);
+            for k in 0..4u32 {
+                let mixed = h1
+                    .rotate_left(k * 16)
+                    .wrapping_add(h2.wrapping_mul(u64::from(k) + 1));
+                let idx = (mixed as usize) % dim;
+                let sign = if ((h1 >> (k * 7)) & 1) == 0 {
+                    1.0_f32
+                } else {
+                    -1.0_f32
+                };
+                vec[idx] += sign * weight;
+            }
+        };
+
+        for tok in &tokens {
+            project_feature(tok, 3.0);
+            let phon = Self::encode_romance_phonetic(tok);
+            if !phon.is_empty() {
+                project_feature(&phon, 2.0);
+            }
+            for ng in Self::generate_ngrams(tok) {
+                project_feature(&ng, 1.0);
+            }
+        }
+
+        let norm = vec
+            .iter()
+            .map(|&v| f64::from(v) * f64::from(v))
+            .sum::<f64>()
+            .sqrt() as f32;
+        if norm > 1e-8 {
+            for v in &mut vec {
+                *v /= norm;
+            }
+        }
+        vec
+    }
+
+    /// Codifica un slice de `f32` en su representación binaria Little-Endian (`4 * len` bytes).
+    pub fn encode_embedding_le_bytes(vec: &[f32]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(vec.len() * 4);
+        for &val in vec {
+            out.extend_from_slice(&val.to_le_bytes());
+        }
+        out
+    }
+
     /// Indexa o consolida un documento de entidad simultáneamente a través de las 6 capas de búsqueda.
     pub fn index_document(&mut self, doc: IndexedEntityDocument) {
         self.ensure_fast_lookup_cache();
@@ -639,6 +748,7 @@ impl MbfHybridSearchIndex {
 
         // If vector query is provided, include all documents with embeddings as candidates
         let q_rabitq = query_vector.map(RaBitQVector::from_f32_slice);
+        let is_pure_vector_query = query_tokens.is_empty();
         if q_rabitq.is_some() {
             for &r in self.rabitq_vectors.keys() {
                 candidate_rows.insert(r);
@@ -663,13 +773,17 @@ impl MbfHybridSearchIndex {
                 query_vector,
                 &doc.embedding,
             ) {
-                (Some(qr), Some(dr), Some(qf), Some(df)) => {
+                (Some(qr), Some(dr), Some(qf), Some(df)) if qf.len() == df.len() => {
                     let approx = f64::from(qr.angular_similarity(dr));
                     let exact = Self::cosine_similarity(qf, df);
                     0.3 * approx + 0.7 * exact.max(0.0)
                 }
                 _ => 0.0,
             };
+
+            if !is_pure_vector_query && bm25f == 0.0 && fuzzy_bonus == 0.0 && vec_sim < 0.65 {
+                continue;
+            }
 
             let total_score = bm25f + fuzzy_bonus + (vec_sim * 5.0);
             hits.push(HybridSearchHit {
@@ -1220,5 +1334,54 @@ mod tests {
         let geo = decoded.search_within_geofence_meters(4.5981, -74.1253, 300.0);
         assert_eq!(geo.len(), 1);
         assert_eq!(geo[0].0, "DOC-NODE-01");
+    }
+
+    #[test]
+    fn deterministic_1024_embedding_and_remove_document_work_for_document_chunk() {
+        let emb_a = MbfHybridSearchIndex::compute_deterministic_embedding(
+            "Manual técnico de bomba centrífuga KSB-500 presión nominal 150 PSI",
+            1024,
+        );
+        let emb_b = MbfHybridSearchIndex::compute_deterministic_embedding(
+            "Transformador eléctrico trifásico de subestación 13.2 kV",
+            1024,
+        );
+        assert_eq!(emb_a.len(), 1024);
+        assert_eq!(
+            MbfHybridSearchIndex::encode_embedding_le_bytes(&emb_a).len(),
+            4096
+        );
+
+        let mut idx = MbfHybridSearchIndex::new();
+        idx.index_document(IndexedEntityDocument {
+            entity_id: "CHUNK-01".into(),
+            row_id: 0,
+            code: "manual-bomba.pdf".into(),
+            title: "Manual técnico de bomba centrífuga KSB-500".into(),
+            description: "Manual técnico de bomba centrífuga KSB-500 presión nominal 150 PSI"
+                .into(),
+            embedding: Some(emb_a),
+            coordinates_wgs84: None,
+        });
+        idx.index_document(IndexedEntityDocument {
+            entity_id: "CHUNK-02".into(),
+            row_id: 1,
+            code: "transformador.pdf".into(),
+            title: "Transformador eléctrico trifásico".into(),
+            description: "Transformador eléctrico trifásico de subestación 13.2 kV".into(),
+            embedding: Some(emb_b),
+            coordinates_wgs84: None,
+        });
+
+        let q_vec =
+            MbfHybridSearchIndex::compute_deterministic_embedding("bomba centrifuga KSB 500", 1024);
+        let hits = idx.search_hybrid("bomba centrifuga KSB 500", Some(&q_vec), 5);
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].entity_id, "CHUNK-01");
+        assert!(hits[0].vector_similarity > 0.5);
+
+        assert!(idx.remove_document("CHUNK-01"));
+        let hits_after = idx.search_hybrid("bomba centrifuga KSB 500", Some(&q_vec), 5);
+        assert!(!hits_after.iter().any(|h| h.entity_id == "CHUNK-01"));
     }
 }

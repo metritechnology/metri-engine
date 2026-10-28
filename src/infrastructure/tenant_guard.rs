@@ -40,7 +40,11 @@ impl TenantGuard {
                 "tenant_id no puede ser vacío",
             ));
         }
-        if tenant_id == SYSTEM_TENANT_ID && !self.allowed_system_ops {
+        if (tenant_id.eq_ignore_ascii_case(SYSTEM_TENANT_ID)
+            || tenant_id.eq_ignore_ascii_case("metri_global")
+            || crate::cedar::is_master_tenant(tenant_id))
+            && !self.allowed_system_ops
+        {
             return Err(DomainError::auth(
                 ErrorCode::Auth403,
                 "Operaciones del sistema SYSTEM_TENANT_ID no permitidas en este contexto",
@@ -75,5 +79,27 @@ impl TenantGuard {
 impl Default for TenantGuard {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tenant_guard_bloquea_variantes_system_y_master_sin_permiso_explicito() {
+        let guard = TenantGuard::new();
+        for forbidden in ["", "SYSTEM", "system", "metri_global", "METRI_GLOBAL"] {
+            assert!(
+                guard.validate_tenant(forbidden).is_err(),
+                "Debió bloquear tenant '{forbidden}'"
+            );
+        }
+        assert!(guard.validate_tenant("tnt_01").is_ok());
+
+        let sys_guard = TenantGuard::with_system_ops();
+        assert!(sys_guard.validate_tenant("SYSTEM").is_ok());
+        assert!(sys_guard.validate_tenant("system").is_ok());
+        assert!(sys_guard.validate_tenant("metri_global").is_ok());
     }
 }

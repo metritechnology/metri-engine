@@ -1,4 +1,14 @@
 //! Ruta de lectura del motor EAV — reconstrucción selectiva (`pull`) e histórica (`pull_as_of`, `history`) sobre `.mbf`.
+//!
+//! Invariantes de la lectura por partición de entidad:
+//! - Toda lectura de la partición `T#<tenant>#E#<entity_id>` devuelve SÓLO los
+//!   datoms de esa entidad exacta: el query `EAVT` del storage ya casa la `PK`
+//!   por igualdad, y `filter_exact_entity_partition` lo garantiza como
+//!   post-filtro defensivo (los ids que son prefijo de otros —`<fileId>` frente
+//!   a `<fileId>_chunk_N`— no deben sangrar entre particiones).
+//! - `history` honra `track_history: false` del Códice: esas entidades son
+//!   infraestructura derivada (p. ej. `document_chunk`) — estado actual sí,
+//!   historial no.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -169,6 +179,7 @@ impl EavReader {
             )
             .await
             .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("pull falló: {e:?}")))?;
+        let raw_items = filter_exact_entity_partition(raw_items, &pk);
 
         if raw_items.is_empty() {
             return Ok(HashMap::new());
@@ -236,7 +247,7 @@ impl EavReader {
 
         attr_names.insert("#pk".to_string(), "PK".to_string());
         attr_names.insert("#sk".to_string(), "SK".to_string());
-        attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
+        attr_values.insert(":pk".to_string(), AttributeValue::S(pk.clone()));
         attr_values.insert(":sk_max".to_string(), AttributeValue::B(Blob::new(sk_max)));
 
         let raw_items = self
@@ -253,10 +264,18 @@ impl EavReader {
             .await
             .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("pull_as_of falló: {e:?}")))?;
 
+        let raw_items = filter_exact_entity_partition(raw_items, &pk);
         Ok(assemble_current_state(raw_items, attrs))
     }
 
     /// Consulta el historial completo de una entidad retornando todos sus datoms (incluyendo retracciones) para auditoría.
+    ///
+    /// Devuelve vacío cuando el tipo real de la entidad declara
+    /// `track_history: false` en el Códice (`document_chunk`, `audit_log`, …):
+    /// es infraestructura derivada — su estado actual se lee con `pull`, pero
+    /// no expone línea de tiempo. El tipo se resuelve del datom `entity/type`
+    /// más reciente de la propia partición, no del tipo que el caller declara:
+    /// un id de chunk consultado "como file" también queda vetado.
     pub async fn history(
         &self,
         tenant_id: &str,
@@ -269,7 +288,7 @@ impl EavReader {
         let mut attr_names = HashMap::new();
         let mut attr_values = HashMap::new();
         attr_names.insert("#pk".to_string(), "PK".to_string());
-        attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
+        attr_values.insert(":pk".to_string(), AttributeValue::S(pk.clone()));
 
         let raw_items = self
             .ddb
@@ -284,8 +303,9 @@ impl EavReader {
             )
             .await
             .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("history falló: {e:?}")))?;
+        let raw_items = filter_exact_entity_partition(raw_items, &pk);
 
-        let entries = raw_items
+        let entries: Vec<HistoryEntry> = raw_items
             .into_iter()
             .filter_map(|item| {
                 let sk = match item.get("SK") {
@@ -298,11 +318,6 @@ impl EavReader {
                     .get_attr_name(attr_id)
                     .unwrap_or("unknown_attr")
                     .to_string();
-                if let Some(filter) = attr_name {
-                    if attr != filter {
-                        return None;
-                    }
-                }
                 let value = extract_datom_value(&item);
                 Some(HistoryEntry {
                     attr_name: attr.to_string(),
@@ -312,6 +327,19 @@ impl EavReader {
                 })
             })
             .collect();
+
+        // El veto `track_history` se evalúa ANTES del filtro por atributo:
+        // necesita el datom `entity/type` aunque el caller pida otro atributo.
+        if !history_tracking_enabled(&entries) {
+            return Ok(Vec::new());
+        }
+
+        if let Some(filter) = attr_name {
+            return Ok(entries
+                .into_iter()
+                .filter(|e| e.attr_name == filter)
+                .collect());
+        }
 
         Ok(entries)
     }
@@ -543,6 +571,45 @@ pub struct HistoryEntry {
     pub op: bool,
 }
 
+/// Post-filtro defensivo de partición exacta: conserva sólo los items cuya
+/// `PK` es exactamente la de la entidad pedida.
+///
+/// El query `EAVT` del storage `.mbf` ya casa la `PK` por igualdad estricta;
+/// este filtro es la garantía de la invariante en la capa de lectura: un
+/// entity_id que es prefijo de otro (`<fileId>` frente a `<fileId>_chunk_N`)
+/// nunca debe sangrar datoms ajenos aunque el mecanismo de acceso cambie.
+fn filter_exact_entity_partition(
+    items: Vec<HashMap<String, AttributeValue>>,
+    expected_pk: &str,
+) -> Vec<HashMap<String, AttributeValue>> {
+    items
+        .into_iter()
+        .filter(|item| matches!(item.get("PK"), Some(AttributeValue::S(pk)) if pk == expected_pk))
+        .collect()
+}
+
+/// Evalúa el veto `track_history: false` del Códice sobre el historial ya decodificado.
+///
+/// El tipo real de la entidad se resuelve del datom `entity/type` de mayor
+/// `tx_id` de su partición — assert o retract (una entidad borrada conserva su
+/// tipo)— y se consulta `CodeRegistry::tracks_history`. Sin datom de tipo
+/// (entidad sin historial visible o de otra época) se conserva el
+/// comportamiento previo: fail-open.
+fn history_tracking_enabled(entries: &[HistoryEntry]) -> bool {
+    let entity_type = entries
+        .iter()
+        .filter(|e| e.attr_name == crate::eav::writer::system_attrs::TYPE_NAME)
+        .max_by_key(|e| e.tx_id)
+        .and_then(|e| match &e.value {
+            Some(DatomValue::Str(t)) if !t.is_empty() => Some(t.as_str()),
+            _ => None,
+        });
+    match entity_type {
+        Some(t) => crate::codice::global().tracks_history(t),
+        None => true,
+    }
+}
+
 /// Ensambla el estado actual de una entidad desde los datoms raw de la partición `.mbf`.
 /// Toma el último datom con op=true por atributo.
 fn assemble_current_state(
@@ -626,5 +693,205 @@ pub(crate) fn extract_datom_value(item: &HashMap<String, AttributeValue>) -> Opt
         AttributeValue::Bool(b) => Some(DatomValue::Bool(*b)),
         AttributeValue::B(blob) => Some(DatomValue::Bytes(blob.as_ref().to_vec())),
         AttributeValue::Null(_) => Some(DatomValue::Null),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::eav::types::datom::Datom;
+    use crate::eav::types::encoding::build_eavt_sk;
+    use crate::eav::writer::system_attrs as sys;
+    use crate::mbf::storage::partition_for;
+
+    fn init() {
+        crate::eav::writer::test_support::init_codice();
+    }
+
+    /// Item `EAVT` canónico con la forma que escribe `transact.rs` (PK/SK + `v`).
+    fn datom_item(
+        pk: &str,
+        attr_id: u16,
+        tx: u64,
+        op: bool,
+        value: &str,
+    ) -> HashMap<String, AttributeValue> {
+        let mut m = HashMap::new();
+        m.insert("PK".to_string(), AttributeValue::S(pk.to_string()));
+        m.insert(
+            "SK".to_string(),
+            AttributeValue::B(Blob::new(build_eavt_sk(attr_id, tx, op))),
+        );
+        m.insert("v".to_string(), AttributeValue::S(value.to_string()));
+        m
+    }
+
+    fn insert_items(table: &str, pk: &str, items: Vec<HashMap<String, AttributeValue>>) {
+        let part = partition_for(table);
+        let mut guard = part.write().expect("partition lock");
+        for item in items {
+            let sk = match item.get("SK") {
+                Some(AttributeValue::B(b)) => b.as_ref().to_vec(),
+                _ => Vec::new(),
+            };
+            guard.insert_indexed((pk.to_string(), sk), item);
+        }
+    }
+
+    fn reader(table: &str) -> EavReader {
+        EavReader::new(
+            Arc::new(crate::mbf::storage::MbfStorageClient::new_stub()),
+            table,
+        )
+    }
+
+    fn history_entry(attr: &str, value: Option<&str>, tx: u64, op: bool) -> HistoryEntry {
+        HistoryEntry {
+            attr_name: attr.to_string(),
+            value: value.map(|v| DatomValue::Str(v.to_string())),
+            tx_id: tx,
+            op,
+        }
+    }
+
+    // ── (a) Partición exacta ────────────────────────────────────────────────
+
+    #[test]
+    fn filtro_de_particion_exacta_descarta_ids_con_prefijo_compartido() {
+        let file_pk = "T#t1#E#file_1";
+        let chunk_pk = "T#t1#E#file_1_chunk_0";
+        let items = vec![
+            datom_item(chunk_pk, sys::TYPE_ID, 100, true, "document_chunk"),
+            datom_item(file_pk, sys::TYPE_ID, 100, true, "file"),
+        ];
+        let filtered = filter_exact_entity_partition(items, file_pk);
+        assert_eq!(
+            filtered.len(),
+            1,
+            "el datom del chunk NO es de la partición del file"
+        );
+        assert_eq!(
+            filtered[0]
+                .get("PK")
+                .and_then(crate::mbf::storage::av_string),
+            Some(file_pk)
+        );
+    }
+
+    #[tokio::test]
+    async fn history_devuelve_solo_los_datoms_de_la_entidad_exacta() {
+        init();
+        let table = "test-history-exact-partition";
+        let file_pk = "T#t1#E#file_1";
+        let chunk_pk = "T#t1#E#file_1_chunk_0";
+        let title_id = Datom::hash_attr_name("title");
+
+        insert_items(
+            table,
+            file_pk,
+            vec![
+                datom_item(file_pk, sys::TYPE_ID, 100, true, "reminder"),
+                datom_item(file_pk, title_id, 100, true, "título del padre"),
+            ],
+        );
+        // El id del chunk comparte prefijo exacto con el del padre: sus datoms
+        // viven en OTRA partición y no deben aparecer en el historial del padre.
+        insert_items(
+            table,
+            chunk_pk,
+            vec![
+                datom_item(chunk_pk, sys::TYPE_ID, 100, true, "reminder"),
+                datom_item(chunk_pk, title_id, 100, true, "datom ajeno del chunk"),
+            ],
+        );
+
+        let entries = reader(table)
+            .history("t1", "file_1", None)
+            .await
+            .expect("history ok");
+        assert_eq!(entries.len(), 2, "sólo los datoms del padre");
+        assert!(entries.iter().all(|e| !matches!(
+            &e.value,
+            Some(DatomValue::Str(s)) if s == "datom ajeno del chunk"
+        )));
+    }
+
+    // ── (c) Veto track_history: false ───────────────────────────────────────
+
+    #[test]
+    fn veto_track_history_se_resuelve_del_datom_entity_type_mas_reciente() {
+        init();
+        // document_chunk declara track_history: false en el Códice real.
+        let chunk_entries = vec![
+            history_entry(sys::TYPE_NAME, Some("document_chunk"), 100, true),
+            history_entry("chunk_content", Some("texto"), 100, true),
+        ];
+        assert!(!history_tracking_enabled(&chunk_entries));
+
+        // Una entidad borrada conserva su tipo (el retract más reciente manda).
+        let deleted_chunk = vec![
+            history_entry(sys::TYPE_NAME, Some("document_chunk"), 100, true),
+            history_entry(sys::TYPE_NAME, Some("document_chunk"), 200, false),
+        ];
+        assert!(!history_tracking_enabled(&deleted_chunk));
+
+        // reminder rastrea historial.
+        let reminder_entries = vec![history_entry(sys::TYPE_NAME, Some("reminder"), 100, true)];
+        assert!(history_tracking_enabled(&reminder_entries));
+
+        // Sin datom de tipo: fail-open (comportamiento previo a la flag).
+        let sin_tipo = vec![history_entry("title", Some("x"), 100, true)];
+        assert!(history_tracking_enabled(&sin_tipo));
+        assert!(history_tracking_enabled(&[]));
+    }
+
+    #[tokio::test]
+    async fn history_devuelve_vacio_para_entidades_con_track_history_false() {
+        init();
+        let table = "test-history-track-veto";
+        let chunk_pk = "T#t1#E#file_9_chunk_0";
+        let content_id = Datom::hash_attr_name("chunk_content");
+
+        insert_items(
+            table,
+            chunk_pk,
+            vec![
+                datom_item(chunk_pk, sys::TYPE_ID, 100, true, "document_chunk"),
+                datom_item(chunk_pk, content_id, 100, true, "contenido del chunk"),
+            ],
+        );
+
+        let entries = reader(table)
+            .history("t1", "file_9_chunk_0", None)
+            .await
+            .expect("history ok");
+        assert!(
+            entries.is_empty(),
+            "document_chunk es infraestructura: estado actual sí, historial no"
+        );
+
+        // El veto se evalúa también con filtro de atributo (no lo esquiva).
+        let entries = reader(table)
+            .history("t1", "file_9_chunk_0", Some("chunk_content"))
+            .await
+            .expect("history ok");
+        assert!(entries.is_empty());
+
+        // Una entidad de negocio en la misma tabla sí expone su historial.
+        let note_pk = "T#t1#E#note_1";
+        let title_id = Datom::hash_attr_name("title");
+        insert_items(
+            table,
+            note_pk,
+            vec![
+                datom_item(note_pk, sys::TYPE_ID, 100, true, "reminder"),
+                datom_item(note_pk, title_id, 100, true, "nota viva"),
+            ],
+        );
+        let entries = reader(table)
+            .history("t1", "note_1", None)
+            .await
+            .expect("history ok");
+        assert_eq!(entries.len(), 2, "reminder expone su historial completo");
     }
 }

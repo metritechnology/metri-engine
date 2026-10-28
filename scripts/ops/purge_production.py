@@ -1,203 +1,198 @@
 #!/usr/bin/env python3
-import sys
-import boto3
+"""Utilidad de purga total del almacén binario S3 Metri Vortex (.mbf) en s3://metri-engine y reinicio en frío de AWS Lambda."""
+
+from __future__ import annotations
+
 import argparse
+import sys
 import time
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
-def get_table_keys(dynamo, table_name):
+import boto3
+
+REQUIRED_CONFIRM_PHRASE = "CONFIRM-PURGE-METRI-PROD"
+
+
+def purge_s3_bucket(
+    session: boto3.Session,
+    bucket_name: str,
+    prefix: str = "",
+) -> dict[str, int]:
+    """Elimina todos los objetos, versiones y marcadores de borrado en un bucket S3."""
+    s3 = session.client("s3")
+    start_time = time.time()
+    deleted_objects = 0
+    deleted_versions = 0
+    aborted_uploads = 0
+
+    print(f"\n--- Purgando bucket S3: s3://{bucket_name}/{prefix} ---")
+
+    # 1. Eliminar objetos actuales (list_objects_v2 + delete_objects en lotes de 1000)
+    paginator = s3.get_paginator("list_objects_v2")
+    page_kwargs: dict[str, Any] = {"Bucket": bucket_name}
+    if prefix:
+        page_kwargs["Prefix"] = prefix
+
+    for page in paginator.paginate(**page_kwargs):
+        contents = page.get("Contents", [])
+        if not contents:
+            continue
+        objects_batch = [{"Key": obj["Key"]} for obj in contents]
+        for i in range(0, len(objects_batch), 1000):
+            chunk = objects_batch[i : i + 1000]
+            resp = s3.delete_objects(
+                Bucket=bucket_name,
+                Delete={"Objects": chunk, "Quiet": True},
+            )
+            errors = resp.get("Errors", [])
+            deleted_objects += len(chunk) - len(errors)
+            if errors:
+                print(f"  [WARN] Errores al borrar lote en {bucket_name}: {errors[:3]}")
+        print(f"  Progreso: {deleted_objects} objetos eliminados...")
+
+    # 2. Eliminar versiones históricas y DeleteMarkers si el bucket tuvo versionado activo
+    ver_paginator = s3.get_paginator("list_object_versions")
+    for page in ver_paginator.paginate(**page_kwargs):
+        version_items = []
+        for v in page.get("Versions", []):
+            version_items.append({"Key": v["Key"], "VersionId": v["VersionId"]})
+        for dm in page.get("DeleteMarkers", []):
+            version_items.append({"Key": dm["Key"], "VersionId": dm["VersionId"]})
+
+        if not version_items:
+            continue
+
+        for i in range(0, len(version_items), 1000):
+            chunk = version_items[i : i + 1000]
+            resp = s3.delete_objects(
+                Bucket=bucket_name,
+                Delete={"Objects": chunk, "Quiet": True},
+            )
+            errors = resp.get("Errors", [])
+            deleted_versions += len(chunk) - len(errors)
+
+    # 3. Abortar cargas multiparte incompletas si existen
     try:
-        desc = dynamo.describe_table(TableName=table_name)
-        key_schema = desc['Table']['KeySchema']
-        return [attr['AttributeName'] for attr in key_schema]
-    except Exception as e:
-        print(f"Error describing table {table_name}: {e}")
-        sys.exit(1)
-
-def delete_batch(dynamo, table_name, batch, lock=None, stats=None):
-    unprocessed = {table_name: batch}
-    retries = 0
-    backoff = 0.1
-    
-    while unprocessed and unprocessed.get(table_name):
-        try:
-            response = dynamo.batch_write_item(RequestItems=unprocessed)
-            unprocessed = response.get('UnprocessedItems', {})
-            
-            if unprocessed and unprocessed.get(table_name):
-                time.sleep(backoff)
-                retries += 1
-                backoff = min(backoff * 2, 2.0)
-                if retries > 12:
-                    print(f"Warning: Reached max retries (12) for batch delete of {len(unprocessed[table_name])} items on {table_name}!")
-                    break
-        except Exception as e:
-            print(f"Error executing batch write on {table_name}: {e}")
-            break
-            
-    actually_deleted = len(batch) - (len(unprocessed.get(table_name, [])) if unprocessed else 0)
-    
-    if lock and stats:
-        with lock:
-            stats['deleted'] += actually_deleted
-            current_time = time.time()
-            if stats['deleted'] % 10000 == 0 or (current_time - stats['last_log'] > 5):
-                elapsed = current_time - stats['start_time']
-                rate = stats['deleted'] / elapsed if elapsed > 0 else 0
-                print(f"  Progress: Deleted {stats['deleted']} items so far... (Avg rate: {rate:.2f} items/sec)")
-                stats['last_log'] = current_time
-    
-    return actually_deleted
-
-# --- COMPLETE PURGE VIA SEGMENT SCANS ---
-def purge_segment(profile, region, table_name, key_names, total_segments, segment_id, delete_executor, lock, stats):
-    session = boto3.Session(profile_name=profile, region_name=region)
-    dynamo = session.client("dynamodb")
-    paginator = dynamo.get_paginator('scan')
-    requests = []
-    
-    try:
-        for page in paginator.paginate(
-            TableName=table_name, 
-            ProjectionExpression=", ".join(key_names),
-            TotalSegments=total_segments,
-            Segment=segment_id
-        ):
-            items = page.get('Items', [])
-            if not items:
+        mp_resp = s3.list_multipart_uploads(Bucket=bucket_name)
+        for upload in mp_resp.get("Uploads", []):
+            if prefix and not upload["Key"].startswith(prefix):
                 continue
-            
-            for item in items:
-                key_dict = {kn: item[kn] for kn in key_names if kn in item}
-                requests.append({'DeleteRequest': {'Key': key_dict}})
-                
-                if len(requests) == 25:
-                    delete_executor.submit(delete_batch, dynamo, table_name, requests, lock, stats)
-                    requests = []
-                    
-        if requests:
-            delete_executor.submit(delete_batch, dynamo, table_name, requests, lock, stats)
-    except Exception as e:
-        print(f"Error scanning segment {segment_id} of {table_name}: {e}")
+            s3.abort_multipart_upload(
+                Bucket=bucket_name,
+                Key=upload["Key"],
+                UploadId=upload["UploadId"],
+            )
+            aborted_uploads += 1
+    except Exception:
+        pass
 
-def purge_table_complete(profile, region, table_name, segments, threads):
-    print(f"\n--- Purging table in parallel: {table_name} ---")
-    session = boto3.Session(profile_name=profile, region_name=region)
-    dynamo = session.client("dynamodb")
-    
-    key_names = get_table_keys(dynamo, table_name)
-    stats = {'deleted': 0, 'start_time': time.time(), 'last_log': time.time()}
-    lock = threading.Lock()
-    
-    with ThreadPoolExecutor(max_workers=threads) as delete_executor:
-        with ThreadPoolExecutor(max_workers=segments) as scan_executor:
-            futures = [
-                scan_executor.submit(purge_segment, profile, region, table_name, key_names, segments, i, delete_executor, lock, stats)
-                for i in range(segments)
-            ]
-            for f in as_completed(futures):
-                f.result()
-                
-    elapsed = time.time() - stats['start_time']
-    print(f"Purge complete! Deleted a total of {stats['deleted']} items from {table_name} in {elapsed:.2f} seconds.")
+    # 4. Verificar que el bucket haya quedado limpio
+    verify_resp = s3.list_objects_v2(Bucket=bucket_name, MaxKeys=5, **({"Prefix": prefix} if prefix else {}))
+    remaining = verify_resp.get("KeyCount", 0)
+    elapsed = time.time() - start_time
 
-# --- SURGICAL TENANT PURGE VIA GSI-AEVT ---
-def query_attribute_keys(dynamo, table_name, tenant_id, attr_name):
-    pk_ap = f"T#{tenant_id}#A#{attr_name}"
-    keys = []
+    print(
+        f"Purga completada en {elapsed:.2f}s | Objetos borrados: {deleted_objects} | "
+        f"Versiones/Markers: {deleted_versions} | Multipart abortados: {aborted_uploads} | "
+        f"Objetos restantes: {remaining}"
+    )
+    return {
+        "deleted_objects": deleted_objects,
+        "deleted_versions": deleted_versions,
+        "aborted_uploads": aborted_uploads,
+        "remaining": remaining,
+    }
+
+
+def restart_lambda_cold_start(
+    session: boto3.Session,
+    stack_name: str = "metri-engine",
+    ssm_param: str = "/metri/engine/bootstrap/master-key",
+) -> str:
+    """Fuerza el reinicio de todas las microVMs de MetriEngineFunction y publica nueva versión en el alias `live`."""
+    cfn = session.client("cloudformation")
+    lmb = session.client("lambda")
+    ssm = session.client("ssm")
+
+    res = cfn.describe_stack_resource(
+        StackName=stack_name,
+        LogicalResourceId="MetriEngineFunction",
+    )
+    fn_name = res["StackResourceDetail"]["PhysicalResourceId"]
+    ssm_key = ssm.get_parameter(Name=ssm_param, WithDecryption=True)["Parameter"]["Value"]
+
+    print(f"\n--- Reiniciando microVMs de AWS Lambda: {fn_name} ---")
+    cfg = lmb.get_function_configuration(FunctionName=fn_name)
+    env_vars = dict(cfg.get("Environment", {}).get("Variables", {}))
+
+    # Garantizar conexión exclusiva a METRI_BOOTSTRAP_MASTER_KEY desde SSM Parameter Store
+    env_vars.pop("METRI_BOOTSTRAP_MASTER_PASSWORD", None)
+    env_vars["METRI_BOOTSTRAP_MASTER_KEY"] = ssm_key
+    env_vars["FORCE_DEPLOY"] = f"reset-{int(time.time())}"
+
+    lmb.update_function_configuration(
+        FunctionName=fn_name,
+        Environment={"Variables": env_vars},
+    )
+    waiter = lmb.get_waiter("function_updated")
+    waiter.wait(FunctionName=fn_name)
+
+    ver_resp = lmb.publish_version(
+        FunctionName=fn_name,
+        Description=f"Cold-start reset linked to {ssm_param}",
+    )
+    new_version = ver_resp["Version"]
+    waiter.wait(FunctionName=fn_name, Qualifier=new_version)
+
     try:
-        paginator = dynamo.get_paginator('query')
-        for page in paginator.paginate(
-            TableName=table_name,
-            IndexName="GSI-AEVT",
-            KeyConditionExpression="#ap = :ap",
-            ExpressionAttributeNames={"#ap": "ap"},
-            ExpressionAttributeValues={":ap": {"S": pk_ap}},
-            ProjectionExpression="PK, SK"
-        ):
-            items = page.get('Items', [])
-            for item in items:
-                keys.append((item['PK']['S'], item['SK']['B']))
-        print(f"  Attribute '{attr_name}': found {len(keys)} items.")
-    except Exception as e:
-        print(f"  Error querying attribute '{attr_name}': {e}", file=sys.stderr)
-    return keys
+        lmb.update_alias(
+            FunctionName=fn_name,
+            Name="live",
+            FunctionVersion=new_version,
+        )
+        print(f"  ✓ Alias 'live' actualizado a la versión limpia v{new_version} (0 microVMs calientes previas).")
+    except lmb.exceptions.ResourceNotFoundException:
+        print(f"  ✓ Versión v{new_version} publicada en $LATEST.")
 
-def purge_tenant_surgical(profile, region, table_name, tenant_id, threads):
-    print(f"\n--- Surgical tenant purge: {tenant_id} in {table_name} ---")
-    session = boto3.Session(profile_name=profile, region_name=region)
-    dynamo = session.client("dynamodb")
-    
-    attributes = [
-        "entity/ulid", "entity/type", "tenant/id", 
-        "meta/created_at", "meta/updated_at",
-        "created_at", "createdAt", "updated_at", "updatedAt",
-        "name", "status", "location_id", "criticality", "category", "model",
-        "health_score", "current_meter_reading", "type"
-    ]
-    
-    print("Retrieving primary keys from GSI-AEVT in parallel...")
-    unique_keys = set()
-    
-    with ThreadPoolExecutor(max_workers=min(20, len(attributes))) as executor:
-        futures = {executor.submit(query_attribute_keys, dynamo, table_name, tenant_id, attr): attr for attr in attributes}
-        for fut in futures:
-            attr_keys = fut.result()
-            for pk, sk in attr_keys:
-                unique_keys.add((pk, sk))
+    return new_version
 
-    total_found = len(unique_keys)
-    print(f"\nTotal unique items found to delete: {total_found}")
-    if total_found == 0:
-        print("Nothing to delete.")
-        return
 
-    keys_to_delete = [{'DeleteRequest': {'Key': {'PK': {'S': pk}, 'SK': {'B': sk}}}} for pk, sk in unique_keys]
-    batches = [keys_to_delete[i:i + 25] for i in range(0, len(keys_to_delete), 25)]
-    
-    print(f"Deleting {total_found} items in {len(batches)} batches in parallel ({threads} workers)...")
-    deleted_count = 0
-    
-    with ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = [executor.submit(delete_batch, dynamo, table_name, b) for b in batches]
-        for fut in futures:
-            deleted_count += fut.result()
-            if deleted_count % 10000 == 0 or deleted_count == total_found:
-                print(f"  Deleted {deleted_count}/{total_found} items...")
-
-    print(f"\nPurge complete! Deleted a total of {deleted_count} items from {table_name} for tenant '{tenant_id}'.")
-
-def main():
-    parser = argparse.ArgumentParser(description="Safely purge production DynamoDB tables (complete or surgical).")
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Purga de producción del almacén binario S3 Metri Vortex (.mbf) en s3://metri-engine."
+    )
     parser.add_argument("--profile", default="metri-dev", help="AWS CLI profile name")
     parser.add_argument("--region", default="us-east-1", help="AWS region")
-    parser.add_argument("--tables", nargs="+", default=["metri-dynamo", "metri-engine-MetriSchemasTable-7SFEBA7CN8S"], help="Target tables")
-    parser.add_argument("--confirm", help="Bypass prompt by supplying 'CONFIRM-PURGE-METRI-PROD'")
-    parser.add_argument("--segments", type=int, default=64, help="Scan segments for complete purge")
-    parser.add_argument("--threads", type=int, default=128, help="Delete worker threads")
-    
-    # Surgical options
-    parser.add_argument("--tenant", help="Tenant ID for surgical purge (bypasses full table scan)")
-    
+    parser.add_argument("--bucket", default="metri-engine", help="Target S3 bucket name")
+    parser.add_argument("--prefix", default="", help="Optional S3 key prefix to purge (default: entire bucket)")
+    parser.add_argument("--stack-name", default="metri-engine", help="CloudFormation stack name")
+    parser.add_argument(
+        "--restart-lambda",
+        action="store_true",
+        help="Force-restart MetriEngineFunction microVMs (alias live) and re-sweep S3 so no warm cache survives",
+    )
+    parser.add_argument(
+        "--confirm",
+        help=f"Bypass prompt by supplying '{REQUIRED_CONFIRM_PHRASE}'",
+    )
+
     args = parser.parse_args()
 
-    print("==================================================")
-    print("      METRI PRODUCTION DYNAMODB PURGE UTILITY     ")
-    print("==================================================")
+    print("============================================================")
+    print("      METRI PRODUCTION S3 (.MBF) PURGE UTILITY              ")
+    print("============================================================")
     print(f"AWS Profile    : {args.profile}")
     print(f"Region         : {args.region}")
-    print(f"Tables         : {', '.join(args.tables)}")
-    print(f"Threads        : {args.threads}")
-    if args.tenant:
-        print(f"Purge Mode     : SURGICAL (Tenant: {args.tenant})")
-    else:
-        print(f"Purge Mode     : COMPLETE (Segments: {args.segments})")
-    print("==================================================")
+    print(f"S3 Bucket      : s3://{args.bucket}/{args.prefix}")
+    print(f"Restart Lambda : {args.restart_lambda}")
+    print("============================================================")
 
-    # Validate AWS Identity
     try:
-        session = boto3.Session(profile_name=args.profile, region_name=args.region)
+        session = (
+            boto3.Session(profile_name=args.profile, region_name=args.region)
+            if args.profile
+            else boto3.Session(region_name=args.region)
+        )
         sts = session.client("sts")
         identity = sts.get_caller_identity()
         print(f"AWS Account ID : {identity['Account']}")
@@ -206,31 +201,32 @@ def main():
         print(f"\n[ERROR] Failed to establish AWS session: {e}")
         sys.exit(1)
 
-    # Confirmation step
-    required_phrase = "CONFIRM-PURGE-METRI-PROD"
     if args.confirm:
         user_input = args.confirm
     else:
-        print("\n" + "!" * 50)
-        print("WARNING: THIS IS A DESTRUCTIVE PRODUCTION WIPE.")
-        print(f"MODE: {'SURGICAL' if args.tenant else 'COMPLETE TABLE WIPE'}")
-        print("!" * 50)
-        user_input = input(f"\nType '{required_phrase}' to proceed: ").strip()
+        print("\n" + "!" * 60)
+        print(f"WARNING: THIS IS A DESTRUCTIVE WIPE OF s3://{args.bucket}/{args.prefix}")
+        print("!" * 60)
+        user_input = input(f"\nType '{REQUIRED_CONFIRM_PHRASE}' to proceed: ").strip()
 
-    if user_input != required_phrase:
+    if user_input != REQUIRED_CONFIRM_PHRASE:
         print("\n[CANCELLED] Confirmation phrase did not match. Exiting.")
         sys.exit(0)
 
-    # Run Purge
-    for t in args.tables:
-        if args.tenant:
-            purge_tenant_surgical(args.profile, args.region, t, args.tenant, args.threads)
-        else:
-            purge_table_complete(args.profile, args.region, t, args.segments, args.threads)
+    stats = purge_s3_bucket(session, args.bucket, args.prefix)
+    if args.restart_lambda:
+        restart_lambda_cold_start(session, stack_name=args.stack_name)
+        print("\n--- Segunda barrida post-reinicio para limpiar cualquier flush residual ---")
+        stats = purge_s3_bucket(session, args.bucket, args.prefix)
 
-    print("\n==================================================")
-    print("      PURGE COMPLETED SUCCESSFULLY                ")
-    print("==================================================")
+    if stats["remaining"] != 0:
+        print(f"\n[ERROR] Bucket still has {stats['remaining']} objects remaining!")
+        sys.exit(2)
+
+    print("\n============================================================")
+    print("      S3 PURGE COMPLETED SUCCESSFULLY (0 OBJECTS LEFT)      ")
+    print("============================================================")
+
 
 if __name__ == "__main__":
     main()

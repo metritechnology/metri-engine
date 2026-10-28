@@ -108,8 +108,13 @@ pub struct AttributeDescriptor {
     pub unique: Option<String>,
     #[doc = "Indica si el atributo genera proyección en el índice secundario de valores (AVET)."]
     pub indexed: bool,
-    #[doc = "Indica si el atributo se indexa para búsqueda de texto completo y difusa (FTS)."]
+    /// Indica si el atributo se indexa para búsqueda de texto completo y difusa (FTS).
     pub fts: bool,
+    /// Indica si el atributo dispara el espejo de historial: al mutar la relación,
+    /// el writer asienta/retracta en la MISMA TX un datom `_refs/<entidad_hija>`
+    /// en la partición del dueño (ver `eav::writer::history_mirror`).
+    #[serde(default)]
+    pub history_mirror: bool,
     #[doc = "Indica si el atributo actúa como dimensión de agrupación analítica (`GROUP BY`)."]
     pub is_dimension: bool,
     #[doc = "Indica si el atributo es elegible como métrica de agregación analítica."]
@@ -215,7 +220,7 @@ pub enum ConstraintKind {
 }
 
 /// Modelo completo de una entidad del Códice.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityModel {
     #[doc = "Nombre técnico único de la entidad (ej. `\"work_order\"`, `\"asset\"`)."]
     pub entity: String,
@@ -241,6 +246,13 @@ pub struct EntityModel {
     /// Indica si la entidad pertenece al plano de control del sistema.
     #[serde(default)]
     pub is_system: bool,
+    /// Si es `false`, la entidad no expone historial: su estado actual sí se
+    /// lee (`pull`), pero `history()` devuelve vacío. Es el caso de la
+    /// infraestructura de sistema derivada (`document_chunk`, `audit_log`,
+    /// `outbox_event`, …): auditarla sólo contamina las líneas de tiempo de
+    /// las entidades de negocio. Ausente en el JSON ⇒ `true`.
+    #[serde(default = "default_track_history")]
+    pub track_history: bool,
     /// Si es `true`, suprime la emisión de eventos de dominio (EDA) al mutar la entidad.
     #[serde(default)]
     pub disable_eda: bool,
@@ -259,6 +271,36 @@ pub struct EntityModel {
     /// Perfil geoespacial Uber H3 + Morton + R-Tree MBR en Zona 5B.
     #[serde(default)]
     pub spatial_profile: Option<SpatialProfile>,
+}
+
+/// Default de `track_history`: el historial se expone salvo que el modelo lo desactive.
+fn default_track_history() -> bool {
+    true
+}
+
+impl Default for EntityModel {
+    fn default() -> Self {
+        Self {
+            entity: String::new(),
+            label: None,
+            icon: None,
+            primary_key: None,
+            fts_fields: Vec::new(),
+            engine: EngineChannel::default(),
+            attributes: Vec::new(),
+            event_rules: Vec::new(),
+            is_sequence_scope_provider: false,
+            write_path_locked: false,
+            is_system: false,
+            track_history: default_track_history(),
+            disable_eda: false,
+            shadow_sagas_mapping: None,
+            constraints: Vec::new(),
+            survival_profile: None,
+            cross_covariance_matrix: None,
+            spatial_profile: None,
+        }
+    }
 }
 
 /// Entrada del registry para una entidad.
@@ -452,6 +494,20 @@ impl CodeRegistry {
                 by_attr_id.insert(id, attr.name.clone());
             }
 
+            // Espejo de historial: si el modelo declara atributos con
+            // `history_mirror`, el writer escribe datoms `_refs/<entidad>` en
+            // la partición del DUEÑO, que no los declara en su modelo. Se
+            // registran aquí sus attr_ids —misma exención que los atributos de
+            // sistema— para que los caminos de lectura (`history`, `pull`,
+            // `get_active_attributes`) resuelvan el nombre en lugar de
+            // degradarlo a `unknown_attr`/`attr_<id>`.
+            if model.attributes.iter().any(|a| a.history_mirror) {
+                let mirror_name =
+                    crate::eav::writer::history_mirror::mirror_attr_name(&entity_name);
+                let mirror_id = crate::eav::types::datom::Datom::hash_attr_name(&mirror_name);
+                by_attr_id.insert(mirror_id, mirror_name);
+            }
+
             by_hash.insert(fingerprint.clone(), entity_name.clone());
             let cache_fingerprint = model_cache_fingerprint(&json);
             by_entity.insert(
@@ -487,6 +543,14 @@ impl CodeRegistry {
     /// Obtiene el modelo de una entidad.
     pub fn get_model(&self, entity_type: &str) -> Option<&EntityModel> {
         self.by_entity.get(entity_type).map(|e| &e.model)
+    }
+
+    /// Indica si la entidad expone historial (`track_history` del modelo).
+    /// Entidad desconocida ⇒ `true` (comportamiento previo a la flag).
+    pub fn tracks_history(&self, entity_type: &str) -> bool {
+        self.get_model(entity_type)
+            .map(|m| m.track_history)
+            .unwrap_or(true)
     }
 
     /// Obtiene el engine channel de una entidad.
@@ -754,6 +818,7 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
                 unique: a["unique"].as_str().map(str::to_string),
                 indexed: a["index"].as_bool().unwrap_or(false),
                 fts,
+                history_mirror: a["history_mirror"].as_bool().unwrap_or(false),
                 is_dimension: a["is_dimension"].as_bool().unwrap_or(false),
                 is_metric,
                 is_measure,
@@ -807,6 +872,7 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
         .as_bool()
         .unwrap_or(false);
     let is_system = json["is_system"].as_bool().unwrap_or(false);
+    let track_history = json["track_history"].as_bool().unwrap_or(true);
 
     let survival_profile = json
         .get("survival_profile")
@@ -872,6 +938,7 @@ fn parse_entity_model(json: &serde_json::Value) -> Result<EntityModel, DomainErr
             .unwrap_or(false),
         write_path_locked,
         is_system,
+        track_history,
         disable_eda: json["disable_eda"].as_bool().unwrap_or(false),
         shadow_sagas_mapping: json
             .get("shadow_sagas_mapping")

@@ -512,11 +512,19 @@ def main():
                         help="Sobreescribe el host de metri-auth")
     parser.add_argument("--username", default="admin",
                         help="Usuario principal de login")
-    parser.add_argument("--password", default="SuperSecurePassword123!",
-                        help="Contraseña del usuario")
+    parser.add_argument("--password", default=os.environ.get("METRI_BOOTSTRAP_MASTER_KEY", ""),
+                        help="Contraseña del usuario (por defecto usa METRI_BOOTSTRAP_MASTER_KEY o AWS SSM /metri/engine/bootstrap/master-key)")
     parser.add_argument("--skip-login", action="store_true", default=False,
                         help="Omite el paso de testear login contra metri-auth")
     args = parser.parse_args()
+
+    if not args.password and not args.skip_login:
+        try:
+            import boto3
+            ssm = boto3.Session(profile_name=os.environ.get("AWS_PROFILE", "metri-dev"), region_name="us-east-1").client("ssm")
+            args.password = ssm.get_parameter(Name="/metri/engine/bootstrap/master-key", WithDecryption=True)["Parameter"]["Value"]
+        except Exception:
+            pass
 
     # Determine hosts and secrets based on environment selection
     # Local compose defaults vs production URLs

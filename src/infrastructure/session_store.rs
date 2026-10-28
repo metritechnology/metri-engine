@@ -56,7 +56,7 @@ impl HmacTokenStore {
         )
     }
 
-    /// Verifica si un jti está en la blacklist de DynamoDB.
+    /// Verifica si un jti está en la blacklist de DynamoDB (política fail-closed en error de infraestructura).
     async fn is_blacklisted(&self, jti: &str) -> bool {
         let pk = format!("REVOKED#{jti}");
         match self
@@ -67,8 +67,8 @@ impl HmacTokenStore {
             Ok(Some(_)) => true, // encontrado → revocado
             Ok(None) => false,   // no encontrado → válido
             Err(e) => {
-                warn!("[HMAC] Error verificando blacklist: {e:?}");
-                false // fail-open en error de infra (disponibilidad > seguridad)
+                warn!("[HMAC] Error verificando blacklist (fail-closed): {e:?}");
+                true // fail-closed en error de infra (seguridad Zero-Trust)
             }
         }
     }
