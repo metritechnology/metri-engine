@@ -18,7 +18,7 @@ Total de modelos registrados: **60**
 | `checklist_template` | `mbf` | — | ✓ | 0 | 0 | `name`, `description`, `status` |
 | `checklist_template_item` | `mbf` | — | ✓ | 0 | 0 | `checklist_template_section_id`, `item_order`, `question_text`, `type`, `is_required` |
 | `checklist_template_section` | `mbf` | — | ✓ | 0 | 0 | `checklist_template_id`, `section_order`, `title`, `description` |
-| `company` | `mbf` | — | ✓ | 0 | 2 | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
+| `company` | `mbf` | — | ✓ | 0 | 2 | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id_type`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address_street`, `address_city`, `address_state_province`, `address_postal_code`, `address_country_iso2`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
 | `dashboardBI` | `mbf` | — | ✓ | 0 | 3 | `name`, `description`, `widgets`, `created_at`, `updated_at` |
 | `document_chunk` | `mbf` | 🔒 | — | 0 | 0 | `id`, `parent_file`, `chunk_index`, `chunk_content`, `semantic_embedding`, `metadata_tags`, `owner_entity_type`, `owner_entity_id`, `page_range`, `created_at` |
 | `domain_fault` | `mbf` | 🔒 | — | 0 | 0 | `trace_id`, `tenant_id`, `user_id`, `error_code`, `severity`, `stage`, `component`, `entity_type`, `retryable`, `occurred_at`, `context` |

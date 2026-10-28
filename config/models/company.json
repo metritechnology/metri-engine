@@ -82,6 +82,12 @@
       "description": "Empresa matriz o Holding corporativo para estructurar relaciones de grupo empresarial."
     },
     {
+      "name": "tax_id_type",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Tipo de documento fiscal según el catálogo del país (NIT, CC, RFC, EIN, RUT, CIF, CNPJ…). El patrón de validación del valor lo aporta la capa de aplicación."
+    },
+    {
       "name": "tax_id",
       "type": "string",
       "unique": "tenant",
@@ -152,10 +158,33 @@
       "description": "Teléfono corporativo o directo de contacto."
     },
     {
-      "name": "address",
-      "type": "json",
-      "required": false,
-      "description": "Estructura de dirección fiscal y física estandarizada."
+      "name": "address_street",
+      "type": "string",
+      "description": "Calle y número de la dirección fiscal y física."
+    },
+    {
+      "name": "address_city",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Ciudad de la dirección fiscal y física."
+    },
+    {
+      "name": "address_state_province",
+      "type": "string",
+      "is_dimension": true,
+      "description": "Estado, departamento o provincia de la dirección fiscal y física."
+    },
+    {
+      "name": "address_postal_code",
+      "type": "string",
+      "description": "Código postal de la dirección fiscal y física."
+    },
+    {
+      "name": "address_country_iso2",
+      "type": "string",
+      "is_dimension": true,
+      "pattern": "^[A-Z]{2}$",
+      "description": "Código de país ISO 3166-1 alpha-2 de la dirección fiscal; determina el catálogo de documentos y regímenes fiscales aplicables."
     },
     {
       "name": "hourly_rate_cents",
