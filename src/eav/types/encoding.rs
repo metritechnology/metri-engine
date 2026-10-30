@@ -163,6 +163,91 @@ pub fn avet_sk_prefix(value: &DatomValue) -> Vec<u8> {
     build_avet_sk(value, "")
 }
 
+/// Cota inferior o superior para consultas de rango sobre el índice secundario `GSI-AVET`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AvetBound {
+    /// Sin límite explícito en este extremo (acotado al `ValueType` tag del rango).
+    Unbounded,
+    /// Límite cerrado (`>=` en cota inferior, `<=` en cota superior).
+    Inclusive(DatomValue),
+    /// Límite abierto (`>` en cota inferior, `<` en cota superior).
+    Exclusive(DatomValue),
+}
+
+impl AvetBound {
+    /// Extrae la referencia al `DatomValue` contenido en la cota, si existe.
+    pub fn value(&self) -> Option<&DatomValue> {
+        match self {
+            AvetBound::Unbounded => None,
+            AvetBound::Inclusive(v) | AvetBound::Exclusive(v) => Some(v),
+        }
+    }
+
+    /// Si la cota contiene `Long(n)` o `Instant(n)`, retorna una nueva cota intercambiando
+    /// entre `Long` (`0x02`) e `Instant` (`0x0A`) para tolerancia de tipo en lecturas.
+    pub fn with_swapped_int_tag(&self) -> Option<Self> {
+        match self {
+            AvetBound::Unbounded => Some(AvetBound::Unbounded),
+            AvetBound::Inclusive(DatomValue::Long(n)) => {
+                Some(AvetBound::Inclusive(DatomValue::Instant(*n)))
+            }
+            AvetBound::Inclusive(DatomValue::Instant(n)) => {
+                Some(AvetBound::Inclusive(DatomValue::Long(*n)))
+            }
+            AvetBound::Exclusive(DatomValue::Long(n)) => {
+                Some(AvetBound::Exclusive(DatomValue::Instant(*n)))
+            }
+            AvetBound::Exclusive(DatomValue::Instant(n)) => {
+                Some(AvetBound::Exclusive(DatomValue::Long(*n)))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Construye el par cerrado `(sk_min, sk_max)` de Sort Keys binarios para una consulta de rango
+/// `BETWEEN :sk_min AND :sk_max` en `GSI-AVET`.
+///
+/// Para cualquier valor `v` con prefijo $P(v) = \text{avet\_sk\_prefix}(v)$ y cualquier `entity_id` no vacío (`eid`):
+/// $$P(v_1) \mathbin{\Vert} \text{eid} \;<\; P(v_2) \;<\; P(v_2) \mathbin{\Vert} \text{eid} \;<\; P(v_2) \mathbin{\Vert} \text{0xFF}^{32}$$
+///
+/// Retorna `None` si ambas cotas son `Unbounded` o si el `ValueType` no es indexable en `GSI-AVET`.
+pub fn avet_sk_range_bounds(lower: &AvetBound, upper: &AvetBound) -> Option<(Vec<u8>, Vec<u8>)> {
+    let sample_val = lower.value().or_else(|| upper.value())?;
+    let vt = sample_val.value_type();
+    if !vt.is_avet_indexable() {
+        return None;
+    }
+    let tag = vt.tag();
+
+    let sk_min = match lower {
+        AvetBound::Unbounded => vec![tag, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        AvetBound::Inclusive(v) => avet_sk_prefix(v),
+        AvetBound::Exclusive(v) => {
+            let mut p = avet_sk_prefix(v);
+            p.extend_from_slice(&[0xFF; 32]);
+            p
+        }
+    };
+
+    let sk_max = match upper {
+        AvetBound::Unbounded => {
+            let mut p = Vec::with_capacity(41);
+            p.push(tag);
+            p.extend_from_slice(&[0xFF; 40]);
+            p
+        }
+        AvetBound::Inclusive(v) => {
+            let mut p = avet_sk_prefix(v);
+            p.extend_from_slice(&[0xFF; 32]);
+            p
+        }
+        AvetBound::Exclusive(v) => avet_sk_prefix(v),
+    };
+
+    Some((sk_min, sk_max))
+}
+
 // ─── VAET Sort Key ────────────────────────────────────────────────────────────
 // PK = "T#<tenant>#V#<ref_entity_id>"
 // SK = [attr_id: 2B][source_entity_id: variable]
@@ -222,5 +307,55 @@ mod tests {
         let p_double = avet_sk_prefix(&DatomValue::Double(0.0));
         assert_eq!(p_double.len(), 9);
         assert!(build_avet_sk(&DatomValue::Double(0.0), "ent-1").starts_with(&p_double));
+    }
+
+    #[test]
+    fn avet_sk_range_bounds_preserves_inclusive_and_exclusive_invariants() {
+        let sk_999 = build_avet_sk(&DatomValue::Instant(999), "01JENTITY_A");
+        let sk_1000 = build_avet_sk(&DatomValue::Instant(1000), "01JENTITY_B");
+        let sk_1001 = build_avet_sk(&DatomValue::Instant(1001), "01JENTITY_C");
+        let sk_other_tag = build_avet_sk(&DatomValue::Long(500), "01JENTITY_D");
+
+        // LT 1000: Unbounded .. Exclusive(1000)
+        let (lt_min, lt_max) = avet_sk_range_bounds(
+            &AvetBound::Unbounded,
+            &AvetBound::Exclusive(DatomValue::Instant(1000)),
+        )
+        .unwrap();
+        assert!(sk_999 >= lt_min && sk_999 <= lt_max);
+        assert!(sk_1000 > lt_max, "LT 1000 debe excluir valor exacto 1000");
+        assert!(
+            sk_other_tag < lt_min,
+            "LT 1000 en Instant (0x0A) no debe cruzar al tag Long (0x02)"
+        );
+
+        // LTE 1000: Unbounded .. Inclusive(1000)
+        let (lte_min, lte_max) = avet_sk_range_bounds(
+            &AvetBound::Unbounded,
+            &AvetBound::Inclusive(DatomValue::Instant(1000)),
+        )
+        .unwrap();
+        assert!(sk_999 >= lte_min && sk_999 <= lte_max);
+        assert!(sk_1000 >= lte_min && sk_1000 <= lte_max);
+        assert!(sk_1001 > lte_max);
+
+        // GT 1000: Exclusive(1000) .. Unbounded
+        let (gt_min, gt_max) = avet_sk_range_bounds(
+            &AvetBound::Exclusive(DatomValue::Instant(1000)),
+            &AvetBound::Unbounded,
+        )
+        .unwrap();
+        assert!(sk_1000 < gt_min, "GT 1000 debe excluir valor exacto 1000");
+        assert!(sk_1001 >= gt_min && sk_1001 <= gt_max);
+
+        // GTE 1000: Inclusive(1000) .. Unbounded
+        let (gte_min, gte_max) = avet_sk_range_bounds(
+            &AvetBound::Inclusive(DatomValue::Instant(1000)),
+            &AvetBound::Unbounded,
+        )
+        .unwrap();
+        assert!(sk_999 < gte_min);
+        assert!(sk_1000 >= gte_min && sk_1000 <= gte_max);
+        assert!(sk_1001 >= gte_min && sk_1001 <= gte_max);
     }
 }

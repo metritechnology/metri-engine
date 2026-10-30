@@ -68,6 +68,20 @@ pub fn compile_native_plan(ast_ir: &Value, tenant_id: &str) -> NativeQueryPlan {
             entity_type,
         },
 
+        EavQueryPlan::AvetRangeFilter {
+            attr_name,
+            lower,
+            upper,
+            eq_filters,
+        } => NativeQueryPlan::AvetRange {
+            tenant_id: tenant_id.to_string(),
+            attr_name,
+            lower,
+            upper,
+            eq_filters,
+            entity_type,
+        },
+
         EavQueryPlan::FtsSearch { term } => NativeQueryPlan::FtsSearch {
             tenant_id: tenant_id.to_string(),
             term,
@@ -133,6 +147,19 @@ pub fn compile_native_plan_fbs(
                 entity_type: ast_ir.entity.clone(),
             })
         }
+        crate::janus::plan_selector::EavQueryPlan::AvetRangeFilter {
+            attr_name,
+            lower,
+            upper,
+            eq_filters,
+        } => Ok(NativeQueryPlan::AvetRange {
+            tenant_id: tenant_id.to_string(),
+            attr_name,
+            lower,
+            upper,
+            eq_filters,
+            entity_type: ast_ir.entity.clone(),
+        }),
         crate::janus::plan_selector::EavQueryPlan::AevtScan {
             entity_type,
             shard_total: _,

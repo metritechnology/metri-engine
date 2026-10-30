@@ -3093,12 +3093,16 @@ impl MbfStorageClient {
             .and_then(av_string)
             .unwrap_or_default();
 
-        let has_lte = key_condition.contains("<=");
+        let has_between = key_condition.contains("BETWEEN");
+        let has_lte = key_condition.contains("<=") || has_between;
         let has_prefix = key_condition.contains("begins_with");
+        let sk_min = expr_attr_values.get(":sk_min").and_then(av_bytes);
         let sk_max = expr_attr_values.get(":sk_max").and_then(av_bytes);
         let sk_prefix = expr_attr_values.get(":sk_prefix").and_then(av_bytes);
 
-        let initial_sk = if has_prefix {
+        let initial_sk = if let Some(min_bytes) = sk_min {
+            min_bytes.to_vec()
+        } else if has_prefix {
             sk_prefix.map_or_else(Vec::new, |p| p.to_vec())
         } else {
             Vec::new()

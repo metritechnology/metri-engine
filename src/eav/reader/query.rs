@@ -60,7 +60,7 @@ pub fn insert_aevt_scan_cache_entry(
 use crate::domain::errors::{DomainError, ErrorCode};
 use crate::eav::fts::trigram::generate_trigrams;
 use crate::eav::types::datom::DatomValue;
-use crate::eav::types::encoding::avet_sk_prefix;
+use crate::eav::types::encoding::{avet_sk_prefix, avet_sk_range_bounds, AvetBound};
 use crate::mbf::storage::{av_string, AttributeValue, Blob, MbfStorageClient};
 
 /// Plan físico nativo de consulta EAV (expresado con nombres de atributo `attr_name`).
@@ -96,6 +96,22 @@ pub enum NativeQueryPlan {
         tenant_id: String,
         /// Lista de pares `(attr_name, valor)` que deben cumplirse simultáneamente.
         filters: Vec<(String, DatomValue)>,
+        /// Tipo de entidad esperado (`entity/type`) — mismo corte estricto que `AvetSingle`.
+        entity_type: Option<String>,
+    },
+    /// Escaneo por rango ordenado en `GSI-AVET` (`LT`, `LTE`, `GT`, `GTE`, `BETWEEN`),
+    /// con intersección opcional de filtros de igualdad indexados (`eq_filters`).
+    AvetRange {
+        /// Identificador del tenant propietario.
+        tenant_id: String,
+        /// Nombre canónico del atributo indexado del rango.
+        attr_name: String,
+        /// Cota inferior del rango (`Unbounded`, `Inclusive`, `Exclusive`).
+        lower: AvetBound,
+        /// Cota superior del rango (`Unbounded`, `Inclusive`, `Exclusive`).
+        upper: AvetBound,
+        /// Filtros adicionales de igualdad (`EQ`) sobre atributos indexados para intersectar antes de hidratar.
+        eq_filters: Vec<(String, DatomValue)>,
         /// Tipo de entidad esperado (`entity/type`) — mismo corte estricto que `AvetSingle`.
         entity_type: Option<String>,
     },
@@ -159,6 +175,23 @@ impl EavQueryExecutor {
             } => {
                 self.execute_avet_intersection(tenant_id, filters, entity_type.as_deref())
                     .await
+            }
+
+            NativeQueryPlan::AvetRange {
+                tenant_id,
+                attr_name,
+                lower,
+                upper,
+                eq_filters,
+                entity_type,
+            } => {
+                self.execute_avet_range(
+                    tenant_id,
+                    attr_name,
+                    (lower, upper),
+                    (eq_filters, entity_type.as_deref()),
+                )
+                .await
             }
 
             NativeQueryPlan::FtsSearch { tenant_id, term } => {
@@ -231,13 +264,15 @@ impl EavQueryExecutor {
             .execute_avet_single_for_tenant(tenant, attr_name, value)
             .await?;
 
-        // Tolerancia de tipo textual: el mismo valor escrito como Str (tag
-        // 0x04) o Uuid (0x05) comparte forma — el AVET prefix no. Los filtros
-        // del gRPC llegan como Str aunque el attr se almacene como Uuid.
+        // Tolerancia de tipo textual y entera: el mismo valor escrito como Str (tag
+        // 0x04) o Uuid (0x05), o como Long (0x02) vs Instant (0x0A), comparte forma
+        // pero tiene distinto byte de etiqueta en AVET.
         if ids.is_empty() {
             let alt = match value {
                 DatomValue::Str(s) => Some(DatomValue::Uuid(s.clone())),
                 DatomValue::Uuid(s) => Some(DatomValue::Str(s.clone())),
+                DatomValue::Long(n) => Some(DatomValue::Instant(*n)),
+                DatomValue::Instant(n) => Some(DatomValue::Long(*n)),
                 _ => None,
             };
             if let Some(alt) = alt {
@@ -289,7 +324,8 @@ impl EavQueryExecutor {
         attr_name: &str,
         value: &DatomValue,
     ) -> Result<Vec<String>, DomainError> {
-        let pk = format!("T#{tenant}#AV#{attr_name}");
+        let canonical_attr = normalize_avet_attr_name(attr_name);
+        let pk = format!("T#{tenant}#AV#{canonical_attr}");
         let sk_prefix = avet_sk_prefix(value);
 
         let mut attr_names = HashMap::new();
@@ -358,6 +394,134 @@ impl EavQueryExecutor {
 
         let ids: Vec<String> = common_ids.unwrap_or_default().into_iter().collect();
         self.restrict_to_entity_type(tenant, ids, entity_type).await
+    }
+
+    /// GSI-AVET rango: ejecuta un recorrido ordenado $O(\log N + K)$ entre `lower` y `upper`
+    /// sobre la partición `T#<tenant>#AV#<attr_name>`, deduplica por MVCC e intersecta
+    /// opcionalmente con `eq_filters` antes del corte por `entity_type`.
+    async fn execute_avet_range(
+        &self,
+        tenant: &str,
+        attr_name: &str,
+        (lower, upper): (&AvetBound, &AvetBound),
+        (eq_filters, entity_type): (&[(String, DatomValue)], Option<&str>),
+    ) -> Result<Vec<String>, DomainError> {
+        let mut ids = self
+            .execute_avet_range_with_type_tolerance(tenant, attr_name, lower, upper)
+            .await?;
+
+        let master_tenant = &crate::domain::config::engine_config().master_tenant_id;
+        if ids.is_empty() && tenant == master_tenant {
+            let tenants = self
+                .execute_aevt_scan_by_type(master_tenant, "tenant", 0)
+                .await
+                .unwrap_or_default();
+
+            for t in tenants {
+                if t == *master_tenant {
+                    continue;
+                }
+                if let Ok(tenant_ids) = self
+                    .execute_avet_range_with_type_tolerance(&t, attr_name, lower, upper)
+                    .await
+                {
+                    if !tenant_ids.is_empty() {
+                        ids = tenant_ids;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ids.is_empty() {
+            return Ok(ids);
+        }
+
+        if !eq_filters.is_empty() {
+            let mut candidate_set: HashSet<String> = ids.into_iter().collect();
+            for (eq_attr, eq_val) in eq_filters {
+                let eq_ids: HashSet<String> = self
+                    .execute_avet_single(tenant, eq_attr, eq_val, None)
+                    .await?
+                    .into_iter()
+                    .collect();
+                candidate_set.retain(|id| eq_ids.contains(id));
+                if candidate_set.is_empty() {
+                    return Ok(vec![]);
+                }
+            }
+            ids = candidate_set.into_iter().collect();
+        }
+
+        self.restrict_to_entity_type(tenant, ids, entity_type).await
+    }
+
+    async fn execute_avet_range_with_type_tolerance(
+        &self,
+        tenant: &str,
+        attr_name: &str,
+        lower: &AvetBound,
+        upper: &AvetBound,
+    ) -> Result<Vec<String>, DomainError> {
+        let mut ids = self
+            .execute_avet_range_for_tenant(tenant, attr_name, lower, upper)
+            .await?;
+
+        if ids.is_empty() {
+            if let (Some(alt_lo), Some(alt_hi)) =
+                (lower.with_swapped_int_tag(), upper.with_swapped_int_tag())
+            {
+                if &alt_lo != lower || &alt_hi != upper {
+                    ids = self
+                        .execute_avet_range_for_tenant(tenant, attr_name, &alt_lo, &alt_hi)
+                        .await?;
+                }
+            }
+        }
+
+        Ok(ids)
+    }
+
+    async fn execute_avet_range_for_tenant(
+        &self,
+        tenant: &str,
+        attr_name: &str,
+        lower: &AvetBound,
+        upper: &AvetBound,
+    ) -> Result<Vec<String>, DomainError> {
+        let Some((sk_min, sk_max)) = avet_sk_range_bounds(lower, upper) else {
+            return Ok(vec![]);
+        };
+        if sk_min > sk_max {
+            return Ok(vec![]);
+        }
+
+        let canonical_attr = normalize_avet_attr_name(attr_name);
+        let pk = format!("T#{tenant}#AV#{canonical_attr}");
+        let mut attr_names = HashMap::new();
+        let mut attr_values = HashMap::new();
+        attr_names.insert("#pk".to_string(), "vp".to_string());
+        attr_names.insert("#sk".to_string(), "vs".to_string());
+
+        attr_values.insert(":pk".to_string(), AttributeValue::S(pk));
+        attr_values.insert(":sk_min".to_string(), AttributeValue::B(Blob::new(sk_min)));
+        attr_values.insert(":sk_max".to_string(), AttributeValue::B(Blob::new(sk_max)));
+
+        let raw = self
+            .ddb
+            .query(
+                &self.table,
+                Some("GSI-AVET"),
+                "#pk = :pk AND #sk BETWEEN :sk_min AND :sk_max",
+                attr_names,
+                attr_values,
+                true,
+                None,
+            )
+            .await
+            .map_err(|e| DomainError::eav(ErrorCode::Eav002, format!("AVET range err: {e:?}")))?;
+
+        Ok(dedup_latest_asserted_in_range(raw))
     }
 
     /// GSI-FTS + MBF Zone 5B Hybrid Search:
@@ -628,6 +792,21 @@ impl EavQueryExecutor {
     }
 }
 
+/// Normaliza el nombre de atributo para el índice `GSI-AVET`: conserva intactos los atributos
+/// de sistema (`meta/*`, `entity/*`, `tenant/*`, `_refs/*`) y elimina cualquier prefijo
+/// `<entity_type>/` en atributos de dominio (`work_order/due_date` -> `due_date`).
+fn normalize_avet_attr_name(attr_name: &str) -> &str {
+    if attr_name.starts_with("meta/")
+        || attr_name.starts_with("entity/")
+        || attr_name.starts_with("tenant/")
+        || attr_name.starts_with(crate::eav::writer::history_mirror::REFS_PREFIX)
+    {
+        attr_name
+    } else {
+        attr_name.split('/').next_back().unwrap_or(attr_name)
+    }
+}
+
 /// Convierte un DatomValue a su representación String para comparación en memoria.
 fn datom_value_to_string(value: &DatomValue) -> String {
     match value {
@@ -724,6 +903,55 @@ fn dedup_latest_asserted_by_value(
                 .map(|(_, op, value_matches)| *op && *value_matches)
                 .unwrap_or(false)
         })
+        .collect()
+}
+
+/// Deduplicación MVCC para consultas de rango sobre `GSI-AVET`.
+///
+/// En el log append-only EAV (`datom_plan.rs`), todo valor $v_1$ sobrescrito o eliminado
+/// en una transacción posterior `tx_2` emite un datom `retract` (`op = false`, `tx = tx_2`)
+/// con la misma clave `vs = build_avet_sk(v_1, eid)`. Por lo tanto, cualquier `assert(v_1)`
+/// dentro del rango `[sk_min, sk_max]` que haya sido revocado tiene su `retract(v_1)`
+/// garantizado dentro del mismo rango `[sk_min, sk_max]`.
+/// Si el nuevo valor $v_2$ en `tx_2` también cae dentro del rango, `(tx_2, true) > (tx_2, false)`
+/// conserva la entidad; si $v_2$ cae fuera del rango, `(tx_2, false)` gana y excluye la entidad.
+fn dedup_latest_asserted_in_range(raw: Vec<HashMap<String, AttributeValue>>) -> Vec<String> {
+    use crate::eav::types::encoding::decode_eavt_sk;
+
+    let mut latest: HashMap<String, (u64, bool)> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+
+    for item in raw {
+        let pk_str = match item.get("PK").and_then(av_string) {
+            Some(pk) => pk,
+            None => continue,
+        };
+        let eid = match pk_str.split('#').nth(3) {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+        let (tx, op) = match item.get("SK").and_then(|v| match v {
+            AttributeValue::B(blob) => decode_eavt_sk(blob.as_ref()),
+            _ => None,
+        }) {
+            Some(decoded) => (decoded.1, decoded.2),
+            None => continue,
+        };
+
+        match latest.get(&eid) {
+            Some((prev_tx, prev_op)) if (*prev_tx, *prev_op) >= (tx, op) => {}
+            _ => {
+                if !latest.contains_key(&eid) {
+                    order.push(eid.clone());
+                }
+                latest.insert(eid, (tx, op));
+            }
+        }
+    }
+
+    order
+        .into_iter()
+        .filter(|eid| latest.get(eid).is_some_and(|(_, op)| *op))
         .collect()
 }
 
@@ -1039,5 +1267,148 @@ mod avet_strict_type_tests {
             ids.is_empty(),
             "una entidad cuyo tipo quedó retractado no pasa el corte"
         );
+    }
+
+    fn avet_typed_item(
+        eid: &str,
+        attr_name: &str,
+        value: DatomValue,
+        tx: u64,
+        op: bool,
+    ) -> HashMap<String, AttributeValue> {
+        let attr_id = crate::eav::types::datom::Datom::hash_attr_name(attr_name);
+        let mut m = HashMap::new();
+        m.insert("PK".to_string(), AttributeValue::S(format!("T#t1#E#{eid}")));
+        m.insert(
+            "SK".to_string(),
+            AttributeValue::B(Blob::new(build_eavt_sk(attr_id, tx, op))),
+        );
+        m.insert(
+            "vp".to_string(),
+            AttributeValue::S(format!("T#t1#AV#{attr_name}")),
+        );
+        m.insert(
+            "vs".to_string(),
+            AttributeValue::B(Blob::new(build_avet_sk(&value, eid))),
+        );
+        match &value {
+            DatomValue::Instant(n) | DatomValue::Long(n) => {
+                m.insert("v".to_string(), AttributeValue::N(n.to_string()));
+            }
+            DatomValue::Double(d) => {
+                m.insert("v".to_string(), AttributeValue::N(d.to_string()));
+            }
+            DatomValue::Str(s) | DatomValue::Uuid(s) => {
+                m.insert("v".to_string(), AttributeValue::S(s.clone()));
+            }
+            _ => {}
+        }
+        m
+    }
+
+    fn seed_work_orders_range(table: &str) {
+        let st_id = crate::eav::types::datom::Datom::hash_attr_name("status");
+        insert_items(
+            table,
+            vec![
+                avet_item(
+                    "t1",
+                    "wo_1",
+                    sys::TYPE_ID,
+                    sys::TYPE_NAME,
+                    "work_order",
+                    10,
+                    true,
+                ),
+                avet_typed_item("wo_1", "due_date", DatomValue::Instant(1_000), 10, true),
+                avet_item("t1", "wo_1", st_id, "status", "IN_PROGRESS", 10, true),
+                avet_item(
+                    "t1",
+                    "wo_2",
+                    sys::TYPE_ID,
+                    sys::TYPE_NAME,
+                    "work_order",
+                    10,
+                    true,
+                ),
+                avet_typed_item("wo_2", "due_date", DatomValue::Instant(5_000), 10, true),
+                avet_item("t1", "wo_2", st_id, "status", "IN_PROGRESS", 10, true),
+                avet_item(
+                    "t1",
+                    "wo_3",
+                    sys::TYPE_ID,
+                    sys::TYPE_NAME,
+                    "work_order",
+                    10,
+                    true,
+                ),
+                avet_typed_item("wo_3", "due_date", DatomValue::Instant(1_500), 10, true),
+                avet_typed_item("wo_3", "due_date", DatomValue::Instant(1_500), 20, false),
+                avet_typed_item("wo_3", "due_date", DatomValue::Instant(9_000), 20, true),
+                avet_item("t1", "wo_3", st_id, "status", "IN_PROGRESS", 10, true),
+                avet_item(
+                    "t1",
+                    "rem_1",
+                    sys::TYPE_ID,
+                    sys::TYPE_NAME,
+                    "reminder",
+                    10,
+                    true,
+                ),
+                avet_typed_item("rem_1", "due_date", DatomValue::Instant(1_200), 10, true),
+            ],
+        );
+    }
+
+    #[tokio::test]
+    async fn avet_range_identifica_work_orders_vencidas_y_respeta_mvcc_retract() {
+        let table = "test-avet-range-overdue-mvcc";
+        seed_work_orders_range(table);
+
+        let lt_plan = NativeQueryPlan::AvetRange {
+            tenant_id: "t1".to_string(),
+            attr_name: "due_date".to_string(),
+            lower: AvetBound::Unbounded,
+            upper: AvetBound::Exclusive(DatomValue::Instant(5_000)),
+            eq_filters: vec![(
+                "status".to_string(),
+                DatomValue::Str("IN_PROGRESS".to_string()),
+            )],
+            entity_type: Some("work_order".to_string()),
+        };
+        let ids_lt = executor(table)
+            .execute_native_plan(&lt_plan)
+            .await
+            .expect("LT plan ok");
+        assert_eq!(ids_lt, vec!["wo_1".to_string()]);
+
+        let lte_plan = NativeQueryPlan::AvetRange {
+            tenant_id: "t1".to_string(),
+            attr_name: "due_date".to_string(),
+            lower: AvetBound::Unbounded,
+            upper: AvetBound::Inclusive(DatomValue::Instant(5_000)),
+            eq_filters: vec![],
+            entity_type: Some("work_order".to_string()),
+        };
+        let mut ids_lte = executor(table)
+            .execute_native_plan(&lte_plan)
+            .await
+            .expect("LTE plan ok");
+        ids_lte.sort();
+        assert_eq!(ids_lte, vec!["wo_1".to_string(), "wo_2".to_string()]);
+
+        let gt_plan = NativeQueryPlan::AvetRange {
+            tenant_id: "t1".to_string(),
+            attr_name: "due_date".to_string(),
+            lower: AvetBound::Exclusive(DatomValue::Instant(5_000)),
+            upper: AvetBound::Unbounded,
+            eq_filters: vec![],
+            entity_type: Some("work_order".to_string()),
+        };
+        let ids_gt = executor(table)
+            .execute_native_plan(&gt_plan)
+            .await
+            .expect("GT plan ok");
+        assert_eq!(ids_gt, vec!["wo_3".to_string()]);
     }
 }
