@@ -85,10 +85,25 @@
       "cardinality": "one"
     },
     {
-      "name": "tags",
-      "type": "array",
-      "of": "string",
-      "description": "Etiquetas libres de clasificación para agrupar y filtrar solicitudes durante el triaje."
+      "name": "tag",
+      "type": "string",
+      "unique": "tenant",
+      "pattern": "^S-[A-Z0-9-]{3,15}$",
+      "fts": true,
+      "auto_generate": {
+        "strategy": "stochastic_base36",
+        "prefix": "S-",
+        "length": 7
+      },
+      "fuzzy_profile": {
+        "max_edit_distance": 1,
+        "enable_symspell": true,
+        "enable_trigrams": true,
+        "phonetic_algorithm": "none",
+        "alphanumeric_code_normalizer": true,
+        "bm25_field_boost": 5.0
+      },
+      "description": "Código de negocio único autogenerado por inquilino para la solicitud (p. ej. S-3K9X2AB)."
     }
   ]
 }
