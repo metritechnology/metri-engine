@@ -83,6 +83,12 @@
       "type": "reference",
       "entityRef": "location",
       "cardinality": "one"
+    },
+    {
+      "name": "tags",
+      "type": "array",
+      "of": "string",
+      "description": "Etiquetas libres de clasificación para agrupar y filtrar solicitudes durante el triaje."
     }
   ]
 }

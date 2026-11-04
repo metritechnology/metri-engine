@@ -48,7 +48,7 @@ Total de modelos registrados: **60**
 | `procedure_template` | `mbf` | — | ✓ | 0 | 0 | `name`, `description`, `lifecycle_state`, `template_type`, `version`, `document_code`, `custom_logo` |
 | `procedure_template_field` | `mbf` | — | ✓ | 0 | 0 | `procedure_template_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `score`, `field_order` |
 | `reminder` | `mbf` | — | ✓ | 0 | 3 | `title`, `message`, `target_user_id`, `target_group_id`, `reminder_datetime`, `prenotify_minutes_array`, `iana_timezone`, `status` |
-| `request` | `mbf` | — | ✓ | 0 | 0 | `title`, `description`, `requested_by_user`, `requested_by_email`, `form_data`, `status`, `priority`, `asset_id`, `location_id` |
+| `request` | `mbf` | — | ✓ | 0 | 0 | `title`, `description`, `requested_by_user`, `requested_by_email`, `form_data`, `status`, `priority`, `asset_id`, `location_id`, `tags` |
 | `role` | `mbf` | 🔒 | ✓ | 0 | 0 | `name`, `description`, `grants`, `allowed_locations`, `allowed_assets`, `tenant_id` |
 | `scheduled_job` | `mbf` | 🔒 | ✓ | 0 | 3 | `parent_entity_ref`, `created_by`, `trigger_type`, `trigger_expression`, `iana_timezone`, `action_type`, `target_user_id`, `target_group_id`, `target_role_id`, `target_webhook_id`, `action_payload`, `idempotency_hash`, `status`, `last_run_at`, `run_count`, `last_error` |
 | `sequence_registry` | `mbf` | 🔒 | — | 0 | 0 | `tenant_id`, `sequence_code`, `prefix`, `padding_length`, `current_value`, `parent_scope_tag` |
