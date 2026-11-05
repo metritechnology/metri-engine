@@ -54,12 +54,12 @@
       "type": "enum",
       "options": [
         "PENDING",
-        "REVIEWED",
-        "CONVERTED_TO_WO",
-        "REJECTED"
+        "APPROVED",
+        "DECLINED"
       ],
       "default_value": "PENDING",
-      "is_dimension": true
+      "is_dimension": true,
+      "description": "Estado del triaje, simplificado a tres valores: PENDING (en cola), APPROVED (aprobada — la conversión genera la OT), DECLINED (declinada). Terminales: APPROVED y DECLINED."
     },
     {
       "name": "priority",
