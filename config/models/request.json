@@ -101,6 +101,13 @@
       "cardinality": "one"
     },
     {
+      "name": "work_order_id",
+      "type": "reference",
+      "entityRef": "work_order",
+      "cardinality": "one",
+      "description": "OT nacida de esta solicitud (back-pointer; la fuente de verdad es work_order.request_id). La escribe la app al guardar la OT generada desde la ficha (flujo Aprobar → Generar OT): una solicitud se convierte como mucho en una orden de trabajo. Vacío en PENDING/IN_REVIEW/APPROVED y en los terminales negativos."
+    },
+    {
       "name": "tag",
       "type": "string",
       "unique": "tenant",
