@@ -30,7 +30,7 @@ impl MetriGrpcService {
             // advierte — el Códice puede no listar dominios de plugins en alta.
             const KNOWN_ACTIONS: &[&str] = &[
                 "VIEW", "CREATE", "UPDATE", "DELETE", "UPSERT", "EXECUTE", "EXPORT", "APPROVE",
-                "REJECT", "DELEGATE", "REVOKE",
+                "REJECT", "DELEGATE", "REVOKE", "CONVERT",
             ];
             if action != "*" && !KNOWN_ACTIONS.contains(&action) {
                 return Err(Status::invalid_argument(format!(

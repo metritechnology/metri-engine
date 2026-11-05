@@ -39,7 +39,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Allowed actions: VIEW, CREATE, UPDATE, DELETE, EXECUTE, EXPORT."
+            "description": "Allowed actions: VIEW, CREATE, UPDATE, DELETE, UPSERT, EXECUTE, EXPORT, APPROVE, REJECT, DELEGATE, REVOKE, CONVERT."
           },
           "scope": {
             "type": "enum",
