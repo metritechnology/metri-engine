@@ -51,6 +51,11 @@ class MetriServiceStub(object):
                 request_serializer=metri__pb2.ExploreRequest.SerializeToString,
                 response_deserializer=metri__pb2.ExploreResponse.FromString,
                 _registered_method=True)
+        self.ListEntities = channel.unary_unary(
+                '/metri.MetriService/ListEntities',
+                request_serializer=metri__pb2.ListEntitiesRequest.SerializeToString,
+                response_deserializer=metri__pb2.ListEntitiesResponse.FromString,
+                _registered_method=True)
         self.Query = channel.unary_stream(
                 '/metri.MetriService/Query',
                 request_serializer=metri__pb2.QueryRequest.SerializeToString,
@@ -61,6 +66,11 @@ class MetriServiceStub(object):
                 request_serializer=metri__pb2.TransactionRequest.SerializeToString,
                 response_deserializer=metri__pb2.TransactionResponse.FromString,
                 _registered_method=True)
+        self.CompositeTransact = channel.unary_unary(
+                '/metri.MetriService/CompositeTransact',
+                request_serializer=metri__pb2.CompositeTransactRequest.SerializeToString,
+                response_deserializer=metri__pb2.CompositeTransactResponse.FromString,
+                _registered_method=True)
         self.BulkIngest = channel.unary_unary(
                 '/metri.MetriService/BulkIngest',
                 request_serializer=metri__pb2.BulkRequest.SerializeToString,
@@ -70,6 +80,16 @@ class MetriServiceStub(object):
                 '/metri.MetriService/MatchRoutingRulesBatch',
                 request_serializer=metri__pb2.MatchRoutingRulesBatchRequest.SerializeToString,
                 response_deserializer=metri__pb2.MatchRoutingRulesBatchResponse.FromString,
+                _registered_method=True)
+        self.ListSequenceConfigs = channel.unary_unary(
+                '/metri.MetriService/ListSequenceConfigs',
+                request_serializer=metri__pb2.ListSequenceConfigsRequest.SerializeToString,
+                response_deserializer=metri__pb2.ListSequenceConfigsResponse.FromString,
+                _registered_method=True)
+        self.UpsertSequenceConfig = channel.unary_unary(
+                '/metri.MetriService/UpsertSequenceConfig',
+                request_serializer=metri__pb2.UpsertSequenceConfigRequest.SerializeToString,
+                response_deserializer=metri__pb2.UpsertSequenceConfigResponse.FromString,
                 _registered_method=True)
 
 
@@ -96,6 +116,15 @@ class MetriServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListEntities(self, request, context):
+        """Lista los ids de las entidades que cumplen filtros de igualdad sobre atributos
+        INDEXADOS. Resuelve el hueco entre Transact+GET (una entidad por id conocido) y
+        Query (consulta analitica de dashboards). Ver PLAN_IMPLEMENTACION_LIST_ENTITIES.md
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def Query(self, request, context):
         """--- Analytics Domain ---
         The Universal Query Engine: Handles 1 query, Batch dashboards, or Multi-Series merged charts.
@@ -112,6 +141,15 @@ class MetriServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CompositeTransact(self, request, context):
+        """Instanciación atómica: N entidades en UNA TransactWriteItems — todo o
+        nada. Caso de uso: colgar un procedure y sus N campos a una OT en una
+        sola llamada (sin procedure mancos a mitad de un fallo).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def BulkIngest(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -120,9 +158,25 @@ class MetriServiceServicer(object):
 
     def MatchRoutingRulesBatch(self, request, context):
         """--- EDA (Event-Driven Architecture) Domain ---
-        High-Performance Batch Router for O(1) Network Hopping
-        Exclusive bridge for the SAM Event Router to evaluate AST logic inversely for arrays of SQS records.
+        DEPRECATED: Use MoiraRoutingService.MatchRoutingRulesBatch (eda.proto) instead.
+        Retained for backward compatibility with existing gRPC clients.
         """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListSequenceConfigs(self, request, context):
+        """--- Sequence Config Domain (numeración de registros) ---
+        Administración de la política de numeración por tenant sobre la tabla
+        metri-sequence-registry (los contadores que producen 'WO-0042' /
+        'WO-L-K92MXA-0043'). El tenant viaja SIEMPRE del JWT — jamás del payload.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpsertSequenceConfig(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -140,6 +194,11 @@ def add_MetriServiceServicer_to_server(servicer, server):
                     request_deserializer=metri__pb2.ExploreRequest.FromString,
                     response_serializer=metri__pb2.ExploreResponse.SerializeToString,
             ),
+            'ListEntities': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListEntities,
+                    request_deserializer=metri__pb2.ListEntitiesRequest.FromString,
+                    response_serializer=metri__pb2.ListEntitiesResponse.SerializeToString,
+            ),
             'Query': grpc.unary_stream_rpc_method_handler(
                     servicer.Query,
                     request_deserializer=metri__pb2.QueryRequest.FromString,
@@ -150,6 +209,11 @@ def add_MetriServiceServicer_to_server(servicer, server):
                     request_deserializer=metri__pb2.TransactionRequest.FromString,
                     response_serializer=metri__pb2.TransactionResponse.SerializeToString,
             ),
+            'CompositeTransact': grpc.unary_unary_rpc_method_handler(
+                    servicer.CompositeTransact,
+                    request_deserializer=metri__pb2.CompositeTransactRequest.FromString,
+                    response_serializer=metri__pb2.CompositeTransactResponse.SerializeToString,
+            ),
             'BulkIngest': grpc.unary_unary_rpc_method_handler(
                     servicer.BulkIngest,
                     request_deserializer=metri__pb2.BulkRequest.FromString,
@@ -159,6 +223,16 @@ def add_MetriServiceServicer_to_server(servicer, server):
                     servicer.MatchRoutingRulesBatch,
                     request_deserializer=metri__pb2.MatchRoutingRulesBatchRequest.FromString,
                     response_serializer=metri__pb2.MatchRoutingRulesBatchResponse.SerializeToString,
+            ),
+            'ListSequenceConfigs': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListSequenceConfigs,
+                    request_deserializer=metri__pb2.ListSequenceConfigsRequest.FromString,
+                    response_serializer=metri__pb2.ListSequenceConfigsResponse.SerializeToString,
+            ),
+            'UpsertSequenceConfig': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpsertSequenceConfig,
+                    request_deserializer=metri__pb2.UpsertSequenceConfigRequest.FromString,
+                    response_serializer=metri__pb2.UpsertSequenceConfigResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -233,6 +307,33 @@ class MetriService(object):
             _registered_method=True)
 
     @staticmethod
+    def ListEntities(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/metri.MetriService/ListEntities',
+            metri__pb2.ListEntitiesRequest.SerializeToString,
+            metri__pb2.ListEntitiesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def Query(request,
             target,
             options=(),
@@ -287,6 +388,33 @@ class MetriService(object):
             _registered_method=True)
 
     @staticmethod
+    def CompositeTransact(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/metri.MetriService/CompositeTransact',
+            metri__pb2.CompositeTransactRequest.SerializeToString,
+            metri__pb2.CompositeTransactResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def BulkIngest(request,
             target,
             options=(),
@@ -330,6 +458,60 @@ class MetriService(object):
             '/metri.MetriService/MatchRoutingRulesBatch',
             metri__pb2.MatchRoutingRulesBatchRequest.SerializeToString,
             metri__pb2.MatchRoutingRulesBatchResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListSequenceConfigs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/metri.MetriService/ListSequenceConfigs',
+            metri__pb2.ListSequenceConfigsRequest.SerializeToString,
+            metri__pb2.ListSequenceConfigsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpsertSequenceConfig(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/metri.MetriService/UpsertSequenceConfig',
+            metri__pb2.UpsertSequenceConfigRequest.SerializeToString,
+            metri__pb2.UpsertSequenceConfigResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -450,6 +632,87 @@ class QuotaService(object):
             '/metri.QuotaService/ReconcileTokens',
             metri__pb2.ReconcileTokensRequest.SerializeToString,
             metri__pb2.ReconcileTokensResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
+class AgentConfigServiceStub(object):
+    """--- Agent Configuration Domain (Prompt Dependency Injection) ---
+    Serves dynamic module configurations for the Metri Q AI agent,
+    enabling new entities to be recognized without recompiling the agent.
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetAgentConfig = channel.unary_unary(
+                '/metri.AgentConfigService/GetAgentConfig',
+                request_serializer=metri__pb2.AgentConfigRequest.SerializeToString,
+                response_deserializer=metri__pb2.AgentConfigResponse.FromString,
+                _registered_method=True)
+
+
+class AgentConfigServiceServicer(object):
+    """--- Agent Configuration Domain (Prompt Dependency Injection) ---
+    Serves dynamic module configurations for the Metri Q AI agent,
+    enabling new entities to be recognized without recompiling the agent.
+    """
+
+    def GetAgentConfig(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_AgentConfigServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetAgentConfig': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAgentConfig,
+                    request_deserializer=metri__pb2.AgentConfigRequest.FromString,
+                    response_serializer=metri__pb2.AgentConfigResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'metri.AgentConfigService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('metri.AgentConfigService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class AgentConfigService(object):
+    """--- Agent Configuration Domain (Prompt Dependency Injection) ---
+    Serves dynamic module configurations for the Metri Q AI agent,
+    enabling new entities to be recognized without recompiling the agent.
+    """
+
+    @staticmethod
+    def GetAgentConfig(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/metri.AgentConfigService/GetAgentConfig',
+            metri__pb2.AgentConfigRequest.SerializeToString,
+            metri__pb2.AgentConfigResponse.FromString,
             options,
             channel_credentials,
             insecure,
