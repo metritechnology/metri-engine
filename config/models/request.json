@@ -73,6 +73,14 @@
       "is_dimension": true
     },
     {
+      "name": "category",
+      "type": "enum",
+      "options": [],
+      "enum_open": true,
+      "is_dimension": true,
+      "description": "Categoría de la demanda. Enum totalmente abierto (sin catálogo canónico): los valores los define el tenant en la configuración del plugin requests."
+    },
+    {
       "name": "asset_id",
       "type": "reference",
       "entityRef": "asset",
