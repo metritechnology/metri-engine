@@ -144,102 +144,135 @@ Resources:
         CloudWatchMetricsEnabled: true
         MetricName: MetriWebACLMetrics
       Rules:
-        # Regla 1 (Unificada Zero-Trust): Contrato estricto gRPC-Web + Ruta /metri.* normalizada
-        # + Validación de formato de token mk_ (>60B).
-        # Fusiona MetriBlockNonGrpcMethods + MetriGrpcProtocolEnforcement (-$1.00/mes)
-        # y evita invocaciones Lambda sin token o hacia /grpc.reflection.
-        - Name: MetriGrpcZeroTrustGate
+        # Regla 0: Bloqueo perimetral de rutas internas (/internal/*) para toda la plataforma
+        - Name: MetriBlockInternalPaths
           Priority: 1
           Action:
             Block: {}
           Statement:
-            NotStatement:
-              Statement:
-                AndStatement:
-                  Statements:
-                    # 1. Solo rutas de servicios gRPC registrados (/metri.*), previniendo ../
-                    - ByteMatchStatement:
-                        FieldToMatch:
-                          UriPath: {}
-                        SearchString: "/metri."
-                        PositionalConstraint: STARTS_WITH
-                        TextTransformations:
-                          - Priority: 0
-                            Type: URL_DECODE
-                          - Priority: 1
-                            Type: NORMALIZE_PATH
-                    # 2. O es preflight OPTIONS, o es POST gRPC con token mk_ (>60 bytes)
-                    - OrStatement:
+            ByteMatchStatement:
+              FieldToMatch:
+                UriPath: {}
+              PositionalConstraint: STARTS_WITH
+              SearchString: "/internal/"
+              TextTransformations:
+                - Priority: 0
+                  Type: URL_DECODE
+                - Priority: 1
+                  Type: LOWERCASE
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: false
+            MetricName: MetriBlockInternalPathsMetrics
+
+        # Regla 1 (Unificada Zero-Trust para Engine): Contrato estricto gRPC-Web condicionado por Host
+        # Aplica solo cuando la cabecera host contiene "engine.", protegiendo metri-engine y permitiendo
+        # que auth.metri.one y otros subdominios compartan esta misma WebACL sin falsos positivos.
+        - Name: MetriGrpcZeroTrustGate
+          Priority: 5
+          Action:
+            Block: {}
+          Statement:
+            AndStatement:
+              Statements:
+                # Condición 1: Solo evaluar si el destino es engine.*
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      SingleHeader:
+                        Name: "host"
+                    SearchString: "engine."
+                    PositionalConstraint: CONTAINS
+                    TextTransformations:
+                      - Priority: 0
+                        Type: LOWERCASE
+                # Condición 2: Si es engine, exigir contrato estricto gRPC
+                - NotStatement:
+                    Statement:
+                      AndStatement:
                         Statements:
+                          # 1. Solo rutas de servicios gRPC registrados (/metri.*), previniendo ../
                           - ByteMatchStatement:
                               FieldToMatch:
-                                Method: {}
-                              SearchString: "OPTIONS"
-                              PositionalConstraint: EXACTLY
+                                UriPath: {}
+                              SearchString: "/metri."
+                              PositionalConstraint: STARTS_WITH
                               TextTransformations:
                                 - Priority: 0
-                                  Type: NONE
-                          - AndStatement:
+                                  Type: URL_DECODE
+                                - Priority: 1
+                                  Type: NORMALIZE_PATH
+                          # 2. O es preflight OPTIONS, o es POST gRPC con token mk_ (>60 bytes)
+                          - OrStatement:
                               Statements:
                                 - ByteMatchStatement:
                                     FieldToMatch:
                                       Method: {}
-                                    SearchString: "POST"
+                                    SearchString: "OPTIONS"
                                     PositionalConstraint: EXACTLY
                                     TextTransformations:
                                       - Priority: 0
                                         Type: NONE
-                                - ByteMatchStatement:
-                                    FieldToMatch:
-                                      SingleHeader:
-                                        Name: "content-type"
-                                    SearchString: "application/grpc"
-                                    PositionalConstraint: STARTS_WITH
-                                    TextTransformations:
-                                      - Priority: 0
-                                        Type: LOWERCASE
-                                - OrStatement:
+                                - AndStatement:
                                     Statements:
-                                      - AndStatement:
+                                      - ByteMatchStatement:
+                                          FieldToMatch:
+                                            Method: {}
+                                          SearchString: "POST"
+                                          PositionalConstraint: EXACTLY
+                                          TextTransformations:
+                                            - Priority: 0
+                                              Type: NONE
+                                      - ByteMatchStatement:
+                                          FieldToMatch:
+                                            SingleHeader:
+                                              Name: "content-type"
+                                          SearchString: "application/grpc"
+                                          PositionalConstraint: STARTS_WITH
+                                          TextTransformations:
+                                            - Priority: 0
+                                              Type: LOWERCASE
+                                      - OrStatement:
                                           Statements:
-                                            - ByteMatchStatement:
-                                                FieldToMatch:
-                                                  SingleHeader:
-                                                    Name: "sid"
-                                                SearchString: "mk_"
-                                                PositionalConstraint: STARTS_WITH
-                                                TextTransformations:
-                                                  - Priority: 0
-                                                    Type: COMPRESS_WHITE_SPACE
-                                            - SizeConstraintStatement:
-                                                FieldToMatch:
-                                                  SingleHeader:
-                                                    Name: "sid"
-                                                ComparisonOperator: GT
-                                                Size: 60
-                                                TextTransformations:
-                                                  - Priority: 0
-                                                    Type: NONE
-                                      - AndStatement:
-                                          Statements:
-                                            - ByteMatchStatement:
-                                                FieldToMatch:
-                                                  SingleHeader:
-                                                    Name: "authorization"
-                                                SearchString: "mk_"
-                                                PositionalConstraint: CONTAINS
-                                                TextTransformations:
-                                                  - Priority: 0
-                                                    Type: NONE
-                                            - SizeConstraintStatement:
-                                                FieldToMatch:
-                                                  SingleHeader:
-                                                    Name: "authorization"
-                                                ComparisonOperator: GT
-                                                Size: 60
-                                                TextTransformations:
-                                                  - Priority: 0
-                                                    Type: NONE
+                                            - AndStatement:
+                                                Statements:
+                                                  - ByteMatchStatement:
+                                                      FieldToMatch:
+                                                        SingleHeader:
+                                                          Name: "sid"
+                                                      SearchString: "mk_"
+                                                      PositionalConstraint: STARTS_WITH
+                                                      TextTransformations:
+                                                        - Priority: 0
+                                                          Type: COMPRESS_WHITE_SPACE
+                                                  - SizeConstraintStatement:
+                                                      FieldToMatch:
+                                                        SingleHeader:
+                                                          Name: "sid"
+                                                      ComparisonOperator: GT
+                                                      Size: 60
+                                                      TextTransformations:
+                                                        - Priority: 0
+                                                          Type: NONE
+                                            - AndStatement:
+                                                Statements:
+                                                  - ByteMatchStatement:
+                                                      FieldToMatch:
+                                                        SingleHeader:
+                                                          Name: "authorization"
+                                                      SearchString: "mk_"
+                                                      PositionalConstraint: CONTAINS
+                                                      TextTransformations:
+                                                        - Priority: 0
+                                                          Type: NONE
+                                                  - SizeConstraintStatement:
+                                                      FieldToMatch:
+                                                        SingleHeader:
+                                                          Name: "authorization"
+                                                      ComparisonOperator: GT
+                                                      Size: 60
+                                                      TextTransformations:
+                                                        - Priority: 0
+                                                          Type: NONE
           VisibilityConfig:
             SampledRequestsEnabled: true
             CloudWatchMetricsEnabled: false
@@ -275,9 +308,34 @@ Resources:
             CloudWatchMetricsEnabled: false
             MetricName: AWSAnonymousIpMetrics
 
-        # Regla 4: Rate Limiting por IP (1000 req/5min ≈ 3.3 req/s sobre tráfico ya filtrado)
-        - Name: MetriRateLimitRule
+        # Regla 4: Rate Limiting Estricto para Autenticación (300 req/5min sobre auth.* anti brute-force)
+        - Name: MetriAuthRateLimit
           Priority: 20
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 300
+              EvaluationWindowSec: 300
+              AggregateKeyType: IP
+              ScopeDownStatement:
+                ByteMatchStatement:
+                  FieldToMatch:
+                    SingleHeader:
+                      Name: "host"
+                  SearchString: "auth."
+                  PositionalConstraint: CONTAINS
+                  TextTransformations:
+                    - Priority: 0
+                      Type: LOWERCASE
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: false
+            MetricName: MetriAuthRateLimitMetrics
+
+        # Regla 5: Rate Limiting Global por IP (1000 req/5min ≈ 3.3 req/s sobre tráfico ya filtrado)
+        - Name: MetriRateLimitRule
+          Priority: 25
           Action:
             Block: {}
           Statement:
@@ -304,8 +362,9 @@ Resources:
             CloudWatchMetricsEnabled: false
             MetricName: AWSKnownBadInputsMetrics
 
-        # Regla 6: Common Rule Set ($0/mes bajo 1500 WCU — protege contra SSRF y Stored XSS,
-        # excluyendo SizeRestrictions_BODY y GenericRFI_BODY para payloads binarios Protobuf)
+        # Regla 7: Common Rule Set ($0/mes bajo 1500 WCU — protege contra SSRF y Stored XSS,
+        # excluyendo SizeRestrictions_BODY, GenericRFI_BODY para payloads binarios Protobuf
+        # y GenericRFI_QUERYARGUMENTS para redirect_uri https:// de OAuth2 en auth.metri.one)
         - Name: AWS-AWSManagedRulesCommonRuleSet
           Priority: 40
           Statement:
@@ -315,6 +374,7 @@ Resources:
               ExcludedRules:
                 - Name: SizeRestrictions_BODY
                 - Name: GenericRFI_BODY
+                - Name: GenericRFI_QUERYARGUMENTS
           OverrideAction:
             None: {}
           VisibilityConfig:
@@ -648,3 +708,8 @@ Outputs:
   MetriBootstrapParameterStoreKey:
     Description: "ARN del parámetro SSM con la clave única de bootstrap del administrador maestro"
     Value: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/metri/engine/bootstrap/master-key"
+  SharedWebAclArn:
+    Description: "ARN de la WebACL WAFv2 unificada para CloudFront (Engine, Auth y CDN)"
+    Value: !GetAtt MetriWebACL.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-SharedWebAclArn"
