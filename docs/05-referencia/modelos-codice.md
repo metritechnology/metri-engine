@@ -3,7 +3,7 @@
 > Generado automáticamente desde `config/models/*.json` — registro SSOT de esquemas.
 > Regenerar: `python3 scripts/docs/gen_reference.py`
 
-Total de modelos registrados: **60**
+Total de modelos registrados: **53**
 
 | Entidad | Motor | Sistema | Historial | Constraints | Reglas EDA | Atributos |
 |---|---|:---:|:---:|:---:|:---:|---|
@@ -15,9 +15,6 @@ Total de modelos registrados: **60**
 | `asset` | `mbf` | — | ✓ | 0 | 3 | `name`, `tag`, `serial_number`, `barcode`, `status`, `criticality`, `location_id`, `parent_asset_id`, `description`, `manufacturer_company_id`, `model_number`, `vendor_provider_id`, `omniclass_code`, `omniclass_name`, `purchase_date`, `installation_date`, `warranty_expiration_date`, `purchase_cost_cents`, `salvage_value_cents`, `currency`, `cost_center`, `expected_lifespan_months`, `custom_attributes` |
 | `audit_log` | `mbf` | — | — | 0 | 0 | `tenant_id`, `user_id`, `action_type`, `resource_domain`, `resource_id`, `client_ip`, `security_context`, `execution_time_ms`, `plugin_telemetry` |
 | `calendar_event` | `mbf` | 🔒 | — | 0 | 0 | `source_entity_id`, `source_entity_type`, `start_date`, `end_date`, `display_title`, `cron_expression`, `iana_timezone`, `color_hex` |
-| `checklist_template` | `mbf` | — | ✓ | 0 | 0 | `name`, `description`, `status` |
-| `checklist_template_item` | `mbf` | — | ✓ | 0 | 0 | `checklist_template_section_id`, `item_order`, `question_text`, `type`, `is_required` |
-| `checklist_template_section` | `mbf` | — | ✓ | 0 | 0 | `checklist_template_id`, `section_order`, `title`, `description` |
 | `company` | `mbf` | — | ✓ | 0 | 2 | `name`, `legal_name`, `tag`, `company_type`, `parent_company_id`, `tax_id_type`, `tax_id`, `tax_regime`, `status`, `website`, `primary_contact_name`, `primary_contact_role`, `contact_email`, `contact_phone`, `address_street`, `address_city`, `address_state_province`, `address_postal_code`, `address_country_iso2`, `hourly_rate_cents`, `currency`, `payment_terms`, `insurance_expiration_date`, `sla_rating`, `erp_external_id`, `custom_attributes` |
 | `dashboardBI` | `mbf` | — | ✓ | 0 | 3 | `name`, `description`, `widgets`, `created_at`, `updated_at` |
 | `document_chunk` | `mbf` | 🔒 | — | 0 | 0 | `id`, `parent_file`, `chunk_index`, `chunk_content`, `semantic_embedding`, `metadata_tags`, `owner_entity_type`, `owner_entity_id`, `page_range`, `created_at` |
@@ -53,8 +50,6 @@ Total de modelos registrados: **60**
 | `scheduled_job` | `mbf` | 🔒 | ✓ | 0 | 3 | `parent_entity_ref`, `created_by`, `trigger_type`, `trigger_expression`, `iana_timezone`, `action_type`, `target_user_id`, `target_group_id`, `target_role_id`, `target_webhook_id`, `action_payload`, `idempotency_hash`, `status`, `last_run_at`, `run_count`, `last_error` |
 | `sequence_registry` | `mbf` | 🔒 | — | 0 | 0 | `tenant_id`, `sequence_code`, `prefix`, `padding_length`, `current_value`, `parent_scope_tag` |
 | `shift_pattern` | `mbf` | — | ✓ | 1 | 1 | `name`, `user_id`, `user_group_id`, `grammar`, `cron_expression`, `iana_timezone`, `span_minutes`, `productive_factor`, `reactive_reserve_pct`, `effective_from`, `effective_to`, `status` |
-| `task_template` | `mbf` | — | ✓ | 0 | 0 | `name`, `estimated_duration_minutes` |
-| `task_template_item` | `mbf` | — | — | 0 | 0 | `task_template_id`, `description` |
 | `technical_specification` | `mbf` | — | — | 1 | 0 | `asset_id`, `concept_code`, `concept_name`, `value`, `spec_order` |
 | `technician_shift` | `mbf` | — | ✓ | 5 | 3 | `user_id`, `shift_date`, `start_time`, `end_time`, `status`, `shift_pattern_id`, `kind`, `absence_reason`, `completed_by`, `completed_at` |
 | `tenant` | `mbf` | 🔒 | ✓ | 0 | 2 | `name`, `tag`, `status`, `tier`, `require_mfa_for_new_users`, `mfa_policy`, `mfa_allowed_methods`, `session_max_idle_minutes`, `industry`, `timezone`, `currency`, `language`, `billing_admin_email`, `logo`, `config` |
@@ -65,5 +60,3 @@ Total de modelos registrados: **60**
 | `work_order` | `mbf` | — | ✓ | 2 | 2 | `work_order_number`, `title`, `description`, `request_id`, `asset_id`, `location_id`, `require_location_verification`, `latitude`, `longitude`, `assignees`, `assigned_group_ids`, `category`, `status`, `priority`, `due_date`, `scheduled_start`, `estimated_duration_hours`, `preventive_maintenance_id`, `scheduled_job_id`, `completed_by`, `completed_at`, `custom_attributes` |
 | `work_order_procedure` | `mbf` | — | ✓ | 4 | 0 | `work_order_id`, `procedure_template_id`, `name`, `status`, `score`, `max_score`, `completed_by`, `completed_at`, `procedure_order` |
 | `work_order_procedure_field` | `mbf` | — | ✓ | 0 | 0 | `work_order_procedure_id`, `procedure_template_field_id`, `parent_field_id`, `label`, `description`, `field_type`, `choices`, `is_required`, `field_order`, `score`, `max_score`, `value_text`, `value_number`, `value_boolean`, `value_epoch`, `value_choice`, `answered_by`, `answered_at` |
-| `work_order_task` | `mbf` | — | — | 0 | 0 | `work_order_id`, `task_template_id`, `description`, `status`, `asset_id`, `location_id`, `assigned_user_id`, `assigned_group_id`, `scheduled_start`, `scheduled_end`, `estimated_duration_minutes`, `completed_by`, `completed_at` |
-| `work_order_task_item` | `mbf` | — | — | 0 | 0 | `work_order_task_id`, `task_template_item_id`, `description`, `is_completed` |

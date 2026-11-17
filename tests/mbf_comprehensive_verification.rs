@@ -121,7 +121,7 @@ fn all_60_codice_models_route_cleanly_via_structural_topology_classifier() {
         count += 1;
     }
 
-    assert_eq!(count, 60, "All 60 Códice models must be verified");
+    assert_eq!(count, 53, "All 53 Códice models must be verified");
     let populated_cells = cell_distribution.iter().filter(|&&n| n > 0).count();
     assert!(
         populated_cells >= 4,

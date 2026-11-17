@@ -19,7 +19,7 @@
 | Documento | Propósito y Alcance |
 | :--- | :--- |
 | [01-desarrollo-calidad-y-pruebas.md](02-guias/01-desarrollo-calidad-y-pruebas.md) | Flujo de trabajo diario, comandos del `Makefile`, ejecución de pruebas y cumplimiento de los guardianes de arquitectura, Clean Code, patrón `Result` y documentación. |
-| [02-modelado-entidades-codice.md](02-guias/02-modelado-entidades-codice.md) | Guía completa para definir y evolucionar los 60 modelos JSON en `config/models/`: tipos, patrón monetario en céntimos (`*_cents`), banderas, secuencias, constraints, reglas EDA y procedimientos. |
+| [02-modelado-entidades-codice.md](02-guias/02-modelado-entidades-codice.md) | Guía completa para definir y evolucionar los 53 modelos JSON en `config/models/`: tipos, patrón monetario en céntimos (`*_cents`), banderas, secuencias, constraints, reglas EDA y procedimientos. |
 | [03-despliegue-aws-y-ci-cd.md](02-guias/03-despliegue-aws-y-ci-cd.md) | Pipelines de GitHub Actions (`rust.yml`, `deploy-production.yml`), federación OIDC sin llaves estáticas, recursos del stack SAM (`template.yaml`) y procedimiento de rollback. |
 | [04-operacion-scripts-y-observabilidad.md](02-guias/04-operacion-scripts-y-observabilidad.md) | Operación con scripts de `scripts/dev/` y `scripts/ops/`, trazas distribuidas OpenTelemetry (`OTLP`), logs estructurados en CloudWatch y telemetría forense (`sherlog`). |
 
@@ -58,7 +58,7 @@ Cada ficha documenta el 100 % de los submódulos, archivos `.rs`, contratos púb
 | :--- | :--- | :---: | :--- |
 | [01-mbf.md](04-componentes/01-mbf.md) | `src/mbf/` | 13 | Formato binario `.mbf` v1 alineado a 64B, `MbfStorageClient`, manifiesto `tx` y las 8 zonas físicas (`pax_mvcc`, `csr_graph`, `iot_timeseries`, `financial_ledger`, `bi_synopses`, `hybrid_search`, `fuzzy_math_catalog`, `cross_covariance`). |
 | [02-eav.md](04-componentes/02-eav.md) | `src/eav/` | 21 | Almacenamiento de datoms inmutables sobre `.mbf`: codificación de tipos (`types`), escritor transaccional ACID (`writer`), lector (`reader`) y búsqueda por trigramas (`fts`). |
-| [03-codice.md](04-componentes/03-codice.md) | `src/codice/` | 14 | Compilador e índice `O(1)` de los 60 esquemas JSON (`registry`), perfiles matemáticos/difusos (`profiles`), coerción, validación y generación de secuencias/Base36. |
+| [03-codice.md](04-componentes/03-codice.md) | `src/codice/` | 14 | Compilador e índice `O(1)` de los 53 esquemas JSON (`registry`), perfiles matemáticos/difusos (`profiles`), coerción, validación y generación de secuencias/Base36. |
 | [04-domain.md](04-componentes/04-domain.md) | `src/domain/` | 19 | Tipos y puertos fundamentales sin dependencias de infraestructura: `DomainError`, `ErrorCatalog`, `events` (`envelope`, `delta`), `protocols`, `pipeline` (`Railway`), `config` y `audit`. |
 | [05-application.md](04-componentes/05-application.md) | `src/application/` | 2 | Puertos de aplicación (`ports.rs`) diseñados bajo Segregación de Interfaces (ISP) e Inversión de Dependencias (DIP). |
 | [06-janus.md](04-componentes/06-janus.md) | `src/janus/` | 34 | Camino de lectura (*Read Path*): normalizadores por operación, validador, selector de planes, compilador AST IR (FlatBuffers), cláusulas ABAC, agregador, multiseries y caché. |
@@ -81,7 +81,7 @@ Cada ficha documenta el 100 % de los submódulos, archivos `.rs`, contratos púb
 | :--- | :--- | :--- |
 | [api-grpc.md](05-referencia/api-grpc.md) | `proto/metri.proto` + `proto/eda.proto` | **[Autogenerado]** Catálogo completo de servicios, RPCs, mensajes y enumeraciones gRPC. |
 | [codigos-error.md](05-referencia/codigos-error.md) | `config/errors/error_catalog.toml` | **[Autogenerado]** Catálogo normativo de códigos de error por familia, etapa, HTTP/gRPC status y reintentabilidad. |
-| [modelos-codice.md](05-referencia/modelos-codice.md) | `config/models/*.json` | **[Autogenerado]** Tabla completa de las 60 entidades del Códice con sus banderas, constraints, reglas EDA y atributos. |
+| [modelos-codice.md](05-referencia/modelos-codice.md) | `config/models/*.json` | **[Autogenerado]** Tabla completa de las 53 entidades del Códice con sus banderas, constraints, reglas EDA y atributos. |
 | [diagrama-modelo-datos.md](05-referencia/diagrama-modelo-datos.md) | `config/models/*.json` | Diagramas Mermaid de relaciones entre dominios (CMMS, Planificación, Plantillas, Activos ISA-95, IoT, Inventario/Contabilidad, Identidad y Plataforma). |
 | [politicas-prompts-y-localizacion.md](05-referencia/politicas-prompts-y-localizacion.md) | `config/{policies,prompts,locales}/` | Especificación de las reglas Cedar (`P00`–`P07`), clasificador y plantillas de prompts de **Metri Q Assistant** y diccionarios i18n (`es`/`en`). |
 | [suites-pruebas-y-scripts.md](05-referencia/suites-pruebas-y-scripts.md) | `tests/` + `scripts/` | Inventario del 100 % de las suites de verificación en Rust/Python y de los scripts de CI, desarrollo y operaciones. |

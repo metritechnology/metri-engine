@@ -36,7 +36,7 @@
 //! | [`janus_router`] | Camino de escritura (Write Path): enrutamiento transaccional `.mbf`, sagas declarativas (`scheduled_job`) y ULIDs monotónicos |
 //! | [`aegis`] | Ejecutores `.mbf` y OLTP sobre AST IR + motor de fórmulas matemáticas sandboxeado |
 //! | [`eav`] | Motor de datoms inmutables sobre `.mbf`: `types`, `reader`, `writer` y `fts` |
-//! | [`codice`] | Registro SSOT de los 60 modelos JSON (`config/models/`): coerción, validación, perfiles matemáticos y secuencias |
+//! | [`codice`] | Registro SSOT de los 53 modelos JSON (`config/models/`): coerción, validación, perfiles matemáticos y secuencias |
 //! | [`cedar`] | Autorización ABAC Zero-Trust (Cedar Policy), grafo de principal y cachés de sesión |
 //! | [`quota`] | Cuotas atómicas por tenant: resolución, libro mayor (`QuotaLedger`), reservas IA y `sweeper` |
 //! | [`iop`] | Pipeline de orquestación de ingesta por pasos: Cedar → Quota → Janus |

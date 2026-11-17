@@ -2,7 +2,7 @@
 
 > **Módulo Rust:** `metri_engine::codice`  
 > **Ubicación:** `src/codice/` (14 archivos `.rs`)  
-> **Insumo Declarativo:** `config/models/*.json` (60 modelos) y `config/locales/*.json`  
+> **Insumo Declarativo:** `config/models/*.json` (53 modelos) y `config/locales/*.json`  
 > ** Ciclo de Vida:** Compilación e inicialización `fail-fast` en el arranque (`OnceLock<CodeRegistry>`), lecturas inmutables $O(1)$ en tiempo de ejecución.
 
 ---
@@ -11,7 +11,7 @@
 
 El componente **Códice** (`src/codice/`) es el registro compilado de única fuente de verdad (**SSOT — Single Source of Truth**) de los esquemas de entidad, descriptores de atributos, restricciones de integridad, diccionarios de localización y perfiles analíticos/difusos de `metri-engine`.
 
-Durante el arranque del motor (`bootstrap`), Códice escanea el directorio `config/models/`, deserializa y valida los 60 modelos JSON declarativos, calcula las huellas criptográficas SHA-256 (`fingerprint` de esquema y `cache_fingerprint` de modelo completo), registra los atributos de sistema reservados con sus identificadores hash DJB2 (`u16`) y verifica las referencias cruzadas de proveedores de ámbito de secuencia (`validate_scope_providers`). Una vez sellado en un contenedor estático `OnceLock<CodeRegistry>`, expone consultas en memoria en tiempo constante $O(1)$ sin bloqueos de sincronización (`Mutex`/`RwLock`).
+Durante el arranque del motor (`bootstrap`), Códice escanea el directorio `config/models/`, deserializa y valida los 53 modelos JSON declarativos, calcula las huellas criptográficas SHA-256 (`fingerprint` de esquema y `cache_fingerprint` de modelo completo), registra los atributos de sistema reservados con sus identificadores hash DJB2 (`u16`) y verifica las referencias cruzadas de proveedores de ámbito de secuencia (`validate_scope_providers`). Una vez sellado en un contenedor estático `OnceLock<CodeRegistry>`, expone consultas en memoria en tiempo constante $O(1)$ sin bloqueos de sincronización (`Mutex`/`RwLock`).
 
 Además del registro de esquemas, Códice agrupa los motores de ejecución vinculados al contrato del modelo:
 - **Coerción de tipos (`coercion.rs`):** normalización determinista de escalares codificados como cadenas JSON hacia tipos numéricos y booleanos.
@@ -24,7 +24,7 @@ Además del registro de esquemas, Códice agrupa los motores de ejecución vincu
 
 | Dimensión | Responsabilidades (Dentro de `src/codice/`) | No-Responsabilidades (Fuera de `src/codice/`) |
 | :--- | :--- | :--- |
-| **Gestión de Esquemas** | Cargar, validar, firmar con SHA-256 e indexar los 60 modelos de `config/models/*.json` y las traducciones de `config/locales/`. | Definir la gramática de transporte Protobuf/FlatBuffers (`src/grpc/`) o almacenar esquemas dinámicos por petición. |
+| **Gestión de Esquemas** | Cargar, validar, firmar con SHA-256 e indexar los 53 modelos de `config/models/*.json` y las traducciones de `config/locales/`. | Definir la gramática de transporte Protobuf/FlatBuffers (`src/grpc/`) o almacenar esquemas dinámicos por petición. |
 | **Perfiles Analíticos y Difusos** | Compilar y asignar por defecto los perfiles declarativos `MathProfile`, `SpectralProfile`, `FuzzySearchProfile`, `SurvivalAnalysisProfile`, `CrossCovarianceProfile` y `SpatialProfile`. | Ejecutar el cálculo vectorial SIMD de sinopsis estadísticas o índices léxicos en bloques físicos (delegado a `src/mbf/` y `src/aegis/`). |
 | **Validación y Coerción** | Coaccionar escalares JSON, validar campos requeridos, patrones regex y opciones `enum`, y transformar el mapa de entrada en `HashMap<String, DatomValue>`. | Evaluar restricciones relacionales que requieren lectura del estado persistido (`RequiresWhen`, `RefState`, unicidad AVET), lo cual ejecuta el canal de escritura (`src/janus_router/`). |
 | **Numeración y Códigos** | Resolver políticas de numeración por tenant (`SequencePolicy`), recorrer la cadena de ámbitos ancestro (`nearest_registered`), incrementar atómicamente el contador secuencial y emitir códigos Base36. | Resolver el grafo jerárquico de ubicaciones desde el almacén EAV para construir `ScopeContext` (responsabilidad del canal transaccional antes de invocar `generator::inject`). |
@@ -36,7 +36,7 @@ Además del registro de esquemas, Códice agrupa los motores de ejecución vincu
 ```mermaid
 flowchart TB
     subgraph Bootstrap["Fase de Arranque (Bootstrap Fail-Fast)"]
-        ModelsDir[("config/models/*.json\n(60 modelos)")]
+        ModelsDir[("config/models/*.json\n(53 modelos)")]
         LocalesDir[("config/locales/**\n(Diccionarios i18n)")]
         Build["CodeRegistry::build()"]
         ScopeGuard["validate_scope_providers()\nGuard COD_SCOPE_001"]
@@ -92,7 +92,7 @@ La siguiente tabla documenta el **100% de los archivos `.rs`** que conforman `sr
 | `tests/base36_tests.rs` | Suite de pruebas unitarias de longitud, alfabeto canónico y no-colisión en Base36. | Tests unitarios (`#[cfg(test)]`). |
 | `tests/coercion_tests.rs` | Suite de pruebas unitarias de coerción de enteros, decimales y booleanos. | Tests unitarios (`#[cfg(test)]`). |
 | `tests/generator_tests.rs` | Suite de pruebas unitarias de inyección de atributos autogenerados y preservación de valores existentes. | Tests unitarios (`#[cfg(test)]`). |
-| `tests/registry_tests.rs` | Suite de pruebas de compilación de los 60 modelos reales, candados de duplicidad, proveedores de scope, enums abiertos y cobertura 100% de perfiles. | Tests unitarios e integración con `config/models/` (`#[cfg(test)]`). |
+| `tests/registry_tests.rs` | Suite de pruebas de compilación de los 53 modelos reales, candados de duplicidad, proveedores de scope, enums abiertos y cobertura 100% de perfiles. | Tests unitarios e integración con `config/models/` (`#[cfg(test)]`). |
 | `tests/sequence_tests.rs` | Suite de pruebas unitarias de claves de secuencia, formateo con segmento de ubicación y precedencia de `SequencePolicy`. | Tests unitarios (`#[cfg(test)]`). |
 | `tests/validator_tests.rs` | Suite de pruebas unitarias de validación de payloads, retracción con `null` (`DatomValue::Null`), enums cerrados/abiertos y expresiones regulares. | Tests unitarios (`#[cfg(test)]`). |
 
@@ -163,7 +163,7 @@ La siguiente tabla documenta el **100% de los archivos `.rs`** que conforman `sr
 El módulo `src/codice/` cuenta con 6 suites de pruebas unitarias y de contrato alojadas en `src/codice/tests/`:
 
 1. **`tests/registry_tests.rs`**:
-   - Verifica la compilación en frío de modelos aislados en directorios temporales y del catálogo real `config/models/` (60 entidades).
+   - Verifica la compilación en frío de modelos aislados en directorios temporales y del catálogo real `config/models/` (53 entidades).
    - Valida el disparo determinista de `ErrorCode::Cod002` ante entidades duplicadas y `ErrorCode::CodScope001` ante proveedores de ámbito inválidos.
    - Verifica los invariantes de dominio de las familias `procedure_template`, `work_order_procedure`, `technical_specification` (UN/CEFACT), `technician_shift` y `shift_pattern`.
    - Comprueba la cobertura del 100% de `math_profile` ($\ge 30$ medidas), `fuzzy_profile` ($\ge 50$ campos FTS), `survival_profile` y `spatial_profile`.

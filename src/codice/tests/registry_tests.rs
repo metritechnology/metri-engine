@@ -332,9 +332,9 @@ fn la_ot_lleva_n_procedimientos_ordenados() {
         == crate::codice::registry::ConstraintKind::AtMost
         && c.attributes == ["score", "max_score"]));
 
-    // Toda la capa de definición de formularios está retirada, y con ella la
-    // familia de checklists de instancia (2026-09-24): la verificación vive
-    // en las tareas y sus ítems.
+    // Toda la capa legacy de formularios, checklists y tareas fue retirada:
+    // los procedimientos (procedure_template + work_order_procedure) son el
+    // único protocolo e instancia de ejecución en órdenes de trabajo.
     for retirada in [
         "form_template",
         "form_template_section",
@@ -342,32 +342,19 @@ fn la_ot_lleva_n_procedimientos_ordenados() {
         "work_order_checklist",
         "work_order_checklist_section",
         "work_order_checklist_item",
+        "checklist_template",
+        "checklist_template_section",
+        "checklist_template_item",
+        "work_order_task",
+        "work_order_task_item",
+        "task_template",
+        "task_template_item",
     ] {
         assert!(
             registry.get_model(retirada).is_none(),
             "{retirada} fue retirada del catálogo"
         );
     }
-
-    // La plantilla de checklists conserva ciclo de vida PUBLISHED y tipado
-    // por pregunta; quedó sin instancia desde el retiro de la familia
-    // work_order_checklist* (2026-09-24).
-    let clt = registry
-        .get_model("checklist_template")
-        .expect("checklist_template debe estar registrado");
-    assert!(clt.attributes.iter().any(|a| a.name == "status"
-        && a.attr_type == AttrType::Enum
-        && a.options.contains(&"PUBLISHED".to_string())));
-    let clt_item = registry
-        .get_model("checklist_template_item")
-        .expect("checklist_template_item debe estar registrado");
-    assert!(clt_item
-        .attributes
-        .iter()
-        .any(|a| a.name == "item_order" && a.attr_type == AttrType::Number));
-    assert!(clt_item.attributes.iter().any(|a| a.name == "type"
-        && a.attr_type == AttrType::Enum
-        && a.options.contains(&"PASS_FAIL".to_string())));
 }
 
 /// La placa de datos del activo dejó de ser un flat_map libre: cada
@@ -678,7 +665,7 @@ fn test_models_do_not_discriminate_oltp_olap_engine() {
 
     let (registry, _rules) =
         CodeRegistry::build(models_dir).expect("config/models debe compilar sin campo engine");
-    assert_eq!(registry.entity_count(), 60);
+    assert_eq!(registry.entity_count(), 53);
     for name in registry.entity_names() {
         assert_eq!(
             registry.get_engine(name),

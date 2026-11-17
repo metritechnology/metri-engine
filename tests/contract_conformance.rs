@@ -133,7 +133,7 @@ fn el_codice_mantiene_el_ssot_de_modelos() {
         .flatten()
         .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
         .count();
-    assert!(count >= 55, "El Códice perdió modelos: {count}");
+    assert!(count >= 53, "El Códice perdió modelos: {count}");
 }
 
 #[test]

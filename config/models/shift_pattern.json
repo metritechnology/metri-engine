@@ -97,7 +97,7 @@
       ],
       "default_value": "DRAFT",
       "is_dimension": true,
-      "description": "Ciclo de vida en paridad con las demás definiciones (procedure_template, checklist_template): solo las PUBLISHED proyectan capacidad; DRAFT se edita sin regir; RETIRED conserva histórico. Default DRAFT: una definición nueva no rige hasta publicarse."
+      "description": "Ciclo de vida en paridad con las demás definiciones (procedure_template): solo las PUBLISHED proyectan capacidad; DRAFT se edita sin regir; RETIRED conserva histórico. Default DRAFT: una definición nueva no rige hasta publicarse."
     }
   ],
   "event_rules": [

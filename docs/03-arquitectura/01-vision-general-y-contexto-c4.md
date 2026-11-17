@@ -116,7 +116,7 @@ flowchart TB
 | :--- | :--- | :--- | :--- |
 | [`src/mbf/`](../../src/mbf/mod.rs) | Motor de Almacenamiento HTAP | Formato binario `.mbf` de 8 zonas, `MbfStorageClient`, manifiesto MVCC/CAS y proyecciones SIMD. | [01-mbf.md](../04-componentes/01-mbf.md) |
 | [`src/eav/`](../../src/eav/mod.rs) | Motor Transaccional de Datoms | Planificador de datoms (`writer/datom_plan.rs`), mutaciones atómicas, `CompositeTransact`, lector y FTS. | [02-eav.md](../04-componentes/02-eav.md) |
-| [`src/codice/`](../../src/codice/mod.rs) | Gobernanza Semántica (SSOT) | Registro de los 60 modelos (`registry.rs`), perfiles (`profiles.rs`), secuencias (`sequence.rs`) y Base36 (`base36.rs`). | [03-codice.md](../04-componentes/03-codice.md) |
+| [`src/codice/`](../../src/codice/mod.rs) | Gobernanza Semántica (SSOT) | Registro de los 53 modelos (`registry.rs`), perfiles (`profiles.rs`), secuencias (`sequence.rs`) y Base36 (`base36.rs`). | [03-codice.md](../04-componentes/03-codice.md) |
 | [`src/domain/`](../../src/domain/mod.rs) | Núcleo de Dominio Puro | Tipos universales (`protocols.rs`), errores tipados (`errors.rs`), catálogo (`error_catalog.rs`), configuración (`config.rs`) y eventos (`events/`). | [04-domain.md](../04-componentes/04-domain.md) |
 | [`src/application/`](../../src/application/mod.rs) | Puertos de Aplicación | Traits asíncronos de inversión de dependencias (`ports.rs`). | [05-application.md](../04-componentes/05-application.md) |
 | [`src/janus/`](../../src/janus/mod.rs) | Camino de Lectura (Read Path) | Normalizadores, validador, selección de plan y compilación de AST **FlatBuffers** (`janus_ir_ast.fbs`). | [06-janus.md](../04-componentes/06-janus.md) |

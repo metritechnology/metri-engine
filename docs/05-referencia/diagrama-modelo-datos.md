@@ -1,12 +1,12 @@
 # Diagrama del Modelo de Datos del Códice (`.mbf`)
 
-> **Fuente única de verdad (SSOT):** `config/models/*.json` (58 modelos activos). La referencia detallada de atributos por modelo se encuentra en [modelos-codice.md](modelos-codice.md) (autogenerada con `python3 scripts/docs/gen_reference.py`) y la guía de autoría en [modelado de entidades del Códice](../02-guias/02-modelado-entidades-codice.md).
+> **Fuente única de verdad (SSOT):** `config/models/*.json` (53 modelos activos). La referencia detallada de atributos por modelo se encuentra en [modelos-codice.md](modelos-codice.md) (autogenerada con `python3 scripts/docs/gen_reference.py`) y la guía de autoría en [modelado de entidades del Códice](../02-guias/02-modelado-entidades-codice.md).
 
 ## Convenciones de los Diagramas
 
 - **Flecha sólida `──1──▶`**: atributo `reference` con `cardinality: "one"` (relación `belongs_to`).
 - **Flecha punteada `┈┈N┈┈▶`**: atributo `reference` con `cardinality: "many"` (arreglo de identificadores).
-- **Auto-referencia**: jerarquía reflexiva dentro de la misma entidad (`asset.parent_asset_id`, `location.parent_location_id`, `work_order.parent_work_order_id`).
+- **Auto-referencia**: jerarquía reflexiva dentro de la misma entidad (`asset.parent_asset_id`, `location.parent_location_id`, `work_order_procedure_field.parent_field_id`).
 - 🔒 = `is_system: true` (entidades reservadas del plano de control y plataforma).
 - **Almacenamiento unificado**: Todos los modelos —tanto operativos como de auditoría, series temporales IoT y libro mayor financiero— se persisten y consultan sobre el motor binario HTAP **Metri Vortex (`.mbf`)** en sus respectivas zonas físicas (Zona 1 PAX+MVCC, Zona 2 Grafo CSR ISA-95, Zona 3 Series Temporales IoT Chimp128, Zona 4 Libro Mayor `FixedDecimal128` y Zona 5 Sinopsis BI).
 
@@ -17,13 +17,13 @@
 ```mermaid
 flowchart LR
     subgraph CMMS["Núcleo CMMS (Ejecución)"]
-        WO["work_order<br/>work_order_task · work_order_task_item<br/>work_order_procedure · work_order_procedure_field<br/>labor_log · downtime_log · note"]
+        WO["work_order<br/>work_order_procedure · work_order_procedure_field<br/>labor_log · downtime_log · note"]
     end
     subgraph PLAN["Planificación y Automatización"]
         PM["preventive_maintenance<br/>preventive_maintenance_procedure<br/>scheduled_job · reminder<br/>calendar_event"]
     end
     subgraph PROT["Catálogo de Plantillas"]
-        TT["procedure_template · procedure_template_field<br/>task_template · task_template_item<br/>checklist_template · checklist_template_section · checklist_template_item"]
+        TT["procedure_template · procedure_template_field"]
     end
     subgraph ACT["Activos, Ubicaciones y Terceros"]
         AS["asset · location · company<br/>technical_specification"]
@@ -76,9 +76,6 @@ flowchart TB
     LL["labor_log<br/>(horas × hourly_rate_cents + currency)"] -->|"work_order_id"| WO
     LL -->|"user_id"| U
 
-    WOT["work_order_task"] -->|"work_order_id"| WO
-    WOTI["work_order_task_item"] -->|"work_order_task_id"| WOT
-
     WPROC["work_order_procedure<br/>(1..N por OT · procedure_order)"] -->|"work_order_id"| WO
     WPROC -->|"procedure_template_id"| PT["procedure_template"]
     WPF["work_order_procedure_field<br/>(respuesta tipada value_* + score)"] -->|"work_order_procedure_id"| WPROC
@@ -91,7 +88,7 @@ flowchart TB
 ### Invariantes Clave del Dominio `work_order`
 - **Idempotencia de generación preventiva**: Constraint declarativo `unique(scheduled_job_id, asset_id)` por tenant en `work_order`, impidiendo que reintentos de planificación dupliquen órdenes de trabajo.
 - **Resolución automática de secuencia (`work_order_number`)**: `location_id` actúa como proveedor de ámbito (`is_sequence_scope_provider: true`). Si la OT solo recibe `asset_id`, el generador resuelve el ámbito navegando hacia la ubicación del activo (`nearest_registered`).
-- **Composición atómica (`CompositeTransact`)**: Una orden de trabajo junto con sus `work_order_procedure`, `work_order_procedure_field`, `work_order_task` y `work_order_task_item` se persiste en una única transacción ACID sobre `HOT_HEAD.mbf`.
+- **Composición atómica (`CompositeTransact`)**: Un procedimiento instanciado (`work_order_procedure`) junto con sus campos de respuesta (`work_order_procedure_field`) se persiste en una única transacción ACID sobre `HOT_HEAD.mbf`.
 
 ---
 
@@ -100,24 +97,21 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph DEFS["Definición de Protocolos (Estado PUBLISHED exigido por ref_state)"]
-        PR["procedure_template → procedure_template_field<br/>(12 tipos de campo · puntaje score/max_score)"]
-        TT["task_template → task_template_item<br/>(plantillas de tareas)"]
-        CLT["checklist_template → checklist_template_section → checklist_template_item<br/>(definición de listas de verificación)"]
+        PR["procedure_template → procedure_template_field<br/>(PROTOCOL | CHECKLIST · 13 tipos de campo · puntaje score/max_score)"]
     end
 
     subgraph GEN["Planificación y Sagas (janus_router::saga)"]
         PM["preventive_maintenance<br/>(recurrencia calendario o umbral de medidor)"]
         PMP["preventive_maintenance_procedure"] -->|"preventive_maintenance_id"| PM
         PMP -->|"procedure_template_id"| PR
-        PM -->|"shadow_sagas_mapping (misma TX ACID)"| SJ["scheduled_job 🔒"]
+        PM -->|"pm-orchestrator"| SJ["scheduled_job 🔒"]
         REM["reminder"] -->|"shadow_sagas_mapping"| SJ
         SJ -->|"dispara creación idempotente"| WO2["work_order"]
         SEQ["sequence_registry 🔒"] -.->|"contador ACID por scope"| WO2
     end
 
     subgraph RUN["Ejecución en Orden de Trabajo"]
-        WO2 --> WPR2["work_order_procedure<br/>(unique: work_order_id + procedure_template_id)"]
-        WO2 --> WT2["work_order_task → work_order_task_item"]
+        WO2 --> WPR2["work_order_procedure → work_order_procedure_field<br/>(unique: work_order_id + procedure_template_id)"]
     end
 ```
 
