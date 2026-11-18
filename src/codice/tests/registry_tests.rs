@@ -259,10 +259,41 @@ fn test_procedure_family_and_wo_hierarchy_registered() {
         .attributes
         .iter()
         .any(|a| a.name == "work_order_procedure_id" && a.required && a.indexed));
+    assert!(
+        wopf.attributes.iter().any(|a| a.name == "procedure_template_id"
+            && a.entity_ref.as_deref() == Some("procedure_template")
+            && a.indexed
+            && a.is_dimension
+            && !a.required),
+        "work_order_procedure_field debe relacionarse directamente con procedure_template (index + is_dimension)"
+    );
     assert!(wopf
         .attributes
         .iter()
-        .any(|a| a.name == "procedure_template_field_id"));
+        .any(|a| a.name == "procedure_template_field_id"
+            && a.entity_ref.as_deref() == Some("procedure_template_field")
+            && a.indexed
+            && a.is_dimension));
+    assert_eq!(
+        registry
+            .get_localized_label(
+                "es",
+                "work_order_procedure_field",
+                Some("procedure_template_id")
+            )
+            .as_deref(),
+        Some("Procedimiento")
+    );
+    assert_eq!(
+        registry
+            .get_localized_label(
+                "en",
+                "work_order_procedure_field",
+                Some("procedure_template_id")
+            )
+            .as_deref(),
+        Some("Procedure")
+    );
     // Captura de valor tipada: un attr por familia de respuesta. La evidencia
     // de fichero no va en array: la vía única es file.owner_entity_* (Fase 3
     // de PLAN_REFACTORIZACION_MODELO).

@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "work_order_procedure_field": {
+      "label": "Pasos de procedimiento ejecutados",
+      "attributes": {
+        "work_order_procedure_id": "Instancia de procedimiento",
+        "procedure_template_id": "Procedimiento",
+        "procedure_template_field_id": "Paso de plantilla",
+        "parent_field_id": "Sección padre",
+        "label": "Etiqueta",
+        "description": "Descripción",
+        "field_type": "Tipo de campo",
+        "choices": "Opciones",
+        "is_required": "Obligatorio",
+        "field_order": "Orden",
+        "score": "Puntaje obtenido",
+        "max_score": "Puntaje máximo",
+        "value_text": "Respuesta (texto)",
+        "value_number": "Respuesta (numérica)",
+        "value_boolean": "Respuesta (booleana)",
+        "value_epoch": "Respuesta (fecha)",
+        "value_choice": "Respuesta (opción)",
+        "answered_by": "Respondido por",
+        "answered_at": "Fecha de respuesta"
+      }
+    }
+  },
+  "enums": {
+    "work_order_procedure_field": {
+      "field_type": {
+        "TEXT": "Texto",
+        "NUMBER": "Número",
+        "AMOUNT": "Monto",
+        "DATE": "Fecha",
+        "HEADING": "Encabezado",
+        "FILE": "Archivo",
+        "PHOTO": "Fotografía",
+        "SIGNATURE": "Firma",
+        "MULTIPLE_CHOICE": "Selección múltiple",
+        "INSPECTION_CHECK": "Inspección",
+        "YES_NO_NA": "Sí / No / N.A.",
+        "CHECKBOX": "Casilla",
+        "CHECKLIST": "Lista de chequeo"
+      }
+    }
+  }
+}

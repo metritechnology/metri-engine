@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "work_order_procedure_field": {
+      "label": "Executed procedure fields",
+      "attributes": {
+        "work_order_procedure_id": "Work order procedure",
+        "procedure_template_id": "Procedure",
+        "procedure_template_field_id": "Template field",
+        "parent_field_id": "Parent section",
+        "label": "Label",
+        "description": "Description",
+        "field_type": "Field type",
+        "choices": "Choices",
+        "is_required": "Required",
+        "field_order": "Order",
+        "score": "Score",
+        "max_score": "Max score",
+        "value_text": "Answer (text)",
+        "value_number": "Answer (number)",
+        "value_boolean": "Answer (boolean)",
+        "value_epoch": "Answer (date)",
+        "value_choice": "Answer (choice)",
+        "answered_by": "Answered by",
+        "answered_at": "Answered at"
+      }
+    }
+  },
+  "enums": {
+    "work_order_procedure_field": {
+      "field_type": {
+        "TEXT": "Text",
+        "NUMBER": "Number",
+        "AMOUNT": "Amount",
+        "DATE": "Date",
+        "HEADING": "Heading",
+        "FILE": "File",
+        "PHOTO": "Photo",
+        "SIGNATURE": "Signature",
+        "MULTIPLE_CHOICE": "Multiple choice",
+        "INSPECTION_CHECK": "Inspection check",
+        "YES_NO_NA": "Yes / No / N/A",
+        "CHECKBOX": "Checkbox",
+        "CHECKLIST": "Checklist"
+      }
+    }
+  }
+}

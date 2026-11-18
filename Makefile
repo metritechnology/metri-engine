@@ -104,6 +104,7 @@ build-MetriEngineFunction: build-lambda
 	mkdir -p $(ARTIFACTS_DIR)/lib
 	cp target/lambda/bootstrap/bootstrap $(ARTIFACTS_DIR)/
 	cp -r config/models $(ARTIFACTS_DIR)/models
+	cp -r config/locales $(ARTIFACTS_DIR)/locales
 	cp -r config/errors $(ARTIFACTS_DIR)/errors
 	cp -r config/prompts $(ARTIFACTS_DIR)/prompts
 

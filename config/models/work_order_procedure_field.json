@@ -13,10 +13,21 @@
       "is_dimension": true
     },
     {
+      "name": "procedure_template_id",
+      "type": "reference",
+      "entityRef": "procedure_template",
+      "cardinality": "one",
+      "index": true,
+      "is_dimension": true,
+      "description": "Provenance de plantilla (procedureTemplateId): qué procedimiento maestro (procedure_template) originó este campo instanciado. Permite filtrar y agrupar directamente respuestas de pasos por procedimiento a través de múltiples órdenes de trabajo."
+    },
+    {
       "name": "procedure_template_field_id",
       "type": "reference",
       "entityRef": "procedure_template_field",
       "cardinality": "one",
+      "index": true,
+      "is_dimension": true,
       "description": "Provenance campo a campo (el procedureTemplateFieldId de MaintainX): qué fila de plantilla originó este campo. Vital para inteligencia de negocio: agrupar métricas sobre este paso específico nacido de una plantilla."
     },
     {

@@ -79,6 +79,7 @@ flowchart TB
     WPROC["work_order_procedure<br/>(1..N por OT · procedure_order)"] -->|"work_order_id"| WO
     WPROC -->|"procedure_template_id"| PT["procedure_template"]
     WPF["work_order_procedure_field<br/>(respuesta tipada value_* + score)"] -->|"work_order_procedure_id"| WPROC
+    WPF -->|"procedure_template_id"| PT
     WPF -->|"procedure_template_field_id"| PTF["procedure_template_field"]
 
     DT["downtime_log<br/>(parada de activo)"] -->|"work_order_id"| WO
