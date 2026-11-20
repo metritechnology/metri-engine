@@ -62,6 +62,7 @@
         "PHOTO",
         "SIGNATURE",
         "MULTIPLE_CHOICE",
+        "DROPDOWN",
         "INSPECTION_CHECK",
         "YES_NO_NA",
         "CHECKBOX",
@@ -74,7 +75,7 @@
     {
       "name": "choices",
       "type": "array",
-      "description": "Opciones para MULTIPLE_CHOICE (ej: [\"OK\", \"Parcial\", \"No OK\"])."
+      "description": "Opciones para MULTIPLE_CHOICE y DROPDOWN (ej: [\"OK\", \"Parcial\", \"No OK\"])."
     },
     {
       "name": "is_required",

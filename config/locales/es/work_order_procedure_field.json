@@ -37,6 +37,7 @@
         "PHOTO": "Fotografía",
         "SIGNATURE": "Firma",
         "MULTIPLE_CHOICE": "Selección múltiple",
+        "DROPDOWN": "Lista desplegable",
         "INSPECTION_CHECK": "Inspección",
         "YES_NO_NA": "Sí / No / N.A.",
         "CHECKBOX": "Casilla",

@@ -37,6 +37,7 @@
         "PHOTO": "Photo",
         "SIGNATURE": "Signature",
         "MULTIPLE_CHOICE": "Multiple choice",
+        "DROPDOWN": "Dropdown",
         "INSPECTION_CHECK": "Inspection check",
         "YES_NO_NA": "Yes / No / N/A",
         "CHECKBOX": "Checkbox",

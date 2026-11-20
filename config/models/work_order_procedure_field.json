@@ -80,6 +80,7 @@
         "PHOTO",
         "SIGNATURE",
         "MULTIPLE_CHOICE",
+        "DROPDOWN",
         "INSPECTION_CHECK",
         "YES_NO_NA",
         "CHECKBOX",
@@ -92,7 +93,7 @@
     {
       "name": "choices",
       "type": "array",
-      "description": "Opciones copiadas de la plantilla para MULTIPLE_CHOICE."
+      "description": "Opciones copiadas de la plantilla para MULTIPLE_CHOICE y DROPDOWN."
     },
     {
       "name": "is_required",
@@ -180,7 +181,7 @@
     {
       "name": "value_choice",
       "type": "string",
-      "description": "Opción elegida para field_type MULTIPLE_CHOICE o YES_NO_NA."
+      "description": "Opción elegida para field_type MULTIPLE_CHOICE, DROPDOWN, INSPECTION_CHECK o YES_NO_NA."
     },
     {
       "name": "answered_by",
